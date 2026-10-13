@@ -1,0 +1,212 @@
+# InvestOpen Roadmap
+
+Open-source (AGPL-3.0), self-hosted, single-user charting platform with reference-class features. Data source: yFinance. Tick items off as they land.
+
+Decisions: AGPL-3.0 · custom Canvas2D chart engine · self-hosted single user (docker compose, no auth). Local-AI screen analysis is built separately; Phase 16 reserves its integration point.
+
+## Architecture (recommended approach)
+
+| Layer             | Choice                                                                                                                             | Why                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Data API          | Python 3.11 + FastAPI + uvicorn + yfinance + pandas                                                                                | yfinance is Python-only. FastAPI gives async, WebSockets, and OpenAPI out of the box.           |
+| Storage           | SQLAlchemy 2 + Alembic. SQLite by default; Postgres via `DATABASE_URL` (compose profile)                                           | Single user, so SQLite is enough. Postgres stays optional, since `.env.example` already has it. |
+| Market data cache | OHLCV table keyed by (symbol, interval, ts) + in-memory TTL cache; incremental fetch                                               | Stays under Yahoo rate limits and makes reloads instant                                         |
+| Live prices       | yfinance `AsyncWebSocket` relayed to the browser over our own `/ws`; polling fallback                                              | Live last price for chart and watchlist                                                         |
+| Frontend          | TypeScript + Vite + React (app UI only) + Zustand                                                                                  | React handles dialogs and panels. The chart stays framework-free for speed.                     |
+| Chart engine      | Its own pure-TS package: layered Canvas2D, typed-array columns, index-based time axis                                              | Full control over drawings, Renko-type axes, replay, and the AI snapshot                        |
+| Indicators        | Pure-TS package, run in a Web Worker on the client                                                                                 | One implementation, shared with the alert service                                               |
+| Alerts service    | Small Node worker that reuses the TS indicator package, reads bars from the Data API, and evaluates server-side                    | Alerts fire with the browser closed, without re-implementing indicators in Python               |
+| Monorepo          | pnpm workspaces + uv (Python)                                                                                                      | Packages: engine, indicators, web app, alerts service, API                                      |
+| Tests             | Vitest (engine and indicators, golden values), Playwright (interaction and visual regression), pytest + recorded yfinance fixtures |                                                                                                 |
+| Icons/UI          | Own design system; Lucide/Tabler (MIT) icons. **No reference name, logos, or icon assets**                                       | Trademark safety                                                                                |
+
+Key design rules that make later phases cheap:
+
+1. **DataFeed interface** (`getBars`, `subscribe`, `resolveSymbol`) in phase 2. Replay, compare, spread symbols (`AAPL/MSFT`), and custom intervals are all feed wrappers.
+2. **Declarative drawing tool definitions** (anchors, render, hitTest, property schema, defaults). Once the framework exists, each of the ~90 tools takes a few hours.
+3. **Declarative indicator definitions** (inputs schema, plots/fills/hlines/shapes outputs, incremental `update`). Settings dialogs are generated from the schema.
+4. **Serializable chart state** (JSON). This one format drives layouts, templates, undo/redo, multi-chart sync, and the AI snapshot.
+5. **Command bus** for every user action. It gives undo/redo, keyboard shortcuts, context menus, and the command palette from a single registry.
+
+yfinance constraints to design around:
+
+- Intraday history limits: 1m covers about 7 days per request and 30 days total; 2m–90m cover 60 days; 1h covers 730 days. Daily and above have full history.
+- Native intervals: 1m 2m 5m 15m 30m 60m 90m 1h 1d 5d 1wk 1mo 3mo. Anything else (3m, 4h, 2D, …) is resampled client-side from the nearest lower native interval.
+- Unofficial API, so expect breakage. Isolate it behind a single `providers/yahoo` adapter, and add retries/backoff plus a pinned version.
+- Yahoo terms allow personal use only. The README needs a disclaimer: not affiliated, personal use, each user runs their own instance.
+
+---
+
+## Implementation checklist
+
+### Phase 0: Foundations
+
+- [x] `git init`, AGPL-3.0 `LICENSE`, README (scope, disclaimer: not affiliated with reference/Yahoo, personal use)
+- [x] pnpm workspace + TS strict config, ESLint, Prettier; uv + ruff + mypy for Python
+- [x] Vite + React app skeleton, Zustand store skeleton, theme tokens (dark/light)
+- [x] FastAPI skeleton with `/health`; settings from env (`DATABASE_URL`, ports)
+- [x] docker compose: `api`, `web` (nginx serving the built app and proxying `/api` + `/ws`), optional `postgres` profile, `alerts`
+- [x] CI (GitHub Actions): lint, typecheck, unit tests, build
+- [x] CONTRIBUTING.md (DCO sign-off), code of conduct
+
+### Phase 1: Data backend (yfinance)
+
+- [ ] Yahoo provider adapter: history(symbol, interval, start/end, prepost), with retries, backoff, and a request rate limiter
+- [ ] OHLCV cache tables + Alembic migration; incremental fetch (only missing ranges); split/dividend adjustment flag
+- [ ] Respect per-interval range limits; chunk 1m requests into 7-day windows
+- [ ] `GET /api/bars` (symbol, interval, from, to, adjusted, prepost): columnar JSON or Arrow/msgpack for speed
+- [ ] `GET /api/symbols/search` (yf.Search), `GET /api/symbols/{s}` (meta: exchange, tz, session, currency, type, min tick)
+- [ ] `GET /api/quotes?symbols=` (batch snapshot for watchlists)
+- [ ] `/ws` live relay: client subscribe/unsubscribe → shared yfinance AsyncWebSocket; fan-out; polling fallback
+- [ ] `GET /api/events/{s}` (dividends, splits, earnings), `GET /api/news/{s}`, `GET /api/fundamentals/{s}` (info + financials)
+- [ ] pytest with recorded fixtures; contract tests for the bar format
+
+### Phase 2: Chart engine core (MVP chart)
+
+- [ ] DataFeed interface + HTTP/WS implementation; client resampler for non-native intervals
+- [ ] Columnar series store (Float64Array) with append/update-last-bar
+- [ ] Time scale: index-based (removes weekend/session gaps), bar spacing, right offset, visible range, smart time labels per zoom level, timezone support
+- [ ] Price scale: auto-scale, linear/log/percent/indexed-to-100, invert, left/right/overlay scales, tick-size-aware labels, last-price label + countdown to bar close
+- [ ] Layered canvases per pane (background/grid, series, overlay for drawings and crosshair); HiDPI; rAF render loop with dirty flags; render only the visible range
+- [ ] Panes: add/remove/resize/reorder/maximize/collapse
+- [ ] Interactions: drag pan, wheel zoom, axis drag scaling, double-click axis reset, kinetic scroll, pinch/touch, keyboard (arrows, +/-)
+- [ ] Crosshair (cross/dot/arrow), magnet modes (weak/strong), status line (OHLC + change under the symbol), legend
+- [ ] Lazy history loading on scroll-left; live bar updates
+- [ ] Hit-testing infrastructure (series, drawings, scales, panes) + cursor management
+- [ ] Engine public API + event emitter; `chart.getState()/setState()` JSON
+- [ ] Benchmark: 100k bars at 60fps pan/zoom; Vitest for scales and math
+
+### Phase 3: App shell (standard layout)
+
+- [ ] Top toolbar: symbol button/search dialog (keyboard-first, type anywhere to search), interval picker + favorites + custom intervals, chart type menu, indicators button, compare, alert, replay, layout menu, undo/redo, settings, screenshot, fullscreen
+- [ ] Left drawing toolbar with grouped flyouts, favorites bar, magnet, stay-in-drawing-mode, lock all, hide all, remove all
+- [ ] Right sidebar: watchlist, alerts, object tree/data window, details, news, notes; resizable
+- [ ] Bottom panel: date range presets (1D 5D 1M 3M 6M YTD 1Y 5Y All), go-to-date, timezone, session toggle (ETH/RTH), %/log/auto toggles
+- [ ] Command bus + keyboard shortcut registry + command palette
+- [ ] Generic context-menu system (shared by chart, scales, drawings, indicators, watchlist rows)
+- [ ] Toasts, modals, settings dialog shell; themes
+
+### Phase 4: Chart types
+
+- [ ] Bars, Candles, Hollow candles, Volume candles, Line, Line with markers, Step line, Area, HLC area, Baseline, Columns, High-Low
+- [ ] Heikin Ashi (transform)
+- [ ] Brick-type transforms on a non-time index: Renko (box size: ATR/fixed, wicks), Line Break, Kagi, Point & Figure, Range bars
+- [ ] Volume overlay/pane; extended-hours shading; price-line + bid/ask-style lines
+- [ ] Per-type style settings in the settings dialog (Symbol tab)
+
+### Phase 5: Indicator framework + core set
+
+- [ ] Indicator definition API: inputs (int/float/bool/source/color/enum/timeframe), outputs (line/histogram/area/columns/circles/cross/step, hlines, fills, bgcolor, shapes/labels), overlay vs pane, precision
+- [ ] Worker runtime with incremental update on the last bar; recompute on data change
+- [ ] Indicator-on-indicator (source = other output); multi-timeframe inputs
+- [ ] Indicators dialog (search, categories, favorites); legend row with eye/settings/source/remove/more menu
+- [ ] Auto-generated settings dialog: Inputs / Style / Visibility (per-interval) tabs; defaults; "Save as default"
+- [ ] Core 25 with golden tests vs a reference (TA-Lib / pandas-ta CSVs): SMA, EMA, WMA, VWMA, HMA, VWAP, Anchored VWAP, Bollinger, Keltner, Donchian, Ichimoku, Parabolic SAR, Supertrend, RSI, MACD, Stochastic, Stoch RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R, Volume, Pivot Points Standard
+
+### Phase 6: Drawing framework + core tools
+
+- [ ] Drawing model: anchors in (time, price) space mapped to bar index; survives interval changes; per-symbol storage, or synced across all symbols
+- [ ] Create/select/drag/anchor-edit/multi-select/clone (Alt+drag)/copy-paste/lock/hide/z-order
+- [ ] Magnet snap to OHLC; Shift-constrain angles; floating mini-toolbar on select (color, width, style, settings, lock, delete)
+- [ ] Right-click menus for drawings (and the chart, scales, panes): settings, clone, copy, z-order, visibility per interval, lock, hide, remove, template
+- [ ] Properties dialog generated from the schema: Style / Text / Coordinates / Visibility tabs; per-tool style templates ("Save as… / Apply default")
+- [ ] Undo/redo via the command bus
+- [ ] Core tools: Trend line, Ray, Extended line, Info line, Horizontal line/ray, Vertical line, Cross line, Parallel channel, Fib retracement, Trend-based fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price range, Date range, Date & price range (measure)
+- [ ] Object tree panel (list, reorder, hide/lock, delete)
+
+### Phase 7: Persistence, layouts, templates
+
+- [ ] API + DB: layouts, drawings, indicator templates, drawing templates, chart templates/themes, settings, notes
+- [ ] Autosave the chart layout (debounced); named layouts: save/save-as/rename/load/delete; restore on startup
+- [ ] Indicator templates (sets of indicators + settings); chart color/style templates
+- [ ] Import/export of layouts and templates as JSON
+
+### Phase 8: Watchlists
+
+- [ ] Multiple named watchlists; create/rename/delete/duplicate; sections/separators; drag reorder
+- [ ] Columns: last, change, change %, volume, ext-hours; sort; customizable columns
+- [ ] Live updates via `/ws`; price tick flash
+- [ ] Color flags (standard flag lists); right-click row menu (add alert, flag, remove, move to list, open in new chart)
+- [ ] Import/export `.txt`; add the current chart symbol; keyboard navigation (↑/↓ changes the chart symbol)
+- [ ] Details panel (key stats, performance, earnings date), news panel
+
+### Phase 9: Compare & symbol math
+
+- [ ] Compare dialog: add overlay symbols (same scale, new scale, new pane); auto-switch to percent scale
+- [ ] Symbol expressions: spread/ratio/arithmetic (`AAPL/MSFT`, `(A+B)/2`) through an expression feed wrapper
+- [ ] Time alignment across symbols with different sessions
+
+### Phase 10: Alerts
+
+- [ ] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
+- [ ] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
+- [ ] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
+- [ ] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
+- [ ] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
+
+### Phase 11: Remaining drawing tools (bulk, on the framework)
+
+- [ ] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
+- [ ] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
+- [ ] Gann: Box, Square fixed, Square, Fan
+- [ ] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
+- [ ] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
+- [ ] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
+- [ ] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
+- [ ] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
+- [ ] Zoom-in tool, Measure tool polish; sync drawings across layouts
+
+### Phase 12: Remaining indicators (bulk)
+
+- [ ] Trend/MA: DEMA, TEMA, ALMA, KAMA, LSMA, McGinley, SMMA, Moving Average Ribbon, Envelopes, Linear Regression channel, ZigZag, Williams Alligator, Fractals
+- [ ] Momentum: Momentum, ROC, TRIX, TSI, Ultimate Oscillator, Awesome/Accelerator Oscillator, Coppock, KST, DPO, PPO, SMI Ergodic, Fisher Transform, Connors RSI, Chande MO, Aroon, Vortex, Choppiness, RVI, Elder Force, Balance of Power, Know Sure Thing
+- [ ] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
+- [ ] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
+- [ ] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
+- [ ] Optional "more advanced than reference": user JS indicators in a sandboxed Worker with a documented API (not standard)
+
+### Phase 13: Market replay
+
+- [ ] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
+- [ ] Indicators and alerts react incrementally; drawings stay usable
+- [ ] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
+- [ ] Optional: replay paper trading (buy/sell, P&L panel)
+
+### Phase 14: Multi-chart layouts
+
+- [ ] Grid layouts 1–16 charts; resizable splitters
+- [ ] Sync per layout: symbol, interval, crosshair, time, date range, drawings
+- [ ] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
+
+### Phase 15: Polish & parity sweep
+
+- [ ] Chart settings dialog parity: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
+- [ ] Events on chart: dividends, splits, earnings markers with tooltips
+- [ ] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
+- [ ] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
+- [ ] Accessibility basics, i18n scaffolding
+- [ ] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
+
+### Phase 16: AI analysis integration point (feature built separately)
+
+- [ ] `chart.snapshot()` → `{ png, visibleBars, indicators: {name, inputs, values}, drawings, symbol, interval, scale }`
+- [ ] Plugin slot in the right sidebar + a command-bus hook (`ai.analyzeCurrentView`)
+- [ ] Engine API so AI results can be rendered back as drawings or annotations
+
+### Phase 17: Release
+
+- [ ] User docs (install via docker compose, shortcuts, features), developer docs (engine/indicator/drawing APIs)
+- [ ] Versioning, changelog, tagged release images
+
+---
+
+## Efficient build order rationale
+
+Phases 0–3 give a usable live chart early. Phases 5–6 build the two frameworks that everything else depends on. Phase 7 persistence comes right after drawings, so work isn't lost. The bulk content phases (11, 12) are parallelizable, low-risk filler. Replay and multi-chart reuse the DataFeed and state abstractions, so they come late and cost little.
+
+## Verification
+
+- Each phase ends with: unit tests green (Vitest/pytest), Playwright scenario(s) for the new interactions, visual-regression screenshots for render changes, and `docker compose up` smoke tests (load AAPL 1D, pan/zoom, draw, reload, and check persistence).
+- Indicators: golden-value tests against reference CSVs (tolerance 1e-8).
+- Engine: perf benchmark in CI (100k bars, frame time budget).
+- Backend: recorded yfinance fixtures; one opt-in live test job.

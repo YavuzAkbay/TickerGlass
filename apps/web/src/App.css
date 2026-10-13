@@ -1,0 +1,52 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.brand {
+  font-weight: 600;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.api {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.api-ok {
+  color: var(--up);
+}
+
+.api-down {
+  color: var(--down);
+}
+
+.topbar button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.chart-area {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}

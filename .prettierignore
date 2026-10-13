@@ -1,0 +1,7 @@
+dist
+node_modules
+pnpm-lock.yaml
+.venv
+api
+LICENSE
+CODE_OF_CONDUCT.md
