@@ -1,10 +1,17 @@
 // Messages between the main thread and the indicator worker (docs/indicators.md §5).
 import type { Bar, BarColumns } from '@investopen/engine';
-import type { InputValueMap, InstanceSpec, InstanceStatus } from '@investopen/indicators';
+import type {
+  InputValueMap,
+  InstanceSpec,
+  InstanceStatus,
+  RuntimeContext,
+} from '@investopen/indicators';
 
 export type ToWorker =
   /** Raw timeframe input value -> resolved ('' = chart bars). */
   | { type: 'timeframeMap'; map: Record<string, string> }
+  /** Exchange timezone/session and bar intervals (symbol/interval change); recomputes as needed. */
+  | { type: 'context'; context: RuntimeContext }
   | { type: 'add'; spec: InstanceSpec }
   | { type: 'setInputs'; id: string; inputs: InputValueMap }
   | { type: 'remove'; id: string }

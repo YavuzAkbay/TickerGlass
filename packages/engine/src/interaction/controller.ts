@@ -98,6 +98,7 @@ export class InteractionController {
       return;
     }
 
+    this.chart.drawingInput.setPointerType(e.pointerType);
     const hit = this.chart.hitTest(p.x, p.y);
     if (this.chart.drawingInput.pointerDown(this.chart.drawingTarget(hit), p.x, p.y, mods(e))) {
       this.drag = { kind: 'drawing' };
@@ -141,6 +142,7 @@ export class InteractionController {
     const chart = this.chart;
 
     if (!d || d.kind === 'drawing') {
+      if (!d) chart.drawingInput.setPointerType(e.pointerType);
       if (d) chart.drawingInput.pointerMove(p.x, p.y, mods(e));
       const hit = chart.hitTest(p.x, p.y);
       if (!d) chart.drawingInput.hover(chart.drawingTarget(hit), p.x, p.y, mods(e));

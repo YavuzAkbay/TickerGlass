@@ -1,28 +1,24 @@
+import { lazy, Suspense } from 'react';
 import { useUiStore, type DialogId } from '../store/ui';
 import CommandPalette from './CommandPalette';
-import CompareDialog from './CompareDialog';
-import IndicatorsDialog from './IndicatorsDialog';
-import IndicatorSettingsDialog from './IndicatorSettingsDialog';
-import DrawingSettingsDialog from './DrawingSettingsDialog';
-import SettingsDialog from './SettingsDialog';
-import ShortcutsDialog from './ShortcutsDialog';
-import SymbolSearchDialog from './SymbolSearchDialog';
-import GoToDateDialog from '../bottombar/GoToDateDialog';
 import IntervalInputDialog from './IntervalInputDialog';
+import SymbolSearchDialog from './SymbolSearchDialog';
 
 type DialogComponent = (props: { onClose: () => void; arg?: unknown }) => React.ReactNode;
 
-const DIALOGS: Record<DialogId, DialogComponent> = {
+// Keyboard-first dialogs stay in the main chunk so they open on the first key
+// press; the heavier dialogs load on first open (keeps the main chunk small).
+const DIALOGS: Record<DialogId, DialogComponent | React.LazyExoticComponent<DialogComponent>> = {
   symbolSearch: SymbolSearchDialog,
-  compare: CompareDialog,
-  indicators: IndicatorsDialog,
-  indicatorSettings: IndicatorSettingsDialog,
-  drawingSettings: DrawingSettingsDialog,
-  settings: SettingsDialog,
   commandPalette: CommandPalette,
-  goToDate: GoToDateDialog,
   intervalInput: IntervalInputDialog,
-  shortcuts: ShortcutsDialog,
+  compare: lazy(() => import('./CompareDialog')),
+  indicators: lazy(() => import('./IndicatorsDialog')),
+  indicatorSettings: lazy(() => import('./IndicatorSettingsDialog')),
+  drawingSettings: lazy(() => import('./DrawingSettingsDialog')),
+  settings: lazy(() => import('./SettingsDialog')),
+  goToDate: lazy(() => import('../bottombar/GoToDateDialog')),
+  shortcuts: lazy(() => import('./ShortcutsDialog')),
 };
 
 /** Renders the single open dialog (one at a time, like reference). */
@@ -32,5 +28,9 @@ export function DialogHost() {
   const close = useUiStore((s) => s.closeDialog);
   if (!dialog) return null;
   const Component = DIALOGS[dialog];
-  return <Component key={dialog} onClose={close} arg={arg} />;
+  return (
+    <Suspense fallback={null}>
+      <Component key={dialog} onClose={close} arg={arg} />
+    </Suspense>
+  );
 }

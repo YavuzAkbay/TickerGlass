@@ -38,7 +38,7 @@ import { InteractionController } from './interaction/controller';
 import { applyThemeVars, injectStyle } from './style';
 import type { Bar, DataFeed, Interval, SymbolInfo, Unsubscribe } from './types';
 import { formatStudyTick, formatStudyValue } from './studies/format';
-import { diffTail, snapshotSeries, type SeriesSnapshot } from './studies/series-diff';
+import { commonPrefix, diffTail, snapshotSeries, type SeriesSnapshot } from './studies/series-diff';
 import { Study } from './studies/study';
 import { StudySeries } from './studies/study-series';
 import type {
@@ -56,6 +56,7 @@ import type {
 import { DrawingInteraction, type DrawingPointerTarget } from './drawings/interaction';
 import { cloneDrawing, DrawingLayer, type DrawingHit, type DrawingHost } from './drawings/layer';
 import { withTime } from './drawings/geometry';
+import { buildTradingCalendar, type TradingCalendar } from './drawings/calendar';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './drawings/mapping';
 import { getDrawingTool } from './drawings/registry';
 import type {
@@ -243,7 +244,9 @@ export class Chart implements StudyApi, DrawingApi {
     interval: { unit: 'day', count: 1 } as Interval,
     bricks: false,
     endTime: NaN,
+    calendar: null as TradingCalendar | null,
   };
+  private calendarKey = '';
   private readonly drawingFormats = new Map<string, DrawingFormat>();
   private readonly intervalCache: { iv: Interval | null; str: string } = { iv: null, str: '' };
   private readonly axisLabelBuf: DrawingAxisLabel[] = [];
@@ -589,8 +592,16 @@ export class Chart implements StudyApi, DrawingApi {
     return pane.id !== 'main' && s0 instanceof StudySeries ? s0 : null;
   }
 
-  private emitSeriesReset(): void {
+  /**
+   * New revision. `keep` (live brick rebuilds): leading displayed bars that
+   * did not change; studies keep drawing their values there (no blank flash)
+   * until the app sends data computed on the new series.
+   */
+  private emitSeriesReset(keep = 0): void {
+    const prev = this._seriesRevision;
     this._seriesRevision++;
+    if (keep > 0)
+      for (const s of this.studies.values()) s.study.truncate(keep, prev, this._seriesRevision);
     this.emitSeriesChange({
       kind: 'reset',
       revision: this._seriesRevision,
@@ -717,6 +728,8 @@ export class Chart implements StudyApi, DrawingApi {
     );
     if (!src.length) return [];
     this.drawingInput.abort();
+    // Drawings from a pane this chart does not have (a study pane) land on the main pane.
+    const paneOf = (d: Drawing) => (this.panes.some((p) => p.id === d.paneId) ? d.paneId : 'main');
     const tl = layer.refreshView().timeline;
     // `at`: the earliest anchor of the group lands on at.time (bars) / at.price.
     let dl = opts.offset ?? 0;
@@ -728,7 +741,7 @@ export class Chart implements StudyApi, DrawingApi {
         for (const p of d.points) {
           const l = timeToLogical(tl, p);
           if (Number.isFinite(l) && (!first || l < first.l))
-            first = { l, price: p.price, pane: d.paneId };
+            first = { l, price: p.price, pane: paneOf(d) };
         }
       if (first) {
         dl += Math.round(timeToLogical(tl, opts.at) - first.l);
@@ -745,12 +758,13 @@ export class Chart implements StudyApi, DrawingApi {
           const t = logicalToTime(tl, timeToLogical(tl, p) + dl);
           if (t) q = withTime(q, t);
         }
-        if (dp && d.paneId === refPane) q.price += dp;
+        if (dp && paneOf(d) === refPane) q.price += dp;
         return q;
       });
       const { id: _id, ...rest } = d;
       const pasted = layer.build({
         ...rest,
+        paneId: paneOf(d),
         points,
         zIndex: ++z,
         symbol: d.scope === 'all' ? d.symbol : this.symbol,
@@ -818,6 +832,7 @@ export class Chart implements StudyApi, DrawingApi {
       },
       magnetValues: (paneId, index) => this.drawingMagnetValues(paneId, index),
       timeline: () => this.refreshTimeline(),
+      bars: () => this.store,
       pane: (id) => this.panes.find((p) => p.id === id) ?? null,
       format: (paneId) => this.drawingFormat(paneId),
       invalidate: () => this.invalidate(INVALIDATE_OVERLAY),
@@ -839,6 +854,15 @@ export class Chart implements StudyApi, DrawingApi {
     return pane ? pane.series.flatMap((s) => s.valuesAt(index)) : [];
   }
 
+  /**
+   * The displayed series as drawings map anchors (bricks on brick types,
+   * session-aware future slots): use with `timeToLogical`/`logicalToTime` for
+   * bar numbers that match the chart. A snapshot copy (additive API).
+   */
+  getAnchorTimeline(): AnchorTimeline {
+    return { ...this.refreshTimeline() };
+  }
+
   /** The displayed series as an anchor timeline (one reused object). */
   private refreshTimeline(): AnchorTimeline {
     const tl = this.timeline;
@@ -848,7 +872,21 @@ export class Chart implements StudyApi, DrawingApi {
     tl.interval = this.interval;
     tl.bricks = BRICK_TYPES.has(this._chartType);
     tl.endTime = this.raw.length ? this.raw.time[this.raw.length - 1]! : NaN;
+    tl.calendar = this.tradingCalendar();
     return tl;
+  }
+
+  /** Trading calendar of the raw bars (exchange timezone), rebuilt when the data changes. */
+  private tradingCalendar(): TradingCalendar | null {
+    const r = this.raw;
+    const n = r.length;
+    const tz = this.symbolInfo?.timezone ?? 'UTC';
+    const key = n ? `${n}|${r.time[0]}|${r.time[n - 1]}|${this.intervalString()}|${tz}` : '';
+    if (key !== this.calendarKey) {
+      this.calendarKey = key;
+      this.timeline.calendar = n ? buildTradingCalendar(r.time, n, this.interval, tz) : null;
+    }
+    return this.timeline.calendar;
   }
 
   private drawingFormat(paneId: string): DrawingFormat {
@@ -1488,7 +1526,7 @@ export class Chart implements StudyApi, DrawingApi {
         const tail = snapshot
           ? diffTail(snapshot, this.derived)
           : [{ kind: r, index: this.store.length - 1 }];
-        if (!tail) this.emitSeriesReset();
+        if (!tail) this.emitSeriesReset(snapshot ? commonPrefix(snapshot, this.derived) : 0);
         else
           for (const c of tail)
             this.emitSeriesChange({ kind: c.kind, revision: this._seriesRevision, index: c.index });

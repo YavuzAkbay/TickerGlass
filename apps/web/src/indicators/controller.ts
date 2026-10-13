@@ -21,6 +21,7 @@ import {
   resolveOutputs,
   type AnyIndicatorDefinition,
   type InstanceStatus,
+  type RuntimeContext,
 } from '@investopen/indicators';
 import {
   sourceRefOf,
@@ -109,6 +110,16 @@ const MAX_RESYNCS = 3;
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** Interval in seconds, 0 when the string does not parse. */
+function secondsOf(interval: string): number {
+  try {
+    return intervalSeconds(parseInterval(interval));
+  } catch {
+    // Unknown interval strings (e.g. brick-only charts) mean "interval unknown" to indicators.
+    return 0;
+  }
+}
+
 function copyColumns(src: ChartHost['store'] | BarColumns, n: number): BarColumns {
   return {
     time: src.time.slice(0, n),
@@ -142,6 +153,8 @@ export class IndicatorController {
   private symbol: string | null = null;
   private interval: string | null = null;
   private tfMapKey = '';
+  private tfMap: Record<string, string> = {};
+  private contextKey = '';
   private required: string[] = [];
   private readonly tfSeries = new Map<string, TfSeries>();
   private pending = new Map<number, Bar>();
@@ -168,6 +181,7 @@ export class IndicatorController {
       this.chart.on('studiesCleared', (e) => this.onStudiesCleared(e.ids)),
     );
     this.interval = this.chart.getInterval();
+    this.sendContext();
     if (this.chart.store.length) this.sendBars(this.chart.seriesRevision);
   }
 
@@ -380,6 +394,8 @@ export class IndicatorController {
       // Per-interval visibility.
       this.sync(this.list);
     }
+    // Before the bars, so period-anchored indicators compute once with the right timezone.
+    this.sendContext();
     this.sendBars(revision);
     for (const tf of this.required) this.ensureTimeframe(tf);
   }
@@ -401,7 +417,26 @@ export class IndicatorController {
     const key = JSON.stringify(map);
     if (!force && key === this.tfMapKey) return;
     this.tfMapKey = key;
+    this.tfMap = map;
     this.worker.post({ type: 'timeframeMap', map });
+    this.sendContext();
+  }
+
+  /** Exchange timezone/session (calendar periods, e.g. VWAP anchors) and intervals, when changed. */
+  private sendContext(): void {
+    const info = this.chart.symbolInfo;
+    const timeframeSeconds: Record<string, number> = {};
+    for (const tf of Object.values(this.tfMap)) if (tf) timeframeSeconds[tf] = secondsOf(tf);
+    const context: RuntimeContext = {
+      timezone: info?.timezone ?? 'UTC',
+      session: info?.session ?? null,
+      intervalSeconds: secondsOf(this.chart.getInterval()),
+      timeframeSeconds,
+    };
+    const key = JSON.stringify(context);
+    if (key === this.contextKey) return;
+    this.contextKey = key;
+    this.worker.post({ type: 'context', context });
   }
 
   private dropTimeframes(): void {

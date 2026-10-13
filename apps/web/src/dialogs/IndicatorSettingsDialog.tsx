@@ -621,6 +621,57 @@ const isAllVisible = (v: IntervalVisibility) =>
     ({ unit, limit }) => v[unit].enabled && v[unit].min === limit[0] && v[unit].max === limit[1],
   );
 
+/** Two-thumb range slider (the common visibility range); thumbs cannot cross. */
+function RangeSlider({
+  min,
+  max,
+  lo,
+  hi,
+  label,
+  disabled,
+  onChange,
+}: {
+  min: number;
+  max: number;
+  lo: number;
+  hi: number;
+  label: string;
+  disabled: boolean;
+  onChange: (lo: number, hi: number) => void;
+}) {
+  const pct = (v: number) => ((v - min) / Math.max(1, max - min)) * 100;
+  return (
+    <div className="ind-range" aria-disabled={disabled || undefined}>
+      <div className="ind-range-track">
+        <div
+          className="ind-range-fill"
+          style={{ left: `${pct(lo)}%`, width: `${Math.max(0, pct(hi) - pct(lo))}%` }}
+        />
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={lo}
+        disabled={disabled}
+        aria-label={`${label} from slider`}
+        onChange={(e) => onChange(Math.min(Number(e.target.value), hi), hi)}
+      />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={hi}
+        disabled={disabled}
+        aria-label={`${label} to slider`}
+        onChange={(e) => onChange(lo, Math.max(Number(e.target.value), lo))}
+      />
+    </div>
+  );
+}
+
 export function VisibilityTab({
   vis,
   set,
@@ -653,7 +704,15 @@ export function VisibilityTab({
               label={`${label} from`}
               onChange={(v) => update(unit, { min: Math.min(clamp(v), r.max) })}
             />
-            <span className="dlg-or">–</span>
+            <RangeSlider
+              min={limit[0]}
+              max={limit[1]}
+              lo={r.min}
+              hi={r.max}
+              label={label}
+              disabled={!r.enabled}
+              onChange={(min, max) => update(unit, { min, max })}
+            />
             <NumberInput
               value={r.max}
               min={limit[0]}

@@ -49,8 +49,17 @@ fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color,
 | `isVisible(g, style)`                    | culling; default `anchorsInView`. Tools drawing past their anchors (rays, extended lines, H/V lines) must override                     |
 
 `DrawingGeometry` (`g`): `points` (px per anchor), `logical` (fractional bar index per anchor), `width`,
-`height`, `barSpacing`, `intervalSeconds`, `format` (`price percent time`), and mappers `toPixel toPoint
+`height`, `barSpacing`, `intervalSeconds`, `format` (`price percent time`), `bars` (additive:
+`DrawingBarData` = the displayed bars, index = logical bar index, `{ length, time, open, high, low, close,
+volume }`; empty without data; measure tools sum `volume` over the measured bars), and mappers `toPixel toPoint
 priceToY yToPrice logicalToX xToLogical`. It is reused between frames: never keep references.
+Hit testing has no canvas: `approxTextWidth(text, size, bold, italic)` measures with a shared offscreen
+canvas in the font family of the last render (cached; 0.6 em per char only where no canvas exists, e.g.
+tests), and `hitLabelSize(lines)` sizes info labels with the last rendered theme, so labels (Info line stats,
+position target/stop/stats boxes) are strong body hits. Line tools cull with `segmentInView` (the possibly
+extended segment clipped against the pane plus 50 px), not with the anchors' x span. Brush end handles
+stretch the stroke (samples move by the handle offset scaled by path length from the fixed end). The
+parallel channel's width is a pixel offset (`channelOffsetPx`), so it stays parallel on log scales.
 Helpers for tools: `drawings/draw-utils.ts` (`setLineStyle extendSegment lineDistance infoLabel
 formatDuration hitRotatedText anchorsInView BODY_HIT WEAK_BODY_HIT TEXT_HIT`). Reference tools:
 `tools/trend-line.ts` (2 points, extend, middle-point derived handle, text, stats label) and
@@ -65,9 +74,14 @@ and reloads without migration. `timeToLogical(timeline, point)`:
 - **Inside the data**: the bar containing `time` (`open <= time < open + interval`); a time in a gap (weekend,
   overnight, a daily midnight anchor on an intraday chart) maps to the next bar. Switching 1h -> 1D puts
   a Wed 16:30 anchor on Wednesday's bar; switching back puts it exactly where it was made.
-- **Past the last bar**: `last + (time - endTime) / interval` where `endTime` = newest raw bar; months step
-  by calendar month. Anchors created in the future area are whole slots (`endTime + k` intervals). Not
-  session-aware (an overnight gap counts as slots), a known limitation.
+- **Past the last bar**: `last + slots(endTime, time)` where `endTime` = newest raw bar. Slots come from the
+  timeline's `calendar` (`AnchorTimeline.calendar`, additive; `buildTradingCalendar(time, n, interval, tz)`),
+  learned from the newest 2000 raw bars in the exchange timezone: weekends are skipped unless the data has
+  weekend bars (crypto), and intraday slots only cover the trading day seen in the data (earliest to latest
+  bar time of day, so ETH data extends it). A time in a non-trading gap maps to the next slot, like gaps inside
+  the data. Round-the-clock intraday data, weekly and monthly intervals step plain intervals (months by
+  calendar month). Exchange holidays are not known (they count as slots). Anchors created in the future area
+  are whole slots.
 - **Before the first bar**: extrapolated back from the first bar; resolves exactly once history loads.
 - **Brick types** (Renko, Kagi, Line break, P&F, Range): the run of bricks at the last brick time `<= time`,
   offset by `brick` (position within bricks sharing a time). Up to `endTime` (newest raw bar) maps to the
@@ -84,6 +98,13 @@ when it declines. Coordinates are chart-root px; anchors snap to bar slots (`sna
 - **idle**: hover sets `layer.hovered` (handles shown on hover); press on a drawing selects it (keeps an
   existing multi-selection) -> `press`; press on empty space pans; a click (<= 3 px) on empty space clears
   the selection. Handles of unlocked drawings are hit before any stroke.
+- **box select**: Shift + drag on empty chart space draws a marquee in that pane; on release every shown
+  drawing of the pane whose extent (anchors and handles; full width for price-only tools such as horizontal
+  lines, full height for time-only tools) meets the box is added to the selection (Shift semantics, like
+  Shift-click). A Shift-click without drag keeps the selection; Esc cancels. Plain drag still pans.
+- **touch**: `drawingInput.setPointerType(e.pointerType)` (called by the controller on every press/hover):
+  with a finger the stroke tolerance is `TOUCH_HIT_TOLERANCE` (10 px instead of 4) and handles reach 8 px
+  past their radius (2 px for mouse/pen).
 - **press -> move** (body) or **handle** after 3 px: live preview mutates the model, `drawingDrag start`;
   on release one `drawingChanged` with all moved drawings (`before`/`after`), `drawingDrag end`. Locked
   drawings stay a press. Esc during a drag restores `before` (no change event).
@@ -116,7 +137,11 @@ Editing API (B, exact signatures):
   — a user gesture: inserts copies with new ids on top, current symbol (scope `'symbol'`), selects them and
   emits one `drawingCreated` per drawing. `offset` shifts every anchor by whole bars (default 0); `at` moves
   the earliest anchor of the group to that time (+ price delta for drawings on the same pane as that anchor).
-  Throws on malformed JSON; unknown tool types are skipped.
+  Throws on malformed JSON; unknown tool types are skipped. A drawing whose `paneId` does not exist on this
+  chart (a study pane) is pasted on `main`.
+- `getAnchorTimeline(): AnchorTimeline` (additive) — snapshot of the timeline drawings use (bricks, `endTime`,
+  `calendar`); with `timeToLogical`/`logicalToTime` it gives bar numbers that match the chart on every chart
+  type (the Coordinates tab's Bar #).
 - `bringToFront(ids)`, `sendToBack(ids)`, `bringForward(ids)`, `sendBackward(ids)`: `(ids: readonly
 string[]) => DrawingChange[]` — within each drawing's pane; no events (app edit), the returned changes are
   the app's undo entry (`[]` = nothing moved).
@@ -150,15 +175,27 @@ z-order, lock) go through commands that call the API and push their own entry. T
 
 ## 6. Persistence
 
-Now (C): localStorage `investopen-drawings` = `{ version: 1, bySymbol: { [symbol]: Drawing[] }, synced:
-Drawing[] }`; scope `'all'` drawings live in `synced`. Symbols are upper case (the app normalizes like
-`Chart.setSymbol`). On symbol change: `setDrawings([...bySymbol[sym], ...synced])`; afterwards only store
-objects that changed are reconciled (`replaceDrawing`). Debounced save on every store change. Data that
-cannot be fully read (bad JSON, unknown version, invalid entries) is first copied to
-`investopen-drawings.backup-<ms>` and the user is warned once; if that backup fails, saving is disabled for
-the session. Saves from other tabs (`storage` event) are merged by id: this tab's unsaved edits are
-re-applied on top of the other tab's data; unreadable data from another tab is not adopted. Phase 7 moves the same JSON to the API (`drawings`
-table keyed by layout + symbol, synced bucket per layout) and adds drawing templates (per-tool named styles).
+The web store keeps `{ bySymbol: { [symbol]: Drawing[] }, synced: Drawing[] }` buckets; scope `'all'`
+drawings live in `synced`. Symbols are upper case (the app normalizes like `Chart.setSymbol`). On symbol
+change: `setDrawings([...bySymbol[sym], ...synced])`; afterwards only store objects that changed are
+reconciled (`replaceDrawing`).
+
+Server (Phase 7, `docs/persistence.md`): drawings are stored **globally, one row per drawing** (table
+`drawings`: `id` = `Drawing.id`, `symbol` upper case or **null for synced** (`scope: 'all'`), `pane_id`, `z`,
+`data` = the whole `Drawing` JSON, `schema_version`, `revision`). They are not keyed by layout (per-layout
+drawings are deferred). The server derives `symbol`/`pane_id`/`z` from `data`, which maps 1:1 onto the store's
+`apply(upserts, removeIds)`: the client diffs the store against the last saved state and sends a debounced
+`POST /drawings/batch` (`upserts` with `baseRevision`, `deletes`; a revision mismatch returns per-id
+conflicts). `GET /drawings?symbol=` returns that symbol's drawings plus the synced ones. localStorage
+`investopen-drawings` (`{ version: 1, bySymbol, synced }`, backup-on-unreadable and cross-tab merge rules)
+stays as the offline cache and is imported into `drawings` on first run (migration plan:
+`docs/persistence.md` §6). Drawing templates (per-tool named styles)
+live in `drawing_templates` (at most one default per tool).
+
+"Sync new drawings" (left toolbar toggle, `useUiStore.syncNewDrawings`, persisted UI pref): drawings created
+with a tool start with `scope: 'all'` (applied in the `drawingCreated` handler via `replaceDrawing`, inside
+the same undo step). Clones and pastes keep their source's scope.
+
 The engine also filters by scope/symbol (B), so a stale list never shows another symbol's drawings.
 
 ## 7. Magnet and Shift constraints (B)

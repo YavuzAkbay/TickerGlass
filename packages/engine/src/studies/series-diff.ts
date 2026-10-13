@@ -64,6 +64,18 @@ function sameBar(
 }
 
 /**
+ * Number of leading bars `next` shares with `prev` (a tail snapshot counts its
+ * uncompared bars before `offset` as shared, like `diffTail`).
+ */
+export function commonPrefix(prev: OhlcvSource | SeriesSnapshot, next: OhlcvSource): number {
+  const off = 'offset' in prev ? prev.offset : 0;
+  const n = Math.min(prev.length, next.length);
+  if (off >= n) return n;
+  for (let i = off; i < n; i++) if (!sameBar(prev, off, next, i)) return i;
+  return n;
+}
+
+/**
  * How a rebuilt series differs from the previous one (`prev` may be a tail
  * snapshot: only its bars are compared). Returns the tail changes in order
  * (update of the old last bar, then appends), [] when nothing changed, or null

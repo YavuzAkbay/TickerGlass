@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { defineIndicator, IndicatorRegistry } from './registry';
 import { IndicatorRuntime } from './runtime';
-import { EMA, SMA } from './builtins';
+import { EMA, PIVOT_POINTS, SMA, VWAP } from './builtins';
+import { calendarPeriod } from './calendar';
+import { resolveOutputs } from './resolve';
 import { barAt, randomBars, slice } from './test-utils';
 import type { BarArrays } from './types';
 
@@ -238,6 +240,92 @@ describe('multi-timeframe', () => {
     expect(ma[14]).toEqual(want(2));
   });
 
+  const HTF_CONFIRMED = defineIndicator({
+    id: 'htf-confirmed',
+    name: 'HTF close',
+    shortName: 'HTF',
+    category: 'other',
+    overlay: true,
+    inputs: {
+      tf: { kind: 'timeframe', label: 'Timeframe', default: '', waitForCloseInput: 'wait' },
+      wait: { kind: 'bool', label: 'Wait for timeframe closes', default: true },
+    },
+    outputs: [{ type: 'plot', id: 'c', title: 'C', kind: 'step', color: '#fff' }],
+    setup: () => (c) => c.set('c', c.close[c.i]!),
+  });
+
+  it('aligns to closed timeframe bars when waiting for closes (no lookahead)', () => {
+    const reg = registry();
+    reg.register(HTF_CONFIRMED);
+    const rt = new IndicatorRuntime({ registry: reg });
+    const { chart, htf } = data();
+    rt.setBars(chart);
+    rt.add({ id: 'w', type: 'htf-confirmed', inputs: { tf: '5m' } });
+    rt.add({ id: 'f', type: 'htf-confirmed', inputs: { tf: '5m', wait: false } });
+    rt.setTimeframeBars('5m', htf);
+    const w = rt.result('w')!.values.c!;
+    const f = rt.result('f')!.values.c!;
+    for (let j = 0; j < 20; j++) {
+      const k = Math.floor(j / 5);
+      expect(f[j]).toEqual(htf.close[k]); // final value of the containing bar
+      expect(w[j]).toEqual(k < 1 ? NaN : htf.close[k - 1]); // last closed bar
+    }
+    // A tick of the forming 5m bar changes nothing for the confirmed instance.
+    const changes = rt.updateTimeframeBar('5m', { ...barAt(htf, 3), close: 1000 });
+    expect(changes).toEqual([{ id: 'f', from: 15 }]);
+    expect(w[19]).toEqual(htf.close[2]);
+  });
+
+  it('does not propagate timeframe ticks that leave aligned values unchanged', () => {
+    const reg = registry();
+    reg.register(PIVOT_POINTS);
+    const rt = new IndicatorRuntime({ registry: reg });
+    const { chart, htf } = data();
+    rt.setBars(chart);
+    rt.add({ id: 'p', type: 'pivot-points', inputs: { timeframe: '5m' } });
+    rt.add({
+      id: 'dep',
+      type: 'sma',
+      inputs: { length: 2, source: { instanceId: 'p', outputId: 'p' } },
+    });
+    rt.setTimeframeBars('5m', htf);
+    // Pivots of the forming bar come from the previous bar: nothing to redo.
+    expect(rt.updateTimeframeBar('5m', { ...barAt(htf, 3), close: 1000 })).toEqual([]);
+    // A new timeframe bar changes chart bars from its first one (none here) -> no chart change.
+    expect(rt.updateTimeframeBar('5m', { ...barAt(htf, 3), time: 1200 })).toEqual([]);
+  });
+
+  it('gives timeframe instances the timeframe interval in env', () => {
+    const seen: number[] = [];
+    const reg = registry();
+    reg.register(
+      defineIndicator({
+        id: 'env-probe',
+        name: 'Env',
+        shortName: 'Env',
+        category: 'other',
+        overlay: true,
+        inputs: { tf: { kind: 'timeframe', label: 'Timeframe', default: '' } },
+        outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#fff' }],
+        setup: ({ env }) => {
+          seen.push(env.intervalSeconds);
+          return () => {};
+        },
+      }),
+    );
+    const rt = new IndicatorRuntime({ registry: reg, context: { intervalSeconds: 60 } });
+    const { chart, htf } = data();
+    rt.setBars(chart);
+    rt.add({ id: 'c', type: 'env-probe' });
+    rt.add({ id: 't', type: 'env-probe', inputs: { tf: '5m' } });
+    rt.setTimeframeBars('5m', htf);
+    expect(seen).toContain(60);
+    expect(seen).toContain(0);
+    seen.length = 0;
+    rt.setContext({ timeframeSeconds: { '5m': 300 } });
+    expect(seen).toEqual([300]);
+  });
+
   it('rejects output sources on a different timeframe', () => {
     const reg = registry();
     reg.register(
@@ -264,5 +352,91 @@ describe('multi-timeframe', () => {
         inputs: { tf: '1D', source: { instanceId: 'a', outputId: 'ma' } },
       }),
     ).toThrow(/price sources/);
+  });
+});
+
+describe('bars context (timezone, session, interval)', () => {
+  const NY = 'America/New_York';
+  // 2024-03-05 (Tue) 04:30 UTC = Mon 23:30 in New York.
+  const t = Date.UTC(2024, 2, 5, 4, 30) / 1000;
+
+  it('computes calendar periods in the exchange timezone', () => {
+    expect(calendarPeriod(t, 'session', 'UTC')).toBe(calendarPeriod(t, 'session', 'UTC'));
+    expect(calendarPeriod(t, 'session', NY)).toBe(calendarPeriod(t, 'session', 'UTC') - 1);
+    // Overnight session (futures, 18:00-17:00 NY): Mon 23:30 belongs to Tuesday's trading day.
+    expect(calendarPeriod(t, 'session', NY, '1800-1700')).toBe(calendarPeriod(t, 'session', 'UTC'));
+    // 2024-03-31 23:30 NY = April 1 UTC: March (Q1) in New York, April (Q2) in UTC.
+    const eoq = Date.UTC(2024, 3, 1, 3, 30) / 1000;
+    expect(calendarPeriod(eoq, 'month', NY)).toBe(2024 * 12 + 2);
+    expect(calendarPeriod(eoq, 'month', 'UTC')).toBe(2024 * 12 + 3);
+    expect(calendarPeriod(eoq, 'quarter', NY)).toBe(2024 * 4);
+    expect(calendarPeriod(eoq, 'quarter', 'UTC')).toBe(2024 * 4 + 1);
+    expect(calendarPeriod(eoq, 'year', NY)).toBe(2024);
+    expect(calendarPeriod(eoq, 'decade', NY)).toBe(202);
+    expect(calendarPeriod(eoq, 'century', NY)).toBe(20);
+    // Unknown zones fall back to UTC.
+    expect(calendarPeriod(t, 'session', 'Not/AZone')).toBe(calendarPeriod(t, 'session', 'UTC'));
+  });
+
+  it('resets session VWAP at exchange midnight and recomputes on a context change', () => {
+    const reg = new IndicatorRegistry();
+    reg.register(VWAP);
+    const rt = new IndicatorRuntime({ registry: reg });
+    // Hourly bars from 2024-03-04 20:00 UTC (15:00 NY) for 12 hours.
+    const bars = randomBars(12, 5, Date.UTC(2024, 2, 4, 20) / 1000, 3600);
+    rt.setBars(bars);
+    rt.add({ id: 'v', type: 'vwap', inputs: { showBand1: false } });
+    const hlc3 = (i: number) => (bars.high[i]! + bars.low[i]! + bars.close[i]!) / 3;
+    // UTC: new session at 00:00 UTC = bar 4.
+    expect(rt.result('v')!.values.vwap![4]).toBeCloseTo(hlc3(4), 10);
+    const changes = rt.setContext({ timezone: NY, intervalSeconds: 3600 });
+    expect(changes).toEqual([{ id: 'v', from: 0 }]);
+    const v = rt.result('v')!.values.vwap!;
+    // New York: midnight = 05:00 UTC (EST) = bar 9.
+    expect(v[4]).not.toBeCloseTo(hlc3(4), 10);
+    expect(v[9]).toBeCloseTo(hlc3(9), 10);
+    // Same context again: nothing to recompute.
+    expect(rt.setContext({ timezone: NY })).toEqual([]);
+  });
+
+  it('hides VWAP on daily and above when asked', () => {
+    const reg = new IndicatorRegistry();
+    reg.register(VWAP);
+    const rt = new IndicatorRuntime({ registry: reg, context: { intervalSeconds: 86_400 } });
+    rt.setBars(randomBars(10, 1, 0, 86_400));
+    rt.add({ id: 'h', type: 'vwap', inputs: { hideOnDWM: true } });
+    rt.add({ id: 's', type: 'vwap' });
+    expect(Array.from(rt.result('h')!.values.vwap!.subarray(0, 10)).every(Number.isNaN)).toBe(true);
+    expect(rt.result('s')!.values.vwap![9]).not.toBeNaN();
+    rt.setContext({ intervalSeconds: 3600 });
+    expect(rt.result('h')!.values.vwap![9]).not.toBeNaN();
+  });
+
+  it('resolves shape and bgcolor offsets from inputs', () => {
+    const def = defineIndicator({
+      id: 'off',
+      name: 'Off',
+      shortName: 'Off',
+      category: 'other',
+      overlay: true,
+      inputs: { offset: { kind: 'int', label: 'Offset', default: 2 } },
+      outputs: [
+        { type: 'bgcolor', id: 'bg', title: 'BG', color: '#fff', offset: (i) => i.offset },
+        {
+          type: 'shape',
+          id: 'sh',
+          title: 'SH',
+          shape: 'circle',
+          location: 'aboveBar',
+          color: '#fff',
+          offset: -1,
+        },
+      ],
+      setup: () => () => {},
+    });
+    const out = resolveOutputs(def, { offset: 3 });
+    expect(out.map((o) => (o.type === 'bgcolor' || o.type === 'shape' ? o.offset : null))).toEqual([
+      3, -1,
+    ]);
   });
 });

@@ -16,10 +16,13 @@ export {
   resolveOutputs,
   sourceRefs,
   timeframeInputValue,
+  waitsForTimeframeClose,
 } from './resolve';
+export { calendarPeriod, tzOffset } from './calendar';
+export type { CalendarUnit } from './calendar';
 export { BarStore } from './bars';
 export { IndicatorInstance } from './instance';
 export type { RefResolver } from './instance';
 export { IndicatorRuntime } from './runtime';
-export type { Change, InstanceSpec, RuntimeOptions } from './runtime';
+export type { Change, InstanceSpec, RuntimeContext, RuntimeOptions } from './runtime';
 export * from './builtins';

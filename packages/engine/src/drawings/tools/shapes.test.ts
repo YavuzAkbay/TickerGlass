@@ -101,6 +101,34 @@ describe('parallel channel', () => {
     expect(off(c)).toBeCloseTo(30, 9);
   });
 
+  it('keeps the lines parallel on a log scale (width as a constant ratio)', () => {
+    const view = makeView();
+    view.pane.priceScale.mode = 'log';
+    view.pane.priceScale.min = 0; // log10: 1 .. 1000
+    view.pane.priceScale.max = 3;
+    const lp = [pt(20, 10), pt(40, 100), pt(30, 100)];
+    const d = makeDrawing('parallel-channel', lp);
+    const g = geometryOf(d, view);
+    const def = tool('parallel-channel');
+    const [a, b, c, e] = def.handles!(g, d.style);
+    // Same pixel offset at both ends -> parallel on screen.
+    expect(c!.y - a!.y).toBeCloseTo(e!.y - b!.y, 9);
+    // On log, that is a constant price ratio: 100 / sqrt(10*100) at bar 30 -> ~3.16x.
+    expect(g.yToPrice(c!.y) / 10).toBeCloseTo(Math.sqrt(10), 6);
+    expect(g.yToPrice(e!.y) / 100).toBeCloseTo(Math.sqrt(10), 6);
+    // Moving a main anchor keeps the ratio width.
+    const moved = def.moveHandle!({
+      start: d.points,
+      handle: 0,
+      target: pt(20, 20),
+      x: g.toPixel(pt(20, 20)).x,
+      y: g.toPixel(pt(20, 20)).y,
+      geometry: g,
+      style: d.style,
+    } as HandleMoveArgs);
+    expect(moved[2]!.price / 20).toBeCloseTo(Math.sqrt(10), 6);
+  });
+
   it('renders a 2-anchor draft as a single line', () => {
     const { def, g, d } = setup('parallel-channel', pts.slice(0, 2));
     const { rc, calls } = recordingContext();
@@ -190,12 +218,25 @@ describe('brush', () => {
     expect(at(X(30), Y(25))).toEqual({ kind: 'body', weak: true });
   });
 
-  it('handles at the ends move one sample; no axis labels', () => {
+  it('end handles stretch the stroke from the fixed end; no axis labels', () => {
     const { def, g, d, move } = setup('brush', pts);
     expect(def.handles!(g, d.style)).toHaveLength(2);
+    const last = pts[pts.length - 1]!;
     const out = move(1, pt(30, 10));
     expect(out[out.length - 1]).toEqual(pt(30, 10));
-    expect(out.slice(0, -1)).toEqual(pts.slice(0, -1));
+    expect(out[0]).toEqual(pts[0]); // fixed end
+    // Every sample in between moved part of the way, in order along the path.
+    const dp = 10 - last.price;
+    let prev = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const frac = (out[i]!.price - pts[i]!.price) / dp;
+      expect(frac).toBeGreaterThan(prev);
+      expect(frac).toBeLessThan(1);
+      prev = frac;
+    }
+    const back = move(0, pt(0, 0));
+    expect(back[0]).toEqual(pt(0, 0));
+    expect(back[back.length - 1]).toEqual(last);
     expect(def.priceAxisLabels!(d, d.style, SELECTED)).toEqual([]);
     expect(def.timeAxisLabels!(d, d.style, SELECTED)).toEqual([]);
   });

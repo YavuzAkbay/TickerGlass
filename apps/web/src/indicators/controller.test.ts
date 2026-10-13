@@ -10,6 +10,7 @@ import {
   type StudyInfo,
   type StudySpec,
   type StudyTarget,
+  type SymbolInfo,
 } from '@investopen/engine';
 import {
   IndicatorRuntime,
@@ -81,7 +82,7 @@ interface FakeStudy {
 
 class FakeChart implements ChartHost {
   readonly store = new SeriesStore();
-  symbolInfo = null;
+  symbolInfo: SymbolInfo | null = null;
   seriesRevision = 0;
   symbol = 'AAPL';
   interval = '1D';
@@ -421,7 +422,19 @@ describe('IndicatorController', () => {
     const { chart, log, ctl } = setup({ feed });
     const tf = inst('test_tf_close');
     ctl.sync([tf]);
-    expect(log[0]).toEqual({ type: 'timeframeMap', map: { auto: '1W' } });
+    expect(log.filter((m) => m.type !== 'context')[0]).toEqual({
+      type: 'timeframeMap',
+      map: { auto: '1W' },
+    });
+    expect(log.filter((m) => m.type === 'context').at(-1)).toEqual({
+      type: 'context',
+      context: {
+        timezone: 'UTC',
+        session: null,
+        intervalSeconds: DAY,
+        timeframeSeconds: { '1W': 7 * DAY },
+      },
+    });
     const daily = makeBars(40);
     chart.load(daily);
     await settle();
@@ -434,6 +447,34 @@ describe('IndicatorController', () => {
       while (k + 1 < weekly.time.length && weekly.time[k + 1]! <= daily.time[j]!) k++;
       expect(s.values.v![j]).toBe(weekly.close[k]);
     }
+  });
+
+  it('sends the exchange timezone before the bars of a new symbol, once per change', async () => {
+    const { chart, log, ctl } = setup();
+    ctl.sync([inst('vwap')]);
+    chart.symbolInfo = {
+      symbol: 'AAPL',
+      name: 'Apple',
+      exchange: 'NMS',
+      exchangeName: 'NasdaqGS',
+      type: 'EQUITY',
+      currency: 'USD',
+      timezone: 'America/New_York',
+      session: '0930-1600',
+      priceHint: 2,
+      minTick: 0.01,
+    };
+    chart.load(makeBars(10));
+    await settle();
+    const types = log.map((m) => m.type);
+    const ctx = types.lastIndexOf('context');
+    expect(ctx).toBeLessThan(types.lastIndexOf('bars'));
+    expect(log[ctx]).toMatchObject({
+      context: { timezone: 'America/New_York', session: '0930-1600' },
+    });
+    chart.load(makeBars(12));
+    await settle();
+    expect(log.filter((m) => m.type === 'context')).toHaveLength(2);
   });
 
   it('reports worker errors for an instance and resyncs bars after a bad tick', async () => {

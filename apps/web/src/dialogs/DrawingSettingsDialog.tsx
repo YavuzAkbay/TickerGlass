@@ -1,7 +1,6 @@
 import {
   getDrawingTool,
   logicalToTime,
-  parseInterval,
   timeToLogical,
   type AnchorTimeline,
   type AnyDrawingToolDefinition,
@@ -603,19 +602,11 @@ function TextTab({
 
 // ------------------------------------------------------------ coordinates
 
-/** Raw-bar timeline of the chart (time-based chart types). */
+/** The chart's anchor timeline: displayed bars (bricks on brick types), as the engine maps anchors. */
 function useTimeline(): AnchorTimeline | null {
   const chart = useChartStore((s) => s.chart);
   if (!chart || !chart.store.length) return null;
-  const time = chart.store.time;
-  const length = chart.store.length;
-  let interval;
-  try {
-    interval = parseInterval(chart.getInterval());
-  } catch {
-    return null;
-  }
-  return { time, length, interval, bricks: false, endTime: time[length - 1]! };
+  return chart.getAnchorTimeline();
 }
 
 /** Unix seconds <-> `datetime-local` value in UTC. */

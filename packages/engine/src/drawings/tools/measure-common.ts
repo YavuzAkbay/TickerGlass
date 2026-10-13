@@ -10,6 +10,7 @@ import {
   infoLabelSize,
   setLineStyle,
 } from '../draw-utils';
+import { formatVolume } from '../../scale/price-ticks';
 import { defineDrawingTool } from '../registry';
 import type { DrawingGeometry, DrawingToolDefinition } from '../types';
 
@@ -38,9 +39,28 @@ export interface MeasureStats {
   bars: number;
   /** p1.time - p0.time (signed seconds). */
   seconds: number;
+  /** Volume of the displayed bars between the anchors (inclusive); NaN without volume data. */
+  volume: number;
 }
 
-const stats: MeasureStats = { priceChange: 0, percent: 0, bars: 0, seconds: 0 };
+const stats: MeasureStats = { priceChange: 0, percent: 0, bars: 0, seconds: 0, volume: NaN };
+
+/** Sum of volume over displayed bars [from, to] (clamped); NaN when no bar has volume. */
+export function rangeVolume(g: DrawingGeometry, from: number, to: number): number {
+  const b = g.bars;
+  const lo = Math.max(0, Math.ceil(Math.min(from, to) - 1e-9));
+  const hi = Math.min(b.length - 1, Math.floor(Math.max(from, to) + 1e-9));
+  let sum = 0;
+  let any = false;
+  for (let i = lo; i <= hi; i++) {
+    const v = b.volume[i]!;
+    if (v === v) {
+      sum += v;
+      any = true;
+    }
+  }
+  return any ? sum : NaN;
+}
 
 /** Stats of anchors 0 -> 1 (reused object), or null with fewer than two anchors. */
 export function measureStats(g: DrawingGeometry): MeasureStats | null {
@@ -50,6 +70,7 @@ export function measureStats(g: DrawingGeometry): MeasureStats | null {
   stats.percent = p0.price !== 0 ? (stats.priceChange / Math.abs(p0.price)) * 100 : NaN;
   stats.bars = Math.round((g.logical[1] ?? 0) - (g.logical[0] ?? 0));
   stats.seconds = p1.time - p0.time;
+  stats.volume = rangeVolume(g, Math.round(g.logical[0] ?? NaN), Math.round(g.logical[1] ?? NaN));
   return stats;
 }
 
@@ -64,7 +85,10 @@ export function measureLines(g: DrawingGeometry, kind: MeasureKind): string[] {
     lines.push(
       `${st.priceChange > 0 ? '+' : ''}${g.format.price(st.priceChange)} (${g.format.percent(st.percent)})`,
     );
-  if (kind !== 'price') lines.push(`${st.bars} bars, ${formatDuration(st.seconds)}`);
+  if (kind !== 'price') {
+    lines.push(`${st.bars} bars, ${formatDuration(st.seconds)}`);
+    if (st.volume === st.volume) lines.push(`Vol ${formatVolume(st.volume)}`);
+  }
   return lines;
 }
 

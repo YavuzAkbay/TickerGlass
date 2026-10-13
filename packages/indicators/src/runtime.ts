@@ -1,8 +1,15 @@
 import { BarStore } from './bars';
-import { IndicatorInstance, type RefResolver } from './instance';
+import { DEFAULT_ENV, IndicatorInstance, type RefResolver } from './instance';
 import { defaultRegistry, type AnyIndicatorDefinition, type IndicatorRegistry } from './registry';
-import { resolveInputs, sourceRefs, timeframeInputValue } from './resolve';
-import type { BarArrays, BarInput, IndicatorResult, InputValueMap, InstanceStatus } from './types';
+import { resolveInputs, sourceRefs, timeframeInputValue, waitsForTimeframeClose } from './resolve';
+import type {
+  BarArrays,
+  BarInput,
+  BarsEnv,
+  IndicatorResult,
+  InputValueMap,
+  InstanceStatus,
+} from './types';
 
 /** Serialisable description of one indicator on a chart (persisted in layouts). */
 export interface InstanceSpec {
@@ -27,6 +34,17 @@ export interface RuntimeOptions {
    * lower than it). Resolves 'auto'. Default: identity.
    */
   resolveTimeframe?: (tf: string) => string;
+  /** Initial bars context (see `setContext`). */
+  context?: RuntimeContext;
+}
+
+/**
+ * Host facts about the chart's bars (all optional; omitted fields keep their
+ * value). `timeframeSeconds` maps a resolved timeframe ('1W') to its interval
+ * for timeframe instances' `env.intervalSeconds` (0 when missing).
+ */
+export interface RuntimeContext extends Partial<BarsEnv> {
+  timeframeSeconds?: Record<string, number>;
 }
 
 interface Node {
@@ -56,10 +74,54 @@ export class IndicatorRuntime {
   private order: Node[] = [];
   private readonly registry: IndicatorRegistry;
   private resolveTf: (tf: string) => string;
+  private env: Readonly<BarsEnv> = DEFAULT_ENV;
+  private tfSeconds: Record<string, number> = {};
 
   constructor(opts: RuntimeOptions = {}) {
     this.registry = opts.registry ?? defaultRegistry;
     this.resolveTf = opts.resolveTimeframe ?? ((tf) => tf);
+    if (opts.context) this.applyContext(opts.context);
+  }
+
+  /** Current bars context of chart instances. */
+  get context(): Readonly<BarsEnv> {
+    return this.env;
+  }
+
+  /**
+   * Exchange timezone/session and bar interval (symbol or interval change).
+   * Instances whose context changed recompute fully.
+   */
+  setContext(ctx: RuntimeContext): Change[] {
+    this.applyContext(ctx);
+    const changed = new Set<string>();
+    for (const node of this.order) if (this.syncEnv(node)) changed.add(node.spec.id);
+    return changed.size ? this.recompute(changed) : [];
+  }
+
+  private applyContext(ctx: RuntimeContext): void {
+    this.env = Object.freeze({
+      timezone: ctx.timezone ?? this.env.timezone,
+      session: ctx.session !== undefined ? ctx.session : this.env.session,
+      intervalSeconds: ctx.intervalSeconds ?? this.env.intervalSeconds,
+    });
+    if (ctx.timeframeSeconds) this.tfSeconds = { ...ctx.timeframeSeconds };
+  }
+
+  /** Give the node's instance the env for its series; true when it changed. */
+  private syncEnv(node: Node): boolean {
+    const want = node.tf
+      ? { ...this.env, intervalSeconds: this.tfSeconds[node.tf] ?? 0 }
+      : this.env;
+    const cur = node.inst.env;
+    if (
+      cur.timezone === want.timezone &&
+      cur.session === want.session &&
+      cur.intervalSeconds === want.intervalSeconds
+    )
+      return false;
+    node.inst.setEnv(Object.freeze({ ...want }));
+    return true;
   }
 
   get length(): number {
@@ -81,6 +143,7 @@ export class IndicatorRuntime {
       aligned: null,
     };
     this.configure(node, inputs);
+    this.syncEnv(node);
     this.nodes.set(spec.id, node);
     this.reorder();
     return this.recompute(new Set([spec.id]));
@@ -99,6 +162,7 @@ export class IndicatorRuntime {
     }
     node.spec = { ...node.spec, inputs: resolved };
     node.inst.setInputs(resolved);
+    this.syncEnv(node);
     return this.recompute(new Set([id]));
   }
 
@@ -170,6 +234,7 @@ export class IndicatorRuntime {
         node.tf = tf;
         changed.add(node.spec.id);
       }
+      if (this.syncEnv(node)) changed.add(node.spec.id);
     }
     return changed.size ? this.recompute(changed) : [];
   }
@@ -202,7 +267,9 @@ export class IndicatorRuntime {
       node.inst.computeLast(store, kind);
       seeds.set(node.spec.id, from);
     }
-    return this.propagate(seeds, 'none');
+    // Only chart bars whose aligned values actually changed propagate (Pivot
+    // Points and confirmed alignment ignore ticks of the forming bar).
+    return this.propagate(seeds, 'none', true);
   }
 
   // ------------------------------------------------------------ internals
@@ -268,7 +335,7 @@ export class IndicatorRuntime {
    * known to change per instance (timeframe instances: re-align from there;
    * chart instances: 0 forces a full compute).
    */
-  private propagate(seeds: Map<string, number>, bars: BarChange): Change[] {
+  private propagate(seeds: Map<string, number>, bars: BarChange, diff = false): Change[] {
     const n = this.bars.length;
     const changed = new Map<string, number>();
     const refs: RefResolver = (ref) => this.result(ref.instanceId)?.values[ref.outputId];
@@ -280,8 +347,8 @@ export class IndicatorRuntime {
         if (bars === 'append') from = Math.min(from, n - 1);
         if (from === Infinity) continue;
         from = Math.max(0, from);
-        this.align(node, from);
-        if (from < n || from === 0) changed.set(id, from);
+        const first = this.align(node, from, diff);
+        if (first < n || first === 0) changed.set(id, first);
         continue;
       }
       // A change before the last bar (inputs, upstream history) needs a full pass.
@@ -296,8 +363,12 @@ export class IndicatorRuntime {
     return [...changed].map(([id, from]) => ({ id, from }));
   }
 
-  /** Map timeframe outputs onto chart bars from index `from`. */
-  private align(node: Node, from: number): void {
+  /**
+   * Map timeframe outputs onto chart bars from index `from`. Returns `from`,
+   * or with `diff` the first chart index whose values/colours/status actually
+   * changed (Infinity when none did).
+   */
+  private align(node: Node, from: number, diff = false): number {
     const n = this.bars.length;
     const store = this.tfBars.get(node.tf);
     const src = node.inst.result();
@@ -317,9 +388,15 @@ export class IndicatorRuntime {
       if (c) next.set(c.subarray(0, Math.min(c.length, from)));
       res.colors[id] = next;
     }
+    const prevLength = res.length;
+    const prevStatus = JSON.stringify(res.status);
     res.length = n;
     res.status = store ? src.status : { state: 'waiting', timeframe: node.tf };
     node.aligned = res;
+    let first =
+      diff && JSON.stringify(res.status) === prevStatus ? Math.max(from, prevLength) : from;
+    // Confirmed alignment: a chart bar shows the timeframe bar before the one containing it.
+    const back = waitsForTimeframeClose(node.inst.def, node.spec.inputs ?? {}) ? 1 : 0;
     // Values hold across every chart bar of a timeframe bar; shapes and
     // background only mark its first chart bar.
     const spanOnly = new Set(
@@ -330,13 +407,21 @@ export class IndicatorRuntime {
     let prevK = from > 0 && store ? store.indexAtOrBefore(this.bars.time[from - 1]!) : -1;
     for (let j = from; j < n; j++) {
       const k = store && src.status.state === 'ok' ? store.indexAtOrBefore(this.bars.time[j]!) : -1;
+      const startsK = k !== prevK;
+      const kv = k - back;
       for (const [id, arr] of Object.entries(res.values)) {
-        const first = k !== prevK;
-        arr[j] = k < 0 || (spanOnly.has(id) && !first) ? NaN : src.values[id]![k]!;
+        const v = kv < 0 || (spanOnly.has(id) && !startsK) ? NaN : src.values[id]![kv]!;
+        if (j < first && !Object.is(arr[j], v)) first = j;
+        arr[j] = v;
       }
-      for (const [id, c] of Object.entries(res.colors)) c[j] = k < 0 ? 0 : src.colors[id]![k]!;
+      for (const [id, c] of Object.entries(res.colors)) {
+        const v = kv < 0 ? 0 : src.colors[id]![kv]!;
+        if (j < first && c[j] !== v) first = j;
+        c[j] = v;
+      }
       prevK = k;
     }
+    return first;
   }
 
   private emptyResult(node: Node): IndicatorResult {

@@ -1,6 +1,8 @@
 // Chart-level drawing API (DOM harness copied from chart-studies.test.ts).
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Chart } from './chart';
+import type { DrawingHost } from './drawings/layer';
+import { logicalToTime, timeToLogical } from './drawings/mapping';
 import type {
   Bar,
   BarListener,
@@ -256,6 +258,9 @@ describe('Chart drawing API', () => {
       { time: START + 30 * DAY, price: 50 },
       { time: START + 40 * DAY, price: 60 },
     ]);
+    // A drawing from a pane this chart lacks lands on the main pane.
+    const studyPane = JSON.stringify({ version: 1, drawings: [{ ...a, paneId: 'pane-rsi' }] });
+    expect(chart.pasteDrawings(studyPane)[0]!.paneId).toBe('main');
     // Unknown types skipped; garbage throws.
     const foreign = JSON.stringify({ version: 1, drawings: [{ ...a, type: 'future' }] });
     expect(chart.pasteDrawings(foreign)).toEqual([]);
@@ -317,6 +322,36 @@ describe('Chart drawing API', () => {
     await chart.setInterval('1h');
     expect(host.interval).toBe('1h');
     expect(cache.iv).not.toBe(iv);
+  });
+
+  it('magnet values on the main pane are the displayed bar OHLC', async () => {
+    const { chart, recent } = await load(20);
+    const host = (chart as unknown as { drawingLayer: { host: DrawingHost } }).drawingLayer.host;
+    const b = recent[7]!;
+    expect(host.magnetValues!('main', 7)).toEqual([b.open, b.high, b.low, b.close]);
+    expect(host.magnetValues!('main', -1)).toEqual([]);
+    expect(host.magnetValues!('main', 20)).toEqual([]);
+    expect(host.magnetValues!('missing', 7)).toEqual([]);
+    // Heikin Ashi: the displayed (transformed) bars, not the raw ones.
+    chart.setChartType('heikinAshi');
+    const s = chart.store;
+    expect(host.magnetValues!('main', 7)).toEqual([s.open[7], s.high[7], s.low[7], s.close[7]]);
+    expect(host.magnetValues!('main', 7)).not.toEqual([b.open, b.high, b.low, b.close]);
+  });
+
+  it('exposes the anchor timeline so bar numbers match bricks (Coordinates tab)', async () => {
+    const { chart, recent } = await load(30);
+    let tl = chart.getAnchorTimeline();
+    expect(tl.bricks).toBe(false);
+    expect(timeToLogical(tl, { time: recent[12]!.time })).toBe(12);
+    chart.setChartStyle({ renko: { boxSizeMode: 'fixed', boxSize: 1 } });
+    chart.setChartType('renko');
+    tl = chart.getAnchorTimeline();
+    expect(tl.bricks).toBe(true);
+    expect(tl.length).toBe(chart.store.length);
+    expect(tl.endTime).toBe(recent[29]!.time);
+    // Brick i round-trips through its time/brick anchor.
+    for (let i = 0; i < tl.length; i++) expect(timeToLogical(tl, logicalToTime(tl, i)!)).toBe(i);
   });
 
   it('pointercancel aborts a drawing gesture instead of committing it', async () => {

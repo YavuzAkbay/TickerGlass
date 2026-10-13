@@ -274,6 +274,40 @@ describe('Chart seriesChange', () => {
   });
 });
 
+describe('brick resets keep unchanged study data', () => {
+  it('keeps values of the unchanged leading bricks drawn across a live reset', async () => {
+    const { chart, feed, changes, recent } = await load(50);
+    chart.setChartStyle({ renko: { boxSizeMode: 'fixed', boxSize: 1 } });
+    chart.setChartType('renko');
+    chart.addStudy(studySpec('ma', { paneId: 'main' }));
+    const last = recent[49]!;
+    const t = last.time + DAY;
+    // A new raw bar that builds several bricks...
+    let close = last.close + 6;
+    feed.tick({ time: t, open: close, high: close, low: close, close, volume: 1 });
+    const n = chart.store.length;
+    const values = { v: Float64Array.from({ length: n }, (_, i) => i) };
+    chart.setStudyData('ma', { revision: chart.seriesRevision, length: n, values, colors: {} });
+    const before = { time: chart.store.time.slice(0, n), close: chart.store.close.slice(0, n) };
+    changes.length = 0;
+    // ...then gives them back within the same bar: bricks disappear -> reset.
+    close = last.close;
+    feed.tick({ time: t, open: close, high: close, low: close, close, volume: 1 });
+    expect(changes.map((c) => c.kind)).toEqual(['reset']);
+    let keep = 0;
+    while (
+      keep < Math.min(n, chart.store.length) &&
+      chart.store.time[keep] === before.time[keep] &&
+      chart.store.close[keep] === before.close[keep]
+    )
+      keep++;
+    expect(keep).toBeGreaterThan(0);
+    // Values before the first changed brick still show; the rest waits for a recompute.
+    expect(chart.getStudyValues('ma', keep - 1)[0]!.value).toBe(keep - 1);
+    expect(chart.getStudyValues('ma', keep)[0]!.value).toBeNaN();
+  });
+});
+
 describe('Chart studies', () => {
   it('adds studies to new panes and removes empty panes', async () => {
     const { chart } = await load(20);

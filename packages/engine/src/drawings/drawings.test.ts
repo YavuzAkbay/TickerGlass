@@ -681,6 +681,59 @@ describe('eraser', () => {
   });
 });
 
+describe('box select (Shift+drag on empty space)', () => {
+  const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
+  const box = (x0: number, y0: number, x1: number, y1: number) => {
+    expect(input.pointerDown(target(x0, y0), x0, y0, SH)).toBe(true);
+    input.pointerMove(x1, y1, SH);
+    expect(layer.marquee).not.toBeNull();
+    input.pointerUp(x1, y1, SH);
+    expect(layer.marquee).toBeNull();
+  };
+
+  it('selects drawings whose extent meets the box, adding to the selection', () => {
+    const a = line(20, 40, 20, 60);
+    const b = line(60, 70, 20, 30);
+    const h = hline(90);
+    // Plain drag on empty space is not a drawing gesture (pans).
+    expect(input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO)).toBe(false);
+    box(X(15), Y(70), X(45), Y(10));
+    expect([...layer.selection]).toEqual([a.id]);
+    // Horizontal lines span the pane width: any box crossing their price meets them.
+    box(X(80), Y(95), X(85), Y(85));
+    expect([...layer.selection].sort()).toEqual([a.id, h.id].sort());
+    expect(layer.selection.has(b.id)).toBe(false);
+    // A Shift-click (no drag) keeps the selection; Esc cancels a box without changes.
+    input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
+    input.pointerUp(X(5), Y(5), SH);
+    expect(layer.selection.size).toBe(2);
+    input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
+    input.pointerMove(X(75), Y(5), SH);
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.marquee).toBeNull();
+    expect(input.busy).toBe(false);
+  });
+});
+
+describe('touch tolerance', () => {
+  it('widens stroke and handle hit radius for touch pointers', () => {
+    const d = line(20, 40, 20, 60);
+    // 8 px below the line's middle: outside the mouse tolerance, inside the touch one.
+    const y = Y(40) + 8;
+    expect(layer.hitTest(pane, X(30), y).strong).toBeNull();
+    input.setPointerType('touch');
+    expect(layer.hitTest(pane, X(30), y).strong?.id).toBe(d.id);
+    // Handles reach further too.
+    const far = HANDLE_RADIUS + 6;
+    expect(layer.hitTest(pane, X(20) + far, Y(20)).strong?.part).toEqual({
+      kind: 'handle',
+      index: 0,
+    });
+    input.setPointerType('mouse');
+    expect(layer.hitTest(pane, X(30), y).strong).toBeNull();
+  });
+});
+
 describe('replace and bounds', () => {
   it('replace drops style keys missing from the new drawing and emits nothing', () => {
     const d = line();

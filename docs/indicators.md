@@ -48,8 +48,12 @@ export const SMA = defineIndicator({
 - **Outputs** (array order = draw order): `plot` (kinds line/step/histogram/area/columns/circles/cross,
   `lineWidth`, `lineStyle`, `base`, `offset`, `showLastValue`), `hline` (`value` may be a function of inputs),
   `fill` (`between` two plots/hlines), `bgcolor`, `shape` (shape, location aboveBar/belowBar/absolute/top/bottom,
-  size, static `text`). `color` is a string or a palette; with a palette the step picks an index per bar
-  (`c.set(id, v, k)` / `c.setColor(id, k)`), e.g. MACD histogram, Supertrend, Ichimoku cloud.
+  size, static `text`); shapes and bgcolor take an `offset` like plots (additive; aboveBar/belowBar anchor to
+  the bar at the drawn position). `color` is a string or a palette; with a palette the step picks an index per
+  bar (`c.set(id, v, k)` / `c.setColor(id, k)`), e.g. MACD histogram, Supertrend, Ichimoku cloud. Index
+  `NO_COLOR` (255, = engine `STUDY_COLOR_NONE`) means "no colour" for that bar (standard `na` colour: the line
+  segment ending there, the bar, mark, fill segment or background is not drawn); any other out-of-range index
+  uses entry 0.
 - `resolveOutputs(def, inputs, overrides)` produces concrete `ResolvedOutput[]` (defaults + user style
   overrides + input-derived hline values and offsets). It is structurally the engine's `StudyOutputMeta`;
   `apps/web/src/indicators/contract.ts` fails typecheck if they drift.
@@ -57,8 +61,15 @@ export const SMA = defineIndicator({
 ## 2. Compute model and incremental semantics
 
 `setup` runs once per full computation and returns `step(c)`, called for bars `0..n-1` in order with one
-reused context: `c.i`, OHLCV arrays, `c.src.<sourceInput>`, `c.inputs`, `c.set`, `c.setColor`, `c.get(id, j<i)`
-(own earlier outputs). Unset outputs are NaN for the bar. All running state lives in `ta` primitives created in
+reused context: `c.i`, OHLCV arrays, `c.src.<sourceInput>`, `c.inputs`, `c.env`, `c.set`, `c.setColor`,
+`c.get(id, j<i)` (own earlier outputs). `env` (also in `setup`'s context, additive) is the host's `BarsEnv`:
+`timezone` (IANA exchange zone, `'UTC'` when unknown), `session` (`"HHMM-HHMM"` or null) and
+`intervalSeconds` (0 = unknown; timeframe instances get their timeframe's seconds). Period-anchored
+indicators use `calendarPeriod(time, unit, tz, session)` (`session|week|month|quarter|year|decade|century`;
+`session` = exchange calendar day, or the trading day of a session that wraps midnight, e.g. futures
+18:00-17:00; weeks start Monday). VWAP: anchors Session/Week/Month/Quarter/Year/Decade/Century in the
+exchange timezone and "Hide VWAP on 1D or Above" (`env.intervalSeconds >= 1D`). OBV: reference "Smoothing" (None,
+SMA, SMA + Bollinger Bands, EMA, SMMA (RMA), WMA, VWMA; length, BB StdDev). Unset outputs are NaN for the bar. All running state lives in `ta` primitives created in
 `setup` (`sma ema rma sum stdev highest lowest history vars series`); creating one inside `step` is an error.
 
 Why per-bar: full compute and live update are the same code, so they cannot diverge; recursive indicators
@@ -76,7 +87,8 @@ skipped (warm-up starts at the first value), later NaNs return NaN without chang
 `IndicatorRuntime` (all instances of one chart; pure, no DOM; also used by the alerts service):
 `add(spec)`, `setInputs(id, inputs)`, `remove(id)`, `setBars(cols)`, `updateBar(index, bar)`, `clearData()`,
 `requiredTimeframes()`, `setTimeframeBars(tf, cols)`, `updateTimeframeBar(tf, bar)`, `setResolveTimeframe(fn)`,
-`result(id)`, `status(id)`, `ids()`. Mutators return `Change[] = { id, from }` (outputs changed for chart
+`setContext({ timezone?, session?, intervalSeconds?, timeframeSeconds? })` (additive; also
+`RuntimeOptions.context`; recomputes only instances whose env changed), `result(id)`, `status(id)`, `ids()`. Mutators return `Change[] = { id, from }` (outputs changed for chart
 indices `>= from`). `updateBar` is **index based** (brick bars can share a time): `index = length-1` updates,
 `index = length` appends, anything else throws `RangeError` and the host must call `setBars`.
 `IndicatorResult` arrays may be longer than `length` and may be reallocated by the next call.
@@ -105,8 +117,14 @@ intraday -> 1D, 1D -> 1W, above -> 12M) and returns `''` when tf equals or is be
    This is lookahead: on history, every chart bar inside a timeframe bar shows that bar's _closing_ value
    (e.g. a daily chart bar on Monday already shows the week's final value), while on the live edge the value
    moves until the timeframe bar closes. Backtests or alert replays over history therefore see values that
-   were not knowable at the time; alerts evaluated live only fire on what was known. Consumers that need
-   non-repainting values must shift by one timeframe bar themselves (no built-in option yet).
+   were not knowable at the time; alerts evaluated live only fire on what was known.
+   **Confirmed alignment** (reference "Wait for timeframe closes"): a definition names a `bool` input in
+   `TimeframeInputDef.waitForCloseInput` (conventionally default true). When it is on, chart bars inside
+   timeframe bar k show bar k-1 (the last closed one), on history and live alike: no lookahead, no repainting,
+   at the cost of one timeframe bar of lag; alerts on such values behave the same in replay and live. Pivot
+   Points need neither (their bar k already holds levels of k-1). A live tick re-aligns and propagates only
+   the chart bars whose aligned values actually changed, so ticks of a forming bar under confirmed alignment
+   (or Pivot Points) do not recompute dependents.
 4. A timeframe instance may only use price sources (no indicator-on-indicator across timeframes).
 
 ## 5. Worker protocol (apps/web)
@@ -117,6 +135,7 @@ the same package for metadata, dialogs and `resolveOutputs`). Bars come from `ch
 ```ts
 type ToWorker =
   | { type: 'timeframeMap'; map: Record<string, string> } // raw tf value -> resolved ('' = chart)
+  | { type: 'context'; context: RuntimeContext } // exchange tz/session, interval seconds (additive)
   | { type: 'add'; spec: InstanceSpec }
   | { type: 'setInputs'; id: string; inputs: InputValueMap }
   | { type: 'remove'; id: string }
@@ -146,8 +165,10 @@ up after 3 resyncs of one revision without a cleanly applied live bar. Any other
 and worker load/runtime failures (`onerror`, `onmessageerror`), are posted as an `error` without `id`:
 fatal, reported once, no further resyncs (a later chart reset still posts `bars`).
 
-The main thread sends `timeframeMap` before any `add`/`setInputs` that uses a tf value and on interval
-change; the worker's resolver is a lookup in it (`setResolveTimeframe`), so interval maths stays on the main
+The main thread sends `context` (symbol `timezone`/`session` from `chart.symbolInfo`, i.e. `/api/symbols/{s}`,
+chart and timeframe interval seconds) at start and, when it changed, before the `bars` of every reset, so
+period-anchored indicators compute once with the right timezone. It sends `timeframeMap` before any
+`add`/`setInputs` that uses a tf value and on interval change; the worker's resolver is a lookup in it (`setResolveTimeframe`), so interval maths stays on the main
 thread (engine `parseInterval`/`intervalSeconds`).
 Main thread: drop `results` whose revision is not `chart.seriesRevision`; `from === 0` -> `setStudyData`,
 otherwise `updateStudyData`. Coalesce `bar` messages per animation frame (latest wins per index). Errors from
@@ -178,13 +199,16 @@ any study fill interior; a fill-only hit is weak (`HitTarget.fill`: no pointer c
 candle, so the main series keeps its context menu over Bollinger/Keltner/Ichimoku/Supertrend fills.
 Rules: values align to `chart.store` indices; data with a stale revision is not drawn; plot `offset` draws
 past the last bar (Ichimoku); `scaleRange` fixes the pane scale (also while the study has no current data);
-`priceScale: 'none'` behaves like the volume overlay. Auto-scale uses visible plots and hlines only: a fill
-whose bounding plot is hidden (e.g. Bollinger bands hidden, background kept) still draws but does not widen
-the scale, so it may be clipped at the pane edges. A history prepend on plain/Heikin Ashi charts emits
+`priceScale: 'none'` behaves like the volume overlay. Auto-scale uses visible plots and hlines, plus hidden
+plots/hlines that bound a visible fill (e.g. Bollinger bands hidden, background kept), so fills are not
+clipped. A history prepend on plain/Heikin Ashi charts emits
 `SeriesChange` `{ kind: 'prepend', revision, length, added }` (new revision, consumers resend all bars like
 `reset`); the engine shifts each study's current data right by `added` and re-stamps it with the new
 revision, so studies keep drawing (and patches apply) until the recomputed `setStudyData` arrives. Brick
-types still emit `reset` on prepend (bricks are rebuilt from the first bar). Study panes are ordinary panes, so `getState/setState` keep their ids/ratios; `setState` drops all
+types still emit `reset` on prepend (bricks are rebuilt from the first bar). A live brick rebuild that emits
+`reset` keeps each study's data for the leading bricks that did not change (`commonPrefix` of the old tail
+snapshot and the new series), re-stamped with the new revision; indicators are causal, so those values equal
+the recomputed ones and only the changed tail is blank until `setStudyData` arrives. Study panes are ordinary panes, so `getState/setState` keep their ids/ratios; `setState` drops all
 studies and emits `studiesCleared`, on which the app re-adds them from its own persisted instance list.
 
 ## 7. Heikin Ashi and brick chart types

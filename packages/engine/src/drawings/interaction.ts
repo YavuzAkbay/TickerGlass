@@ -82,6 +82,8 @@ type Gesture =
     }
   /** Eraser press/drag: drawings removed so far. */
   | { kind: 'erase'; pane: DrawingPane; removed: Drawing[] }
+  /** Shift+drag on empty space: box select (root px); `base` = selection before. */
+  | { kind: 'box'; pane: DrawingPane; downX: number; downY: number; base: string[] }
   | {
       kind: 'handle';
       pane: DrawingPane;
@@ -125,6 +127,7 @@ export class DrawingInteraction {
     const g = this.gesture;
     this.gesture = null;
     this.layer.draft = null;
+    this.layer.marquee = null;
     if (g?.kind === 'move' || g?.kind === 'handle') this.cancelDrag(g);
     else if (g?.kind === 'erase' && g.removed.length)
       // The removals already happened: report them rather than losing them.
@@ -162,7 +165,18 @@ export class DrawingInteraction {
     }
     if (this.tool) return this.startCreate(this.tool, target.pane, x, y, mods);
     const hit = target.drawing;
-    if (!hit) return false;
+    if (!hit) {
+      if (!mods.shift) return false;
+      // Shift+drag on empty space: box select (adds to the selection, like Shift-click).
+      this.gesture = {
+        kind: 'box',
+        pane: target.pane,
+        downX: x,
+        downY: y,
+        base: [...this.layer.selection],
+      };
+      return true;
+    }
     const sel = this.layer.selection;
     let toggleOff = false;
     if (mods.shift) {
@@ -205,7 +219,32 @@ export class DrawingInteraction {
         if (hit) this.eraseId(g, hit.id);
         return true;
       }
+      case 'box':
+        this.layer.marquee = this.boxRect(g, x, y);
+        this.layer.host.invalidate();
+        return true;
     }
+  }
+
+  /** Pane-local box from the press to (x, y), clamped to the pane. */
+  private boxRect(g: Extract<Gesture, { kind: 'box' }>, x: number, y: number) {
+    const top = g.pane.top;
+    const w = this.layer.host.paneWidth;
+    const h = g.pane.height;
+    const cx = (v: number) => Math.min(Math.max(v, 0), w);
+    const cy = (v: number) => Math.min(Math.max(v - top, 0), h);
+    return {
+      paneId: g.pane.id,
+      left: cx(Math.min(g.downX, x)),
+      right: cx(Math.max(g.downX, x)),
+      top: cy(Math.min(g.downY, y)),
+      bottom: cy(Math.max(g.downY, y)),
+    };
+  }
+
+  /** Last pointer type ('mouse' | 'pen' | 'touch'): touch widens hit tolerances. */
+  setPointerType(type: string): void {
+    this.layer.touch = type === 'touch';
   }
 
   /** Pointer moved with no button: hover highlight, or the floating anchor of a creation. */
@@ -246,6 +285,22 @@ export class DrawingInteraction {
         if (g.removed.length)
           this.layer.host.emit('drawingsRemoved', { drawings: g.removed.map(cloneDrawing) });
         return true;
+      case 'box': {
+        this.gesture = null;
+        this.layer.marquee = null;
+        this.layer.host.invalidate();
+        // A Shift-click (no drag) on empty space keeps the selection.
+        if (Math.hypot(x - g.downX, y - g.downY) <= DRAG_SLOP) return true;
+        const r = this.boxRect(g, x, y);
+        const ids = this.layer.idsInRect(g.pane, r.left, r.top, r.right, r.bottom);
+        const next = [...new Set([...g.base, ...ids])];
+        if (
+          next.length !== this.layer.selection.size ||
+          next.some((id) => !this.layer.selection.has(id))
+        )
+          this.layer.setSelection(next);
+        return true;
+      }
     }
   }
 
@@ -295,6 +350,7 @@ export class DrawingInteraction {
     const g = this.gesture;
     if (key === 'Escape') {
       if (g?.kind === 'create') this.cancelCreate();
+      else if (g?.kind === 'box') this.abort();
       else if (g?.kind === 'move' || g?.kind === 'handle') {
         this.gesture = null;
         this.cancelDrag(g);
@@ -359,6 +415,7 @@ export class DrawingInteraction {
     const g = this.gesture;
     if (g?.kind === 'move') return 'grabbing';
     if (g?.kind === 'handle') return g.cursor;
+    if (g?.kind === 'box') return 'crosshair';
     if (this.tool === ERASER_TOOL || g?.kind === 'erase')
       return target ? (target.drawing ? 'pointer' : 'crosshair') : null;
     if (this.tool || g?.kind === 'create') return target ? 'crosshair' : null;

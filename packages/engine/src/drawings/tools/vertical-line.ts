@@ -103,7 +103,7 @@ export const verticalLine = defineDrawingTool({
     if (!p) return null;
     const text = g.drawing.text;
     if (text) {
-      const w = approxTextWidth(text, s.fontSize);
+      const w = approxTextWidth(text, s.fontSize, s.bold, s.italic);
       const h = s.fontSize * 1.2;
       const off = TEXT_GAP + s.lineWidth / 2;
       if (s.textOrientation === 'vertical') {

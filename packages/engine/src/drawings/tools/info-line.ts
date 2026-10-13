@@ -1,9 +1,11 @@
 import {
   anchorsInView,
+  segmentInView,
   BODY_HIT,
   clamp,
   extendSegment,
   formatDuration,
+  hitLabelSize,
   infoLabel,
   infoLabelSize,
   lineDistance,
@@ -87,6 +89,19 @@ function infoLines(g: DrawingGeometry, s: InfoLineStyle): string[] {
   return lines;
 }
 
+const pos = { x: 0, y: 0 };
+
+/** Label top-left: below the line's midpoint (above when it goes down), inside the pane. */
+function labelPos(g: DrawingGeometry, w: number, h: number): typeof pos | null {
+  const [a, b] = g.points;
+  if (!a || !b) return null;
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  pos.x = clamp(mx - w / 2, 4, Math.max(4, g.width - w - 4));
+  pos.y = clamp(b.y >= a.y ? my - h - 12 : my + 12, 4, Math.max(4, g.height - h - 4));
+  return pos;
+}
+
 /** Trend line with an always-on measurement label (price, %, bars, time, distance, angle). */
 export const infoLine = defineDrawingTool({
   type: 'info-line',
@@ -129,22 +144,27 @@ export const infoLine = defineDrawingTool({
     const ls = infoLines(g, s);
     if (!ls.length) return;
     const { w, h } = infoLabelSize(ctx, ls, theme);
-    // Below the line's midpoint (above when the line goes down), kept inside the pane.
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    const x = clamp(mx - w / 2, 4, Math.max(4, g.width - w - 4));
-    const y = clamp(b.y >= a.y ? my - h - 12 : my + 12, 4, Math.max(4, g.height - h - 4));
-    infoLabel(ctx, ls, x, y, theme, s.labelBackgroundColor, s.textColor);
+    const r = labelPos(g, w, h);
+    if (r) infoLabel(ctx, ls, r.x, r.y, theme, s.labelBackgroundColor, s.textColor);
   },
 
   hitTest(g, s, x, y, tol) {
     const [a, b] = g.points;
     if (!a || !b) return null;
     const d = lineDistance(x, y, a.x, a.y, b.x, b.y, s.extendLeft, s.extendRight);
-    return d <= tol + s.lineWidth / 2 ? BODY_HIT : null;
+    if (d <= tol + s.lineWidth / 2) return BODY_HIT;
+    // The stats label is part of the drawing (grab to drag, right-click for the menu).
+    const ls = infoLines(g, s);
+    if (!ls.length) return null;
+    const { w, h } = hitLabelSize(ls);
+    const r = labelPos(g, w, h);
+    return r && x >= r.x && x <= r.x + w && y >= r.y && y <= r.y + h ? BODY_HIT : null;
   },
 
   isVisible(g, s) {
-    return s.extendLeft || s.extendRight || anchorsInView(g);
+    const [a, b] = g.points;
+    if (!a || !b) return anchorsInView(g);
+    // The label is clamped into the pane, so a line in view always shows it.
+    return segmentInView(a.x, a.y, b.x, b.y, s.extendLeft, s.extendRight, g.width, g.height);
   },
 });

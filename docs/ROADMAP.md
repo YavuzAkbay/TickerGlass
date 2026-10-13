@@ -2,6 +2,8 @@
 
 Open-source (AGPL-3.0), self-hosted, single-user charting platform with reference-class features. Data source: yFinance. Tick items off as they land.
 
+Known limitations (what you see, why, and Fixed / Planned / Inherent status): **[docs/LIMITATIONS.md](LIMITATIONS.md)**.
+
 Decisions: AGPL-3.0 · custom Canvas2D chart engine · self-hosted single user (docker compose, no auth). Local-AI screen analysis is built separately; Phase 16 reserves its integration point.
 
 ## Architecture (recommended approach)
@@ -115,7 +117,7 @@ Phase 3 notes:
 
 Phase 4 notes:
 
-- Bid/ask lines are not drawn: Yahoo's free data has no bid/ask. Instead there is a previous-day-close line (Settings → Scales and lines).
+- Bid/ask lines and other data limitations: see [LIMITATIONS.md](LIMITATIONS.md#data-yahoo--yfinance).
 - Brick types (Renko, Line break, Kagi, P&F, Range) size ATR-based boxes once per load, so bricks stay stable during live updates. Their indices are not time bars; indicators in Phase 5 should run on the displayed series (`chart.store`), with `chart.sourceIndexOf(i)` mapping back to time bars.
 
 ### Phase 5: Indicator framework + core set
@@ -130,9 +132,7 @@ Phase 4 notes:
 Phase 5 notes:
 
 - Design and worker protocol: `docs/indicators.md`. Golden references are regenerated with `uv run --no-project --python 3.11 --with ta-lib --with pandas --with numpy packages/indicators/scripts/golden.py` (synthetic 1000-bar input; TA-Lib where its warm-up matches standard, numpy otherwise).
-- VWAP anchors (session/week/month) use UTC boundaries; exchange timezone support needs a contract change.
-- Pivot Points ship Traditional only; other pivot types land in Phase 12.
-- Multi-timeframe history shows final higher-timeframe values (lookahead); alerts must account for it.
+- Indicator limitations (VWAP timezone/anchors, pivot types, MTF lookahead, ...): see [LIMITATIONS.md](LIMITATIONS.md#indicators). Bars context (exchange timezone, session, interval) and confirmed MTF alignment: `docs/indicators.md` §2/§4.
 - Studies are not part of `chart.getState()`; the app re-adds them on `studiesCleared`. Phase 7 moves indicator persistence from localStorage to the API.
 
 ### Phase 6: Drawing framework + core tools
@@ -150,10 +150,8 @@ Phase 6 notes:
 
 - Design, tool definition API, and undo/persistence contract: `docs/drawings.md`.
 - 20 core tools registered; toolbar entries without a definition are dimmed until Phase 11.
-- Anchors extrapolated past the last bar ignore sessions (overnight gaps count as bar slots).
-- Measure tools show no volume yet (tool geometry has no bar-data accessor).
-- Drawings persist to localStorage (`investopen-drawings`, per-symbol + synced buckets, backup on unreadable data, cross-tab merge) until Phase 7 moves them to the API.
-- No box select; Bar # in the Coordinates tab assumes a time-based chart (wrong on brick types).
+- Drawing limitations and their status (session-aware extrapolation, measure volume, box select, ...): see [LIMITATIONS.md](LIMITATIONS.md#drawings).
+- Drawings persist to localStorage (`investopen-drawings`, per-symbol + synced buckets, backup on unreadable data, cross-tab merge); Phase 7 adds the API (one row per drawing, see `docs/drawings.md` §6).
 
 ### Phase 7: Persistence, layouts, templates
 

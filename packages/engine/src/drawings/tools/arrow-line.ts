@@ -101,7 +101,7 @@ export const arrowLine = defineDrawingTool({
       const angle = textAngle(a, b);
       const cx = (a.x + b.x) / 2 + Math.sin(angle) * off;
       const cy = (a.y + b.y) / 2 - Math.cos(angle) * off;
-      const w = approxTextWidth(text, s.fontSize);
+      const w = approxTextWidth(text, s.fontSize, s.bold, s.italic);
       if (hitRotatedText(x, y, cx, cy, angle, w, s.fontSize * 1.2)) return TEXT_HIT;
     }
     return lineDistance(x, y, a.x, a.y, b.x, b.y) <= tol + s.lineWidth / 2 ? BODY_HIT : null;

@@ -580,7 +580,27 @@ def obv():
     return out
 
 
-case("obv", {}, "numpy", {"obv": obv()})
+def obv_case(name, inputs, ma_type, ma_len, mult):
+    o = obv()
+    out = {"obv": o, "ma": nans(), "bbUpper": nans(), "bbLower": nans()}
+    if ma_type != "None":
+        is_bb = ma_type == "SMA + Bollinger Bands"
+        out["ma"] = ma_by_type("SMA" if is_bb else ma_type, o, ma_len)
+        if is_bb:
+            sd = stdev(o, ma_len) * mult
+            out["bbUpper"], out["bbLower"] = out["ma"] + sd, out["ma"] - sd
+    case(name, inputs, "numpy", out)
+
+
+obv_case("obv", {}, "None", 14, 2.0)
+obv_case(
+    "obv-bb",
+    {"maType": "SMA + Bollinger Bands", "maLength": 20, "bbMult": 1.5},
+    "SMA + Bollinger Bands",
+    20,
+    1.5,
+)
+obv_case("obv-ema", {"maType": "EMA", "maLength": 9}, "EMA", 9, 2.0)
 # TA-Lib's OBV starts at volume[0] instead of 0.
 cross_check("obv", obv() + V[0], talib.OBV(C, V), 0)
 

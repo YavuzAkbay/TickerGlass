@@ -1,23 +1,44 @@
+import { calendarPeriod, type CalendarUnit } from '../calendar';
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 import { BAND_OUTPUTS, VWAP_SUMS, bandInputs, setBands, vwapUpdate } from './vwap-bands';
 
-export const VWAP_ANCHORS = ['Session', 'Week', 'Month'] as const;
+/** reference anchors that need only bar times (Earnings/Dividends/Splits need event data). */
+export const VWAP_ANCHORS = [
+  'Session',
+  'Week',
+  'Month',
+  'Quarter',
+  'Year',
+  'Decade',
+  'Century',
+] as const;
 export type VwapAnchor = (typeof VWAP_ANCHORS)[number];
+
+const UNIT: Record<VwapAnchor, CalendarUnit> = {
+  Session: 'session',
+  Week: 'week',
+  Month: 'month',
+  Quarter: 'quarter',
+  Year: 'year',
+  Decade: 'decade',
+  Century: 'century',
+};
 
 const DAY = 86_400;
 
 /**
- * Period number of a bar time for an anchor. Boundaries are UTC calendar
- * days, ISO weeks (Monday) and months: the runtime has no exchange timezone.
+ * Period number of a bar time for an anchor in the exchange timezone `tz`
+ * (default UTC): calendar days (or the overnight `session`'s trading day),
+ * ISO weeks (Monday), months, quarters, years, decades, centuries.
  */
-export function anchorPeriod(time: number, anchor: VwapAnchor): number {
-  const day = Math.floor(time / DAY);
-  if (anchor === 'Session') return day;
-  // 1970-01-01 was a Thursday; +3 makes weeks start on Monday.
-  if (anchor === 'Week') return Math.floor((day + 3) / 7);
-  const d = new Date(time * 1000);
-  return d.getUTCFullYear() * 12 + d.getUTCMonth();
+export function anchorPeriod(
+  time: number,
+  anchor: VwapAnchor,
+  tz = 'UTC',
+  session: string | null = null,
+): number {
+  return calendarPeriod(time, UNIT[anchor], tz, session);
 }
 
 /** Volume-weighted average price, reset every anchor period, with optional bands. */
@@ -29,6 +50,12 @@ export const VWAP = defineIndicator({
   keywords: ['vwap', 'volume', 'weighted', 'average', 'price', 'session'],
   overlay: true,
   inputs: {
+    hideOnDWM: {
+      kind: 'bool',
+      label: 'Hide VWAP on 1D or Above',
+      default: false,
+      hideInTitle: true,
+    },
     anchor: { kind: 'enum', label: 'Anchor Period', options: VWAP_ANCHORS, default: 'Session' },
     source: { kind: 'source', label: 'Source', default: 'hlc3' },
     offset: { kind: 'int', label: 'Offset', default: 0, min: -500, max: 500, hideInTitle: true },
@@ -47,10 +74,13 @@ export const VWAP = defineIndicator({
       o.type === 'plot' ? { ...o, offset: (inputs: { offset: number }) => inputs.offset } : o,
     ),
   ],
-  setup({ inputs, ta }) {
+  setup({ inputs, ta, env }) {
     const st = ta.vars({ ...VWAP_SUMS, period: NaN });
+    // standard `timeframe.isdwm`: daily, weekly and monthly charts.
+    const hidden = inputs.hideOnDWM && env.intervalSeconds >= DAY;
     return (c) => {
-      const period = anchorPeriod(c.time[c.i]!, inputs.anchor);
+      if (hidden) return;
+      const period = anchorPeriod(c.time[c.i]!, inputs.anchor, env.timezone, env.session);
       const isNew = period !== st.period;
       st.period = period;
       const vwap = vwapUpdate(st, isNew, c.src.source[c.i]!, c.volume[c.i]!);

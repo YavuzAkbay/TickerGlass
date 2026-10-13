@@ -101,6 +101,17 @@ export interface EnumInputDef<O extends string = string> extends InputBase<O> {
  */
 export interface TimeframeInputDef extends InputBase<string> {
   kind: 'timeframe';
+  /**
+   * Key of a `bool` input in the same schema (the common "Wait for timeframe
+   * closes", conventionally default true) that selects confirmed alignment:
+   * every chart bar shows the last *closed* timeframe bar, so history matches
+   * what was knowable in real time and live values never repaint. Without it
+   * (or when false) chart bars show the timeframe bar containing them: on
+   * history that is the bar's final value (lookahead), live it moves with each
+   * tick. Indicators whose values are already known at the start of the
+   * timeframe bar (Pivot Points use the previous bar) do not need it.
+   */
+  waitForCloseInput?: string;
 }
 
 /** Unix seconds (e.g. Anchored VWAP anchor). 0 = "not set"; the host may pick one. */
@@ -173,9 +184,13 @@ export type ShapeSize = 'tiny' | 'small' | 'normal' | 'large' | 'huge';
 /**
  * A colour or a palette. With a palette the step picks an index per bar
  * (`ctx.set(id, v, colorIndex)`), e.g. MACD histogram rising/falling colours.
- * Users edit each palette entry in the Style tab.
+ * Users edit each palette entry in the Style tab. `NO_COLOR` as the index
+ * hides that bar (standard `na` colour); other out-of-range indices use entry 0.
  */
 export type ColorSpec = string | readonly string[];
+
+/** Palette index meaning "no colour" for the bar (same value as the engine's STUDY_COLOR_NONE). */
+export const NO_COLOR = 255;
 
 /** Static value or a function of the inputs (e.g. RSI upper band = input). The
  * method-signature form keeps typed definitions assignable to the erased
@@ -230,13 +245,21 @@ export interface FillDef<O extends string = string> extends OutputBase<O> {
 }
 
 /** Per-bar background colour; drawn where the value is non-NaN. */
-export interface BgColorDef<O extends string = string> extends OutputBase<O> {
+export interface BgColorDef<
+  O extends string = string,
+  S extends InputsSchema = InputsSchema,
+> extends OutputBase<O> {
   type: 'bgcolor';
   color: ColorSpec;
+  /** Shift by N bars when drawn (like PlotDef.offset). */
+  offset?: FromInputs<S, number>;
 }
 
 /** Per-bar marker; drawn where the value is non-NaN (see ShapeLocation). */
-export interface ShapeDef<O extends string = string> extends OutputBase<O> {
+export interface ShapeDef<
+  O extends string = string,
+  S extends InputsSchema = InputsSchema,
+> extends OutputBase<O> {
   type: 'shape';
   shape: ShapeKind;
   location: ShapeLocation;
@@ -245,10 +268,12 @@ export interface ShapeDef<O extends string = string> extends OutputBase<O> {
   /** Static label text drawn with the shape. */
   text?: string;
   textColor?: string;
+  /** Shift by N bars when drawn (aboveBar/belowBar use the bar at the drawn position). */
+  offset?: FromInputs<S, number>;
 }
 
 export type OutputDef<O extends string = string, S extends InputsSchema = InputsSchema> =
-  PlotDef<O, S> | HLineDef<O, S> | FillDef<O> | BgColorDef<O> | ShapeDef<O>;
+  PlotDef<O, S> | HLineDef<O, S> | FillDef<O> | BgColorDef<O, S> | ShapeDef<O, S>;
 
 export type OutputType = OutputDef['type'];
 
@@ -296,6 +321,7 @@ export interface ResolvedBgColor {
   title: string;
   visible: boolean;
   colors: string[];
+  offset: number;
 }
 
 export interface ResolvedShape {
@@ -309,6 +335,7 @@ export interface ResolvedShape {
   colors: string[];
   text: string;
   textColor: string;
+  offset: number;
 }
 
 export type ResolvedOutput =
@@ -371,9 +398,27 @@ export interface IndicatorDefinition<
   setup(ctx: SetupContext<S>): StepFn<S, O>;
 }
 
+/**
+ * Facts about the bars an instance runs on, provided by the host
+ * (`IndicatorRuntime.setContext`). Changing them recomputes every instance.
+ */
+export interface BarsEnv {
+  /** IANA exchange timezone for calendar periods (VWAP anchors); 'UTC' when unknown. */
+  timezone: string;
+  /** Regular session "HHMM-HHMM" in exchange time, or null when unknown. */
+  session: string | null;
+  /**
+   * Interval of the bars in seconds (chart interval for chart instances, the
+   * timeframe for timeframe instances); 0 = unknown. Brick charts report the
+   * interval of the time bars they were built from.
+   */
+  intervalSeconds: number;
+}
+
 export interface SetupContext<S extends InputsSchema> {
   readonly inputs: InputValues<S>;
   readonly ta: Ta;
+  readonly env: Readonly<BarsEnv>;
 }
 
 /** Per-bar function (method-signature form: bivariant, see FromInputs). */
@@ -398,9 +443,10 @@ export interface StepContext<S extends InputsSchema = InputsSchema, O extends st
   /** Resolved `source` inputs (price columns or another indicator's output). */
   readonly src: { readonly [K in SourceKeys<S>]: Float64Array };
   readonly inputs: InputValues<S>;
+  readonly env: Readonly<BarsEnv>;
   /**
    * Value of a plot/shape/bgcolor at bar i (NaN = none). `color` is a palette
-   * index (default 0). Unset outputs are NaN for this bar.
+   * index (default 0; `NO_COLOR` hides the bar). Unset outputs are NaN for this bar.
    */
   set(id: O, value: number, color?: number): void;
   /** Palette index for bar i only (fills, or plots set elsewhere). */

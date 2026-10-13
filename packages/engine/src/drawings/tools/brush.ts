@@ -136,9 +136,39 @@ export const brush = defineDrawingTool({
       : [];
   },
 
-  moveHandle({ start, handle, target }) {
+  /**
+   * End handles stretch the stroke: the dragged end follows the pointer, the
+   * other end stays, and samples in between move by the same offset scaled by
+   * their path length from the fixed end (time linearly, price in pixels so
+   * log scales keep the shape).
+   */
+  moveHandle({ start, handle, target, geometry: g }) {
+    const n = start.length;
     const pts = start.map((p) => ({ ...p }));
-    if (pts.length) pts[handle === 0 ? 0 : pts.length - 1] = target;
+    if (!n) return pts;
+    const end = handle === 0 ? 0 : n - 1;
+    if (n === 1) return [target];
+    const px = start.map((p) => g.toPixel(p));
+    const weights = new Array<number>(n).fill(0);
+    let total = 0;
+    // Path length from the fixed end (n-1 when dragging 0, else 0).
+    const order = end === 0 ? [...px.keys()].reverse() : [...px.keys()];
+    for (let k = 1; k < n; k++) {
+      const i = order[k]!;
+      const j = order[k - 1]!;
+      const d = Math.hypot(px[i]!.x - px[j]!.x, px[i]!.y - px[j]!.y);
+      total += Number.isFinite(d) ? d : 0;
+      weights[i] = total;
+    }
+    const dt = target.time - start[end]!.time;
+    const dy = g.priceToY(target.price) - px[end]!.y;
+    for (let i = 0; i < n; i++) {
+      const w = total > 0 ? weights[i]! / total : i === end ? 1 : 0;
+      const p = pts[i]!;
+      p.time = Math.round(p.time + dt * w);
+      p.price = g.yToPrice(px[i]!.y + dy * w);
+    }
+    pts[end] = target;
     return pts;
   },
 

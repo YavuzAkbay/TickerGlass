@@ -43,6 +43,9 @@ export class WorkerCore {
         this.emit(this.runtime.setResolveTimeframe((tf) => this.tfMap[tf] ?? ''));
         this.emitTimeframes();
         return;
+      case 'context':
+        this.emit(this.runtime.setContext(msg.context));
+        return;
       case 'add':
         this.guarded(msg.spec.id, () => this.runtime.add(msg.spec));
         this.emitTimeframes();

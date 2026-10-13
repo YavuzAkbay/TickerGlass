@@ -2,7 +2,24 @@ import { intervalSeconds } from '../feed/intervals';
 import type { PriceScale } from '../scale/price-scale';
 import type { TimeScale } from '../scale/time-scale';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './mapping';
-import type { Drawing, DrawingFormat, DrawingGeometry, DrawingPoint, PixelPoint } from './types';
+import type {
+  Drawing,
+  DrawingBarData,
+  DrawingFormat,
+  DrawingGeometry,
+  DrawingPoint,
+  PixelPoint,
+} from './types';
+
+const NO_BARS: DrawingBarData = {
+  length: 0,
+  time: [],
+  open: [],
+  high: [],
+  low: [],
+  close: [],
+  volume: [],
+};
 
 /** What drawings need from a pane. `Pane` satisfies it. */
 export interface DrawingPane {
@@ -20,6 +37,8 @@ export interface GeometryView {
   timeScale: TimeScale;
   /** Pane width (CSS px). */
   width: number;
+  /** Displayed bars (default: none). */
+  bars?: DrawingBarData;
 }
 
 /**
@@ -35,6 +54,7 @@ export class Geometry implements DrawingGeometry {
   barSpacing = 1;
   intervalSeconds = 0;
   format!: DrawingFormat;
+  bars: DrawingBarData = NO_BARS;
   private ts!: TimeScale;
   private ps!: PriceScale;
   private tl!: AnchorTimeline;
@@ -55,6 +75,7 @@ export class Geometry implements DrawingGeometry {
     this.barSpacing = view.timeScale.barSpacing;
     this.intervalSeconds = intervalSeconds(view.timeline.interval);
     this.format = format;
+    this.bars = view.bars ?? NO_BARS;
     const pts = drawing.points;
     const n = pts.length;
     while (this.points.length < n) this.points.push({ x: NaN, y: NaN });

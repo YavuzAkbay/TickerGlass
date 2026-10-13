@@ -3,14 +3,15 @@ import type { ChartTheme } from '../options';
 import type { PriceScale } from '../scale/price-scale';
 import type { TimeScale } from '../scale/time-scale';
 import { paletteColor, plotBase, type Study } from './study';
-import type {
-  StudyBgColorMeta,
-  StudyFillMeta,
-  StudyHLineMeta,
-  StudyLineStyle,
-  StudyPlotMeta,
-  StudyShapeMeta,
-  StudyShapeSize,
+import {
+  STUDY_COLOR_NONE,
+  type StudyBgColorMeta,
+  type StudyFillMeta,
+  type StudyHLineMeta,
+  type StudyLineStyle,
+  type StudyPlotMeta,
+  type StudyShapeMeta,
+  type StudyShapeSize,
 } from './types';
 
 /** Where a study sits in its pane (drawing and hit testing). */
@@ -156,7 +157,7 @@ function strokeLine(
   ctx.lineJoin = 'round';
   ctx.lineCap = 'butt';
   ctx.setLineDash(lineDash(o.lineStyle, w));
-  const multi = o.colors.length > 1 && idx !== undefined;
+  const multi = idx !== undefined;
   let cur = '';
   let pending = false;
   let have = false;
@@ -172,6 +173,14 @@ function strokeLine(
     const x = ts.indexToX(j + o.offset) * dpr;
     const y = ps.priceToY(v) * dpr;
     const color = multi ? paletteColor(o.colors, idx, j) : (o.colors[0] ?? '');
+    if (color === '') {
+      // "No colour": the segment ending at this bar is not drawn.
+      ctx.moveTo(x, y);
+      have = true;
+      px = x;
+      py = y;
+      continue;
+    }
     if (color !== cur) {
       if (pending) ctx.stroke();
       ctx.strokeStyle = color;
@@ -216,13 +225,13 @@ function drawBars(
   w = Math.min(w, Math.max(1, Math.floor(spacing)));
   const half = w >> 1;
   const baseY = Math.round(ps.priceToY(plotBase(o)) * dpr);
-  const passes = idx && o.colors.length > 1 ? o.colors.length : 1;
+  const passes = paletteSize(idx, o.colors);
   for (let k = 0; k < passes; k++) {
     ctx.fillStyle = o.colors[k] ?? '';
     for (let j = j0; j <= j1; j++) {
       const v = vals[j]!;
       if (v !== v) continue;
-      if (passes > 1 && colorIndex(idx, j, passes) !== k) continue;
+      if (idx && colorIndex(idx, j, passes) !== k) continue;
       const x = Math.round(ts.indexToX(j + o.offset) * dpr);
       const y = Math.round(ps.priceToY(v) * dpr);
       const top = Math.min(y, baseY);
@@ -245,7 +254,7 @@ function drawMarks(
   const r = (circles ? lw + 1 : lw + 2) * dpr;
   ctx.lineWidth = Math.max(1, Math.round(dpr * Math.min(2, lw)));
   ctx.setLineDash([]);
-  const passes = idx && o.colors.length > 1 ? o.colors.length : 1;
+  const passes = paletteSize(idx, o.colors);
   for (let k = 0; k < passes; k++) {
     const color = o.colors[k] ?? '';
     ctx.fillStyle = color;
@@ -255,7 +264,7 @@ function drawMarks(
     for (let j = j0; j <= j1; j++) {
       const v = vals[j]!;
       if (v !== v) continue;
-      if (passes > 1 && colorIndex(idx, j, passes) !== k) continue;
+      if (idx && colorIndex(idx, j, passes) !== k) continue;
       const x = ts.indexToX(j + o.offset) * dpr;
       const y = ps.priceToY(v) * dpr;
       if (circles) {
@@ -275,10 +284,16 @@ function drawMarks(
   }
 }
 
-/** Palette index of bar j; out-of-range indices fall back to 0. */
+/** Palette index of bar j; -1 for STUDY_COLOR_NONE, other out-of-range indices fall back to 0. */
 function colorIndex(idx: Uint8Array | undefined, j: number, size: number): number {
   const k = idx?.[j] ?? 0;
+  if (k === STUDY_COLOR_NONE) return -1;
   return k < size ? k : 0;
+}
+
+/** Colour passes: one per palette entry when per-bar indices exist. */
+function paletteSize(idx: Uint8Array | undefined, colors: readonly string[]): number {
+  return idx ? Math.max(1, colors.length) : 1;
 }
 
 // ------------------------------------------------------------------- hlines
@@ -347,7 +362,7 @@ export function fillBand(
     return;
   }
   const ts = dc.timeScale;
-  const passes = idx && colors.length > 1 ? colors.length : 1;
+  const passes = paletteSize(idx, colors);
   ctx.globalAlpha = alpha;
   for (let k = 0; k < passes; k++) {
     ctx.fillStyle = colors[k] ?? '';
@@ -365,7 +380,7 @@ export function fillBand(
         yb === yb &&
         pa === pa &&
         pb === pb &&
-        (passes === 1 || colorIndex(idx, p - colorOffset, passes) === k)
+        (!idx || colorIndex(idx, p - colorOffset, passes) === k)
       ) {
         ctx.moveTo(px, pa * dpr);
         ctx.lineTo(x, ya * dpr);
@@ -409,22 +424,22 @@ function drawBgColor(dc: StudyDrawContext, study: Study, o: StudyBgColorMeta): v
   const vals = study.values[o.id];
   if (!vals) return;
   const { ctx, dpr, timeScale: ts } = dc;
-  const [j0, j1] = dataRange(dc.pFrom, dc.pTo, 0, dc.limit);
+  const off = o.offset ?? 0;
+  const [j0, j1] = dataRange(dc.pFrom, dc.pTo, off, dc.limit);
   if (j0 > j1) return;
   const idx = study.colors[o.id];
-  const passes = idx && o.colors.length > 1 ? o.colors.length : 1;
+  const passes = paletteSize(idx, o.colors);
   const half = ts.barSpacing / 2;
   const h = Math.round(dc.height * dpr);
   for (let k = 0; k < passes; k++) {
     ctx.fillStyle = o.colors[k] ?? '';
     let run = -1;
     for (let j = j0; j <= j1 + 1; j++) {
-      const on =
-        j <= j1 && vals[j]! === vals[j]! && (passes === 1 || colorIndex(idx, j, passes) === k);
+      const on = j <= j1 && vals[j]! === vals[j]! && (!idx || colorIndex(idx, j, passes) === k);
       if (on && run < 0) run = j;
       else if (!on && run >= 0) {
-        const x0 = Math.round((ts.indexToX(run) - half) * dpr);
-        const x1 = Math.round((ts.indexToX(j - 1) + half) * dpr);
+        const x0 = Math.round((ts.indexToX(run + off) - half) * dpr);
+        const x1 = Math.round((ts.indexToX(j - 1 + off) + half) * dpr);
         ctx.fillRect(x0, 0, Math.max(1, x1 - x0), h);
         run = -1;
       }
@@ -434,7 +449,10 @@ function drawBgColor(dc: StudyDrawContext, study: Study, o: StudyBgColorMeta): v
 
 // ------------------------------------------------------------------- shapes
 
-/** Vertical centre (CSS px) of a shape of size s at bar j, or NaN. */
+/**
+ * Vertical centre (CSS px) of a shape of size s drawn at position (displayed
+ * bar) j, or NaN. aboveBar/belowBar need a displayed bar at j.
+ */
 export function shapeCenterY(
   dc: StudyGeometry,
   o: StudyShapeMeta,
@@ -446,10 +464,12 @@ export function shapeCenterY(
   const ps = dc.priceScale;
   switch (o.location) {
     case 'aboveBar': {
+      if (j < 0 || j >= dc.bars.length) return NaN;
       const hi = dc.bars.high[j];
       return hi === undefined ? NaN : ps.priceToY(hi) - gap - s / 2;
     }
     case 'belowBar': {
+      if (j < 0 || j >= dc.bars.length) return NaN;
       const lo = dc.bars.low[j];
       return lo === undefined ? NaN : ps.priceToY(lo) + gap + s / 2;
     }
@@ -474,7 +494,8 @@ function drawShapes(dc: StudyDrawContext, study: Study, o: StudyShapeMeta): void
   const vals = study.values[o.id];
   if (!vals) return;
   const { ctx, dpr, timeScale: ts } = dc;
-  const [j0, j1] = dataRange(dc.pFrom, dc.pTo, 0, Math.min(dc.limit, dc.bars.length));
+  const off = o.offset ?? 0;
+  const [j0, j1] = dataRange(dc.pFrom, dc.pTo, off, dc.limit);
   if (j0 > j1) return;
   const idx = study.colors[o.id];
   const s = SHAPE_SIZES[o.size];
@@ -487,10 +508,11 @@ function drawShapes(dc: StudyDrawContext, study: Study, o: StudyShapeMeta): void
   for (let j = j0; j <= j1; j++) {
     const v = vals[j]!;
     if (v !== v) continue;
-    const cy = shapeCenterY(dc, o, j, v, s);
-    if (cy !== cy) continue;
-    const x = ts.indexToX(j) * dpr;
     const color = paletteColor(o.colors, idx, j);
+    if (color === '') continue;
+    const cy = shapeCenterY(dc, o, j + off, v, s);
+    if (cy !== cy) continue;
+    const x = ts.indexToX(j + off) * dpr;
     if (label) {
       drawLabel(ctx, x, cy * dpr, up, o.text, color, o.textColor, s * dpr, fontPx * dpr);
       continue;

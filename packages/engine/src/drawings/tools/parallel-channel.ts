@@ -1,5 +1,6 @@
 import {
   anchorsInView,
+  segmentInView,
   BODY_HIT,
   extendSegment,
   lineDistance,
@@ -45,6 +46,23 @@ export function channelOffset(points: readonly DrawingPoint[], logical: readonly
   return p2.price - lineValueAt(l0, p0.price, l1, p1.price, l2);
 }
 
+/**
+ * Channel width in pixels: anchor 2's y minus the main line's y at anchor 2's
+ * x (0 with fewer than three anchors). Working in pixels keeps the lines
+ * parallel on screen on every price scale: on a log scale the width is a
+ * constant ratio, on a linear one it equals `channelOffset` in price.
+ */
+export function channelOffsetPx(g: DrawingGeometry, points: readonly DrawingPoint[]): number {
+  const [p0, p1, p2] = points;
+  if (!p0 || !p1 || !p2) return 0;
+  const a = g.toPixel(p0);
+  const b = g.toPixel(p1);
+  const c = g.toPixel(p2);
+  const dx = b.x - a.x;
+  const yMain = Math.abs(dx) < 1e-9 ? a.y : a.y + ((b.y - a.y) * (c.x - a.x)) / dx;
+  return c.y - yMain;
+}
+
 /** Pixel corners: main a(0,1) b(2,3), parallel c(4,5) d(6,7) at the same x as a, b. */
 const corners = [0, 0, 0, 0, 0, 0, 0, 0];
 
@@ -52,15 +70,15 @@ function computeCorners(g: DrawingGeometry): boolean {
   const [p0, p1] = g.drawing.points;
   const [a, b] = g.points;
   if (!p0 || !p1 || !a || !b) return false;
-  const off = channelOffset(g.drawing.points, g.logical);
+  const dy = g.points.length >= 3 ? channelOffsetPx(g, g.drawing.points) : 0;
   corners[0] = a.x;
   corners[1] = a.y;
   corners[2] = b.x;
   corners[3] = b.y;
   corners[4] = a.x;
-  corners[5] = off === 0 ? a.y : g.priceToY(p0.price + off);
+  corners[5] = a.y + dy;
   corners[6] = b.x;
-  corners[7] = off === 0 ? b.y : g.priceToY(p1.price + off);
+  corners[7] = b.y + dy;
   return true;
 }
 
@@ -180,26 +198,28 @@ export const parallelChannel = defineDrawingTool({
       if (handle < 2) pts[handle] = target;
       return pts;
     }
-    const logical = start.map((p) => g.xToLogical(g.toPixel(p).x));
-    const off = channelOffset(start, logical);
+    // Width in pixels (parallel on screen on log scales too, see channelOffsetPx).
+    const dy = channelOffsetPx(g, start);
+    const ya = g.priceToY(p0.price);
+    const yb = g.priceToY(p1.price);
     switch (handle) {
       case 0:
       case 1: {
         pts[handle] = target;
         const a = pts[0]!;
-        return [a, pts[1]!, withPrice(a, a.price + off)];
+        return [a, pts[1]!, withPrice(a, g.yToPrice(g.priceToY(a.price) + dy))];
       }
       case 2:
         return [p0, p1, withTime(target, p0)];
       case 3:
         return [p0, p1, withTime(target, p1)];
       case 4: {
-        const d = target.price - (p0.price + p1.price) / 2;
-        return [withPrice(p0, p0.price + d), withPrice(p1, p1.price + d), p2];
+        const d = g.priceToY(target.price) - (ya + yb) / 2;
+        return [withPrice(p0, g.yToPrice(ya + d)), withPrice(p1, g.yToPrice(yb + d)), p2];
       }
       case 5: {
-        const w = target.price - (p0.price + p1.price) / 2;
-        return [p0, p1, withPrice(p0, p0.price + w)];
+        const w = g.priceToY(target.price) - (ya + yb) / 2;
+        return [p0, p1, withPrice(p0, g.yToPrice(ya + w))];
       }
       default:
         return pts;
@@ -215,6 +235,20 @@ export const parallelChannel = defineDrawingTool({
   },
 
   isVisible(g, s: ChannelStyle) {
-    return s.extendLeft || s.extendRight || anchorsInView(g);
+    if (!computeCorners(g)) return anchorsInView(g);
+    const c = corners;
+    const el = s.extendLeft;
+    const er = s.extendRight;
+    if (segmentInView(c[0]!, c[1]!, c[2]!, c[3]!, el, er, g.width, g.height)) return true;
+    if (g.points.length < 3) return false;
+    if (segmentInView(c[4]!, c[5]!, c[6]!, c[7]!, el, er, g.width, g.height)) return true;
+    // Both lines off screen: the band between them may still cover the pane.
+    const dx = c[2]! - c[0]!;
+    if (!s.fillBackground || Math.abs(dx) < 1e-9) return false;
+    const u = (g.width / 2 - c[0]!) / dx;
+    if ((u < 0 && !(dx > 0 ? el : er)) || (u > 1 && !(dx > 0 ? er : el))) return false;
+    const ya = c[1]! + (c[3]! - c[1]!) * u;
+    const yb = c[5]! + (c[7]! - c[5]!) * u;
+    return Math.min(ya, yb) <= g.height && Math.max(ya, yb) >= 0;
   },
 });

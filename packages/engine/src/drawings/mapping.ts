@@ -1,5 +1,6 @@
 import { intervalSeconds } from '../feed/intervals';
 import type { Interval } from '../types';
+import type { TradingCalendar } from './calendar';
 import type { DrawingPoint } from './types';
 
 /**
@@ -16,6 +17,11 @@ export interface AnchorTimeline {
   readonly bricks: boolean;
   /** Open time of the newest underlying (raw) bar; time[length - 1] on time charts. */
   readonly endTime: number;
+  /**
+   * Session-aware slots past `endTime` (skip weekends and non-trading hours).
+   * Absent/null: plain interval steps (overnight gaps count as slots).
+   */
+  readonly calendar?: TradingCalendar | null;
 }
 
 const MONTH = 30 * 86_400;
@@ -91,8 +97,10 @@ export function timeToLogical(tl: AnchorTimeline, p: Pick<DrawingPoint, 'time' |
   const time = tl.time;
   if (t < time[0]!) return -stepsBetween(t, time[0]!, tl.interval);
   const i = indexAtOrBefore(time, n, t);
+  const cal = tl.calendar;
+  // Past the newest raw bar's own span; a calendar maps non-trading gaps to the next slot.
   if (i === n - 1 && t >= stepTime(tl.endTime, 1, tl.interval))
-    return n - 1 + stepsBetween(tl.endTime, t, tl.interval);
+    return n - 1 + (cal ? cal.slots(tl.endTime, t) : stepsBetween(tl.endTime, t, tl.interval));
   if (tl.bricks) return Math.min(runStart(time, i) + (p.brick ?? 0), i);
   if (i === n - 1 || t < stepTime(time[i]!, 1, tl.interval)) return i;
   return i + 1;
@@ -107,7 +115,12 @@ export function logicalToTime(
   if (!n || !Number.isFinite(logical)) return null;
   const i = Math.round(logical);
   if (i < 0) return { time: stepTime(tl.time[0]!, i, tl.interval) };
-  if (i > n - 1) return { time: stepTime(tl.endTime, i - (n - 1), tl.interval) };
+  if (i > n - 1) {
+    const k = i - (n - 1);
+    return {
+      time: tl.calendar ? tl.calendar.step(tl.endTime, k) : stepTime(tl.endTime, k, tl.interval),
+    };
+  }
   const time = tl.time[i]!;
   if (!tl.bricks) return { time };
   const k = i - runStart(tl.time, i);

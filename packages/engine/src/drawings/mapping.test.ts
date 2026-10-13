@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Interval } from '../types';
+import { buildTradingCalendar } from './calendar';
 import {
   logicalToTime,
   stepTime,
@@ -118,5 +119,55 @@ describe('anchor mapping', () => {
     const tl = timeline([], DAY, false, NaN);
     expect(timeToLogical(tl, { time: MON })).toBeNaN();
     expect(logicalToTime(tl, 0)).toBeNull();
+  });
+});
+
+describe('session-aware extrapolation past the last bar', () => {
+  const withCalendar = (times: number[], iv: Interval, tz = 'UTC') => {
+    const tl = timeline(times, iv);
+    return { ...tl, calendar: buildTradingCalendar(tl.time, tl.length, iv, tz) };
+  };
+
+  it('skips weekends on daily charts', () => {
+    const days = dailyBars(10); // Mon..Fri, Mon..Fri; last = Friday
+    const tl = withCalendar(days, DAY);
+    const fri = days[9]!;
+    expect(logicalToTime(tl, 10)).toEqual({ time: fri + 3 * D }); // Monday
+    expect(logicalToTime(tl, 14)).toEqual({ time: fri + 7 * D }); // next Friday
+    expect(logicalToTime(tl, 15)).toEqual({ time: fri + 10 * D }); // Monday after
+    for (let i = 10; i < 30; i++)
+      expect(timeToLogical(tl, logicalToTime(tl, i)!)).toBeCloseTo(i, 9);
+    // A Saturday anchor maps to the next trading day (gap rule, like inside the data).
+    expect(timeToLogical(tl, { time: fri + D + 5 * H })).toBe(10);
+  });
+
+  it('skips non-trading hours and weekends on intraday charts', () => {
+    const bars = hourlyBars(5); // Mon..Fri 14:30..20:30 UTC
+    const tl = withCalendar(bars, HOUR);
+    const last = bars.at(-1)!; // Friday 20:30
+    const monday = last - 6 * H + 3 * D; // Monday 14:30
+    expect(logicalToTime(tl, bars.length)).toEqual({ time: monday });
+    expect(logicalToTime(tl, bars.length + 7)).toEqual({ time: monday + D });
+    for (let i = bars.length; i < bars.length + 40; i++)
+      expect(timeToLogical(tl, logicalToTime(tl, i)!)).toBeCloseTo(i, 9);
+    // Overnight (Monday 03:00) maps to Monday's first slot; inside a slot is fractional.
+    expect(timeToLogical(tl, { time: monday - 11.5 * H })).toBe(bars.length);
+    expect(timeToLogical(tl, { time: monday + 30 * 60 })).toBeCloseTo(bars.length + 0.5, 9);
+  });
+
+  it('uses the exchange timezone for the trading day', () => {
+    // 09:30..15:30 New York (EST, UTC-5) = 14:30..20:30 UTC in November.
+    const bars = hourlyBars(5);
+    const tl = withCalendar(bars, HOUR, 'America/New_York');
+    expect(logicalToTime(tl, bars.length)).toEqual({ time: bars.at(-1)! - 6 * H + 3 * D });
+  });
+
+  it('keeps plain stepping for round-the-clock data and weekly bars', () => {
+    const all = Array.from({ length: 200 }, (_, i) => MON + i * H);
+    expect(buildTradingCalendar(Float64Array.from(all), all.length, HOUR, 'UTC')).toBeNull();
+    const weeks = Array.from({ length: 10 }, (_, i) => MON + i * 7 * D);
+    expect(
+      buildTradingCalendar(Float64Array.from(weeks), 10, { unit: 'week', count: 1 }, 'UTC'),
+    ).toBeNull();
   });
 });

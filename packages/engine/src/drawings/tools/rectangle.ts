@@ -56,7 +56,7 @@ const tpos = { x: 0, y: 0, w: 0, h: 0 };
 function textBlock(s: RectangleStyle, lines: readonly string[], bx: typeof box): typeof tpos {
   const lineH = s.fontSize * 1.2;
   let w = 0;
-  for (const l of lines) w = Math.max(w, approxTextWidth(l, s.fontSize));
+  for (const l of lines) w = Math.max(w, approxTextWidth(l, s.fontSize, s.bold, s.italic));
   tpos.w = w;
   tpos.h = lines.length * lineH;
   tpos.x =

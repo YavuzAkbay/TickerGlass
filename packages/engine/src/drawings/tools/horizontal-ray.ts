@@ -78,7 +78,7 @@ export const horizontalRay = defineDrawingTool({
     if (!p) return null;
     const text = g.drawing.text;
     if (text) {
-      const w = approxTextWidth(text, s.fontSize);
+      const w = approxTextWidth(text, s.fontSize, s.bold, s.italic);
       const tx = textX(p.x, g.width, s);
       const x0 = s.textAlign === 'left' ? tx : s.textAlign === 'center' ? tx - w / 2 : tx - w;
       const bottom = p.y - TEXT_GAP - s.lineWidth / 2;

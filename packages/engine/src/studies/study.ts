@@ -1,24 +1,31 @@
 import { formatStudyValue } from './format';
-import type {
-  StudyData,
-  StudyDataPatch,
-  StudyLegendValue,
-  StudyOutputMeta,
-  StudyOutputStylePatch,
-  StudyPlotMeta,
-  StudySpec,
+import {
+  STUDY_COLOR_NONE,
+  type StudyData,
+  type StudyDataPatch,
+  type StudyLegendValue,
+  type StudyOutputMeta,
+  type StudyOutputStylePatch,
+  type StudyPlotMeta,
+  type StudySpec,
 } from './types';
 
 const EMPTY_F64 = new Float64Array(0);
 
-/** Palette colour for bar j of an output (index arrays only for multi-colour palettes). */
+/**
+ * Palette colour for bar j of an output, '' for `STUDY_COLOR_NONE` (nothing
+ * drawn). Any other out-of-range index falls back to entry 0.
+ */
 export function paletteColor(
   colors: readonly string[],
   idx: Uint8Array | undefined,
   j: number,
 ): string {
-  if (colors.length <= 1 || !idx) return colors[0] ?? '';
-  return colors[idx[j] ?? 0] ?? colors[0] ?? '';
+  if (!idx) return colors[0] ?? '';
+  const k = idx[j] ?? 0;
+  if (k === STUDY_COLOR_NONE) return '';
+  if (colors.length <= 1) return colors[0] ?? '';
+  return colors[k] ?? colors[0] ?? '';
 }
 
 /**
@@ -112,6 +119,19 @@ export class Study {
     return true;
   }
 
+  /**
+   * Live brick rebuild: the first `keep` displayed bars did not change, so
+   * values there stay valid (indicators are causal). Keeps data of revision
+   * `from` for [0, keep) and re-stamps it as `to`; the tail is dropped until
+   * the recomputed data arrives. Returns whether data was kept.
+   */
+  truncate(keep: number, from: number, to: number): boolean {
+    if (this.revision !== from || keep <= 0) return false;
+    this.length = Math.min(this.length, keep);
+    this.revision = to;
+    return true;
+  }
+
   /** Values of a plot (empty when it has none). */
   plotValues(id: string): Float64Array {
     return this.values[id] ?? EMPTY_F64;
@@ -168,9 +188,10 @@ export class Study {
         value: v,
         text: formatStudyValue(v, format, precision, symbolDecimals),
         color:
-          current && j >= 0 && j < this.length
+          (current && j >= 0 && j < this.length
             ? paletteColor(o.colors, this.colors[o.id], j)
-            : (o.colors[0] ?? ''),
+            : '') ||
+          (o.colors[0] ?? ''),
       });
     }
     return out;
@@ -186,8 +207,13 @@ export function studyValueRange(
 ): { min: number; max: number } | null {
   let min = Infinity;
   let max = -Infinity;
+  // A visible fill still draws when a plot/hline bounding it is hidden, so
+  // its bounds count too (otherwise the fill would clip at the pane edges).
+  const bounds = new Set<string>();
+  for (const o of study.spec.outputs)
+    if (o.type === 'fill' && o.visible) for (const id of o.between) bounds.add(id);
   for (const o of study.spec.outputs) {
-    if (!o.visible) continue;
+    if (!o.visible && !bounds.has(o.id)) continue;
     if (o.type === 'hline') {
       if (Number.isFinite(o.value)) {
         if (o.value < min) min = o.value;

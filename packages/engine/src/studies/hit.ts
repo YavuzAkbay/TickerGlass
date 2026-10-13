@@ -63,8 +63,9 @@ function hitOutput(
     }
     case 'shape': {
       const vals = study.values[o.id];
-      if (!vals || p < 0 || p >= Math.min(dc.limit, dc.bars.length)) return false;
-      const v = vals[p]!;
+      const j = p - (o.offset ?? 0);
+      if (!vals || j < 0 || j >= dc.limit) return false;
+      const v = vals[j]!;
       if (v !== v) return false;
       const s = SHAPE_SIZES[o.size];
       const cy = shapeCenterY(dc, o, p, v, s);

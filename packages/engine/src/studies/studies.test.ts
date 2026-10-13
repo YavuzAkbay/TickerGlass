@@ -9,7 +9,12 @@ import { dataRange, drawSpan, drawStudy, type StudyDrawContext } from './render'
 import { diffTail, snapshotSeries } from './series-diff';
 import { Study, studyValueRange } from './study';
 import { StudySeries, type StudyHost } from './study-series';
-import type { StudyOutputMeta, StudyPlotMeta, StudySpec } from './types';
+import {
+  STUDY_COLOR_NONE,
+  type StudyOutputMeta,
+  type StudyPlotMeta,
+  type StudySpec,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Recording canvas context (device px, identity transform).
@@ -305,6 +310,29 @@ describe('studyValueRange (auto-scale)', () => {
     expect(studyValueRange(s, 0, 6, 3)).toEqual({ min: 10, max: 20 });
   });
 
+  it('includes hidden plots that bound a visible fill', () => {
+    const s = withData(
+      [
+        plot('u', { visible: false }),
+        plot('l', { visible: false }),
+        plot('m'),
+        {
+          type: 'fill',
+          id: 'f',
+          title: 'F',
+          visible: true,
+          between: ['u', 'l'],
+          colors: ['#0f01'],
+        },
+      ],
+      { u: f64([30, 31]), l: f64([10, 9]), m: f64([20, 20]) },
+    );
+    expect(studyValueRange(s, 0, 1, 2)).toEqual({ min: 9, max: 31 });
+    // Hidden fill: only the visible plot counts.
+    s.setStyle('f', { visible: false });
+    expect(studyValueRange(s, 0, 1, 2)).toEqual({ min: 20, max: 20 });
+  });
+
   it('includes hlines and the histogram base', () => {
     const s = withData(
       [
@@ -531,6 +559,70 @@ describe('drawStudy', () => {
     expect(Math.min(...ys[1]!)).toBeGreaterThan(ps.priceToY(99)); // below low
     expect(Math.min(...ys[2]!)).toBeLessThan(ps.priceToY(50));
     expect(Math.max(...ys[2]!)).toBeGreaterThan(ps.priceToY(50));
+  });
+
+  it('shifts bgcolor and shapes by their offset', () => {
+    const shape: StudyOutputMeta = {
+      type: 'shape',
+      id: 'sh',
+      title: 'SH',
+      visible: true,
+      shape: 'circle',
+      location: 'absolute',
+      size: 'small',
+      colors: ['#fff'],
+      text: '',
+      textColor: '',
+      offset: 2,
+    };
+    const s = withData(
+      [
+        { type: 'bgcolor', id: 'bg', title: 'BG', visible: true, colors: ['#0f02'], offset: 2 },
+        shape,
+      ],
+      { bg: f64([1, NaN, NaN, NaN]), sh: f64([50, NaN, NaN, NaN]) },
+    );
+    const { ctx, dc, ts } = setup(4);
+    drawStudy(dc, s);
+    const rect = ctx.of('fillRect')[0]!;
+    expect(rect.args[0]).toBe(Math.round(ts.indexToX(2) - 5));
+    const arc = pathOps(ctx.of('fill')[0]!, 'arc')[0]!;
+    expect(arc.args[0]).toBeCloseTo(ts.indexToX(2));
+    // Hit testing uses the drawn position.
+    const g = { ...dc };
+    expect(hitTestStudy(g, s, ts.indexToX(2), dc.priceScale.priceToY(50))).toBe('sh');
+    expect(hitTestStudy(g, s, ts.indexToX(0), dc.priceScale.priceToY(50))).toBeNull();
+  });
+
+  it('skips bars whose palette index is STUDY_COLOR_NONE', () => {
+    const N = STUDY_COLOR_NONE;
+    const s = withData(
+      [
+        plot('a', { colors: ['#0f0'] }),
+        plot('h', { kind: 'histogram', colors: ['#0f0', '#f00'] }),
+        { type: 'bgcolor', id: 'bg', title: 'BG', visible: true, colors: ['#00f', '#0ff'] },
+      ],
+      { a: f64([1, 2, 3, 4]), h: f64([1, 2, 3, 4]), bg: f64([1, 1, 1, 1]) },
+      {
+        a: Uint8Array.from([0, 0, N, 0]),
+        h: Uint8Array.from([0, N, 1, 7]),
+        bg: Uint8Array.from([N, N, 1, 1]),
+      },
+    );
+    const { ctx, dc } = setup(4);
+    drawStudy(dc, s);
+    // Line: segments 0-1 and 2-3 drawn, 1-2 hidden (moveTo instead of lineTo).
+    const line = ctx.of('stroke')[0]!;
+    expect(pathOps(line, 'lineTo')).toHaveLength(2);
+    // Histogram: 3 bars (index 7 is out of range -> entry 0), the "none" bar skipped.
+    const bars = ctx.of('fillRect').filter((c) => c.fillStyle === '#0f0' || c.fillStyle === '#f00');
+    expect(bars).toHaveLength(3);
+    // Background: one run over bars 2..3 in entry 1.
+    const bg = ctx.of('fillRect').filter((c) => c.fillStyle === '#00f' || c.fillStyle === '#0ff');
+    expect(bg).toHaveLength(1);
+    expect(bg[0]!.fillStyle).toBe('#0ff');
+    // Legend falls back to entry 0 for a "none" bar.
+    expect(s.legendValues(2, 1, 2)[0]!.color).toBe('#0f0');
   });
 
   it('skips hidden outputs and draws nothing without data', () => {

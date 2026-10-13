@@ -432,6 +432,7 @@ function ToggleButton({
  * the active tool and options to the chart). */
 export function LeftToolbar() {
   const stay = useUiStore((s) => s.stayInDrawingMode);
+  const syncNew = useUiStore((s) => s.syncNewDrawings);
   const lockAll = useUiStore((s) => s.lockAll);
   const showFav = useUiStore((s) => s.showFavoritesBar);
   const hasFavs = useUiStore((s) => s.favoriteTools.length > 0);
@@ -454,6 +455,12 @@ export function LeftToolbar() {
         active={stay}
         icon={<I.IconStayDrawing />}
         command="drawings.toggleStayInDrawingMode"
+      />
+      <ToggleButton
+        label={syncNew ? 'New drawings: synced to all symbols' : 'New drawings: this symbol only'}
+        active={syncNew}
+        icon={<I.IconSyncDrawings />}
+        command="drawings.toggleSyncNew"
       />
       <ToggleButton
         label={lockAll ? 'Unlock all drawings' : 'Lock all drawings'}

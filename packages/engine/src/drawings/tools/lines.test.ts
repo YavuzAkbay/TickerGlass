@@ -45,6 +45,33 @@ describe('ray / extended line', () => {
   });
 });
 
+describe('line culling (line-viewport intersection)', () => {
+  it('rays and extended lines are visible only when they cross the pane', () => {
+    const def = tool('ray');
+    const vis = (points: ReturnType<typeof pt>[], style = {}) => {
+      const d = makeDrawing('ray', points, style);
+      return def.isVisible!(geometryOf(d), d.style);
+    };
+    // Pointing away from the pane (left of it, going left): culled.
+    expect(vis([pt(-50, 50), pt(-60, 50)])).toBe(false);
+    // Off to the left but pointing into it: visible.
+    expect(vis([pt(-60, 50), pt(-50, 50)])).toBe(true);
+    // Rising steeply above the pane: culled even though it extends right.
+    expect(vis([pt(10, 150), pt(11, 200)])).toBe(false);
+    // Extended both ways through the pane from far away: visible.
+    expect(vis([pt(-300, 50), pt(-290, 50)], { extendLeft: true })).toBe(true);
+    // A plain trend line far off screen: culled.
+    expect(
+      tool('trend-line').isVisible!(
+        geometryOf(makeDrawing('trend-line', [pt(-90, 1), pt(-80, 2)])),
+        {
+          ...tool('trend-line').defaults,
+        },
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('info line', () => {
   it('computes price change, %, bars, time, angle and distance', () => {
     const { g } = hit('info-line', [pt(20, 20), pt(40, 60)]);
@@ -74,6 +101,22 @@ describe('info line', () => {
     const r2 = recordingContext();
     def.render(r2.rc, g, { ...d.style, showDistance: false, showPercentChange: false }, IDLE);
     expect(r2.texts).toEqual(['+40.00', '20 bars, 2w 6d', '38.66°']);
+  });
+
+  it('hits the stats label as part of the drawing', () => {
+    // Line rises (20 -> 60): the label sits below its midpoint (bar 30, price 40).
+    const { at } = hit('info-line');
+    expect(at(X(30), Y(40) + 30)).toEqual({ kind: 'body' });
+    expect(at(X(30), Y(40) + 200)).toBeNull();
+    const none = hit('info-line', undefined, {
+      showPriceRange: false,
+      showPercentChange: false,
+      showBarsRange: false,
+      showDateTimeRange: false,
+      showDistance: false,
+      showAngle: false,
+    });
+    expect(none.at(X(30), Y(40) + 30)).toBeNull();
   });
 
   it('hits the line', () => {

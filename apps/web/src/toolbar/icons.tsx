@@ -808,6 +808,14 @@ export const IconStayDrawing = mk(
     {P('M17.5 19.5h7v5h-7zM19 19.5v-1.5a2 2 0 0 1 4 0v1.5')}
   </>,
 );
+/** Two linked chain rings: new drawings synced to all symbols. */
+export const IconSyncDrawings = mk(
+  <>
+    {P('M12.5 16.5l4-4')}
+    {P('M11 13.5l-2 2a3.5 3.5 0 0 0 5 5l2-2')}
+    {P('M18 15.5l2-2a3.5 3.5 0 0 0-5-5l-2 2')}
+  </>,
+);
 export const IconLock = mk(
   <>
     {P('M8.5 13.5h12v10h-12z')}

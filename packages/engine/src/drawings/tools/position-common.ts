@@ -6,6 +6,7 @@
 import {
   BODY_HIT,
   clamp,
+  hitLabelSize,
   infoLabel,
   infoLabelSize,
   setLineStyle,
@@ -133,6 +134,46 @@ function money(v: number): string {
 const one: string[] = [''];
 const two: string[] = ['', ''];
 
+const box = { x: 0, y: 0, w: 0, h: 0 };
+
+/** Zone label box (size w x h) centred at cx, above or below the zone edge y, inside the pane. */
+function zoneBox(g: DrawingGeometry, w: number, h: number, cx: number, y: number, above: boolean) {
+  box.w = w;
+  box.h = h;
+  box.x = clamp(cx - w / 2, 2, Math.max(2, g.width - w - 2));
+  box.y = clamp(above ? y - h - 4 : y + 4, 2, Math.max(2, g.height - h - 2));
+  return box;
+}
+
+/** Stats box (Qty, R/R) on the entry line, on the side of the larger zone. */
+function statsBox(g: DrawingGeometry, L: typeof lay, w: number, h: number) {
+  const cx = (Math.min(L.x0, L.x1) + Math.max(L.x0, L.x1)) / 2;
+  box.w = w;
+  box.h = h;
+  box.x = clamp(cx - w / 2, 2, Math.max(2, g.width - w - 2));
+  const below = Math.abs(L.yS - L.yE) >= Math.abs(L.yT - L.yE) === L.yS > L.yE;
+  box.y = clamp(below ? L.yE + 4 : L.yE - h - 4, 2, Math.max(2, g.height - h - 2));
+  return box;
+}
+
+const inRect = (r: typeof box, x: number, y: number) =>
+  x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+
+/** Target/stop label texts and the stats lines (shared buffers). */
+function labelTexts(g: DrawingGeometry, L: typeof lay, s: PositionStyle) {
+  const st = positionStats(L.entry, L.target, L.stop, s);
+  const f = g.format;
+  const target = s.compact
+    ? f.price(L.target)
+    : `Target: ${f.price(L.target)} (${f.percent(st.targetPercent)}) ${f.price(st.reward)}, Amount: ${money(st.profitAmount)}`;
+  const stop = s.compact
+    ? f.price(L.stop)
+    : `Stop: ${f.price(L.stop)} (${f.percent(st.stopPercent)}) ${f.price(st.riskDistance)}, Amount: ${money(st.lossAmount)}`;
+  two[0] = `Qty: ${+st.qty.toFixed(4)}`;
+  two[1] = `Risk/Reward Ratio: ${Number.isFinite(st.riskReward) ? st.riskReward.toFixed(2) : '∞'}`;
+  return { target, stop, stats: two };
+}
+
 /** Label box centred at x, above (`above`) or below the zone edge y. */
 function zoneLabel(
   ctx: CanvasRenderingContext2D,
@@ -146,9 +187,8 @@ function zoneLabel(
   g: DrawingGeometry,
 ): void {
   const { w, h } = infoLabelSize(ctx, lines, theme);
-  const x = clamp(cx - w / 2, 2, Math.max(2, g.width - w - 2));
-  const ly = clamp(above ? y - h - 4 : y + 4, 2, Math.max(2, g.height - h - 2));
-  infoLabel(ctx, lines, x, ly, theme, bg, fg);
+  const b = zoneBox(g, w, h, cx, y, above);
+  infoLabel(ctx, lines, b.x, b.y, theme, bg, fg);
 }
 
 /** Tool definition for one side. */
@@ -201,26 +241,16 @@ export function positionTool(side: PositionSide): DrawingToolDefinition<Position
       ctx.lineTo(r, L.yE);
       ctx.stroke();
 
-      const st = positionStats(L.entry, L.target, L.stop, s);
+      const t = labelTexts(g, L, s);
       const cx = (l + r) / 2;
-      const f = g.format;
-      one[0] = s.compact
-        ? f.price(L.target)
-        : `Target: ${f.price(L.target)} (${f.percent(st.targetPercent)}) ${f.price(st.reward)}, Amount: ${money(st.profitAmount)}`;
+      one[0] = t.target;
       zoneLabel(ctx, theme, one, cx, L.yT, L.yT < L.yE, s.targetLabelColor, s.textColor, g);
-      one[0] = s.compact
-        ? f.price(L.stop)
-        : `Stop: ${f.price(L.stop)} (${f.percent(st.stopPercent)}) ${f.price(st.riskDistance)}, Amount: ${money(st.lossAmount)}`;
+      one[0] = t.stop;
       zoneLabel(ctx, theme, one, cx, L.yS, L.yS < L.yE, s.stopLabelColor, s.textColor, g);
       if (s.alwaysShowStats || state.selected || state.hovered || state.editing) {
-        two[0] = `Qty: ${+st.qty.toFixed(4)}`;
-        two[1] = `Risk/Reward Ratio: ${Number.isFinite(st.riskReward) ? st.riskReward.toFixed(2) : '∞'}`;
-        const { w, h } = infoLabelSize(ctx, two, theme);
-        const x = clamp(cx - w / 2, 2, Math.max(2, g.width - w - 2));
-        // On the entry line, on the side of the larger zone.
-        const below = Math.abs(L.yS - L.yE) >= Math.abs(L.yT - L.yE) === L.yS > L.yE;
-        const y = clamp(below ? L.yE + 4 : L.yE - h - 4, 2, Math.max(2, g.height - h - 2));
-        infoLabel(ctx, two, x, y, theme, s.lineColor, s.textColor);
+        const { w, h } = infoLabelSize(ctx, t.stats, theme);
+        const b = statsBox(g, L, w, h);
+        infoLabel(ctx, t.stats, b.x, b.y, theme, s.lineColor, s.textColor);
       }
     },
 
@@ -229,6 +259,17 @@ export function positionTool(side: PositionSide): DrawingToolDefinition<Position
       if (!L) return null;
       const l = Math.min(L.x0, L.x1);
       const r = Math.max(L.x0, L.x1);
+      // Target/stop labels and the stats box (shown on hover) are strong parts.
+      const t = labelTexts(g, L, s);
+      const cx = (l + r) / 2;
+      one[0] = t.target;
+      let sz = hitLabelSize(one);
+      if (inRect(zoneBox(g, sz.w, sz.h, cx, L.yT, L.yT < L.yE), x, y)) return BODY_HIT;
+      one[0] = t.stop;
+      sz = hitLabelSize(one);
+      if (inRect(zoneBox(g, sz.w, sz.h, cx, L.yS, L.yS < L.yE), x, y)) return BODY_HIT;
+      sz = hitLabelSize(t.stats);
+      if (inRect(statsBox(g, L, sz.w, sz.h), x, y)) return BODY_HIT;
       if (x < l - tol || x > r + tol) return null;
       if (Math.abs(y - L.yE) <= tol + s.lineWidth / 2) return BODY_HIT;
       const lo = Math.min(L.yE, L.yT, L.yS);

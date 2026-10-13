@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DrawingLevel, DrawingPoint, HandleMoveArgs } from '../types';
 import { defaultFibLevels, fibExtensionPrice, fibRetracementPrice } from './fib-common';
+import { Geometry } from '../geometry';
 import { measureStats } from './measure-common';
 import { POSITION_DEFAULT_BARS, POSITION_DEFAULTS, positionStats } from './position-common';
 import {
@@ -12,6 +13,8 @@ import {
   pt,
   recordingContext,
   SELECTED,
+  FORMAT,
+  N,
   START,
   tool,
 } from './test-utils';
@@ -178,7 +181,11 @@ describe('long / short position tools', () => {
   it('hit: entry line strong, zones weak', () => {
     const { at } = setup('long-position', pts);
     expect(at(X(30), Y(50))).toEqual({ kind: 'body' });
-    expect(at(X(30), Y(60))).toEqual({ kind: 'body', weak: true });
+    expect(at(X(30), Y(66))).toEqual({ kind: 'body', weak: true });
+    // Labels are strong: target label above the target, stats box above the entry line.
+    expect(at(X(30), Y(74))).toEqual({ kind: 'body' });
+    expect(at(X(30), Y(56))).toEqual({ kind: 'body' });
+    expect(at(X(30), Y(37))).toEqual({ kind: 'body' }); // stop label below the stop
     expect(at(X(30), Y(45))).toEqual({ kind: 'body', weak: true });
     expect(at(X(30), Y(80))).toBeNull();
     expect(at(X(45), Y(50))).toBeNull();
@@ -241,6 +248,35 @@ describe('measure tools', () => {
       expect(texts).toEqual(lines);
       expect(def.shiftConstraint).toBe('none');
     }
+  });
+
+  it('sums the volume of the measured bars from the geometry bar data', () => {
+    const view = makeView();
+    const volume = Float64Array.from({ length: N }, (_, i) => (i === 25 ? NaN : 1000 + i));
+    const bars = {
+      ...view.timeline,
+      open: volume,
+      high: volume,
+      low: volume,
+      close: volume,
+      volume,
+    };
+    const d = makeDrawing('date-range', pts);
+    const g = new Geometry();
+    g.update(
+      d,
+      view.pane,
+      { timeline: view.timeline, timeScale: view.ts, width: 800, bars },
+      FORMAT,
+    );
+    let want = 0;
+    for (let i = 20; i <= 30; i++) if (i !== 25) want += 1000 + i;
+    expect(measureStats(g)!.volume).toBe(want);
+    const { rc, texts } = recordingContext();
+    tool('date-range').render(rc, g, d.style, IDLE);
+    expect(texts).toEqual(['10 bars, 1w 3d', 'Vol 10.25K']);
+    // No bar data (or a range outside it): no volume line.
+    expect(measureStats(geometryOf(d))!.volume).toBeNaN();
   });
 
   it('the measured box is a strong hit', () => {

@@ -2,7 +2,17 @@ import { parseInterval } from '../feed/intervals';
 import type { ChartTheme, MagnetMode } from '../options';
 import type { Interval } from '../types';
 import type { TimeScale } from '../scale/time-scale';
-import { anchorsInView, colorOf, drawHandle, HANDLE_RADIUS, HIT_TOLERANCE } from './draw-utils';
+import {
+  anchorsInView,
+  colorOf,
+  drawHandle,
+  HANDLE_RADIUS,
+  HIT_TOLERANCE,
+  TOUCH_HIT_TOLERANCE,
+} from './draw-utils';
+
+/** Extra handle reach (px) for touch; mouse uses 2. */
+const TOUCH_EXTRA = 8;
 import { Geometry, type DrawingPane, type GeometryView } from './geometry';
 import type { AnchorTimeline } from './mapping';
 import { getDrawingTool } from './registry';
@@ -10,6 +20,7 @@ import type {
   AnyDrawingToolDefinition,
   Drawing,
   DrawingAxisLabel,
+  DrawingBarData,
   DrawingBounds,
   DrawingChange,
   DrawingEvents,
@@ -42,6 +53,8 @@ export interface DrawingHost {
   magnetValues?(paneId: string, index: number): readonly number[];
   /** Displayed series for anchor mapping (may be refreshed in place). */
   timeline(): AnchorTimeline;
+  /** Displayed bars for tools that read data (measure volume). Default: none. */
+  bars?(): DrawingBarData;
   pane(id: string): DrawingPane | null;
   /** Label formatting for drawings on pane `paneId`. */
   format(paneId: string): DrawingFormat;
@@ -96,6 +109,11 @@ export class DrawingLayer {
   private readonly view: GeometryView;
   private readonly rc: DrawingRenderContext;
   private readonly state: DrawingRenderState = { selected: false, hovered: false, editing: false };
+  /** Last pointer was a finger: larger hit tolerance and handle reach. */
+  touch = false;
+  /** Box-select rectangle being dragged (pane-local CSS px). */
+  marquee: { paneId: string; left: number; top: number; right: number; bottom: number } | null =
+    null;
 
   constructor(readonly host: DrawingHost) {
     this.view = { timeline: host.timeline(), timeScale: host.timeScale, width: 0 };
@@ -335,6 +353,9 @@ export class DrawingLayer {
     this.view.timeline = this.host.timeline();
     this.view.timeScale = this.host.timeScale;
     this.view.width = this.host.paneWidth;
+    const bars = this.host.bars?.();
+    if (bars) this.view.bars = bars;
+    else delete this.view.bars;
     return this.view;
   }
 
@@ -377,6 +398,49 @@ export class DrawingLayer {
     for (const d of this.list())
       if (d.paneId === pane.id && this.isShown(d)) this.renderOne(d, pane);
     if (this.draft?.paneId === pane.id) this.renderOne(this.draft, pane);
+    const m = this.marquee;
+    if (m?.paneId === pane.id) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(41, 98, 255, 0.1)';
+      ctx.strokeStyle = 'rgba(41, 98, 255, 0.8)';
+      ctx.lineWidth = 1;
+      ctx.fillRect(m.left, m.top, m.right - m.left, m.bottom - m.top);
+      ctx.strokeRect(m.left + 0.5, m.top + 0.5, m.right - m.left, m.bottom - m.top);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Shown drawings of `pane` whose extent (anchors and handles; full width for
+   * price-only tools, full height for time-only tools) intersects the
+   * pane-local rectangle. Draw order.
+   */
+  idsInRect(pane: DrawingPane, left: number, top: number, right: number, bottom: number): string[] {
+    const out: string[] = [];
+    if (!this.items.size || pane.height <= 0) return out;
+    this.refreshView();
+    for (const d of this.list()) {
+      if (d.paneId !== pane.id || !this.isShown(d)) continue;
+      const def = getDrawingTool(d.type);
+      const g = def ? this.geometry(d, pane) : null;
+      if (!def || !g) continue;
+      let l = Infinity;
+      let t = Infinity;
+      let r = -Infinity;
+      let b = -Infinity;
+      for (const p of [...g.points, ...this.handlesOf(def, d, g)]) {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+        l = Math.min(l, p.x);
+        r = Math.max(r, p.x);
+        t = Math.min(t, p.y);
+        b = Math.max(b, p.y);
+      }
+      if (l > r) continue;
+      if (def.axes === 'price') [l, r] = [-Infinity, Infinity];
+      if (def.axes === 'time') [t, b] = [-Infinity, Infinity];
+      if (l <= right && r >= left && t <= bottom && b >= top) out.push(d.id);
+    }
+    return out;
   }
 
   private renderOne(d: Drawing, pane: DrawingPane): void {
@@ -481,7 +545,7 @@ export class DrawingLayer {
         const hs = this.handlesOf(def, d, g);
         for (let i = 0; i < hs.length; i++) {
           const h = hs[i]!;
-          if (Math.hypot(h.x - x, h.y - y) <= HANDLE_RADIUS + 2)
+          if (Math.hypot(h.x - x, h.y - y) <= HANDLE_RADIUS + (this.touch ? TOUCH_EXTRA : 2))
             return {
               strong: {
                 id: d.id,
@@ -492,7 +556,7 @@ export class DrawingLayer {
             };
         }
       }
-      const part = def.hitTest(g, d.style, x, y, HIT_TOLERANCE);
+      const part = def.hitTest(g, d.style, x, y, this.touch ? TOUCH_HIT_TOLERANCE : HIT_TOLERANCE);
       if (!part) continue;
       const hit = { id: d.id, part, cursor: 'pointer' };
       if (part.kind === 'body' && part.weak) {

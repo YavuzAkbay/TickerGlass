@@ -31,6 +31,8 @@ interface UiState {
   favoriteTools: DrawingToolId[];
   showFavoritesBar: boolean;
   stayInDrawingMode: boolean;
+  /** New drawings are created synced to all symbols (scope 'all'). */
+  syncNewDrawings: boolean;
   lockAll: boolean;
   hideAll: boolean;
   notes: string;
@@ -53,6 +55,7 @@ export const useUiStore = create<UiState>()(
       favoriteTools: [],
       showFavoritesBar: false,
       stayInDrawingMode: false,
+      syncNewDrawings: false,
       lockAll: false,
       hideAll: false,
       notes: '',

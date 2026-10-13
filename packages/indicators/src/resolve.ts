@@ -88,6 +88,21 @@ export function timeframeInputValue(def: AnyIndicatorDefinition, inputs: InputVa
   return '';
 }
 
+/**
+ * Whether a timeframe instance aligns to confirmed (closed) timeframe bars:
+ * the timeframe input's `waitForCloseInput` bool is true.
+ */
+export function waitsForTimeframeClose(
+  def: AnyIndicatorDefinition,
+  inputs: InputValueMap,
+): boolean {
+  for (const d of Object.values(def.inputs)) {
+    if (d.kind !== 'timeframe') continue;
+    return d.waitForCloseInput !== undefined && inputs[d.waitForCloseInput] === true;
+  }
+  return false;
+}
+
 /** Output references among the `source` inputs. */
 export function sourceRefs(def: AnyIndicatorDefinition, inputs: InputValueMap): OutputSourceRef[] {
   const refs: OutputSourceRef[] = [];
@@ -160,6 +175,7 @@ export function resolveOutputs(
           title: o.title,
           visible,
           colors: ov.colors ?? palette(o.color),
+          offset: o.offset === undefined ? 0 : val(o.offset),
         };
       case 'shape':
         return {
@@ -173,6 +189,7 @@ export function resolveOutputs(
           colors: ov.colors ?? palette(o.color),
           text: o.text ?? '',
           textColor: ov.textColor ?? o.textColor ?? palette(o.color)[0] ?? '',
+          offset: o.offset === undefined ? 0 : val(o.offset),
         };
     }
   });

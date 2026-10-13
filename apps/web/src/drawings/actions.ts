@@ -205,6 +205,11 @@ export function flushGestures(): void {
   if (b) record(b.label, b.changes);
 }
 
+/** A labelled API gesture (paste, clone in place) is emitting events right now. */
+export function inLabelledGesture(): boolean {
+  return labelOverride !== null;
+}
+
 /** Label gesture events emitted synchronously by `fn` (e.g. 'Paste drawings'). */
 function withGestureLabel<T>(label: string, fn: () => T): T {
   const prev = labelOverride;

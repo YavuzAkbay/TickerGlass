@@ -110,7 +110,7 @@ export class StudySeries implements PaneSeries {
       out.push({
         outputId: o.id,
         price: v,
-        color: paletteColor(o.colors, this.study.colors[o.id], j),
+        color: paletteColor(o.colors, this.study.colors[o.id], j) || (o.colors[0] ?? ''),
       });
     }
     return out;

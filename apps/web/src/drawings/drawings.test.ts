@@ -4,6 +4,7 @@ import { useHistory } from '../commands/history';
 import { useChartStore } from '../store/chart';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
+import { useUiStore } from '../store/ui';
 import { attachDrawings } from './attach';
 import {
   amendCreated,
@@ -650,6 +651,28 @@ describe('attach (engine events and sync)', () => {
     f.emit('drawingCreated', { drawing: d });
     await Promise.resolve();
     expect(past().at(-1)!.label).toBe('Create Trend line');
+    f.detach();
+  });
+
+  it('"sync new drawings" makes tool-created drawings synced, not clones', async () => {
+    useUiStore.setState({ syncNewDrawings: true });
+    const f = attach();
+    const d = drw();
+    f.chart.addDrawing(d);
+    f.emit('drawingCreated', { drawing: d });
+    await Promise.resolve();
+    expect(findDrawing(d.id)!.scope).toBe('all');
+    expect(f.chart.getDrawing(d.id)!.scope).toBe('all');
+    const c = drw();
+    f.emit('drawingDrag', { ids: [c.id], phase: 'start' });
+    f.emit('drawingDrag', { ids: [c.id], phase: 'end' });
+    f.emit('drawingCreated', { drawing: c });
+    await Promise.resolve();
+    expect(findDrawing(c.id)!.scope).toBe('symbol');
+    // Undo removes the synced drawing in one step.
+    undo();
+    expect(findDrawing(c.id)).toBeUndefined();
+    useUiStore.setState({ syncNewDrawings: false });
     f.detach();
   });
 

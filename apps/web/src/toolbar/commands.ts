@@ -92,6 +92,12 @@ export function registerToolbarCommands(): () => void {
       run: () => useUiStore.setState((s) => ({ stayInDrawingMode: !s.stayInDrawingMode })),
     },
     {
+      id: 'drawings.toggleSyncNew',
+      title: 'Toggle sync new drawings to all symbols',
+      category: 'Drawings',
+      run: () => useUiStore.setState((s) => ({ syncNewDrawings: !s.syncNewDrawings })),
+    },
+    {
       id: 'drawings.toggleLockAll',
       title: 'Toggle lock all drawings',
       category: 'Drawings',

@@ -1,5 +1,5 @@
 // Rendering and geometry helpers shared by drawing tools (CSS px, pane-local).
-import type { ChartTheme } from '../options';
+import { DARK_THEME, type ChartTheme } from '../options';
 import { roundRect } from '../render/draw';
 import { segmentDistance } from '../studies/hit';
 import type { DrawingGeometry, DrawingHitPart, DrawingLineStyle, DrawingStyle } from './types';
@@ -11,6 +11,8 @@ export const DEFAULT_DRAWING_COLOR = '#2962ff';
 export const HANDLE_RADIUS = 5;
 /** Hit tolerance (px) around strokes. */
 export const HIT_TOLERANCE = 4;
+/** Stroke hit tolerance (CSS px) when the last pointer was a finger. */
+export const TOUCH_HIT_TOLERANCE = 10;
 
 const dashes = new Map<string, number[]>();
 const SOLID: number[] = [];
@@ -123,7 +125,11 @@ export function lineDistance(
   return Math.hypot(px - (x0 + t * dx), py - (y0 + t * dy));
 }
 
+/** Font family of the last rendered text (hit tests measure with it). */
+let lastFontFamily = 'sans-serif';
+
 export function textFont(theme: ChartTheme, size: number, bold = false, italic = false): string {
+  lastFontFamily = theme.fontFamily;
   return `${italic ? 'italic ' : ''}${bold ? '600 ' : ''}${size}px ${theme.fontFamily}`;
 }
 
@@ -195,6 +201,48 @@ export function drawHandle(
   ctx.stroke();
 }
 
+/**
+ * Culling for lines: whether segment (x0,y0)-(x1,y1), optionally extended to a
+ * ray/line, passes through the pane box grown by `margin` (Liang-Barsky).
+ */
+export function segmentInView(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  extendLeft: boolean,
+  extendRight: boolean,
+  width: number,
+  height: number,
+  margin = 50,
+): boolean {
+  if (![x0, y0, x1, y1].every(Number.isFinite)) return false;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const inside = (x: number, y: number) =>
+    x >= -margin && x <= width + margin && y >= -margin && y <= height + margin;
+  if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return inside(x0, y0);
+  let t0 = extendLeft ? -Infinity : 0;
+  let t1 = extendRight ? Infinity : 1;
+  const edges: [number, number][] = [
+    [-dx, x0 + margin],
+    [dx, width + margin - x0],
+    [-dy, y0 + margin],
+    [dy, height + margin - y0],
+  ];
+  for (const [p, q] of edges) {
+    if (Math.abs(p) < 1e-12) {
+      if (q < 0) return false;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) t0 = Math.max(t0, r);
+    else t1 = Math.min(t1, r);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
 /** Default culling: the anchors' x span (plus `margin` px) overlaps the pane. */
 export function anchorsInView(g: DrawingGeometry, margin = 50): boolean {
   let lo = Infinity;
@@ -232,9 +280,53 @@ export function hitRotatedText(
   return Math.abs(lx) <= w / 2 && ly <= 0 && ly >= -h;
 }
 
-/** Approximate text width without a canvas (hit testing). */
-export function approxTextWidth(text: string, fontSize: number): number {
-  return text.length * fontSize * 0.6;
+type Measurer = { font: string; measureText(t: string): { width: number } };
+let measurer: Measurer | null | undefined;
+const widthCache = new Map<string, number>();
+
+/** Shared offscreen 2D context for measuring text outside render, or null (no DOM). */
+function getMeasurer(): Measurer | null {
+  if (measurer !== undefined) return measurer;
+  measurer = null;
+  try {
+    const canvas =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(1, 1)
+        : typeof document !== 'undefined'
+          ? document.createElement('canvas')
+          : null;
+    const ctx = canvas?.getContext('2d') as Measurer | null | undefined;
+    if (ctx && typeof ctx.measureText === 'function') measurer = ctx;
+  } catch {
+    // No canvas support (workers without OffscreenCanvas, tests): approximate instead.
+    measurer = null;
+  }
+  return measurer;
+}
+
+/**
+ * Text width for hit testing (no render context). Measured with an offscreen
+ * canvas in the font family last used for rendering (cached); approximated
+ * (0.6 em per character) where no canvas exists.
+ */
+export function approxTextWidth(
+  text: string,
+  fontSize: number,
+  bold = false,
+  italic = false,
+): number {
+  const m = getMeasurer();
+  if (!m) return text.length * fontSize * 0.6;
+  const font = `${italic ? 'italic ' : ''}${bold ? '600 ' : ''}${fontSize}px ${lastFontFamily}`;
+  const key = `${font}|${text}`;
+  let w = widthCache.get(key);
+  if (w === undefined) {
+    if (widthCache.size > 2000) widthCache.clear();
+    m.font = font;
+    w = m.measureText(text).width;
+    widthCache.set(key, w);
+  }
+  return w;
 }
 
 // ------------------------------------------------- helpers for core tools
@@ -301,6 +393,13 @@ export function arrowHead(
 }
 
 const labelSize = { w: 0, h: 0 };
+/** Theme of the last rendered info label (hit tests size labels with it). */
+let labelTheme: ChartTheme | null = null;
+
+/** `infoLabel` box size for hit testing: the last render's theme, text measured off-canvas. */
+export function hitLabelSize(lines: readonly string[]): { w: number; h: number } {
+  return approxInfoLabelSize(lines, labelTheme ?? DARK_THEME);
+}
 
 /** Size of an `infoLabel` box for `lines` (reused object; sets `ctx.font`). */
 export function infoLabelSize(
@@ -308,6 +407,7 @@ export function infoLabelSize(
   lines: readonly string[],
   theme: ChartTheme,
 ): { w: number; h: number } {
+  labelTheme = theme;
   const size = theme.fontSize + 1;
   ctx.font = textFont(theme, size);
   let w = 0;

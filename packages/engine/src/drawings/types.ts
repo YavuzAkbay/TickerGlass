@@ -105,6 +105,21 @@ export interface DrawingFormat {
 }
 
 /**
+ * Displayed bars (bricks on brick types): index = logical bar index. Read
+ * [0, length) only; arrays may be longer and are replaced on reloads, so do
+ * not keep references across calls.
+ */
+export interface DrawingBarData {
+  readonly length: number;
+  readonly time: ArrayLike<number>;
+  readonly open: ArrayLike<number>;
+  readonly high: ArrayLike<number>;
+  readonly low: ArrayLike<number>;
+  readonly close: ArrayLike<number>;
+  readonly volume: ArrayLike<number>;
+}
+
+/**
  * A drawing mapped to its pane (CSS px, pane-local). Built by the framework
  * for every render and hit test; tools treat it as read-only. The `points`,
  * `logical` arrays and the object itself are reused between frames: do not
@@ -123,6 +138,8 @@ export interface DrawingGeometry {
   /** Nominal seconds per bar of the chart interval. */
   readonly intervalSeconds: number;
   readonly format: DrawingFormat;
+  /** Displayed bars (additive): e.g. volume of the measured range. Empty without data. */
+  readonly bars: DrawingBarData;
   toPixel(p: DrawingPoint): PixelPoint;
   /** Pixel -> anchor, x snapped to the nearest bar slot. */
   toPoint(x: number, y: number): DrawingPoint;

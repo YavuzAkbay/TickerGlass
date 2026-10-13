@@ -26,7 +26,7 @@ function textBox(g: DrawingGeometry, s: TextStyle, lines: readonly string[]): ty
   const p = g.points[0];
   if (!p) return null;
   let w = 0;
-  for (const l of lines) w = Math.max(w, approxTextWidth(l, s.fontSize));
+  for (const l of lines) w = Math.max(w, approxTextWidth(l, s.fontSize, s.bold, s.italic));
   box.x = p.x;
   box.y = p.y;
   box.w = w + PAD * 2;

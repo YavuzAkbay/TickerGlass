@@ -1,5 +1,6 @@
 import {
   anchorsInView,
+  segmentInView,
   approxTextWidth,
   BODY_HIT,
   extendSegment,
@@ -145,7 +146,7 @@ export const trendLine = defineDrawingTool({
       const angle = textAngle(a, b);
       const cx = (a.x + b.x) / 2 + Math.sin(angle) * off;
       const cy = (a.y + b.y) / 2 - Math.cos(angle) * off;
-      const w = approxTextWidth(text, s.fontSize);
+      const w = approxTextWidth(text, s.fontSize, s.bold, s.italic);
       if (hitRotatedText(x, y, cx, cy, angle, w, s.fontSize * 1.2)) return TEXT_HIT;
     }
     const d = lineDistance(x, y, a.x, a.y, b.x, b.y, s.extendLeft, s.extendRight);
@@ -180,6 +181,9 @@ export const trendLine = defineDrawingTool({
   },
 
   isVisible(g, s) {
-    return s.extendLeft || s.extendRight || anchorsInView(g);
+    const [a, b] = g.points;
+    if (!a || !b) return anchorsInView(g);
+    // Stats/text labels sit next to the line, inside the 50 px margin.
+    return segmentInView(a.x, a.y, b.x, b.y, s.extendLeft, s.extendRight, g.width, g.height);
   },
 });

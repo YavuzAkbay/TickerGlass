@@ -10,6 +10,7 @@ import {
   amendGesture,
   foldHistorySince,
   historyMark,
+  inLabelledGesture,
   recordGesture,
   removePaneDrawings,
   type Change,
@@ -149,12 +150,25 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
 
     chart.on('drawingCreated', ({ drawing }) => {
       const name = toolName(drawing.type);
-      const label = !dragEnded?.has(drawing.id)
+      const clone = !!dragEnded?.has(drawing.id);
+      const label = !clone
         ? `Create ${name}`
-        : dragEnded.size === 1
+        : dragEnded!.size === 1
           ? `Clone ${name}`
           : 'Clone drawings';
-      recordGesture(label, [{ before: null, after: drawing }]);
+      // "Sync new drawings": drawings made with a tool start synced to all symbols
+      // (clones and pastes keep the scope of their source).
+      let after = drawing;
+      if (
+        !clone &&
+        !inLabelledGesture() &&
+        drawing.scope === 'symbol' &&
+        useUiStore.getState().syncNewDrawings
+      ) {
+        after = { ...drawing, scope: 'all' };
+        chart.replaceDrawing(after);
+      }
+      recordGesture(label, [{ before: null, after }]);
     }),
     chart.on('drawingChanged', ({ changes }) =>
       recordGesture(

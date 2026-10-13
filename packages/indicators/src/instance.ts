@@ -3,6 +3,7 @@ import type { AnyIndicatorDefinition } from './registry';
 import { isOutputRef, resolveInputs } from './resolve';
 import { TaScope } from './ta';
 import type {
+  BarsEnv,
   IndicatorResult,
   InputValueMap,
   InputValues,
@@ -18,6 +19,13 @@ export type RefResolver = (ref: OutputSourceRef) => Float64Array | undefined;
 
 const NO_REFS: RefResolver = () => undefined;
 
+/** Defaults when the host provides no context: UTC calendar, unknown interval. */
+export const DEFAULT_ENV: Readonly<BarsEnv> = Object.freeze({
+  timezone: 'UTC',
+  session: null,
+  intervalSeconds: 0,
+});
+
 /** The single reused per-bar context. */
 class StepCtx implements StepContext {
   i = 0;
@@ -28,6 +36,7 @@ class StepCtx implements StepContext {
   close = new Float64Array(0);
   volume = new Float64Array(0);
   src: Record<string, Float64Array> = {};
+  env: Readonly<BarsEnv> = DEFAULT_ENV;
 
   constructor(
     public inputs: InputValues<InputsSchema>,
@@ -92,6 +101,16 @@ export class IndicatorInstance {
     this.step = null;
   }
 
+  /** Bars context for the next `computeAll` (a change needs a full recompute). */
+  setEnv(env: Readonly<BarsEnv>): void {
+    this.ctx.env = env;
+    this.step = null;
+  }
+
+  get env(): Readonly<BarsEnv> {
+    return this.ctx.env;
+  }
+
   /** Recompute every bar. */
   computeAll(bars: BarStore, refs: RefResolver = NO_REFS): void {
     const n = bars.length;
@@ -104,6 +123,7 @@ export class IndicatorInstance {
       this.step = this.def.setup({
         inputs: this.inputs as InputValues<InputsSchema>,
         ta: this.scope.ta,
+        env: this.ctx.env,
       });
       this.scope.open = false;
       for (let i = 0; i < n; i++) {

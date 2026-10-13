@@ -38,7 +38,12 @@ export type StudyValueFormat = 'inherit' | 'price' | 'volume' | 'percent';
 /**
  * Colours: `colors` is a palette. Outputs with more than one entry receive a
  * per-bar palette index in `StudyData.colors[id]`; otherwise entry 0 is used.
+ * Index `STUDY_COLOR_NONE` (255) means "no colour" for that bar (standard `na`
+ * colour): the bar's segment/mark/fill/background is not drawn. Any other
+ * out-of-range index falls back to entry 0.
  */
+export const STUDY_COLOR_NONE = 255;
+
 export interface StudyPlotMeta {
   type: 'plot';
   id: string;
@@ -84,6 +89,8 @@ export interface StudyBgColorMeta {
   title: string;
   visible: boolean;
   colors: string[];
+  /** Draw value[i] at bar i + offset (additive; default 0). */
+  offset?: number;
 }
 
 export interface StudyShapeMeta {
@@ -97,6 +104,9 @@ export interface StudyShapeMeta {
   colors: string[];
   text: string;
   textColor: string;
+  /** Draw value[i] at bar i + offset (additive; default 0). aboveBar/belowBar
+   * anchor to the bar at the drawn position; past the last bar they are not drawn. */
+  offset?: number;
 }
 
 /** Draw order = array order (later on top). */
