@@ -51,15 +51,22 @@ yfinance constraints to design around:
 
 ### Phase 1: Data backend (yfinance)
 
-- [ ] Yahoo provider adapter: history(symbol, interval, start/end, prepost), with retries, backoff, and a request rate limiter
-- [ ] OHLCV cache tables + Alembic migration; incremental fetch (only missing ranges); split/dividend adjustment flag
-- [ ] Respect per-interval range limits; chunk 1m requests into 7-day windows
-- [ ] `GET /api/bars` (symbol, interval, from, to, adjusted, prepost): columnar JSON or Arrow/msgpack for speed
-- [ ] `GET /api/symbols/search` (yf.Search), `GET /api/symbols/{s}` (meta: exchange, tz, session, currency, type, min tick)
-- [ ] `GET /api/quotes?symbols=` (batch snapshot for watchlists)
-- [ ] `/ws` live relay: client subscribe/unsubscribe → shared yfinance AsyncWebSocket; fan-out; polling fallback
-- [ ] `GET /api/events/{s}` (dividends, splits, earnings), `GET /api/news/{s}`, `GET /api/fundamentals/{s}` (info + financials)
-- [ ] pytest with recorded fixtures; contract tests for the bar format
+- [x] Yahoo provider adapter: history(symbol, interval, start/end, prepost), with retries, backoff, and a request rate limiter
+- [x] OHLCV cache tables + Alembic migration; incremental fetch (only missing ranges); split/dividend adjustment flag
+- [x] Respect per-interval range limits; chunk 1m requests into 7-day windows
+- [x] `GET /api/bars` (symbol, interval, from, to, adjusted, prepost): columnar JSON or Arrow/msgpack for speed
+- [x] `GET /api/symbols/search` (yf.Search), `GET /api/symbols/{s}` (meta: exchange, tz, session, currency, type, min tick)
+- [x] `GET /api/quotes?symbols=` (batch snapshot for watchlists)
+- [x] `/ws` live relay: client subscribe/unsubscribe → shared yfinance AsyncWebSocket; fan-out; polling fallback
+- [x] `GET /api/events/{s}` (dividends, splits, earnings), `GET /api/news/{s}`, `GET /api/fundamentals/{s}` (info + financials)
+- [x] pytest with recorded fixtures; contract tests for the bar format
+
+Phase 1 notes (yfinance 1.7.0 quirks, revisit on upgrades):
+
+- `Ticker.get_news()` returns nothing (upstream endpoint 404); news falls back to `yf.Search(...).news`.
+- The live relay reads Yahoo's stream with yfinance private internals (`_connect`, `_ws`, `_decode_message`) because `AsyncWebSocket.listen` never returns on disconnect.
+- Quotes report `currency` only once it is cached from a bars/symbol request; the frontend should take currency from `/api/symbols/{s}`.
+- `dividendYield` from `/api/fundamentals` is already a percentage.
 
 ### Phase 2: Chart engine core (MVP chart)
 
@@ -138,65 +145,65 @@ yfinance constraints to design around:
 
 ### Phase 10: Alerts
 
-- [ ] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
-- [ ] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
-- [ ] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
-- [ ] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
-- [ ] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
+- [x] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
+- [x] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
+- [x] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
+- [x] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
+- [x] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
 
 ### Phase 11: Remaining drawing tools (bulk, on the framework)
 
-- [ ] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
-- [ ] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
-- [ ] Gann: Box, Square fixed, Square, Fan
-- [ ] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
-- [ ] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
-- [ ] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
-- [ ] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
-- [ ] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
-- [ ] Zoom-in tool, Measure tool polish; sync drawings across layouts
+- [x] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
+- [x] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
+- [x] Gann: Box, Square fixed, Square, Fan
+- [x] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
+- [x] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
+- [x] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
+- [x] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
+- [x] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
+- [x] Zoom-in tool, Measure tool polish; sync drawings across layouts
 
 ### Phase 12: Remaining indicators (bulk)
 
-- [ ] Trend/MA: DEMA, TEMA, ALMA, KAMA, LSMA, McGinley, SMMA, Moving Average Ribbon, Envelopes, Linear Regression channel, ZigZag, Williams Alligator, Fractals
-- [ ] Momentum: Momentum, ROC, TRIX, TSI, Ultimate Oscillator, Awesome/Accelerator Oscillator, Coppock, KST, DPO, PPO, SMI Ergodic, Fisher Transform, Connors RSI, Chande MO, Aroon, Vortex, Choppiness, RVI, Elder Force, Balance of Power, Know Sure Thing
-- [ ] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
-- [ ] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
-- [ ] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
-- [ ] Optional "more advanced than reference": user JS indicators in a sandboxed Worker with a documented API (not standard)
+- [x] Trend/MA: DEMA, TEMA, ALMA, KAMA, LSMA, McGinley, SMMA, Moving Average Ribbon, Envelopes, Linear Regression channel, ZigZag, Williams Alligator, Fractals
+- [x] Momentum: Momentum, ROC, TRIX, TSI, Ultimate Oscillator, Awesome/Accelerator Oscillator, Coppock, KST, DPO, PPO, SMI Ergodic, Fisher Transform, Connors RSI, Chande MO, Aroon, Vortex, Choppiness, RVI, Elder Force, Balance of Power, Know Sure Thing
+- [x] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
+- [x] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
+- [x] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
+- [x] Optional "more advanced than reference": user JS indicators in a sandboxed Worker with a documented API (not standard)
 
 ### Phase 13: Market replay
 
-- [ ] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
-- [ ] Indicators and alerts react incrementally; drawings stay usable
-- [ ] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
-- [ ] Optional: replay paper trading (buy/sell, P&L panel)
+- [x] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
+- [x] Indicators and alerts react incrementally; drawings stay usable
+- [x] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
+- [x] Optional: replay paper trading (buy/sell, P&L panel)
 
 ### Phase 14: Multi-chart layouts
 
-- [ ] Grid layouts 1–16 charts; resizable splitters
-- [ ] Sync per layout: symbol, interval, crosshair, time, date range, drawings
-- [ ] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
+- [x] Grid layouts 1–16 charts; resizable splitters
+- [x] Sync per layout: symbol, interval, crosshair, time, date range, drawings
+- [x] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
 
 ### Phase 15: Polish & parity sweep
 
-- [ ] Chart settings dialog parity: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
-- [ ] Events on chart: dividends, splits, earnings markers with tooltips
-- [ ] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
-- [ ] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
-- [ ] Accessibility basics, i18n scaffolding
-- [ ] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
+- [x] Chart settings dialog parity: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
+- [x] Events on chart: dividends, splits, earnings markers with tooltips
+- [x] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
+- [x] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
+- [x] Accessibility basics, i18n scaffolding
+- [x] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
 
 ### Phase 16: AI analysis integration point (feature built separately)
 
-- [ ] `chart.snapshot()` → `{ png, visibleBars, indicators: {name, inputs, values}, drawings, symbol, interval, scale }`
-- [ ] Plugin slot in the right sidebar + a command-bus hook (`ai.analyzeCurrentView`)
-- [ ] Engine API so AI results can be rendered back as drawings or annotations
+- [x] `chart.snapshot()` → `{ png, visibleBars, indicators: {name, inputs, values}, drawings, symbol, interval, scale }`
+- [x] Plugin slot in the right sidebar + a command-bus hook (`ai.analyzeCurrentView`)
+- [x] Engine API so AI results can be rendered back as drawings or annotations
 
 ### Phase 17: Release
 
-- [ ] User docs (install via docker compose, shortcuts, features), developer docs (engine/indicator/drawing APIs)
-- [ ] Versioning, changelog, tagged release images
+- [x] User docs (install via docker compose, shortcuts, features), developer docs (engine/indicator/drawing APIs)
+- [x] Versioning, changelog, tagged release images
 
 ---
 

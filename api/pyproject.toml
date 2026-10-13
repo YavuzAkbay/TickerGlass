@@ -5,9 +5,13 @@ description = "InvestOpen data API (yfinance-backed)"
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.20.0",
     "fastapi>=0.143.0",
+    "pandas>=3.0.6",
     "pydantic-settings>=2.15.0",
+    "sqlalchemy>=2",
     "uvicorn[standard]>=0.54.0",
+    "yfinance>=1.7.0",
 ]
 
 [project.scripts]
@@ -21,6 +25,7 @@ build-backend = "uv_build"
 dev = [
     "httpx2>=2.13.1",
     "mypy>=2.4.0",
+    "pandas-stubs>=3.0.5.260914",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
 ]
@@ -40,3 +45,7 @@ mypy_path = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[[tool.mypy.overrides]]
+module = ["yfinance", "yfinance.*"]
+ignore_missing_imports = true
