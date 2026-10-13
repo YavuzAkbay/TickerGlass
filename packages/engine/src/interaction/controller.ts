@@ -2,6 +2,8 @@ import type { Chart, HitTarget } from '../chart';
 import type { Pane } from '../pane';
 
 const VERTICAL_PAN_THRESHOLD = 10;
+/** Max pointer travel (px) for a press to count as a click. */
+const CLICK_SLOP = 3;
 const KINETIC_MIN_VELOCITY = 0.25; // px/ms
 const KINETIC_STOP_VELOCITY = 0.02;
 const KINETIC_DECAY = 0.94; // per 16ms
@@ -10,6 +12,8 @@ type Drag =
   | {
       kind: 'pan';
       pane: Pane;
+      startX: number;
+      startY: number;
       lastX: number;
       lastY: number;
       totalDy: number;
@@ -44,6 +48,7 @@ export class InteractionController {
     this.el.addEventListener(
       'contextmenu',
       (e) => {
+        if (inLegendSlot(e)) return;
         e.preventDefault();
         this.drag = null;
         this.chart.events.emit('contextMenu', this.chart.describePoint(e.clientX, e.clientY));
@@ -65,6 +70,8 @@ export class InteractionController {
 
   private onDown(e: PointerEvent): void {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
+    // App-owned legend rows (buttons) keep their own pointer handling.
+    if (inLegendSlot(e)) return;
     this.el.focus({ preventScroll: true });
     this.stopKinetic();
     const p = this.local(e);
@@ -90,6 +97,8 @@ export class InteractionController {
         this.drag = {
           kind: 'pan',
           pane: hit.pane,
+          startX: p.x,
+          startY: p.y,
           lastX: p.x,
           lastY: p.y,
           totalDy: 0,
@@ -122,6 +131,7 @@ export class InteractionController {
     if (!d) {
       const hit = chart.hitTest(p.x, p.y);
       this.updateCursor(hit);
+      chart.hoverStudy(hit);
       if (hit.kind === 'pane') chart.setCrosshair(hit.pane, hit.x, hit.y);
       else chart.setCrosshair(null, 0, 0);
       return;
@@ -187,21 +197,27 @@ export class InteractionController {
       return;
     }
     this.drag = null;
-    if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
-    if (d) this.chart.viewSettled();
     const p = this.local(e);
-    this.updateCursor(this.chart.hitTest(p.x, p.y));
+    const hit = this.chart.hitTest(p.x, p.y);
+    if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= CLICK_SLOP)
+      this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
+    else if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
+    if (d) this.chart.viewSettled();
+    this.updateCursor(hit);
   }
 
   private onLeave(): void {
+    this.chart.hoverStudy(null);
     if (!this.drag) this.chart.setCrosshair(null, 0, 0);
   }
 
   private onDoubleClick(e: MouseEvent): void {
+    if (inLegendSlot(e)) return;
     const p = this.local(e);
     const hit = this.chart.hitTest(p.x, p.y);
     if (hit.kind === 'priceAxis') this.chart.setAutoScale(hit.pane.id, true);
     else if (hit.kind === 'timeAxis') this.chart.resetView();
+    else this.chart.emitStudyPointer('studyDoubleClick', hit, e.clientX, e.clientY);
   }
 
   private onWheel(e: WheelEvent): void {
@@ -298,11 +314,13 @@ export class InteractionController {
     switch (hit.kind) {
       case 'pane':
         cursor =
-          this.chart.options.crosshair === 'cross'
-            ? 'crosshair'
-            : this.chart.options.crosshair === 'dot'
-              ? 'none'
-              : 'default';
+          this.chart.isStudy(hit.seriesId) && !hit.fill
+            ? 'pointer'
+            : this.chart.options.crosshair === 'cross'
+              ? 'crosshair'
+              : this.chart.options.crosshair === 'dot'
+                ? 'none'
+                : 'default';
         break;
       case 'priceAxis':
         cursor = 'ns-resize';
@@ -316,4 +334,9 @@ export class InteractionController {
     }
     this.el.style.cursor = cursor;
   }
+}
+
+/** Event started inside a pane's app-owned legend slot. */
+function inLegendSlot(e: Event): boolean {
+  return e.target instanceof Element && e.target.closest('.io-legend-slot') !== null;
 }

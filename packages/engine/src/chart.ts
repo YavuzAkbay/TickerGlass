@@ -37,6 +37,22 @@ import { createTzConverter, type TzConverter } from './scale/timezone';
 import { InteractionController } from './interaction/controller';
 import { applyThemeVars, injectStyle } from './style';
 import type { Bar, DataFeed, Interval, SymbolInfo, Unsubscribe } from './types';
+import { formatStudyTick, formatStudyValue } from './studies/format';
+import { diffTail, snapshotSeries, type SeriesSnapshot } from './studies/series-diff';
+import { Study } from './studies/study';
+import { StudySeries } from './studies/study-series';
+import type {
+  SeriesChange,
+  StudyApi,
+  StudyData,
+  StudyDataPatch,
+  StudyEvents,
+  StudyInfo,
+  StudyLegendValue,
+  StudyOutputStylePatch,
+  StudySpec,
+  StudyTarget,
+} from './studies/types';
 
 const TIME_AXIS_HEIGHT = 28;
 const MIN_AXIS_WIDTH = 56;
@@ -48,6 +64,9 @@ const AXIS_LABEL_HEIGHT = 20;
 const INVALIDATE_OVERLAY = 1;
 const INVALIDATE_MAIN = 2;
 const INVALIDATE_LAYOUT = 4;
+
+/** Ids reserved for built-in series. */
+const RESERVED_STUDY_IDS = new Set(['main', 'volume', 'volume-pane']);
 
 export interface CrosshairInfo {
   paneId: string | null;
@@ -69,7 +88,7 @@ export interface ChartPoint {
   seriesId?: string | null;
 }
 
-export interface ChartEvents {
+export interface ChartEvents extends StudyEvents {
   contextMenu: ChartPoint;
   /** Live update of the last bar (or a newly appended one). */
   barUpdate: Bar;
@@ -109,7 +128,18 @@ export interface ChartState {
 }
 
 export type HitTarget =
-  | { kind: 'pane'; pane: Pane; x: number; y: number; seriesId: string | null }
+  | {
+      kind: 'pane';
+      pane: Pane;
+      x: number;
+      y: number;
+      seriesId: string | null;
+      /** Study output under the pointer when `seriesId` is a study. */
+      outputId?: string | null;
+      /** Only a study fill's interior is under the pointer (a weak hit: no
+       * pointer cursor; any line, mark or bar of any series wins over it). */
+      fill?: boolean;
+    }
   | { kind: 'priceAxis'; pane: Pane; y: number }
   | { kind: 'timeAxis'; x: number }
   | { kind: 'separator'; index: number }
@@ -123,7 +153,7 @@ interface CrosshairPos {
   rawY: number;
 }
 
-export class Chart {
+export class Chart implements StudyApi {
   readonly root: HTMLDivElement;
   /** Bars as loaded from the feed. */
   private readonly raw = new SeriesStore();
@@ -175,6 +205,10 @@ export class Chart {
   private controller: InteractionController;
   private lastRange = { from: -1, to: -1 };
   private destroyed = false;
+  /** Studies by id (each also sits in its pane's series list). */
+  private readonly studies = new Map<string, StudySeries>();
+  private _seriesRevision = 0;
+  private hoveredStudy: { id: string; outputId: string | null } | null = null;
 
   constructor(container: HTMLElement, feed: DataFeed, options: Partial<ChartOptions> = {}) {
     injectStyle();
@@ -284,14 +318,32 @@ export class Chart {
     return pane;
   }
 
+  /** Removes a non-main pane with everything on it. Emits paneRemoved when
+   * it held studies, so the app can drop their instances. */
   removePane(id: string): void {
+    const studyIds = this.dropPane(id);
+    if (studyIds?.length) this.events.emit('paneRemoved', { paneId: id, studyIds });
+  }
+
+  /** Remove a non-main pane; returns the ids of the studies dropped with it
+   * (null when nothing was removed). Emits no study events. */
+  private dropPane(id: string): string[] | null {
     const i = this.panes.findIndex((p) => p.id === id);
-    if (i <= 0) return; // the main pane stays
+    if (i <= 0) return null; // the main pane stays
     const [pane] = this.panes.splice(i, 1);
+    const studyIds: string[] = [];
+    for (const s of pane?.series ?? []) {
+      if (s instanceof StudySeries) {
+        studyIds.push(s.id);
+        this.studies.delete(s.id);
+        if (this.hoveredStudy?.id === s.id) this.hoverStudy(null);
+      }
+    }
     pane?.destroy();
     if (this.maximized === pane) this.maximized = null;
     this.invalidate(INVALIDATE_LAYOUT);
     this.emitState();
+    return studyIds;
   }
 
   /** Move a pane up (-1) or down (+1). */
@@ -348,6 +400,180 @@ export class Chart {
     this.emitState();
   }
 
+  // ---------------------------------------------------------------- studies
+
+  /** Increments on every 'reset' SeriesChange. */
+  get seriesRevision(): number {
+    return this._seriesRevision;
+  }
+
+  addStudy(spec: StudySpec): string {
+    if (RESERVED_STUDY_IDS.has(spec.id)) throw new Error(`Reserved study id: ${spec.id}`);
+    if (this.studies.has(spec.id)) throw new Error(`Study already exists: ${spec.id}`);
+    const pane = this.resolveStudyTarget(spec.target);
+    const series = new StudySeries(new Study(spec, pane.id), this);
+    pane.series.push(series);
+    this.studies.set(spec.id, series);
+    this.invalidate(INVALIDATE_LAYOUT);
+    return pane.id;
+  }
+
+  removeStudy(id: string): void {
+    const s = this.studies.get(id);
+    if (!s) return;
+    this.studies.delete(id);
+    if (this.hoveredStudy?.id === id) this.hoverStudy(null);
+    this.detachStudy(s);
+    this.invalidate(INVALIDATE_LAYOUT);
+  }
+
+  moveStudy(id: string, target: StudyTarget): string {
+    const s = this.studies.get(id);
+    if (!s) throw new Error(`Unknown study: ${id}`);
+    if ('paneId' in target && target.paneId === s.study.paneId) return target.paneId;
+    if ('newPane' in target && target.newPane.id === s.study.paneId) return s.study.paneId;
+    const pane = this.resolveStudyTarget(target);
+    this.detachStudy(s);
+    pane.series.push(s);
+    s.study.paneId = pane.id;
+    this.invalidate(INVALIDATE_LAYOUT);
+    return pane.id;
+  }
+
+  getStudies(): StudyInfo[] {
+    return [...this.studies.values()].map((s) => ({
+      id: s.id,
+      paneId: s.study.paneId,
+      title: s.study.spec.title,
+      visible: s.study.spec.visible,
+    }));
+  }
+
+  /** Replaces all values. Data computed on an older series revision is ignored. */
+  setStudyData(id: string, data: StudyData): void {
+    const s = this.studies.get(id);
+    if (!s || data.revision !== this._seriesRevision) return;
+    s.study.setData(data);
+    this.invalidate(INVALIDATE_MAIN);
+  }
+
+  updateStudyData(id: string, patch: StudyDataPatch): void {
+    const s = this.studies.get(id);
+    if (s?.study.patch(patch, this._seriesRevision)) this.invalidate(INVALIDATE_MAIN);
+  }
+
+  setStudyVisible(id: string, visible: boolean): void {
+    const s = this.studies.get(id);
+    if (!s || s.study.spec.visible === visible) return;
+    s.study.spec.visible = visible;
+    this.invalidate(INVALIDATE_MAIN);
+  }
+
+  updateStudySpec(id: string, patch: Partial<Omit<StudySpec, 'id' | 'target'>>): void {
+    const s = this.studies.get(id);
+    if (!s) return;
+    s.study.updateSpec(patch);
+    this.invalidate(INVALIDATE_LAYOUT);
+  }
+
+  setStudyStyle(id: string, outputId: string, style: StudyOutputStylePatch): void {
+    if (this.studies.get(id)?.study.setStyle(outputId, style)) this.invalidate(INVALIDATE_MAIN);
+  }
+
+  getStudyValues(id: string, index: number): StudyLegendValue[] {
+    const s = this.studies.get(id);
+    return s ? s.study.legendValues(index, this._seriesRevision, this.decimals) : [];
+  }
+
+  getLegendSlot(paneId: string): HTMLElement | null {
+    return this.panes.find((p) => p.id === paneId)?.legendSlot ?? null;
+  }
+
+  /** True when `id` is a study on this chart. */
+  isStudy(id: string | null | undefined): boolean {
+    return !!id && this.studies.has(id);
+  }
+
+  /** Track the study under the pointer; emits studyHover on change. */
+  hoverStudy(hit: HitTarget | null): void {
+    const id = hit?.kind === 'pane' ? hit.seriesId : null;
+    const next =
+      hit?.kind === 'pane' && id && this.studies.has(id)
+        ? { id, outputId: hit.outputId ?? null }
+        : null;
+    const prev = this.hoveredStudy;
+    if (prev?.id === next?.id && prev?.outputId === next?.outputId) return;
+    this.hoveredStudy = next;
+    this.events.emit('studyHover', next ?? { id: null, outputId: null });
+  }
+
+  /** Emit a study click/double-click if `hit` is on a study. Returns whether it was. */
+  emitStudyPointer(
+    event: 'studyClick' | 'studyDoubleClick',
+    hit: HitTarget,
+    clientX: number,
+    clientY: number,
+  ): boolean {
+    if (hit.kind !== 'pane' || !hit.seriesId || !this.isStudy(hit.seriesId)) return false;
+    this.events.emit(event, { id: hit.seriesId, outputId: hit.outputId ?? null, clientX, clientY });
+    return true;
+  }
+
+  private resolveStudyTarget(target: StudyTarget): Pane {
+    if ('paneId' in target) {
+      const pane = this.panes.find((p) => p.id === target.paneId);
+      if (!pane) throw new Error(`Unknown pane: ${target.paneId}`);
+      return pane;
+    }
+    const { id, ratio } = target.newPane;
+    // Re-adding to an existing own pane (undo, layout restore) reuses it.
+    const existing = id === undefined ? undefined : this.panes.find((p) => p.id === id);
+    return existing ?? this.addPane(ratio ?? 1, id);
+  }
+
+  /** Take a study out of its pane; an emptied non-main pane is removed. */
+  private detachStudy(s: StudySeries): void {
+    const pane = this.panes.find((p) => p.id === s.study.paneId);
+    if (!pane) return;
+    const k = pane.series.indexOf(s);
+    if (k >= 0) pane.series.splice(k, 1);
+    if (pane.id !== 'main' && pane.series.length === 0 && this.dropPane(pane.id))
+      this.events.emit('paneRemoved', { paneId: pane.id, studyIds: [] });
+  }
+
+  /** The study defining a non-main pane's axis format (its first series), if any. */
+  private paneStudy(pane: Pane): StudySeries | null {
+    const s0 = pane.series[0];
+    return pane.id !== 'main' && s0 instanceof StudySeries ? s0 : null;
+  }
+
+  private emitSeriesReset(): void {
+    this._seriesRevision++;
+    this.emitSeriesChange({
+      kind: 'reset',
+      revision: this._seriesRevision,
+      length: this.store.length,
+    });
+  }
+
+  /** History prepend: new revision; studies keep drawing their data shifted
+   * by `added` until the app sends values computed on the new series. */
+  private emitSeriesPrepend(added: number): void {
+    const prev = this._seriesRevision;
+    this._seriesRevision++;
+    for (const s of this.studies.values()) s.study.shift(added, prev, this._seriesRevision);
+    this.emitSeriesChange({
+      kind: 'prepend',
+      revision: this._seriesRevision,
+      length: this.store.length,
+      added,
+    });
+  }
+
+  private emitSeriesChange(change: SeriesChange): void {
+    this.events.emit('seriesChange', change);
+  }
+
   // ------------------------------------------------------------ chart types
 
   /** Displayed bars (transformed for Heikin Ashi / brick types). */
@@ -383,6 +609,7 @@ export class Chart {
   setChartType(type: ChartType): void {
     if (type === this._chartType) return;
     const wasBrick = BRICK_TYPES.has(this._chartType);
+    const wasTransform = this.usesTransform;
     this._chartType = type;
     this.brickSize = null;
     this.rebuildView();
@@ -393,6 +620,8 @@ export class Chart {
     this.crosshair = null;
     for (const p of this.panes) p.priceScale.autoScale = true;
     this.invalidate(INVALIDATE_LAYOUT);
+    // Plain types share the raw store, so indices only change through a transform.
+    if (wasTransform || this.usesTransform) this.emitSeriesReset();
     this.emitState();
   }
 
@@ -406,6 +635,7 @@ export class Chart {
       this.rebuildView();
       this.recomputeWeights();
       this.resetBrickView();
+      if (this.usesTransform) this.emitSeriesReset();
     }
     this.invalidate(INVALIDATE_MAIN);
   }
@@ -420,10 +650,17 @@ export class Chart {
     const main = this.panes[0]!;
     const idx = main.series.indexOf(this.volumeOverlay);
     if (idx >= 0) main.series.splice(idx, 1);
-    this.removePane('volume');
+    const volPane = this.panes.find((p) => p.id === 'volume');
+    if (volPane?.series.some((s) => s instanceof StudySeries)) {
+      // Keep a volume pane that also holds studies; drop only the volume series.
+      const k = volPane.series.findIndex((s) => s.id === 'volume-pane');
+      if (k >= 0) volPane.series.splice(k, 1);
+    } else this.removePane('volume');
     if (mode === 'overlay') main.series.push(this.volumeOverlay);
-    else if (mode === 'pane')
-      this.addPane(1, 'volume').series.push(new VolumeSeries('volume-pane', this, false));
+    else if (mode === 'pane') {
+      const pane = this.panes.find((p) => p.id === 'volume') ?? this.addPane(1, 'volume');
+      pane.series.unshift(new VolumeSeries('volume-pane', this, false));
+    }
     this.invalidate(INVALIDATE_LAYOUT);
     this.emitState();
   }
@@ -647,8 +884,18 @@ export class Chart {
       magnet: state.crosshair.magnet,
       timezone: state.timezone,
     };
+    // Studies are re-added by the app after setState (it persists its own list;
+    // studiesCleared below tells it when).
+    const cleared = [...this.studies.keys()];
+    for (const s of this.studies.values()) {
+      const pane = this.panes.find((p) => p.id === s.study.paneId);
+      const k = pane ? pane.series.indexOf(s) : -1;
+      if (k >= 0) pane?.series.splice(k, 1);
+    }
+    this.studies.clear();
+    this.hoverStudy(null);
     // Recreate extra panes to match the saved list (main pane always first).
-    for (const p of this.panes.slice(1)) this.removePane(p.id);
+    for (const p of this.panes.slice(1)) this.dropPane(p.id);
     for (const ps of state.panes) {
       if (ps.id === 'volume') continue; // recreated by setVolumeMode below
       const pane = ps.id === 'main' ? this.panes[0]! : this.addPane(ps.ratio, ps.id);
@@ -671,6 +918,7 @@ export class Chart {
     if (state.chartType) this.setChartType(state.chartType);
     if (state.volume) this.setVolumeMode(state.volume, true);
     this.maximized = this.panes.find((p) => p.id === state.maximizedPane) ?? null;
+    if (cleared.length) this.events.emit('studiesCleared', { ids: cleared });
     this.timeScale.barSpacing = state.timeScale.barSpacing;
     const view = state.timeScale.rightOffset;
     if (state.symbol) {
@@ -721,19 +969,43 @@ export class Chart {
     if (!pane) return { kind: 'none' };
     const py = y - pane.top;
     if (x >= this.paneWidth) return { kind: 'priceAxis', pane, y: py };
-    return { kind: 'pane', pane, x, y: py, seriesId: this.hitSeries(pane, x, py) };
+    const s = this.hitSeries(pane, x, py);
+    return {
+      kind: 'pane',
+      pane,
+      x,
+      y: py,
+      seriesId: s.id,
+      outputId: s.outputId,
+      ...(s.fill ? { fill: true } : {}),
+    };
   }
 
-  private hitSeries(pane: Pane, x: number, y: number): string | null {
+  /** Topmost series under (x, y): lines, marks and bars of every series
+   * first, study fill interiors only as a last resort. */
+  private hitSeries(
+    pane: Pane,
+    x: number,
+    y: number,
+  ): { id: string | null; outputId: string | null; fill: boolean } {
     const i = this.timeScale.xToIndex(x);
     const ps = pane.priceScale;
     const price = ps.yToPrice(y);
     const tol = Math.abs(ps.yToPrice(y - 4) - price);
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
-      if (s.hitTest(i, price, tol)) return s.id;
+      if (s instanceof StudySeries) {
+        const out = s.hitTestPx(x, y, 'marks');
+        if (out !== null) return { id: s.id, outputId: out, fill: false };
+      } else if (s.hitTest(i, price, tol)) return { id: s.id, outputId: null, fill: false };
     }
-    return null;
+    for (let k = pane.series.length - 1; k >= 0; k--) {
+      const s = pane.series[k]!;
+      if (!(s instanceof StudySeries)) continue;
+      const out = s.hitTestPx(x, y, 'fills');
+      if (out !== null) return { id: s.id, outputId: out, fill: true };
+    }
+    return { id: null, outputId: null, fill: false };
   }
 
   /** Separator drag: move the boundary above visible pane `index` by dy px. */
@@ -848,6 +1120,7 @@ export class Chart {
       this.setStatus(this.store.length ? null : 'No data');
       this.subscribeLive(gen);
       this.invalidate(INVALIDATE_LAYOUT);
+      this.emitSeriesReset();
       this.events.emit('dataLoaded', {
         symbol,
         interval: formatInterval(interval),
@@ -861,6 +1134,7 @@ export class Chart {
       this.rebuildView();
       this.setStatus(message);
       this.invalidate(INVALIDATE_LAYOUT);
+      this.emitSeriesReset();
       this.events.emit('error', { message });
     } finally {
       if (gen === this.loadGen) this.events.emit('loading', false);
@@ -882,6 +1156,10 @@ export class Chart {
         if (gen !== this.loadGen) return;
         const r = this.raw.upsert(bar);
         if (r === 'ignored') return;
+        // Brick views can change more than their tail: compare with a snapshot.
+        const snapshot: SeriesSnapshot | null = BRICK_TYPES.has(this._chartType)
+          ? snapshotSeries(this.derived)
+          : null;
         if (this.usesTransform) {
           const before = this.store.length;
           this.rebuildView();
@@ -893,6 +1171,14 @@ export class Chart {
           this.recomputeWeights();
         }
         this.invalidate(INVALIDATE_MAIN);
+        // Plain and Heikin Ashi views change exactly like the raw bar.
+        const tail = snapshot
+          ? diffTail(snapshot, this.derived)
+          : [{ kind: r, index: this.store.length - 1 }];
+        if (!tail) this.emitSeriesReset();
+        else
+          for (const c of tail)
+            this.emitSeriesChange({ kind: c.kind, revision: this._seriesRevision, index: c.index });
         if (this.crosshair) this.emitCrosshair();
         this.events.emit('barUpdate', bar);
       },
@@ -929,6 +1215,9 @@ export class Chart {
           if (this.crosshair) this.crosshair.index += added;
           this.recomputeWeights();
           this.invalidate(INVALIDATE_MAIN);
+          // Brick views are rebuilt from the first bar, so they can differ anywhere.
+          if (BRICK_TYPES.has(this._chartType) || added <= 0) this.emitSeriesReset();
+          else this.emitSeriesPrepend(added);
         }
         return n;
       } catch (err) {
@@ -1065,6 +1354,9 @@ export class Chart {
     const ps = pane.priceScale;
     if (ps.mode === 'percent') return formatPercent(ps.toDisplay(price)).replace('+', '');
     if (ps.mode === 'indexed') return formatPrice(ps.toDisplay(price), 2);
+    const st = this.paneStudy(pane)?.study.spec;
+    if (st && (st.format === 'volume' || st.format === 'percent' || st.precision !== null))
+      return formatStudyValue(price, st.format, st.precision, pane.labelDecimals + 1);
     return pane.id === 'main'
       ? formatPrice(price, this.decimals)
       : formatAxisNumber(price, pane.labelDecimals + 1);
@@ -1205,6 +1497,9 @@ export class Chart {
     const ps = pane.priceScale;
     if (ps.mode === 'percent') return `${formatPrice(value, 2)}%`;
     if (ps.mode === 'indexed') return formatPrice(value, 2);
+    const st = this.paneStudy(pane)?.study.spec;
+    const text = st ? formatStudyTick(value, st.format, pane.labelDecimals) : null;
+    if (text !== null) return text;
     return pane.id === 'main'
       ? formatPrice(value, this.decimals)
       : formatAxisNumber(value, pane.labelDecimals);
@@ -1221,6 +1516,35 @@ export class Chart {
       const ctx = pane.overlay.begin();
       const ax = pane.axisOverlay.begin();
       const ps = pane.priceScale;
+
+      // Study last values (below the series' own label).
+      for (const s of pane.series) {
+        if (!(s instanceof StudySeries)) continue;
+        const { format, precision } = s.study.spec;
+        for (const lv of s.lastValues()) {
+          const y = ps.priceToY(lv.price);
+          if (y < 0 || y > pane.height) continue;
+          const top = Math.max(
+            0,
+            Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2),
+          );
+          const text =
+            ps.mode === 'linear' || ps.mode === 'log'
+              ? formatStudyValue(lv.price, format, precision, this.decimals)
+              : this.formatAxisValue(pane, lv.price);
+          labelBox(
+            ax,
+            text,
+            1,
+            top,
+            this.axisWidth - 2,
+            AXIS_LABEL_HEIGHT,
+            lv.color,
+            '#ffffff',
+            fontStr,
+          );
+        }
+      }
 
       // Last value labels (+ countdown on the main pane for intraday).
       const last = pane.series[0]?.lastValue(t);
@@ -1428,16 +1752,18 @@ export class Chart {
           }
           html += `<span class="io-legend-item"><span class="io-legend-label">Vol</span><span style="color:${color}">${formatVolume(bar.volume)}</span></span>`;
         }
-        setHtml(pane.legendEl, html);
+        setHtml(pane.legendInfo, html);
       } else {
+        // Study legends are rendered by the app into pane.legendSlot.
         const html = pane.series
+          .filter((s) => !(s instanceof StudySeries))
           .map((s) => {
             const v = s.valuesAt(idx);
             const val = v.length ? formatAxisNumber(v[v.length - 1]!, pane.labelDecimals + 1) : '—';
             return `<span class="io-legend-title">${escapeHtml(s.title)}</span><span class="io-legend-item">${val}</span>`;
           })
           .join('');
-        setHtml(pane.legendEl, html);
+        setHtml(pane.legendInfo, html);
       }
     }
   }

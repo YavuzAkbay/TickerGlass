@@ -20,3 +20,4 @@ export type { PaneSeries, SeriesRenderContext } from './render/series';
 export type { PriceScaleMode } from './scale/price-scale';
 export { SeriesStore } from './model/series-store';
 export * from './feed';
+export type * from './studies/types';

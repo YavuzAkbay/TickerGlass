@@ -9,7 +9,12 @@ export class Pane {
   readonly id: string;
   readonly el: HTMLDivElement;
   readonly axisEl: HTMLDivElement;
+  /** Legend container: engine-written info line, then the app-owned slot. */
   readonly legendEl: HTMLDivElement;
+  /** Written by the engine (symbol/OHLC line, non-study series). */
+  readonly legendInfo: HTMLDivElement;
+  /** Owned by the app (study legend rows); the engine never writes it. */
+  readonly legendSlot: HTMLDivElement;
   readonly bg: CanvasLayer;
   readonly main: CanvasLayer;
   readonly overlay: CanvasLayer;
@@ -37,6 +42,8 @@ export class Pane {
     this.axisMain = new CanvasLayer(this.axisEl, 1);
     this.axisOverlay = new CanvasLayer(this.axisEl, 2);
     this.legendEl = div(this.el, 'io-legend');
+    this.legendInfo = div(this.legendEl, 'io-legend-info');
+    this.legendSlot = div(this.legendEl, 'io-legend-slot');
   }
 
   layout(left: number, top: number, width: number, height: number, axisWidth: number, dpr: number) {

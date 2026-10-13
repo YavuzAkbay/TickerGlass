@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@investopen/engine';
 import { feed } from './feed';
+import { attachIndicators } from '../indicators/attach';
+import { IndicatorLegends } from '../indicators/Legend';
 import { openChartContextMenu } from './contextMenus';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
@@ -11,6 +13,7 @@ export function ChartView() {
   const chartRef = useRef<Chart | null>(null);
   const { symbol, interval, theme, timezone, prepost, crosshair, magnet } = useAppStore();
   const { chartType, chartStyle, volume, showPrevClose } = useAppStore();
+  const chartState = useChartStore((s) => s.chart);
 
   useEffect(() => {
     const s = useAppStore.getState();
@@ -34,6 +37,7 @@ export function ChartView() {
       chart.on('crosshairMove', (c) => useChartStore.setState({ crosshair: c })),
       chart.on('loading', (loading) => useChartStore.setState({ loading })),
       chart.on('contextMenu', (p) => openChartContextMenu(chart, p)),
+      attachIndicators(chart, feed),
     ];
     return () => {
       offs.forEach((off) => off());
@@ -66,5 +70,10 @@ export function ChartView() {
     chart.applyOptions({ showPrevClose });
   }, [chartType, chartStyle, volume, showPrevClose]);
 
-  return <div ref={hostRef} className="chart-host" />;
+  return (
+    <>
+      <div ref={hostRef} className="chart-host" />
+      <IndicatorLegends chart={chartState} />
+    </>
+  );
 }

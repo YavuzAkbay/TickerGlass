@@ -120,12 +120,20 @@ Phase 4 notes:
 
 ### Phase 5: Indicator framework + core set
 
-- [ ] Indicator definition API: inputs (int/float/bool/source/color/enum/timeframe), outputs (line/histogram/area/columns/circles/cross/step, hlines, fills, bgcolor, shapes/labels), overlay vs pane, precision
-- [ ] Worker runtime with incremental update on the last bar; recompute on data change
-- [ ] Indicator-on-indicator (source = other output); multi-timeframe inputs
-- [ ] Indicators dialog (search, categories, favorites); legend row with eye/settings/source/remove/more menu
-- [ ] Auto-generated settings dialog: Inputs / Style / Visibility (per-interval) tabs; defaults; "Save as default"
-- [ ] Core 25 with golden tests vs a reference (TA-Lib / pandas-ta CSVs): SMA, EMA, WMA, VWMA, HMA, VWAP, Anchored VWAP, Bollinger, Keltner, Donchian, Ichimoku, Parabolic SAR, Supertrend, RSI, MACD, Stochastic, Stoch RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R, Volume, Pivot Points Standard
+- [x] Indicator definition API: inputs (int/float/bool/source/color/enum/timeframe), outputs (line/histogram/area/columns/circles/cross/step, hlines, fills, bgcolor, shapes/labels), overlay vs pane, precision
+- [x] Worker runtime with incremental update on the last bar; recompute on data change
+- [x] Indicator-on-indicator (source = other output); multi-timeframe inputs
+- [x] Indicators dialog (search, categories, favorites); legend row with eye/settings/source/remove/more menu
+- [x] Auto-generated settings dialog: Inputs / Style / Visibility (per-interval) tabs; defaults; "Save as default"
+- [x] Core 25 with golden tests vs a reference (TA-Lib / pandas-ta CSVs): SMA, EMA, WMA, VWMA, HMA, VWAP, Anchored VWAP, Bollinger, Keltner, Donchian, Ichimoku, Parabolic SAR, Supertrend, RSI, MACD, Stochastic, Stoch RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R, Volume, Pivot Points Standard
+
+Phase 5 notes:
+
+- Design and worker protocol: `docs/indicators.md`. Golden references are regenerated with `uv run --no-project --python 3.11 --with ta-lib --with pandas --with numpy packages/indicators/scripts/golden.py` (synthetic 1000-bar input; TA-Lib where its warm-up matches standard, numpy otherwise).
+- VWAP anchors (session/week/month) use UTC boundaries; exchange timezone support needs a contract change.
+- Pivot Points ship Traditional only; other pivot types land in Phase 12.
+- Multi-timeframe history shows final higher-timeframe values (lookahead); alerts must account for it.
+- Studies are not part of `chart.getState()`; the app re-adds them on `studiesCleared`. Phase 7 moves indicator persistence from localStorage to the API.
 
 ### Phase 6: Drawing framework + core tools
 
@@ -162,65 +170,65 @@ Phase 4 notes:
 
 ### Phase 10: Alerts
 
-- [x] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
-- [x] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
-- [x] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
-- [x] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
-- [x] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
+- [ ] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
+- [ ] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
+- [ ] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
+- [ ] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
+- [ ] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
 
 ### Phase 11: Remaining drawing tools (bulk, on the framework)
 
-- [x] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
-- [x] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
-- [x] Gann: Box, Square fixed, Square, Fan
-- [x] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
-- [x] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
-- [x] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
-- [x] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
-- [x] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
-- [x] Zoom-in tool, Measure tool polish; sync drawings across layouts
+- [ ] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
+- [ ] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
+- [ ] Gann: Box, Square fixed, Square, Fan
+- [ ] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
+- [ ] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
+- [ ] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
+- [ ] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
+- [ ] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
+- [ ] Zoom-in tool, Measure tool polish; sync drawings across layouts
 
 ### Phase 12: Remaining indicators (bulk)
 
-- [x] Trend/MA: DEMA, TEMA, ALMA, KAMA, LSMA, McGinley, SMMA, Moving Average Ribbon, Envelopes, Linear Regression channel, ZigZag, Williams Alligator, Fractals
-- [x] Momentum: Momentum, ROC, TRIX, TSI, Ultimate Oscillator, Awesome/Accelerator Oscillator, Coppock, KST, DPO, PPO, SMI Ergodic, Fisher Transform, Connors RSI, Chande MO, Aroon, Vortex, Choppiness, RVI, Elder Force, Balance of Power, Know Sure Thing
-- [x] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
-- [x] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
-- [x] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
-- [x] Optional "more advanced than reference": user JS indicators in a sandboxed Worker with a documented API (not standard)
+- [ ] Trend/MA: DEMA, TEMA, ALMA, KAMA, LSMA, McGinley, SMMA, Moving Average Ribbon, Envelopes, Linear Regression channel, ZigZag, Williams Alligator, Fractals
+- [ ] Momentum: Momentum, ROC, TRIX, TSI, Ultimate Oscillator, Awesome/Accelerator Oscillator, Coppock, KST, DPO, PPO, SMI Ergodic, Fisher Transform, Connors RSI, Chande MO, Aroon, Vortex, Choppiness, RVI, Elder Force, Balance of Power, Know Sure Thing
+- [ ] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
+- [ ] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
+- [ ] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
+- [ ] Optional "more advanced than reference": user JS indicators in a sandboxed Worker with a documented API (not standard)
 
 ### Phase 13: Market replay
 
-- [x] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
-- [x] Indicators and alerts react incrementally; drawings stay usable
-- [x] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
-- [x] Optional: replay paper trading (buy/sell, P&L panel)
+- [ ] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
+- [ ] Indicators and alerts react incrementally; drawings stay usable
+- [ ] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
+- [ ] Optional: replay paper trading (buy/sell, P&L panel)
 
 ### Phase 14: Multi-chart layouts
 
-- [x] Grid layouts 1–16 charts; resizable splitters
-- [x] Sync per layout: symbol, interval, crosshair, time, date range, drawings
-- [x] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
+- [ ] Grid layouts 1–16 charts; resizable splitters
+- [ ] Sync per layout: symbol, interval, crosshair, time, date range, drawings
+- [ ] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
 
 ### Phase 15: Polish & parity sweep
 
-- [x] Chart settings dialog parity: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
-- [x] Events on chart: dividends, splits, earnings markers with tooltips
-- [x] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
-- [x] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
-- [x] Accessibility basics, i18n scaffolding
-- [x] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
+- [ ] Chart settings dialog parity: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
+- [ ] Events on chart: dividends, splits, earnings markers with tooltips
+- [ ] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
+- [ ] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
+- [ ] Accessibility basics, i18n scaffolding
+- [ ] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
 
 ### Phase 16: AI analysis integration point (feature built separately)
 
-- [x] `chart.snapshot()` → `{ png, visibleBars, indicators: {name, inputs, values}, drawings, symbol, interval, scale }`
-- [x] Plugin slot in the right sidebar + a command-bus hook (`ai.analyzeCurrentView`)
-- [x] Engine API so AI results can be rendered back as drawings or annotations
+- [ ] `chart.snapshot()` → `{ png, visibleBars, indicators: {name, inputs, values}, drawings, symbol, interval, scale }`
+- [ ] Plugin slot in the right sidebar + a command-bus hook (`ai.analyzeCurrentView`)
+- [ ] Engine API so AI results can be rendered back as drawings or annotations
 
 ### Phase 17: Release
 
-- [x] User docs (install via docker compose, shortcuts, features), developer docs (engine/indicator/drawing APIs)
-- [x] Versioning, changelog, tagged release images
+- [ ] User docs (install via docker compose, shortcuts, features), developer docs (engine/indicator/drawing APIs)
+- [ ] Versioning, changelog, tagged release images
 
 ---
 

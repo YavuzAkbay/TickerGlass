@@ -75,7 +75,11 @@ importers:
 
   packages/engine: {}
 
-  packages/indicators: {}
+  packages/indicators:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
 
   services/alerts:
     dependencies:

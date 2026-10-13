@@ -1,0 +1,8 @@
+// Indicator worker entry (Vite module worker, one per chart).
+import type { ToWorker } from './protocol';
+import { WorkerCore } from './workerCore';
+
+const core = new WorkerCore((msg, transfer) => self.postMessage(msg, { transfer }));
+
+// handle() never throws; failures arrive as `error` / `resync` messages.
+self.addEventListener('message', (e: MessageEvent<ToWorker>) => core.handle(e.data));

@@ -1,5 +1,6 @@
 import type { MagnetMode } from '@investopen/engine';
 import { commands, type Command } from '../commands/registry';
+import { removeAllIndicators } from '../indicators/actions';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { toast } from '../ui/Toast';
@@ -109,7 +110,7 @@ export function registerToolbarCommands(): () => void {
       id: 'drawings.removeIndicators',
       title: 'Remove indicators',
       category: 'Drawings',
-      run: phase6,
+      run: removeAllIndicators,
     },
     {
       id: 'drawings.removeAllObjects',

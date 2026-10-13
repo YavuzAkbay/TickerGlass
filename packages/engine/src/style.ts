@@ -15,6 +15,8 @@ const CSS = `
 .io-separator.io-active, .io-separator:hover { background: var(--io-text-muted); }
 .io-legend { position: absolute; left: 8px; top: 6px; z-index: 4; pointer-events: none;
   line-height: 18px; white-space: nowrap; font-size: 13px; }
+.io-legend-info:empty { display: none; }
+.io-legend-slot { pointer-events: auto; width: fit-content; }
 .io-legend-title { color: var(--io-text); font-weight: 500; margin-right: 10px; }
 .io-legend-item { margin-right: 8px; }
 .io-legend-label { color: var(--io-text-muted); margin-right: 2px; }

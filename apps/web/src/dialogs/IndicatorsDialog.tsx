@@ -1,9 +1,36 @@
-import { ChartSpline, Code, Search, Star, Users, Landmark, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import {
+  listIndicators,
+  isOutputRef,
+  type AnyIndicatorDefinition,
+  type IndicatorCategory,
+  type OutputSourceRef,
+} from '@investopen/indicators';
+import {
+  Activity,
+  ArrowLeftRight,
+  ChartColumn,
+  ChartSpline,
+  Code,
+  Gauge,
+  Landmark,
+  Search,
+  Spline,
+  Star,
+  TrendingUp,
+  Users,
+  Waves,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { addIndicator } from '../indicators/actions';
+import { outputRefLabel, sourceInputKey } from '../indicators/model';
+import { useIndicatorPrefs, useIndicatorStore } from '../indicators/store';
 import { Modal } from '../ui/Modal';
+import '../indicators/indicators.css';
 import './dialogs.css';
 
-type CategoryId = 'favorites' | 'technicals' | 'fundamentals' | 'community' | 'scripts';
+type CategoryId =
+  'favorites' | 'scripts' | 'technicals' | IndicatorCategory | 'fundamentals' | 'community';
 
 interface Category {
   id: CategoryId;
@@ -13,67 +40,184 @@ interface Category {
   empty: string;
 }
 
-const GROUPS: { title: string; items: Category[] }[] = [
-  {
-    title: 'Personal',
-    items: [
-      {
-        id: 'favorites',
-        label: 'Favorites',
-        icon: Star,
-        empty: 'Star an indicator to keep it here.',
-      },
-      {
-        id: 'scripts',
-        label: 'My scripts',
-        icon: Code,
-        empty: 'Your own scripts will be listed here.',
-      },
-    ],
-  },
-  {
-    title: 'Built-ins',
-    items: [
-      {
-        id: 'technicals',
-        label: 'Technicals',
-        icon: ChartSpline,
-        empty: 'Moving averages, oscillators, volume and volatility studies.',
-      },
-      {
-        id: 'fundamentals',
-        label: 'Fundamentals',
-        icon: Landmark,
-        empty: 'Income statement, balance sheet and valuation metrics.',
-      },
-    ],
-  },
-  {
-    title: 'Community',
-    items: [
-      {
-        id: 'community',
-        label: 'Community',
-        icon: Users,
-        disabled: true,
-        empty: 'Community scripts are not planned yet.',
-      },
-    ],
-  },
+const TECH_CATEGORIES: { id: IndicatorCategory; label: string; icon: LucideIcon }[] = [
+  { id: 'movingAverage', label: 'Moving averages', icon: Spline },
+  { id: 'trend', label: 'Trend', icon: TrendingUp },
+  { id: 'momentum', label: 'Oscillators', icon: Activity },
+  { id: 'volatility', label: 'Volatility', icon: Gauge },
+  { id: 'bands', label: 'Bands & channels', icon: ArrowLeftRight },
+  { id: 'volume', label: 'Volume', icon: ChartColumn },
+  { id: 'other', label: 'Other', icon: Waves },
 ];
 
-const ALL = GROUPS.flatMap((g) => g.items);
+function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Category[] }[] {
+  const present = new Set(defs.map((d) => d.category));
+  return [
+    {
+      title: 'Personal',
+      items: [
+        {
+          id: 'favorites',
+          label: 'Favorites',
+          icon: Star,
+          empty: 'Star an indicator to keep it here.',
+        },
+        {
+          id: 'scripts',
+          label: 'My scripts',
+          icon: Code,
+          empty: 'Your own scripts will be listed here.',
+        },
+      ],
+    },
+    {
+      title: 'Built-ins',
+      items: [
+        {
+          id: 'technicals',
+          label: 'Technicals',
+          icon: ChartSpline,
+          empty: 'No indicators are registered.',
+        },
+        ...TECH_CATEGORIES.filter((c) => present.has(c.id)).map((c): Category => ({
+          ...c,
+          empty: 'No indicators in this category.',
+        })),
+        {
+          id: 'fundamentals',
+          label: 'Fundamentals',
+          icon: Landmark,
+          empty: 'Income statement, balance sheet and valuation metrics.',
+        },
+      ],
+    },
+    {
+      title: 'Community',
+      items: [
+        {
+          id: 'community',
+          label: 'Community',
+          icon: Users,
+          disabled: true,
+          empty: 'Community scripts are not planned yet.',
+        },
+      ],
+    },
+  ];
+}
 
-/** Shell of the indicator picker. Indicators themselves arrive in Phase 5. */
-export default function IndicatorsDialog({ onClose }: { onClose: () => void; arg?: unknown }) {
+/** Case-insensitive match of every query word against name, short name, id and keywords. */
+export function matchesQuery(def: AnyIndicatorDefinition, query: string): boolean {
+  const hay = [def.name, def.shortName, def.id, ...(def.keywords ?? [])].join(' ').toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((w) => hay.includes(w));
+}
+
+function sourceArg(arg: unknown): OutputSourceRef | null {
+  const s = (arg as { sourceOf?: unknown } | undefined)?.sourceOf;
+  return isOutputRef(s) ? s : null;
+}
+
+/** Indicator picker: search, categories, favourites; Enter/click adds to the chart. */
+export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void; arg?: unknown }) {
+  const sourceOf = sourceArg(arg);
+  const favorites = useIndicatorPrefs((s) => s.favorites);
+  const toggleFavorite = useIndicatorPrefs((s) => s.toggleFavorite);
+  const instances = useIndicatorStore((s) => s.instances);
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState<CategoryId>('technicals');
-  const current = ALL.find((c) => c.id === cat);
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const all = listIndicators()
+    .filter((d) => !sourceOf || sourceInputKey(d))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const nav = groups(all);
+  const current = nav.flatMap((g) => g.items).find((c) => c.id === cat);
   const q = query.trim();
+  let rows: AnyIndicatorDefinition[];
+  if (q) rows = all.filter((d) => matchesQuery(d, q));
+  else if (cat === 'favorites') rows = all.filter((d) => favorites.includes(d.id));
+  else if (cat === 'technicals') rows = all;
+  else rows = all.filter((d) => d.category === cat);
+  const idx = Math.max(0, Math.min(active, rows.length - 1));
+
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-index="${idx}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [idx]);
+
+  const add = (def: AnyIndicatorDefinition) => {
+    const id = sourceOf ? addIndicator(def.id, { sourceOf }) : addIndicator(def.id);
+    // Indicator-on-indicator adds one; the plain picker stays open like reference.
+    if (id && sourceOf) onClose();
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const n = rows.length;
+    if (e.key === 'ArrowDown') setActive(n ? (idx + 1) % n : 0);
+    else if (e.key === 'ArrowUp') setActive(n ? (idx - 1 + n) % n : 0);
+    else if (e.key === 'Enter') {
+      const d = rows[idx];
+      if (d) add(d);
+    } else return;
+    e.preventDefault();
+  };
+
+  let body: ReactNode;
+  if (rows.length === 0) {
+    const Icon = current?.icon ?? ChartSpline;
+    body = (
+      <div className="dlg-emptystate">
+        <Icon size={40} strokeWidth={1.2} className="dlg-emptystate-icon" />
+        <h3>{q ? `No results for "${q}"` : (current?.label ?? '')}</h3>
+        <p>{q ? 'Try another name or abbreviation.' : current?.empty}</p>
+      </div>
+    );
+  } else {
+    body = (
+      <>
+        <div className="dlg-section-title">{q ? 'Search results' : current?.label}</div>
+        {rows.map((d, i) => {
+          const fav = favorites.includes(d.id);
+          return (
+            <div
+              key={d.id}
+              data-index={i}
+              role="option"
+              aria-selected={i === idx}
+              className={`ind-row${i === idx ? ' active' : ''}`}
+              onPointerEnter={() => setActive(i)}
+              onClick={() => add(d)}
+            >
+              <button
+                type="button"
+                className={`ind-star${fav ? ' on' : ''}`}
+                aria-label={fav ? `Remove ${d.name} from favorites` : `Add ${d.name} to favorites`}
+                aria-pressed={fav}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(d.id);
+                }}
+              >
+                <Star size={16} fill={fav ? 'currentColor' : 'none'} />
+              </button>
+              <span className="ind-row-name">{d.name}</span>
+              <span className="ind-row-short">{d.shortName}</span>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
 
   return (
     <Modal
-      title="Indicators, metrics and strategies"
+      title={sourceOf ? 'Add indicator on' : 'Indicators, metrics and strategies'}
       onClose={onClose}
       width={760}
       className="dlg-picker"
@@ -88,12 +232,21 @@ export default function IndicatorsDialog({ onClose }: { onClose: () => void; arg
           spellCheck={false}
           autoComplete="off"
           autoFocus
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={onKeyDown}
         />
       </div>
+      {sourceOf ? (
+        <div className="ind-picker-note">
+          Source: {outputRefLabel(sourceOf, (id) => instances.find((i) => i.id === id))}
+        </div>
+      ) : null}
       <div className="dlg-picker-body">
         <nav className="dlg-side" aria-label="Indicator categories">
-          {GROUPS.map((g) => (
+          {nav.map((g) => (
             <div key={g.title} className="dlg-side-group">
               <div className="dlg-side-title">{g.title}</div>
               {g.items.map((c) => {
@@ -102,10 +255,14 @@ export default function IndicatorsDialog({ onClose }: { onClose: () => void; arg
                   <button
                     key={c.id}
                     type="button"
-                    className={`dlg-side-item${cat === c.id ? ' active' : ''}`}
+                    className={`dlg-side-item${cat === c.id && !q ? ' active' : ''}`}
                     aria-current={cat === c.id ? 'true' : undefined}
                     disabled={c.disabled}
-                    onClick={() => setCat(c.id)}
+                    onClick={() => {
+                      setCat(c.id);
+                      setQuery('');
+                      setActive(0);
+                    }}
                   >
                     <Icon size={18} strokeWidth={1.6} />
                     <span>{c.label}</span>
@@ -116,13 +273,13 @@ export default function IndicatorsDialog({ onClose }: { onClose: () => void; arg
             </div>
           ))}
         </nav>
-        <div className="dlg-picker-content">
-          <div className="dlg-emptystate">
-            <ChartSpline size={40} strokeWidth={1.2} className="dlg-emptystate-icon" />
-            <h3>{q ? `No results for "${q}" yet` : `${current?.label ?? ''}`}</h3>
-            <p>{current?.empty}</p>
-            <p className="dlg-emptystate-phase">Indicators arrive in Phase 5.</p>
-          </div>
+        <div
+          ref={listRef}
+          className="dlg-picker-content ind-list"
+          role="listbox"
+          aria-label="Indicators"
+        >
+          {body}
         </div>
       </div>
     </Modal>

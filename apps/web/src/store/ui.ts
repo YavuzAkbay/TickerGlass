@@ -8,6 +8,7 @@ export type DialogId =
   | 'symbolSearch'
   | 'compare'
   | 'indicators'
+  | 'indicatorSettings'
   | 'settings'
   | 'commandPalette'
   | 'goToDate'

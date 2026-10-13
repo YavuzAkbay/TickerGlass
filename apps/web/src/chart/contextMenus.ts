@@ -13,6 +13,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { commands } from '../commands/registry';
+import { findIndicator } from '../indicators/actions';
+import { indicatorMenuItems } from '../indicators/menu';
 import { changeScale, toggleScaleMode } from './scaleActions';
 import { openContextMenu } from '../ui/ContextMenu';
 import type { MenuItem } from '../ui/Menu';
@@ -101,6 +103,10 @@ function paneItems(chart: Chart, paneId: string): MenuItem[] {
 /** Right-click menus for the chart canvas, price axis and time axis. */
 export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
   const { clientX: x, clientY: y } = p;
+  if (p.seriesId && findIndicator(p.seriesId)) {
+    openContextMenu(x, y, indicatorMenuItems(p.seriesId));
+    return;
+  }
   if (p.kind === 'priceAxis' && p.paneId) {
     openContextMenu(x, y, [
       {

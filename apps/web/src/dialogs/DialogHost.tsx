@@ -2,6 +2,7 @@ import { useUiStore, type DialogId } from '../store/ui';
 import CommandPalette from './CommandPalette';
 import CompareDialog from './CompareDialog';
 import IndicatorsDialog from './IndicatorsDialog';
+import IndicatorSettingsDialog from './IndicatorSettingsDialog';
 import SettingsDialog from './SettingsDialog';
 import ShortcutsDialog from './ShortcutsDialog';
 import SymbolSearchDialog from './SymbolSearchDialog';
@@ -14,6 +15,7 @@ const DIALOGS: Record<DialogId, DialogComponent> = {
   symbolSearch: SymbolSearchDialog,
   compare: CompareDialog,
   indicators: IndicatorsDialog,
+  indicatorSettings: IndicatorSettingsDialog,
   settings: SettingsDialog,
   commandPalette: CommandPalette,
   goToDate: GoToDateDialog,

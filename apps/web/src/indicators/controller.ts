@@ -1,0 +1,576 @@
+// Main-thread side of the indicator worker for one chart: forwards displayed
+// bars, mirrors the instance list into the engine (studies) and the worker
+// (computation), fetches higher-timeframe series and routes results.
+import {
+  intervalSeconds,
+  parseInterval,
+  type Bar,
+  type BarColumns,
+  type ChartEvents,
+  type DataFeed,
+  type SeriesChange,
+  type SeriesStore,
+  type StudyApi,
+  type StudySpec,
+  type StudyTarget,
+  type SymbolInfo,
+  type Unsubscribe,
+} from '@investopen/engine';
+import {
+  getIndicator,
+  resolveOutputs,
+  type AnyIndicatorDefinition,
+  type InstanceStatus,
+} from '@investopen/indicators';
+import {
+  sourceRefOf,
+  studyTitle,
+  timeframeMap,
+  visibleOnInterval,
+  type IndicatorState,
+} from './model';
+import type { FromWorker, ToWorker } from './protocol';
+import { useIndicatorRuntime } from './store';
+
+/** What the controller needs from the engine chart (Chart implements it). */
+export interface ChartHost extends StudyApi {
+  readonly store: Pick<
+    SeriesStore,
+    'length' | 'time' | 'open' | 'high' | 'low' | 'close' | 'volume' | 'bar'
+  >;
+  readonly symbolInfo: SymbolInfo | null;
+  getSymbol(): string;
+  getInterval(): string;
+  on<K extends keyof ChartEvents>(event: K, fn: (p: ChartEvents[K]) => void): () => void;
+}
+
+/** Message port to the worker (a real Worker in the app, in-process in tests). */
+export interface WorkerPort {
+  post(msg: ToWorker, transfer?: Transferable[]): void;
+  /** Worker load/runtime failures are delivered as a fatal `{ type: 'error' }` (no id). */
+  listen(fn: (msg: FromWorker) => void): void;
+  terminate(): void;
+}
+
+export function createIndicatorWorker(): WorkerPort {
+  const w = new Worker(new URL('./worker.ts', import.meta.url), {
+    type: 'module',
+    name: 'indicators',
+  });
+  return {
+    post: (msg, transfer = []) => w.postMessage(msg, transfer),
+    listen: (fn) => {
+      w.onmessage = (e: MessageEvent<FromWorker>) => fn(e.data);
+      w.onerror = (e) => fn({ type: 'error', message: `Indicator worker failed: ${e.message}` });
+      w.onmessageerror = () =>
+        fn({ type: 'error', message: 'Indicator worker failed: unreadable message' });
+    },
+    terminate: () => w.terminate(),
+  };
+}
+
+export interface ControllerOptions {
+  chart: ChartHost;
+  feed: DataFeed;
+  worker: WorkerPort;
+  /** Coalesces live bars (requestAnimationFrame in the app). */
+  schedule?: (fn: () => void) => void;
+  /** User-facing errors (toasts in the app). */
+  onError?: (message: string) => void;
+  /** The engine dropped studies (e.g. their pane was removed); the app removes the instances. */
+  onStudiesLost?: (ids: string[]) => void;
+  /** Extended hours for timeframe requests. */
+  prepost?: () => boolean;
+}
+
+interface Applied {
+  inputsKey: string;
+  title: string;
+  outputsKey: string;
+  visible: boolean;
+  targetKey: string;
+}
+
+interface TfSeries {
+  /** The request finished with bars (until then it is in flight). */
+  loaded: boolean;
+  /** First bar time (meaningful once loaded). */
+  first: number;
+  /** No older history available (or the request cap was hit). */
+  complete: boolean;
+  unsub: Unsubscribe | null;
+}
+
+/** Bars of warm-up requested before the chart's first bar for timeframe series. */
+const TF_WARMUP = 300;
+const TF_MAX_BARS = 5000;
+/** Consecutive resyncs of one series revision before the worker is given up on. */
+const MAX_RESYNCS = 3;
+
+const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+function copyColumns(src: ChartHost['store'] | BarColumns, n: number): BarColumns {
+  return {
+    time: src.time.slice(0, n),
+    open: src.open.slice(0, n),
+    high: src.high.slice(0, n),
+    low: src.low.slice(0, n),
+    close: src.close.slice(0, n),
+    volume: src.volume.slice(0, n),
+  };
+}
+
+const buffers = (c: BarColumns): Transferable[] => [
+  c.time.buffer,
+  c.open.buffer,
+  c.high.buffer,
+  c.low.buffer,
+  c.close.buffer,
+  c.volume.buffer,
+];
+
+export class IndicatorController {
+  private readonly chart: ChartHost;
+  private readonly feed: DataFeed;
+  private readonly worker: WorkerPort;
+  private readonly schedule: (fn: () => void) => void;
+  private readonly onError: (message: string) => void;
+  private list: readonly IndicatorState[] = [];
+  private readonly applied = new Map<string, Applied>();
+  private hidden = false;
+  private sentRevision = -1;
+  private symbol: string | null = null;
+  private interval: string | null = null;
+  private tfMapKey = '';
+  private required: string[] = [];
+  private readonly tfSeries = new Map<string, TfSeries>();
+  private pending = new Map<number, Bar>();
+  private flushQueued = false;
+  private offs: (() => void)[] = [];
+  private destroyed = false;
+  /** `bars` messages posted (the worker echoes its count in resync). */
+  private barsSent = 0;
+  /** Resyncs of the current revision since a live bar last applied cleanly. */
+  private resyncs = 0;
+  /** A fatal worker error was reported: no more resyncs, no repeated toasts. */
+  private failed = false;
+
+  constructor(private readonly opts: ControllerOptions) {
+    this.chart = opts.chart;
+    this.feed = opts.feed;
+    this.worker = opts.worker;
+    this.schedule = opts.schedule ?? ((fn) => queueMicrotask(fn));
+    this.onError = opts.onError ?? ((m) => console.error(m));
+    this.worker.listen((msg) => this.onMessage(msg));
+    this.offs.push(
+      this.chart.on('seriesChange', (c) => this.onSeriesChange(c)),
+      this.chart.on('paneRemoved', () => this.onPaneRemoved()),
+      this.chart.on('studiesCleared', (e) => this.onStudiesCleared(e.ids)),
+    );
+    this.interval = this.chart.getInterval();
+    if (this.chart.store.length) this.sendBars(this.chart.seriesRevision);
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.offs.forEach((off) => off());
+    this.offs = [];
+    for (const s of this.tfSeries.values()) s.unsub?.();
+    this.tfSeries.clear();
+    this.worker.terminate();
+    useIndicatorRuntime.setState({ status: {}, panes: {} });
+  }
+
+  /** Global "hide indicators" (left toolbar hide button). */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    this.sync(this.list);
+  }
+
+  /** Mirror the store's instance list into the engine and the worker. */
+  sync(list: readonly IndicatorState[]): void {
+    if (this.destroyed) return;
+    this.list = list;
+    const ids = new Set(list.map((i) => i.id));
+    for (const id of [...this.applied.keys()]) {
+      if (ids.has(id)) continue;
+      this.applied.delete(id);
+      this.worker.post({ type: 'remove', id });
+      this.engine(() => this.chart.removeStudy(id));
+      this.forget(id);
+    }
+    this.sendTimeframeMap(false);
+    for (const inst of list) {
+      const def = getIndicator(inst.type);
+      if (!def) {
+        this.setStatus(inst.id, { state: 'error', message: `Unknown indicator "${inst.type}"` });
+        continue;
+      }
+      const prev = this.applied.get(inst.id);
+      const next = this.describe(inst, def);
+      if (!prev) {
+        this.add(inst, def, next);
+        continue;
+      }
+      if (next.inputsKey !== prev.inputsKey)
+        this.worker.post({ type: 'setInputs', id: inst.id, inputs: inst.inputs });
+      if (next.title !== prev.title || next.outputsKey !== prev.outputsKey) {
+        const outputs = resolveOutputs(def, inst.inputs, inst.styles);
+        this.engine(() => this.chart.updateStudySpec(inst.id, { title: next.title, outputs }));
+      }
+      if (next.visible !== prev.visible)
+        this.engine(() => this.chart.setStudyVisible(inst.id, next.visible));
+      if (next.targetKey !== prev.targetKey) {
+        const target = this.target(inst, def);
+        this.engine(() => this.setPane(inst.id, this.chart.moveStudy(inst.id, target)));
+      }
+      this.applied.set(inst.id, next);
+    }
+  }
+
+  // ------------------------------------------------------------- instances
+
+  private lookup = (id: string) => this.list.find((i) => i.id === id);
+
+  private describe(inst: IndicatorState, def: AnyIndicatorDefinition): Applied {
+    return {
+      inputsKey: JSON.stringify(inst.inputs),
+      title: studyTitle(def, inst.inputs, this.lookup),
+      outputsKey: JSON.stringify(resolveOutputs(def, inst.inputs, inst.styles)),
+      visible: this.effectiveVisible(inst),
+      targetKey: inst.placement,
+    };
+  }
+
+  private effectiveVisible(inst: IndicatorState): boolean {
+    return (
+      !this.hidden && inst.visible && visibleOnInterval(inst.visibility, this.chart.getInterval())
+    );
+  }
+
+  private target(inst: IndicatorState, def: AnyIndicatorDefinition): StudyTarget {
+    const own: StudyTarget = { newPane: { id: `pane-${inst.id}` } };
+    if (inst.placement === 'main') return { paneId: 'main' };
+    if (inst.placement === 'own') return own;
+    const ref = sourceRefOf(inst);
+    const srcPane = ref ? useIndicatorRuntime.getState().panes[ref.instanceId] : undefined;
+    if (srcPane) return { paneId: srcPane };
+    return def.overlay ? { paneId: 'main' } : own;
+  }
+
+  private add(inst: IndicatorState, def: AnyIndicatorDefinition, next: Applied): void {
+    const format = def.format ?? 'inherit';
+    const spec: StudySpec = {
+      id: inst.id,
+      title: next.title,
+      target: this.target(inst, def),
+      outputs: resolveOutputs(def, inst.inputs, inst.styles),
+      format,
+      precision: def.precision ?? null,
+      scaleRange: def.scaleRange ? { ...def.scaleRange } : null,
+      // A volume-scaled overlay must not squash the price scale.
+      priceScale: def.overlay && format === 'volume' ? 'none' : 'pane',
+      visible: next.visible,
+    };
+    const ok = this.engine(() => this.setPane(inst.id, this.chart.addStudy(spec)));
+    if (!ok) {
+      this.setStatus(inst.id, { state: 'error', message: 'Could not add to the chart' });
+      return;
+    }
+    this.applied.set(inst.id, next);
+    this.worker.post({ type: 'add', spec: { id: inst.id, type: inst.type, inputs: inst.inputs } });
+  }
+
+  /** Run an engine call; report failures instead of breaking the sync loop. */
+  private engine(fn: () => void): boolean {
+    try {
+      fn();
+      return true;
+    } catch (err) {
+      this.onError(`Chart: ${errText(err)}`);
+      return false;
+    }
+  }
+
+  private setPane(id: string, paneId: string): void {
+    useIndicatorRuntime.setState((s) => ({ panes: { ...s.panes, [id]: paneId } }));
+  }
+
+  private setStatus(id: string, status: InstanceStatus): void {
+    useIndicatorRuntime.setState((s) => ({ status: { ...s.status, [id]: status } }));
+  }
+
+  private forget(id: string): void {
+    useIndicatorRuntime.setState((s) => {
+      const { [id]: _s, ...status } = s.status;
+      const { [id]: _p, ...panes } = s.panes;
+      return { status, panes };
+    });
+  }
+
+  private onPaneRemoved(): void {
+    const panes: Record<string, string> = {};
+    for (const s of this.chart.getStudies()) panes[s.id] = s.paneId;
+    useIndicatorRuntime.setState({ panes });
+    const lost = [...this.applied.keys()].filter((id) => !(id in panes));
+    if (!lost.length) return;
+    for (const id of lost) {
+      this.applied.delete(id);
+      this.worker.post({ type: 'remove', id });
+    }
+    this.opts.onStudiesLost?.(lost);
+  }
+
+  /** setState dropped the engine's studies: re-add them from the instance list. */
+  private onStudiesCleared(ids: string[]): void {
+    if (this.destroyed) return;
+    for (const id of ids) {
+      if (!this.applied.delete(id)) continue;
+      this.worker.post({ type: 'remove', id });
+    }
+    this.sync(this.list);
+  }
+
+  // ------------------------------------------------------------------ bars
+
+  private onSeriesChange(c: SeriesChange): void {
+    if (this.destroyed) return;
+    // A prepend shifts every index: the worker needs the whole series again.
+    if (c.kind === 'reset' || c.kind === 'prepend') {
+      this.onReset(c.revision);
+      return;
+    }
+    // Bars of a series the worker never received would land on wrong indices.
+    if (c.revision !== this.sentRevision) return;
+    const bar = this.chart.store.bar(c.index);
+    if (!bar) return;
+    this.pending.set(c.index, bar);
+    if (this.flushQueued) return;
+    this.flushQueued = true;
+    this.schedule(() => this.flush());
+  }
+
+  private flush(): void {
+    this.flushQueued = false;
+    if (this.destroyed) return;
+    const pending = this.pending;
+    this.pending = new Map();
+    for (const index of [...pending.keys()].sort((a, b) => a - b))
+      this.worker.post({
+        type: 'bar',
+        revision: this.sentRevision,
+        index,
+        bar: pending.get(index)!,
+      });
+  }
+
+  private onReset(revision: number): void {
+    const symbol = this.chart.getSymbol();
+    const interval = this.chart.getInterval();
+    if (this.symbol !== null && symbol !== this.symbol) {
+      this.worker.post({ type: 'clear' });
+      this.dropTimeframes();
+    }
+    this.symbol = symbol;
+    if (interval !== this.interval) {
+      this.interval = interval;
+      this.dropTimeframes();
+      this.sendTimeframeMap(true);
+      // Per-interval visibility.
+      this.sync(this.list);
+    }
+    this.sendBars(revision);
+    for (const tf of this.required) this.ensureTimeframe(tf);
+  }
+
+  private sendBars(revision: number): void {
+    this.pending.clear();
+    if (revision !== this.sentRevision) this.resyncs = 0;
+    this.sentRevision = revision;
+    this.barsSent++;
+    this.symbol ??= this.chart.getSymbol();
+    const bars = copyColumns(this.chart.store, this.chart.store.length);
+    this.worker.post({ type: 'bars', revision, bars }, buffers(bars));
+  }
+
+  // ------------------------------------------------------------ timeframes
+
+  private sendTimeframeMap(force: boolean): void {
+    const map = timeframeMap(this.list, this.chart.getInterval());
+    const key = JSON.stringify(map);
+    if (!force && key === this.tfMapKey) return;
+    this.tfMapKey = key;
+    this.worker.post({ type: 'timeframeMap', map });
+  }
+
+  private dropTimeframes(): void {
+    for (const s of this.tfSeries.values()) s.unsub?.();
+    this.tfSeries.clear();
+  }
+
+  private onTimeframes(tfs: string[]): void {
+    this.required = tfs;
+    for (const [tf, s] of this.tfSeries) {
+      if (tfs.includes(tf)) continue;
+      s.unsub?.();
+      this.tfSeries.delete(tf);
+    }
+    for (const tf of tfs) this.ensureTimeframe(tf);
+  }
+
+  /** Fetch (or extend) a timeframe series covering the chart's span plus warm-up. */
+  private ensureTimeframe(tf: string): void {
+    const store = this.chart.store;
+    const n = store.length;
+    if (!n) return;
+    const chartFirst = store.time[0]!;
+    const cur = this.tfSeries.get(tf);
+    if (cur && (!cur.loaded || cur.complete || cur.first <= chartFirst)) return;
+    cur?.unsub?.();
+    let interval;
+    try {
+      interval = parseInterval(tf);
+    } catch (err) {
+      this.onError(errText(err));
+      return;
+    }
+    const entry: TfSeries = { loaded: false, first: Infinity, complete: false, unsub: null };
+    this.tfSeries.set(tf, entry);
+    const end = Math.max(store.time[n - 1]!, Date.now() / 1000);
+    const limit = Math.min(
+      TF_MAX_BARS,
+      Math.ceil((end - chartFirst) / intervalSeconds(interval)) + TF_WARMUP,
+    );
+    const symbol = this.chart.getSymbol();
+    const prepost = this.opts.prepost?.() ?? false;
+    const current = () => !this.destroyed && this.tfSeries.get(tf) === entry;
+    this.feed
+      .getBars({ symbol, interval, limit, prepost })
+      .then((res) => {
+        if (!current()) return;
+        const len = res.bars.time.length;
+        if (!len) {
+          // Nothing yet (e.g. a new listing): the instance keeps waiting; retry on the next reset.
+          this.tfSeries.delete(tf);
+          return;
+        }
+        entry.loaded = true;
+        entry.first = res.bars.time[0]!;
+        entry.complete = !res.hasMore || len < limit || limit >= TF_MAX_BARS;
+        // Copies: the feed may cache the arrays it returned.
+        const bars = copyColumns(res.bars, len);
+        this.worker.post({ type: 'tfBars', tf, bars }, buffers(bars));
+        const last = {
+          time: bars.time[len - 1]!,
+          open: bars.open[len - 1]!,
+          high: bars.high[len - 1]!,
+          low: bars.low[len - 1]!,
+          close: bars.close[len - 1]!,
+          volume: bars.volume[len - 1]!,
+        };
+        const info = this.chart.symbolInfo;
+        entry.unsub = this.feed.subscribe(
+          {
+            symbol,
+            interval,
+            prepost,
+            timezone: info?.timezone ?? null,
+            session: info?.session ?? null,
+          },
+          last,
+          (bar) => {
+            if (current()) this.worker.post({ type: 'tfBar', tf, bar });
+          },
+        );
+      })
+      .catch((err: unknown) => {
+        if (!current()) return;
+        // Retry on the next reset.
+        this.tfSeries.delete(tf);
+        this.onError(`Could not load ${tf} bars: ${errText(err)}`);
+      });
+  }
+
+  // --------------------------------------------------------------- results
+
+  private onMessage(msg: FromWorker): void {
+    if (this.destroyed) return;
+    switch (msg.type) {
+      case 'results':
+        this.onResults(msg);
+        return;
+      case 'timeframes':
+        this.onTimeframes(msg.timeframes);
+        return;
+      case 'resync':
+        this.onResync(msg);
+        return;
+      case 'error': {
+        if (msg.id === undefined) {
+          this.fail(msg.message);
+          return;
+        }
+        const inst = this.lookup(msg.id);
+        const name = inst ? (getIndicator(inst.type)?.shortName ?? inst.type) : msg.id;
+        this.setStatus(msg.id, { state: 'error', message: msg.message });
+        this.onError(`${name}: ${msg.message}`);
+        return;
+      }
+    }
+  }
+
+  /** A live bar did not fit the worker's series: resend everything, once per burst. */
+  private onResync(msg: Extract<FromWorker, { type: 'resync' }>): void {
+    if (this.failed) return;
+    // A newer full series is already on its way, or the chart moved on (its reset resends).
+    if (msg.bars < this.barsSent || msg.revision !== this.sentRevision) return;
+    if (msg.revision !== this.chart.seriesRevision || !this.chart.store.length) return;
+    if (++this.resyncs > MAX_RESYNCS) {
+      this.fail('Indicator data keeps falling out of sync with the chart');
+      return;
+    }
+    this.sendBars(msg.revision);
+  }
+
+  /** Report a fatal worker failure once; stop resending to it. */
+  private fail(message: string): void {
+    if (this.failed) return;
+    this.failed = true;
+    this.onError(message);
+  }
+
+  private onResults(msg: Extract<FromWorker, { type: 'results' }>): void {
+    // A live bar applied cleanly: the worker is in step again.
+    if (msg.revision === this.sentRevision && msg.changes.every((c) => c.from > 0))
+      this.resyncs = 0;
+    if (msg.revision !== this.chart.seriesRevision) return;
+    const status: Record<string, InstanceStatus> = {};
+    for (const ch of msg.changes) {
+      if (!this.applied.has(ch.id)) continue;
+      status[ch.id] = ch.status;
+      const { revision, length } = msg;
+      this.engine(() => {
+        if (ch.from === 0)
+          this.chart.setStudyData(ch.id, {
+            revision,
+            length,
+            values: ch.values,
+            colors: ch.colors,
+          });
+        else
+          this.chart.updateStudyData(ch.id, {
+            revision,
+            from: ch.from,
+            length,
+            values: ch.values,
+            colors: ch.colors,
+          });
+      });
+    }
+    useIndicatorRuntime.setState((s) => ({
+      status: { ...s.status, ...status },
+      tick: s.tick + 1,
+    }));
+  }
+}

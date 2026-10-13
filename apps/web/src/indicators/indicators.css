@@ -1,0 +1,173 @@
+/* ---- study legend rows (rendered into the engine's legend slot) ---- */
+.ind-legend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: auto;
+}
+.ind-legend-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 4px;
+  margin-left: -4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: default;
+}
+.ind-legend-row:hover,
+.ind-legend-row.menu-open {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+}
+.ind-legend-name {
+  font-weight: 500;
+}
+.ind-legend-inputs {
+  color: var(--text-muted);
+}
+.ind-legend-row.off .ind-legend-name,
+.ind-legend-row.off .ind-legend-inputs {
+  opacity: 0.5;
+}
+.ind-legend-actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+}
+.ind-legend-row:hover .ind-legend-actions,
+.ind-legend-row:focus-within .ind-legend-actions,
+.ind-legend-row.menu-open .ind-legend-actions {
+  display: inline-flex;
+}
+.ind-legend-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.ind-legend-btn:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.ind-legend-value {
+  font-variant-numeric: tabular-nums;
+}
+.ind-legend-muted {
+  color: var(--text-muted);
+}
+.ind-legend-error {
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--down);
+  text-overflow: ellipsis;
+}
+
+/* ---- indicators picker ---- */
+.ind-list {
+  padding: 4px 0;
+}
+.ind-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 16px 0 12px;
+  cursor: pointer;
+}
+.ind-row.active {
+  background: var(--hover);
+}
+.ind-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ind-row-short {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ind-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ind-star:hover {
+  background: var(--hover);
+}
+.ind-star.on {
+  color: var(--star);
+}
+.ind-picker-note {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- settings dialog ---- */
+.ind-settings .dlg-tabs {
+  border-bottom: 1px solid var(--border);
+}
+.ind-settings-body {
+  height: 420px;
+  max-height: calc(100vh - 220px);
+  padding: 4px 20px 16px;
+  overflow-y: auto;
+}
+.ind-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ind-num {
+  width: 96px;
+  height: 32px;
+}
+.ind-style-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+.ind-style-row .dlg-check {
+  flex: 1;
+  min-width: 0;
+}
+.ind-style-row .dlg-select {
+  width: auto;
+}
+.ind-vis-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+.ind-vis-row .dlg-check {
+  width: 120px;
+}
+.ind-vis-row .ind-num {
+  width: 72px;
+}
