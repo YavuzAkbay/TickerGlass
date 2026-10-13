@@ -162,6 +162,79 @@ describe('session-aware extrapolation past the last bar', () => {
     expect(logicalToTime(tl, bars.length)).toEqual({ time: bars.at(-1)! - 6 * H + 3 * D });
   });
 
+  /** 5m bars 14:30..20:55 UTC on the first `days` weekdays. */
+  const fiveMin = (days: number) =>
+    dailyBars(days).flatMap((d) => Array.from({ length: 78 }, (_, k) => d + 14.5 * H + k * 300));
+  const M5: Interval = { unit: 'minute', count: 5 };
+
+  it('learns the modal trading day: odd prints and partial days do not change it', () => {
+    const bars = fiveMin(4);
+    const odd = [...bars.slice(0, 78), bars[77]! + 2 * H, ...bars.slice(78)]; // 22:55 print on day 1
+    const partial = [...bars.slice(0, 3 * 78 + 10)]; // day 4 still in progress
+    const ref = withCalendar(bars, M5).calendar!;
+    for (const times of [odd, partial]) {
+      const cal = withCalendar(times, M5).calendar!;
+      const end = times.at(-1)!;
+      for (let k = 1; k < 200; k += 7) expect(cal.step(end, k)).toBe(ref.step(end, k));
+    }
+    // Under two full days there is no shape to learn (plain stepping), unless the session is known.
+    const oneDay = Float64Array.from(bars.slice(0, 78 + 20));
+    expect(buildTradingCalendar(oneDay, oneDay.length, M5, 'UTC')).toBeNull();
+    const cal = buildTradingCalendar(oneDay, oneDay.length, M5, 'UTC', '1430-2100')!;
+    expect(cal.step(bars[77]!, 1)).toBe(bars[78]); // next day's open
+  });
+
+  it('prefers the regular session over the data', () => {
+    // The data has an extra 21:00 bar every day; the session ends at 21:00.
+    const bars = dailyBars(3).flatMap((d) =>
+      Array.from({ length: 79 }, (_, k) => d + 14.5 * H + k * 300),
+    );
+    const cal = buildTradingCalendar(Float64Array.from(bars), bars.length, M5, 'UTC', '1430-2100')!;
+    const fri = bars.at(-1)! - 78 * 300; // Wednesday 14:30
+    expect(cal.step(fri, 78)).toBe(fri + D); // 78 slots per day, not 79
+  });
+
+  it('keeps future anchors on the bars they will land on as bars arrive', () => {
+    // 3 full days, then day 4 arrives bar by bar with an odd after-hours print at its end.
+    const all = fiveMin(5);
+    const day4 = all.slice(3 * 78, 4 * 78);
+    const odd = 4 * 78;
+    const final = [...all.slice(0, odd), day4.at(-1)! + 2 * H, ...all.slice(odd)];
+    const loaded = final.slice(0, 3 * 78);
+    // Built once at load (as the chart does); anchors are bars of days 4 and 5.
+    const cal = withCalendar(loaded, M5).calendar!;
+    const targets = [3 * 78 + 5, 3 * 78 + 77, 4 * 78 + 1, 4 * 78 + 30];
+    for (let n = loaded.length; n <= final.length; n++) {
+      // Same result whether the calendar is kept from load or relearned now.
+      for (const tl of [
+        { ...timeline(final.slice(0, n), M5), calendar: cal },
+        withCalendar(final.slice(0, n), M5),
+      ]) {
+        for (const i of targets) {
+          // Day 5 indices count the odd print once it is there (it cannot be foreseen).
+          if (i < n || (i > odd && n <= odd)) continue;
+          expect(timeToLogical(tl, { time: final[i]! })).toBe(i);
+          expect(logicalToTime(tl, i)).toEqual({ time: final[i] });
+        }
+      }
+    }
+  });
+
+  it('projects on the bar grid for intervals that do not divide a day (7m)', () => {
+    // Round the clock on weekdays (24/5): the 7m grid restarts at each local midnight.
+    const M7: Interval = { unit: 'minute', count: 7 };
+    const per = Math.ceil(D / 420); // 206 slots, the last one short
+    const bars = dailyBars(3).flatMap((d) => Array.from({ length: per }, (_, k) => d + k * 420));
+    const tl = withCalendar(bars, M7);
+    for (let i = bars.length; i < bars.length + 3 * per; i += 5) {
+      const t = logicalToTime(tl, i)!.time;
+      expect((t % D) % 420).toBe(0);
+      expect(timeToLogical(tl, { time: t })).toBeCloseTo(i, 9);
+    }
+    // The first projected bar after Wednesday 23:55 is Thursday 00:00.
+    expect(logicalToTime(tl, bars.length)).toEqual({ time: bars.at(-1)! - 1435 * 60 + D });
+  });
+
   it('keeps plain stepping for round-the-clock data and weekly bars', () => {
     const all = Array.from({ length: 200 }, (_, i) => MON + i * H);
     expect(buildTradingCalendar(Float64Array.from(all), all.length, HOUR, 'UTC')).toBeNull();

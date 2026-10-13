@@ -98,9 +98,14 @@ export function timeToLogical(tl: AnchorTimeline, p: Pick<DrawingPoint, 'time' |
   if (t < time[0]!) return -stepsBetween(t, time[0]!, tl.interval);
   const i = indexAtOrBefore(time, n, t);
   const cal = tl.calendar;
-  // Past the newest raw bar's own span; a calendar maps non-trading gaps to the next slot.
-  if (i === n - 1 && t >= stepTime(tl.endTime, 1, tl.interval))
-    return n - 1 + (cal ? cal.slots(tl.endTime, t) : stepsBetween(tl.endTime, t, tl.interval));
+  // Past the newest raw bar's own span (a calendar may end it early: the short
+  // last bar of a day on a 7m grid); a calendar maps non-trading gaps to the next slot.
+  if (i === n - 1) {
+    let next = stepTime(tl.endTime, 1, tl.interval);
+    if (cal) next = Math.min(next, cal.step(tl.endTime, 1));
+    if (t >= next)
+      return n - 1 + (cal ? cal.slots(tl.endTime, t) : stepsBetween(tl.endTime, t, tl.interval));
+  }
   if (tl.bricks) return Math.min(runStart(time, i) + (p.brick ?? 0), i);
   if (i === n - 1 || t < stepTime(time[i]!, 1, tl.interval)) return i;
   return i + 1;

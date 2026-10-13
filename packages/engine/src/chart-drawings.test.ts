@@ -354,6 +354,20 @@ describe('Chart drawing API', () => {
     for (let i = 0; i < tl.length; i++) expect(timeToLogical(tl, logicalToTime(tl, i)!)).toBe(i);
   });
 
+  it('keeps the trading calendar across live bars and rebuilds it on reload', async () => {
+    const { chart, feed, recent } = await load(30);
+    const cal = chart.getAnchorTimeline().calendar;
+    expect(cal).toBeTruthy();
+    const last = recent.at(-1)!;
+    feed.tick({ ...last, time: last.time + DAY });
+    feed.tick({ ...last, time: last.time + 2 * DAY, close: last.close + 1 });
+    const tl = chart.getAnchorTimeline();
+    expect(tl.length).toBe(32);
+    expect(tl.calendar).toBe(cal);
+    await chart.setSymbol('OTHER');
+    expect(chart.getAnchorTimeline().calendar).not.toBe(cal);
+  });
+
   it('pointercancel aborts a drawing gesture instead of committing it', async () => {
     const { chart } = await load(10);
     vi.stubGlobal('Element', FakeEl);

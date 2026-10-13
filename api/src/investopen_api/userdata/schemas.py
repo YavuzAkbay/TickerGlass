@@ -21,6 +21,10 @@ MAX_SETTING_BYTES = 512_000
 MAX_NOTE_CHARS = 200_000
 MAX_BATCH_OPS = 5_000
 MAX_BUNDLE_ITEMS = 100_000
+MAX_BUNDLE_SETTINGS = 10_000
+
+#: Layout ids that would shadow fixed `/api/layouts/...` routes; regenerated on import.
+RESERVED_LAYOUT_IDS = frozenset({"last-used", "import", "export"})
 
 
 def now() -> datetime:
@@ -339,8 +343,11 @@ class Bundle(ApiModel):
     """All user data (`GET /api/export`, `POST /api/import`)."""
 
     version: int = BUNDLE_VERSION
-    app: Literal["investopen"] = "investopen"
+    #: Required: guards against importing an arbitrary JSON object.
+    app: Literal["investopen"]
     exported_at: datetime | None = None
+    # Sections absent from the request are left untouched, even in replace mode
+    # (`model_fields_set` tells absent from explicitly empty).
     layouts: list[BundleLayout] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     drawings: list[BundleDrawing] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     indicator_templates: list[BundleIndicatorTemplate] = Field(
@@ -352,7 +359,10 @@ class Bundle(ApiModel):
     chart_templates: list[BundleChartTemplate] = Field(
         default_factory=list, max_length=MAX_BUNDLE_ITEMS
     )
-    settings: dict[SettingKey, SettingValue] = Field(default_factory=dict)
+    #: Null values are rejected (422), like `PUT /settings/{key}`; export never emits null.
+    settings: dict[SettingKey, SettingValue] = Field(
+        default_factory=dict, max_length=MAX_BUNDLE_SETTINGS
+    )
     notes: list[BundleNote] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
 
 

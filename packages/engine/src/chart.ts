@@ -247,6 +247,8 @@ export class Chart implements StudyApi, DrawingApi {
     calendar: null as TradingCalendar | null,
   };
   private calendarKey = '';
+  /** Bumped when the raw bars are replaced or extended backwards (not on live bars). */
+  private rawEpoch = 0;
   private readonly drawingFormats = new Map<string, DrawingFormat>();
   private readonly intervalCache: { iv: Interval | null; str: string } = { iv: null, str: '' };
   private readonly axisLabelBuf: DrawingAxisLabel[] = [];
@@ -857,7 +859,11 @@ export class Chart implements StudyApi, DrawingApi {
   /**
    * The displayed series as drawings map anchors (bricks on brick types,
    * session-aware future slots): use with `timeToLogical`/`logicalToTime` for
-   * bar numbers that match the chart. A snapshot copy (additive API).
+   * bar numbers that match the chart (additive API). A new object each call,
+   * but `time` is the chart's live time column, not a copy (O(1), fine per
+   * frame): treat it as read-only and valid while `seriesRevision` is
+   * unchanged (appends add bars past `length`; resets and history prepends
+   * bump the revision). Call again after a change instead of keeping it.
    */
   getAnchorTimeline(): AnchorTimeline {
     return { ...this.refreshTimeline() };
@@ -876,15 +882,23 @@ export class Chart implements StudyApi, DrawingApi {
     return tl;
   }
 
-  /** Trading calendar of the raw bars (exchange timezone), rebuilt when the data changes. */
+  /**
+   * Trading calendar of the raw bars (exchange timezone). Built once per load
+   * (symbol, interval, extended hours) and history prepend, not per live bar,
+   * so anchors past the last bar keep their slots as bars arrive. The regular
+   * session shapes the day unless extended hours are shown.
+   */
   private tradingCalendar(): TradingCalendar | null {
     const r = this.raw;
     const n = r.length;
     const tz = this.symbolInfo?.timezone ?? 'UTC';
-    const key = n ? `${n}|${r.time[0]}|${r.time[n - 1]}|${this.intervalString()}|${tz}` : '';
+    const session = this.options.prepost ? null : (this.symbolInfo?.session ?? null);
+    const key = n ? `${this.rawEpoch}|${this.intervalString()}|${tz}|${session ?? ''}` : '';
     if (key !== this.calendarKey) {
       this.calendarKey = key;
-      this.timeline.calendar = n ? buildTradingCalendar(r.time, n, this.interval, tz) : null;
+      this.timeline.calendar = n
+        ? buildTradingCalendar(r.time, n, this.interval, tz, session)
+        : null;
     }
     return this.timeline.calendar;
   }
@@ -1461,6 +1475,7 @@ export class Chart implements StudyApi, DrawingApi {
       });
       if (gen !== this.loadGen) return;
       this.raw.setAll(res.bars);
+      this.rawEpoch++;
       this.brickSize = null;
       this.rebuildView();
       this.hasMore = res.hasMore;
@@ -1558,6 +1573,7 @@ export class Chart implements StudyApi, DrawingApi {
         if (gen !== this.loadGen) return 0;
         const before = this.store.length;
         const n = this.raw.prepend(res.bars);
+        if (n > 0) this.rawEpoch++;
         this.hasMore = res.hasMore && n > 0;
         if (n > 0) {
           this.rebuildView();

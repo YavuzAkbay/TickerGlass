@@ -27,29 +27,29 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 
 ## 2. Endpoints (all under `/api`)
 
-| Method + path                                                               | Client function                                      | Notes                                                               |
-| --------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| `GET /layouts`                                                              | `listLayouts`                                        | summaries (no state), newest `updatedAt` first                      |
-| `POST /layouts` `{name,state,schemaVersion?}`                               | `createLayout`                                       | 201; also "save as"                                                 |
-| `GET /layouts/{id}`                                                         | `getLayout`                                          |                                                                     |
-| `PUT /layouts/{id}` `{state,revision,schemaVersion?}`                       | `saveLayout`                                         | 409 if `revision` stale; returns new revision                       |
-| `PATCH /layouts/{id}` `{name}`                                              | `renameLayout`                                       | does not bump revision                                              |
-| `POST /layouts/{id}/duplicate` `{name}`                                     | `duplicateLayout`                                    | copies the _stored_ state                                           |
-| `DELETE /layouts/{id}`                                                      | `deleteLayout`                                       | 204                                                                 |
-| `GET/PUT /layouts/last-used` (`{id}`)                                       | `getLastUsedLayout`/`setLastUsedLayout`              | GET returns `null` when none                                        |
-| `GET /layouts/{id}/export`, `POST /layouts/import?name=`                    | `exportLayout`/`importLayout`                        | import always creates a new layout                                  |
-| `GET /drawings?symbol=&synced=true`                                         | `getDrawings`                                        | no symbol = all; with symbol = its + synced                         |
-| `POST /drawings/batch`                                                      | `batchDrawings`                                      | see §3                                                              |
-| `GET/POST /indicator-templates`, `GET/PUT/DELETE /indicator-templates/{id}` | `list/save/get/update/deleteIndicatorTemplate`       | POST upserts by name (201 new, 200 replaced); PUT 409 on name clash |
-| `GET /drawing-templates?toolType=`, `POST`, `GET/PUT/DELETE /{id}`          | `...DrawingTemplate(s)`                              | POST upserts by (toolType, name)                                    |
-| `GET/POST /chart-templates`, `GET/PUT/DELETE /{id}`                         | `...ChartTemplate(s)`                                | POST upserts by name                                                |
-| `GET /settings`, `PATCH /settings` `{k: v\|null}`                           | `getSettings`/`patchSettings`                        | null deletes; PATCH returns all settings                            |
-| `GET/PUT/DELETE /settings/{key}` (`{value}`)                                | `getSetting`/`putSetting`/`deleteSetting`            | GET 404 if unset; last writer wins per key                          |
-| `GET /notes?symbol=`, `POST`, `GET/PUT/DELETE /notes/{id}`                  | `listNotes/createNote/getNote/updateNote/deleteNote` | PUT with `revision` -> 409 if stale                                 |
-| `GET /export`                                                               | `exportAll`                                          | full bundle (§4)                                                    |
-| `POST /import?mode=merge\|replace&dryRun=`                                  | `importAll`                                          | returns per-entity `{created,updated,deleted}`                      |
+| Method + path                                                               | Client function                                      | Notes                                                                        |
+| --------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `GET /layouts`                                                              | `listLayouts`                                        | summaries (no state), newest `updatedAt` first                               |
+| `POST /layouts` `{name,state,schemaVersion?}`                               | `createLayout`                                       | 201; also "save as"                                                          |
+| `GET /layouts/{id}`                                                         | `getLayout`                                          |                                                                              |
+| `PUT /layouts/{id}` `{state,revision,schemaVersion?}`                       | `saveLayout`                                         | 409 if `revision` stale; returns new revision                                |
+| `PATCH /layouts/{id}` `{name}`                                              | `renameLayout`                                       | does not bump revision                                                       |
+| `POST /layouts/{id}/duplicate` `{name}`                                     | `duplicateLayout`                                    | copies the _stored_ state                                                    |
+| `DELETE /layouts/{id}`                                                      | `deleteLayout`                                       | 204                                                                          |
+| `GET/PUT /layouts/last-used` (`{id}`)                                       | `getLastUsedLayout`/`setLastUsedLayout`              | GET returns `null` when none                                                 |
+| `GET /layouts/{id}/export`, `POST /layouts/import?name=`                    | `exportLayout`/`importLayout`                        | import always creates a new layout                                           |
+| `GET /drawings?symbol=&synced=true`                                         | `getDrawings`                                        | no symbol = all; with symbol = its + synced                                  |
+| `POST /drawings/batch`                                                      | `batchDrawings`                                      | see §3                                                                       |
+| `GET/POST /indicator-templates`, `GET/PUT/DELETE /indicator-templates/{id}` | `list/save/get/update/deleteIndicatorTemplate`       | POST upserts by name (201 new, 200 replaced); PUT 409 on name clash          |
+| `GET /drawing-templates?toolType=`, `POST`, `GET/PUT/DELETE /{id}`          | `...DrawingTemplate(s)`                              | POST upserts by (toolType, name)                                             |
+| `GET/POST /chart-templates`, `GET/PUT/DELETE /{id}`                         | `...ChartTemplate(s)`                                | POST upserts by name                                                         |
+| `GET /settings`, `PATCH /settings` `{k: v\|null}`                           | `getSettings`/`patchSettings`                        | null deletes; PATCH returns all settings                                     |
+| `GET/PUT/DELETE /settings/{key}` (`{value}`)                                | `getSetting`/`putSetting`/`deleteSetting`            | GET 404 if unset; last writer wins per key                                   |
+| `GET /notes?symbol=`, `POST`, `GET/PUT/DELETE /notes/{id}`                  | `listNotes/createNote/getNote/updateNote/deleteNote` | PUT with `revision` -> 409 if stale                                          |
+| `GET /export`                                                               | `exportAll`                                          | full bundle (§4)                                                             |
+| `POST /import?mode=merge\|replace&dryRun=&confirm=`                         | `importAll`                                          | returns per-entity `{created,updated,deleted}`; replace needs `confirm=true` |
 
-Errors: `{detail: string}` (404, 422) or, for revision conflicts, `{detail: {message, current | conflicts}}`.
+Errors: `{detail: string}` (400, 404, 409 name clash, 422) or, for revision conflicts, `{detail: {message, current | conflicts}}`.
 `ApiError.message` is the `detail` string or `detail.message`; `ApiError.body` holds the parsed body.
 
 ## 3. Revisions and conflicts
@@ -65,7 +65,15 @@ schemaVersion?, force?}`. Upsert with `baseRevision: null` = create (conflict if
   `detail.conflicts[] = {id, revision|null, drawing|null}` (`drawingConflicts(err)`). `force: true` skips checks
   (last writer wins, for "keep mine"). Success returns the written rows (new revisions) and `deleted` ids.
 - **Notes**: optional `revision` on PUT (409 with `detail.current`); omit it to overwrite.
-- **Templates, settings**: last writer wins.
+- **Templates, settings**: last writer wins. A name clash (PUT rename, or two POSTs creating the same name at the
+  same time) is a 409 `{detail: string}`.
+
+Checks are atomic with the write: layouts/notes use one `UPDATE ... WHERE id = :id AND revision = :base` and
+treat "0 rows" as the conflict; the drawing batch pre-checks (for the full `conflicts` list) and then writes each
+row conditionally on the revision it read, rolling the whole batch back with the same 409 shape if another writer
+committed in between (or created the same id: an insert unique violation). `force: true` writes unconditionally, but
+a concurrent create of the same id is still a 409. `tests/test_userdata.py` races a second connection between check
+and write; set `TEST_DATABASE_URL` to a disposable Postgres database to run those tests there too.
 
 Recommended web policy: keep `id -> revision` for drawings next to the store; diff the store against the last
 synced state (like `mergeBuckets`) to build a batch; on 409 adopt the server copies of the conflicting ids, rebuild
@@ -75,18 +83,26 @@ the batch for the rest, retry. Refetch (`getDrawings`, `getLayout`) on window fo
 
 ```jsonc
 { "version": 1, "app": "investopen", "exportedAt": "...",
-  "layouts": [{ "id", "name", "state", "schemaVersion", "isLastUsed", ... }],
+  "layouts": [{ "id", "name", "state", "schemaVersion", "isLastUsed", ... }],   // "app" is required
   "drawings": [{ "data": <Drawing>, "schemaVersion", ... }],   // id/symbol/z derived from data
   "indicatorTemplates": [...], "drawingTemplates": [...], "chartTemplates": [...],
   "settings": { "<key>": <value> }, "notes": [{ "id", "symbol", "text", ... }] }
 ```
 
-Export fields `revision`/`createdAt`/`updatedAt` are informational. Import validates everything first (version
-1..server's `BUNDLE_VERSION`, sizes, duplicate keys in the bundle -> 422) and runs in one transaction.
+Export fields `revision`/`createdAt`/`updatedAt` are informational. Import validates everything first (`app:
+"investopen"` required, version 1..server's `BUNDLE_VERSION`, sizes, duplicate keys in the bundle, per-symbol
+drawings without a symbol, null setting values, more than 10,000 settings -> 422) and runs in one transaction.
 `merge`: layouts/drawings/notes match by id, templates by name (drawing templates by toolType+name), settings by
 key; matches are overwritten (revision bumped), the rest is created; a bundle `isLastUsed` applies only if no
-layout is last-used yet. `replace`: deletes all user data first. `dryRun=true` returns the same summary and rolls
-back. Single-layout files: `{version: 1, kind: "layout", layout: {name, state, schemaVersion}}`.
+layout is last-used yet. `replace` requires `confirm=true` (400 otherwise; not needed with `dryRun=true`) and
+empties only the tables of the sections **present** in the bundle (`"notes": []` wipes notes; an absent `notes`
+key leaves them alone), so `{"version": 1, "app": "investopen"}` changes nothing. Send a full export bundle to
+replace everything. `dryRun=true` returns the same summary and rolls back.
+
+- Layout ids that would shadow a fixed route (`last-used`, `import`, `export`) or are not `[A-Za-z0-9_-]{1,36}` get a
+  fresh id on import (`isLastUsed` follows the new id); such layouts are always created, never matched.
+- Settings: `null` values are rejected (422), as with `PUT /settings/{key}`; to remove a key use `PATCH` / `DELETE`.
+  Export never emits null. Single-layout files: `{version: 1, kind: "layout", layout: {name, state, schemaVersion}}`.
 
 ## 5. Schema versions and migrations
 

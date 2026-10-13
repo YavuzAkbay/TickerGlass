@@ -682,6 +682,58 @@ describe('hit testing', () => {
     expect(hitTestStudy(dc, s, ts.indexToX(0), ps.priceToY(170))).toBeNull();
   });
 
+  it('does not hit bars drawn with no colour (STUDY_COLOR_NONE)', () => {
+    const N = STUDY_COLOR_NONE;
+    const shape: StudyOutputMeta = {
+      type: 'shape',
+      id: 'sh',
+      title: 'SH',
+      visible: true,
+      shape: 'circle',
+      location: 'absolute',
+      size: 'small',
+      colors: ['#fff'],
+      text: '',
+      textColor: '',
+    };
+    const fill: StudyOutputMeta = {
+      type: 'fill',
+      id: 'f',
+      title: 'F',
+      visible: true,
+      between: ['a', 'b'],
+      colors: ['#fff'],
+    };
+    const s = withData(
+      [plot('a'), plot('b'), plot('h', { kind: 'histogram', lineWidth: 4 }), shape, fill],
+      {
+        a: f64([100, 100, 100, 100]),
+        b: f64([50, 50, 50, 50]),
+        h: f64([20, 20, 20, 20]),
+        sh: f64([180, 180, 180, 180]),
+      },
+      {
+        a: Uint8Array.from([0, 0, N, 0]),
+        h: Uint8Array.from([N, 0, 0, 0]),
+        sh: Uint8Array.from([0, N, 0, 0]),
+        f: Uint8Array.from([0, N, 0, 0]),
+      },
+    );
+    const { dc, ts, ps } = setup(4);
+    const mid = (i: number) => (ts.indexToX(i) + ts.indexToX(i + 1)) / 2;
+    // Line: the segment ending at bar 2 is not drawn; the others are.
+    expect(hitTestStudy(dc, s, mid(1), ps.priceToY(100))).not.toBe('a');
+    expect(hitTestStudy(dc, s, mid(0), ps.priceToY(100))).toBe('a');
+    expect(hitTestStudy(dc, s, mid(2), ps.priceToY(100))).toBe('a');
+    // Histogram, shape and fill: bar 0 / 1 are "none".
+    expect(hitTestStudy(dc, s, ts.indexToX(0), ps.priceToY(10))).toBeNull();
+    expect(hitTestStudy(dc, s, ts.indexToX(1), ps.priceToY(10))).toBe('h');
+    expect(hitTestStudy(dc, s, ts.indexToX(1), ps.priceToY(180))).toBeNull();
+    expect(hitTestStudy(dc, s, ts.indexToX(2), ps.priceToY(180))).toBe('sh');
+    expect(hitTestStudy(dc, s, ts.indexToX(1), ps.priceToY(75))).toBeNull();
+    expect(hitTestStudy(dc, s, ts.indexToX(2), ps.priceToY(75))).toBe('f');
+  });
+
   it('segmentDistance clamps to the segment ends', () => {
     expect(segmentDistance(5, 3, 0, 0, 10, 0)).toBe(3);
     expect(segmentDistance(-3, 4, 0, 0, 10, 0)).toBe(5);

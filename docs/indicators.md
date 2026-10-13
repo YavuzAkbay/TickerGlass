@@ -67,7 +67,9 @@ reused context: `c.i`, OHLCV arrays, `c.src.<sourceInput>`, `c.inputs`, `c.env`,
 `intervalSeconds` (0 = unknown; timeframe instances get their timeframe's seconds). Period-anchored
 indicators use `calendarPeriod(time, unit, tz, session)` (`session|week|month|quarter|year|decade|century`;
 `session` = exchange calendar day, or the trading day of a session that wraps midnight, e.g. futures
-18:00-17:00; weeks start Monday). VWAP: anchors Session/Week/Month/Quarter/Year/Decade/Century in the
+18:00-17:00; weeks, months, quarters and years of such a session also start at the session open, so a Sunday
+18:00 open begins the new week; weeks start Monday). Zone offsets are cached per 15 UTC minutes (half-hour
+DST zones such as Australia/Lord_Howe). VWAP: anchors Session/Week/Month/Quarter/Year/Decade/Century in the
 exchange timezone and "Hide VWAP on 1D or Above" (`env.intervalSeconds >= 1D`). OBV: reference "Smoothing" (None,
 SMA, SMA + Bollinger Bands, EMA, SMMA (RMA), WMA, VWMA; length, BB StdDev). Unset outputs are NaN for the bar. All running state lives in `ta` primitives created in
 `setup` (`sma ema rma sum stdev highest lowest history vars series`); creating one inside `step` is an error.

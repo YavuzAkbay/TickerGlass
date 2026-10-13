@@ -75,13 +75,17 @@ and reloads without migration. `timeToLogical(timeline, point)`:
   overnight, a daily midnight anchor on an intraday chart) maps to the next bar. Switching 1h -> 1D puts
   a Wed 16:30 anchor on Wednesday's bar; switching back puts it exactly where it was made.
 - **Past the last bar**: `last + slots(endTime, time)` where `endTime` = newest raw bar. Slots come from the
-  timeline's `calendar` (`AnchorTimeline.calendar`, additive; `buildTradingCalendar(time, n, interval, tz)`),
-  learned from the newest 2000 raw bars in the exchange timezone: weekends are skipped unless the data has
-  weekend bars (crypto), and intraday slots only cover the trading day seen in the data (earliest to latest
-  bar time of day, so ETH data extends it). A time in a non-trading gap maps to the next slot, like gaps inside
-  the data. Round-the-clock intraday data, weekly and monthly intervals step plain intervals (months by
-  calendar month). Exchange holidays are not known (they count as slots). Anchors created in the future area
-  are whole slots.
+  timeline's `calendar` (`AnchorTimeline.calendar`, additive; `buildTradingCalendar(time, n, interval, tz,
+session?)`), in the exchange timezone: weekends are skipped unless the newest 2000 raw bars have weekend bars
+  (crypto). Intraday slots cover the regular `symbolInfo.session` when known and extended hours are off;
+  otherwise the typical day of those bars (modal first and last bar time of day, at least two full days
+  matching it, else plain steps), so odd after-hours prints and partial days do not change it. The chart
+  builds it once per load / history prepend, not per live bar, so future anchors keep their slots as bars
+  arrive. Slot times lie on the bar grid from the day's first slot (intervals that do not divide a day, e.g.
+  7m, restart the grid each day). A bar in a gap (an odd print) sits before the next day's first slot. A time
+  in a non-trading gap maps to the next slot, like gaps inside the data. Round-the-clock intraday data, weekly
+  and monthly intervals step plain intervals (months by calendar month). Exchange holidays are not known
+  (they count as slots). Anchors created in the future area are whole slots.
 - **Before the first bar**: extrapolated back from the first bar; resolves exactly once history loads.
 - **Brick types** (Renko, Kagi, Line break, P&F, Range): the run of bricks at the last brick time `<= time`,
   offset by `brick` (position within bricks sharing a time). Up to `endTime` (newest raw bar) maps to the
@@ -139,8 +143,9 @@ Editing API (B, exact signatures):
   the earliest anchor of the group to that time (+ price delta for drawings on the same pane as that anchor).
   Throws on malformed JSON; unknown tool types are skipped. A drawing whose `paneId` does not exist on this
   chart (a study pane) is pasted on `main`.
-- `getAnchorTimeline(): AnchorTimeline` (additive) — snapshot of the timeline drawings use (bricks, `endTime`,
-  `calendar`); with `timeToLogical`/`logicalToTime` it gives bar numbers that match the chart on every chart
+- `getAnchorTimeline(): AnchorTimeline` (additive) — the timeline drawings use (bricks, `endTime`,
+  `calendar`). A new object per call, but `time` is the live column (no copy): read-only, valid while
+  `chart.seriesRevision` is unchanged; call again rather than keeping it. With `timeToLogical`/`logicalToTime` it gives bar numbers that match the chart on every chart
   type (the Coordinates tab's Bar #).
 - `bringToFront(ids)`, `sendToBack(ids)`, `bringForward(ids)`, `sendBackward(ids)`: `(ids: readonly
 string[]) => DrawingChange[]` — within each drawing's pane; no events (app edit), the returned changes are

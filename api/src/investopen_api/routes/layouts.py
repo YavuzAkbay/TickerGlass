@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from .. import models as m
 from ..deps import SessionDep
@@ -85,9 +85,25 @@ def get_layout(session: SessionDep, layout_id: str) -> s.Layout:
 
 @router.put("/{layout_id}", response_model=s.Layout)
 def save_layout(session: SessionDep, layout_id: str, body: s.LayoutSave) -> s.Layout:
-    """Overwrite the state. 409 (with the stored layout) unless `revision` is current."""
-    row = _get(session, layout_id)
-    if body.revision != row.revision:
+    """Overwrite the state. 409 (with the stored layout) unless `revision` is current.
+
+    The revision check and the write are one conditional UPDATE, so two writers
+    based on the same revision cannot both succeed.
+    """
+    stmt = (
+        update(m.Layout)
+        .where(m.Layout.id == layout_id, m.Layout.revision == body.revision)
+        .values(
+            state=body.state,
+            schema_version=body.schema_version,
+            revision=m.Layout.revision + 1,
+            updated_at=s.now(),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if store.rowcount(session.execute(stmt)) != 1:
+        session.rollback()
+        row = _get(session, layout_id)
         raise HTTPException(
             409,
             {
@@ -96,10 +112,7 @@ def save_layout(session: SessionDep, layout_id: str, body: s.LayoutSave) -> s.La
                 "current": store.layout(row).model_dump(mode="json", by_alias=True),
             },
         )
-    row.state = body.state
-    row.schema_version = body.schema_version
-    row.revision += 1
-    row.updated_at = s.now()
+    row = store.reload(session, m.Layout, layout_id)
     session.commit()
     return store.layout(row)
 

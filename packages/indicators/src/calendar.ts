@@ -5,14 +5,17 @@
 
 const DAY = 86_400;
 const HOUR = 3600;
+/** Offset cache granularity: every real DST transition falls on a 15-minute UTC boundary. */
+const SLOT = 900;
 
 /** Calendar unit of a period. 'session' = trading day (see `calendarPeriod`). */
 export type CalendarUnit = 'session' | 'week' | 'month' | 'quarter' | 'year' | 'decade' | 'century';
 
 /**
- * UTC offsets of one IANA zone, memoized per UTC hour (DST transitions fall on
- * UTC hour boundaries for practically every zone), so 100k one-minute bars
- * cost ~1.7k Intl calls.
+ * UTC offsets of one IANA zone, memoized per 15 UTC minutes. Hour slots are
+ * not enough: half-hour zones such as Australia/Lord_Howe (+10:30 / +11, DST at
+ * 02:00 local = 15:30 UTC) and India-style offsets change on half hours. 100k
+ * one-minute bars cost ~6.7k Intl calls.
  */
 class ZoneOffsets {
   private readonly fmt: Intl.DateTimeFormat;
@@ -33,10 +36,10 @@ class ZoneOffsets {
 
   /** Offset in seconds (local - UTC) at unix time `t`. */
   offset(t: number): number {
-    const key = Math.floor(t / HOUR);
+    const key = Math.floor(t / SLOT);
     const hit = this.cache.get(key);
     if (hit !== undefined) return hit;
-    const at = key * HOUR;
+    const at = key * SLOT;
     const parts: Record<string, number> = {};
     for (const p of this.fmt.formatToParts(new Date(at * 1000)))
       if (p.type !== 'literal') parts[p.type] = Number(p.value);
@@ -95,8 +98,9 @@ function sessionShift(session: string | null): number {
  * (IANA; '' / 'UTC' / unknown = UTC). Consecutive bars with the same number
  * are in the same period. 'session' is the exchange calendar day; when
  * `session` ("HHMM-HHMM", exchange time) wraps midnight (futures, FX), the
- * trading day starts at the session open of the previous calendar day. Weeks
- * start on Monday.
+ * trading day starts at the session open of the previous calendar day, and so
+ * do weeks, months, quarters, ... (a Sunday 18:00 open is Monday's trading
+ * day, so it starts the new week). Weeks start on Monday.
  */
 export function calendarPeriod(
   time: number,
@@ -104,7 +108,7 @@ export function calendarPeriod(
   tz = 'UTC',
   session: string | null = null,
 ): number {
-  const local = time + tzOffset(time, tz) + (unit === 'session' ? sessionShift(session) : 0);
+  const local = time + tzOffset(time, tz) + sessionShift(session);
   const day = Math.floor(local / DAY);
   if (unit === 'session') return day;
   // 1970-01-01 was a Thursday; +3 makes weeks start on Monday.

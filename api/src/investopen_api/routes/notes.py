@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from .. import models as m
 from ..deps import SessionDep
@@ -49,9 +49,24 @@ def get_note(session: SessionDep, note_id: str) -> s.Note:
 
 @router.put("/{note_id}", response_model=s.Note)
 def update_note(session: SessionDep, note_id: str, body: s.NoteUpdate) -> s.Note:
-    """409 (with the stored note) if `revision` is given and stale."""
-    row = _get(session, note_id)
-    if body.revision is not None and body.revision != row.revision:
+    """409 (with the stored note) if `revision` is given and stale.
+
+    Check and write are one conditional UPDATE (no lost updates under concurrency).
+    """
+    cond = [m.Note.id == note_id]
+    if body.revision is not None:
+        cond.append(m.Note.revision == body.revision)
+    stmt = (
+        update(m.Note)
+        .where(*cond)
+        .values(
+            symbol=body.symbol, text=body.text, revision=m.Note.revision + 1, updated_at=s.now()
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if store.rowcount(session.execute(stmt)) != 1:
+        session.rollback()
+        row = _get(session, note_id)
         raise HTTPException(
             409,
             {
@@ -59,9 +74,7 @@ def update_note(session: SessionDep, note_id: str, body: s.NoteUpdate) -> s.Note
                 "current": store.note(row).model_dump(mode="json", by_alias=True),
             },
         )
-    row.symbol, row.text = body.symbol, body.text
-    row.revision += 1
-    row.updated_at = s.now()
+    row = store.reload(session, m.Note, note_id)
     session.commit()
     return store.note(row)
 

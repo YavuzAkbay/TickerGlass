@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defineIndicator, IndicatorRegistry } from './registry';
 import { IndicatorRuntime } from './runtime';
 import { EMA, PIVOT_POINTS, SMA, VWAP } from './builtins';
-import { calendarPeriod } from './calendar';
+import { calendarPeriod, tzOffset } from './calendar';
 import { resolveOutputs } from './resolve';
 import { barAt, randomBars, slice } from './test-utils';
 import type { BarArrays } from './types';
@@ -376,6 +376,38 @@ describe('bars context (timezone, session, interval)', () => {
     expect(calendarPeriod(eoq, 'century', NY)).toBe(20);
     // Unknown zones fall back to UTC.
     expect(calendarPeriod(t, 'session', 'Not/AZone')).toBe(calendarPeriod(t, 'session', 'UTC'));
+  });
+
+  it('anchors week/month/quarter/year of an overnight session at the session open', () => {
+    const FUT = '1800-1700';
+    const at = (y: number, mo: number, d: number, h: number) => Date.UTC(y, mo - 1, d, h) / 1000;
+    // Fri 2024-03-08 16:00 EST; Sun 2024-03-10 18:00 EDT opens Monday's trading day (new week).
+    const fri = at(2024, 3, 8, 21);
+    const sunOpen = at(2024, 3, 10, 22);
+    const mon = at(2024, 3, 11, 14);
+    expect(calendarPeriod(sunOpen, 'week', NY, FUT)).toBe(calendarPeriod(fri, 'week', NY, FUT) + 1);
+    expect(calendarPeriod(sunOpen, 'week', NY, FUT)).toBe(calendarPeriod(mon, 'week', NY, FUT));
+    // Without a session the Sunday bar stays in the old (calendar) week.
+    expect(calendarPeriod(sunOpen, 'week', NY)).toBe(calendarPeriod(fri, 'week', NY));
+    // Tue 2024-04-30: 16:00 EDT is April, the 18:00 open is May 1's trading day.
+    expect(calendarPeriod(at(2024, 4, 30, 20), 'month', NY, FUT)).toBe(2024 * 12 + 3);
+    expect(calendarPeriod(at(2024, 4, 30, 22), 'month', NY, FUT)).toBe(2024 * 12 + 4);
+    // Sun 2024-03-31 18:00 EDT opens Q2; Tue 2024-12-31 18:00 EST opens 2025.
+    expect(calendarPeriod(at(2024, 3, 31, 22), 'quarter', NY, FUT)).toBe(2024 * 4 + 1);
+    expect(calendarPeriod(at(2024, 3, 31, 20), 'quarter', NY, FUT)).toBe(2024 * 4);
+    expect(calendarPeriod(at(2024, 12, 31, 23), 'year', NY, FUT)).toBe(2025);
+    expect(calendarPeriod(at(2024, 12, 31, 21), 'year', NY, FUT)).toBe(2024);
+  });
+
+  it('resolves half-hour DST transitions (Australia/Lord_Howe)', () => {
+    const LH = 'Australia/Lord_Howe';
+    // DST starts 2024-10-06 02:00 LHST (+10:30) = 2024-10-05 15:30 UTC, to +11:00.
+    const before = Date.UTC(2024, 9, 5, 15, 15) / 1000;
+    const after = Date.UTC(2024, 9, 5, 15, 45) / 1000;
+    expect(tzOffset(before, LH)).toBe(10.5 * 3600);
+    expect(tzOffset(after, LH)).toBe(11 * 3600);
+    // Local midnight of 2024-10-06 = 13:00 UTC on the 5th (before DST): same session day.
+    expect(calendarPeriod(after, 'session', LH)).toBe(Date.UTC(2024, 9, 6) / 1000 / 86_400);
   });
 
   it('resets session VWAP at exchange midnight and recomputes on a context change', () => {

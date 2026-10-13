@@ -1,8 +1,10 @@
 """Phase 7 user data endpoints: layouts, drawings, templates, settings, notes,
 import/export, and the migration."""
 
-from collections.abc import Iterator
-from datetime import datetime
+import os
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +15,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import Connection, Engine, create_engine, event, insert, inspect, text, update
 
 from investopen_api import models
 from investopen_api.app import create_app
@@ -256,6 +258,12 @@ def test_drawings_validation(client: TestClient) -> None:
     assert status(upserts=[{"drawing": drawing("a")}], deletes=[{"id": "a"}]) == 422
     assert status(upserts=[{"drawing": {**drawing("a"), "big": "x" * 600_000}}]) == 422
     assert status(upserts=[{"drawing": drawing("a"), "baseRevision": 0}]) == 422
+    # A per-symbol drawing needs a symbol (else it would be stored under "").
+    assert status(upserts=[{"drawing": drawing("a", symbol="  ")}]) == 422
+    no_symbol = drawing("a")
+    del no_symbol["symbol"]
+    assert status(upserts=[{"drawing": no_symbol}]) == 422
+    assert status(upserts=[{"drawing": {**no_symbol, "scope": "all"}}]) == 200
     assert status(deletes=[{"id": str(i)} for i in range(5001)]) == 422
     assert status() == 200
 
@@ -452,7 +460,10 @@ def test_import_dry_run_and_replace(client: TestClient) -> None:
     assert summary["notes"] == {"created": 0, "updated": 0, "deleted": 2}
     assert len(client.get("/api/layouts").json()) == 2  # rolled back
 
-    res = client.post("/api/import", params={"mode": "replace"}, json=small)
+    # Replace deletes data: it needs confirm=true (a dry run does not).
+    assert client.post("/api/import", params={"mode": "replace"}, json=small).status_code == 400
+    assert len(client.get("/api/layouts").json()) == 2
+    res = client.post("/api/import", params={"mode": "replace", "confirm": True}, json=small)
     assert res.status_code == 200
     assert len(client.get("/api/layouts").json()) == 1
     assert client.get("/api/notes").json() == []
@@ -464,14 +475,231 @@ def test_import_validation(client: TestClient) -> None:
     def status(body: dict[str, Any], **params: Any) -> int:
         return int(client.post("/api/import", params=params, json=body).status_code)
 
-    assert status({"version": 2}) == 422
+    app = {"version": 1, "app": "investopen"}
+    assert status({"version": 2, "app": "investopen"}) == 422
     assert status({"version": 1, "app": "other"}) == 422
-    assert status({"version": 1}, mode="wipe") == 422
-    assert status({"version": 1, "drawings": [{"data": {"id": "x"}}]}) == 422
+    assert status({"version": 1}) == 422  # `app` is required
+    assert status(app, mode="wipe") == 422
+    assert status({**app, "drawings": [{"data": {"id": "x"}}]}) == 422
     dup = {"id": "a", "name": "n", "state": {}}
-    assert status({"version": 1, "layouts": [dup, dup]}) == 422
-    assert status({"version": 1, "settings": {"bad key": 1}}) == 422
-    assert status({"version": 1}) == 200
+    assert status({**app, "layouts": [dup, dup]}) == 422
+    assert status({**app, "settings": {"bad key": 1}}) == 422
+    # Null setting values are rejected (like PUT /settings/{key}), not treated as deletes.
+    assert status({**app, "settings": {"k": None}}) == 422
+    assert status({**app, "settings": {f"k{i}": i for i in range(10_001)}}) == 422
+    unsynced = drawing("u", scope="symbol")
+    del unsynced["symbol"]
+    assert status({**app, "drawings": [{"data": unsynced}]}) == 422
+    assert status(app) == 200
+
+
+def test_import_replace_keeps_absent_sections(client: TestClient) -> None:
+    seed(client)
+    before = client.get("/api/export").json()
+    # Nothing present -> nothing deleted, even in replace mode.
+    res = client.post(
+        "/api/import",
+        params={"mode": "replace", "confirm": True},
+        json={"version": 1, "app": "investopen"},
+    )
+    assert res.status_code == 200
+    assert all(c["deleted"] == 0 for k, c in res.json().items() if isinstance(c, dict))
+    assert strip_volatile(client.get("/api/export").json()) == strip_volatile(before)
+
+    # Only `notes` (explicitly empty) is replaced; everything else is untouched.
+    body = {"version": 1, "app": "investopen", "notes": []}
+    res = client.post("/api/import", params={"mode": "replace", "confirm": True}, json=body)
+    assert res.json()["notes"]["deleted"] == 1 and res.json()["layouts"]["deleted"] == 0
+    after = strip_volatile(client.get("/api/export").json())
+    assert after == {**strip_volatile(before), "notes": []}
+
+
+def test_import_regenerates_reserved_layout_ids(client: TestClient) -> None:
+    layouts = [
+        {"id": "last-used", "name": "A", "state": STATE, "isLastUsed": True},
+        {"id": "import", "name": "B", "state": STATE},
+        {"id": "a/b", "name": "C", "state": STATE},
+        {"id": "keep-me", "name": "D", "state": STATE},
+    ]
+    res = client.post("/api/import", json={"version": 1, "app": "investopen", "layouts": layouts})
+    assert res.status_code == 200 and res.json()["layouts"]["created"] == 4
+    ids = {x["name"]: x["id"] for x in client.get("/api/layouts").json()}
+    assert ids["D"] == "keep-me"
+    assert {ids["A"], ids["B"], ids["C"]}.isdisjoint({"last-used", "import", "a/b"})
+    # The last-used flag follows the regenerated id.
+    assert client.get("/api/layouts/last-used").json()["id"] == ids["A"]
+    assert client.get(f"/api/layouts/{ids['B']}").json()["name"] == "B"
+
+
+# ------------------------------------------------------------- concurrency
+#
+# A competing writer commits on another connection right before the request's
+# own write statement runs (after its revision/name check). Runs on SQLite, and
+# also on Postgres when TEST_DATABASE_URL points at a disposable database.
+
+PG_URL = os.environ.get("TEST_DATABASE_URL")
+
+
+@pytest.fixture(
+    params=[
+        "sqlite",
+        pytest.param(
+            "postgres",
+            marks=pytest.mark.skipif(not PG_URL, reason="TEST_DATABASE_URL not set"),
+        ),
+    ]
+)
+def race_client(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[TestClient]:
+    url = PG_URL if request.param == "postgres" else f"sqlite:///{tmp_path}/r.db"
+    app = create_app(provider=NullProvider(), database_url=url)
+    with TestClient(app) as c:
+        with engine_of(c).begin() as conn:
+            for table in USER_TABLES:
+                conn.execute(text(f"DELETE FROM {table}"))
+        yield c
+
+
+def engine_of(client: TestClient) -> Engine:
+    engine: Engine = client.app.state.sessionmaker.kw["bind"]  # type: ignore[attr-defined]
+    return engine
+
+
+@contextmanager
+def interleave(
+    client: TestClient, statement: str, competitor: Callable[[Connection], object]
+) -> Iterator[None]:
+    """Run `competitor` in its own committed transaction just before the first
+    SQL statement starting with `statement` (case-insensitive)."""
+    engine = engine_of(client)
+    fired = False
+
+    def hook(*args: Any) -> None:
+        nonlocal fired
+        if not fired and str(args[2]).lstrip().upper().startswith(statement.upper()):
+            fired = True
+            with engine.begin() as other:
+                competitor(other)
+
+    event.listen(engine, "before_cursor_execute", hook)
+    try:
+        yield
+    finally:
+        event.remove(engine, "before_cursor_execute", hook)
+    assert fired, f"no {statement!r} statement ran"
+
+
+def test_layout_save_race_is_a_conflict(race_client: TestClient) -> None:
+    client = race_client
+    lid = client.post("/api/layouts", json={"name": "L", "state": STATE}).json()["id"]
+    theirs = {**STATE, "by": "other device"}
+
+    def other(conn: Connection) -> None:
+        conn.execute(
+            update(models.Layout)
+            .where(models.Layout.id == lid)
+            .values(state=theirs, revision=models.Layout.revision + 1)
+        )
+
+    with interleave(client, "UPDATE layouts", other):
+        res = client.put(f"/api/layouts/{lid}", json={"state": {"by": "me"}, "revision": 1})
+    assert res.status_code == 409
+    assert res.json()["detail"]["current"]["revision"] == 2
+    assert client.get(f"/api/layouts/{lid}").json()["state"] == theirs
+
+
+def test_note_update_race_is_a_conflict(race_client: TestClient) -> None:
+    client = race_client
+    nid = client.post("/api/notes", json={"text": "v1"}).json()["id"]
+
+    def other(conn: Connection) -> None:
+        conn.execute(
+            update(models.Note)
+            .where(models.Note.id == nid)
+            .values(text="theirs", revision=models.Note.revision + 1)
+        )
+
+    with interleave(client, "UPDATE notes", other):
+        res = client.put(f"/api/notes/{nid}", json={"text": "mine", "revision": 1})
+    assert res.status_code == 409 and res.json()["detail"]["current"]["text"] == "theirs"
+    assert client.get(f"/api/notes/{nid}").json()["text"] == "theirs"
+
+
+def test_drawings_batch_race_is_all_or_nothing(race_client: TestClient) -> None:
+    client = race_client
+    batch(client, upserts=[{"drawing": drawing("d1")}, {"drawing": drawing("d2")}])
+
+    def bump(conn: Connection) -> None:
+        conn.execute(
+            update(models.DrawingRow)
+            .where(models.DrawingRow.id == "d1")
+            .values(data=drawing("d1", text="theirs"), revision=models.DrawingRow.revision + 1)
+        )
+
+    with interleave(client, "UPDATE drawings", bump):
+        res = batch(
+            client,
+            upserts=[
+                {"drawing": drawing("d1", text="mine"), "baseRevision": 1},
+                {"drawing": drawing("d3")},
+            ],
+            deletes=[{"id": "d2", "baseRevision": 1}],
+        )
+    assert res.status_code == 409
+    conflicts = res.json()["detail"]["conflicts"]
+    assert [(c["id"], c["revision"]) for c in conflicts] == [("d1", 2)]
+    assert conflicts[0]["drawing"]["data"]["text"] == "theirs"
+    stored = {d["id"]: d for d in client.get("/api/drawings").json()["drawings"]}
+    assert set(stored) == {"d1", "d2"} and stored["d1"]["data"]["text"] == "theirs"
+
+    # Same id created concurrently: 409 with the other copy, not a 500.
+    def create(conn: Connection) -> None:
+        conn.execute(
+            insert(models.DrawingRow).values(
+                id="d4",
+                symbol="AAPL",
+                pane_id="main",
+                z=0,
+                data=drawing("d4", text="theirs"),
+                schema_version=1,
+                revision=1,
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    with interleave(client, "INSERT INTO drawings", create):
+        res = batch(client, upserts=[{"drawing": drawing("d4", text="mine")}])
+    assert res.status_code == 409
+    assert res.json()["detail"]["conflicts"][0]["drawing"]["data"]["text"] == "theirs"
+
+
+def test_template_name_race_is_a_conflict(race_client: TestClient) -> None:
+    client = race_client
+
+    def create(conn: Connection) -> None:
+        t = datetime.now(UTC)
+        conn.execute(
+            insert(models.IndicatorTemplate).values(
+                id="other", name="Trend", instances=[], schema_version=1, created_at=t, updated_at=t
+            )
+        )
+
+    with interleave(client, "INSERT INTO indicator_templates", create):
+        res = client.post("/api/indicator-templates", json={"name": "Trend", "instances": []})
+    assert res.status_code == 409
+
+    def create_ct(conn: Connection) -> None:
+        t = datetime.now(UTC)
+        conn.execute(
+            insert(models.ChartTemplate).values(
+                id="other", name="Dark", data={}, schema_version=1, created_at=t, updated_at=t
+            )
+        )
+
+    tid = client.post("/api/chart-templates", json={"name": "Light", "data": {}}).json()["id"]
+    with interleave(client, "UPDATE chart_templates", create_ct):
+        res = client.put(f"/api/chart-templates/{tid}", json={"name": "Dark", "data": {}})
+    assert res.status_code == 409
+    assert client.get(f"/api/chart-templates/{tid}").json()["name"] == "Light"
 
 
 # ---------------------------------------------------------------- migration

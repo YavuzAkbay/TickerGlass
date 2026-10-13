@@ -2,13 +2,15 @@
 
 POST creates or replaces by natural key (name; tool type + name for drawing
 templates): 201 when created, 200 when replaced. PUT /{id} edits by id and
-returns 409 if the new name is taken by another template.
+returns 409 if the new name is taken by another template. A unique-key race
+(two writers creating the same name at once) is also a 409, never a 500.
 """
 
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models as m
@@ -28,6 +30,21 @@ def _get(session: Session, model: Any, tid: str, what: str) -> Any:
 
 def _name_taken(what: str, name: str) -> HTTPException:
     return HTTPException(409, f"a {what} named {name!r} already exists")
+
+
+def _flush(session: Session, what: str, name: str) -> None:
+    """Flush; a unique-name violation (a concurrent writer took the name after
+    our check) becomes the same 409 as the check itself."""
+    try:
+        session.flush()
+    except IntegrityError as exc:
+        session.rollback()
+        raise _name_taken(what, name) from exc
+
+
+def _commit(session: Session, what: str, name: str) -> None:
+    _flush(session, what, name)
+    session.commit()
 
 
 # ------------------------------------------------------------ indicator templates
@@ -51,7 +68,7 @@ def put_indicator_template(
     else:
         response.status_code = 200
     row.instances, row.schema_version, row.updated_at = body.instances, body.schema_version, t
-    session.commit()
+    _commit(session, "indicator template", body.name)
     return store.indicator_template(row)
 
 
@@ -70,7 +87,7 @@ def update_indicator_template(
         raise _name_taken("indicator template", body.name)
     row.name, row.instances, row.schema_version = body.name, body.instances, body.schema_version
     row.updated_at = s.now()
-    session.commit()
+    _commit(session, "indicator template", body.name)
     return store.indicator_template(row)
 
 
@@ -115,7 +132,7 @@ def put_drawing_template(
         response.status_code = 200
     row.style, row.is_default, row.schema_version = body.style, body.is_default, body.schema_version
     row.updated_at = t
-    session.flush()
+    _flush(session, f"{body.tool_type} template", body.name)
     if body.is_default:
         store.clear_other_defaults(session, body.tool_type, row.id)
     session.commit()
@@ -142,7 +159,7 @@ def update_drawing_template(
     row.tool_type, row.name, row.style = body.tool_type, body.name, body.style
     row.is_default, row.schema_version = body.is_default, body.schema_version
     row.updated_at = s.now()
-    session.flush()
+    _flush(session, f"{body.tool_type} template", body.name)
     if body.is_default:
         store.clear_other_defaults(session, body.tool_type, row.id)
     session.commit()
@@ -177,7 +194,7 @@ def put_chart_template(
     else:
         response.status_code = 200
     row.data, row.schema_version, row.updated_at = body.data, body.schema_version, t
-    session.commit()
+    _commit(session, "chart template", body.name)
     return store.chart_template(row)
 
 
@@ -196,7 +213,7 @@ def update_chart_template(
         raise _name_taken("chart template", body.name)
     row.name, row.data, row.schema_version = body.name, body.data, body.schema_version
     row.updated_at = s.now()
-    session.commit()
+    _commit(session, "chart template", body.name)
     return store.chart_template(row)
 
 

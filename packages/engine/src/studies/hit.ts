@@ -1,6 +1,6 @@
 import type { StudyGeometry } from './render';
 import { SHAPE_SIZES, shapeCenterY } from './render';
-import { plotBase, type Study } from './study';
+import { paletteColor, plotBase, type Study } from './study';
 import type { StudyOutputMeta, StudyPlotMeta } from './types';
 
 /** Which outputs a hit test considers: marks = everything except fills. */
@@ -8,7 +8,8 @@ export type StudyHitLayer = 'all' | 'marks' | 'fills';
 
 /**
  * Output of `study` under CSS point (x, y), or null. Lines, marks, bars,
- * hlines and shapes win over fills; bgcolor is never hit. `layer` limits the
+ * hlines and shapes win over fills; bgcolor is never hit, nor is anything
+ * drawn with "no colour" (`STUDY_COLOR_NONE`), which renders nothing. `layer` limits the
  * test to marks or fills (the chart tests marks of all series before fills).
  */
 export function hitTestStudy(
@@ -29,6 +30,11 @@ export function hitTestStudy(
     }
   }
   return null;
+}
+
+/** Bar `j` (data index) of output `o` is drawn, i.e. its palette colour is not "none". */
+function drawn(study: Study, o: StudyOutputMeta & { colors: readonly string[] }, j: number) {
+  return paletteColor(o.colors, study.colors[o.id], j) !== '';
 }
 
 function valueAt(dc: StudyGeometry, vals: Float64Array, off: number, p: number): number {
@@ -53,12 +59,17 @@ function hitOutput(
       return Number.isFinite(o.value) && Math.abs(ps.priceToY(o.value) - y) <= tol;
     case 'plot': {
       const vals = study.values[o.id];
-      return vals ? hitPlot(dc, o, vals, lp, x, y, tol) : false;
+      return vals ? hitPlot(dc, study, o, vals, lp, x, y, tol) : false;
     }
     case 'fill': {
       const ya = sideAt(dc, study, o.between[0], p);
       const yb = sideAt(dc, study, o.between[1], p);
       if (ya !== ya || yb !== yb) return false;
+      // The segment ending at bar p takes the colour of the (shifted) plot side's bar.
+      const a = study.output(o.between[0]);
+      const b = study.output(o.between[1]);
+      const off = a?.type === 'plot' ? a.offset : b?.type === 'plot' ? b.offset : null;
+      if (off !== null && !drawn(study, o, p - off)) return false;
       return y >= Math.min(ya, yb) && y <= Math.max(ya, yb);
     }
     case 'shape': {
@@ -66,7 +77,7 @@ function hitOutput(
       const j = p - (o.offset ?? 0);
       if (!vals || j < 0 || j >= dc.limit) return false;
       const v = vals[j]!;
-      if (v !== v) return false;
+      if (v !== v || !drawn(study, o, j)) return false;
       const s = SHAPE_SIZES[o.size];
       const cy = shapeCenterY(dc, o, p, v, s);
       return Math.abs(ts.indexToX(p) - x) <= s / 2 + 1 && Math.abs(cy - y) <= s / 2 + tol;
@@ -88,6 +99,7 @@ function sideAt(dc: StudyGeometry, study: Study, id: string, p: number): number 
 
 function hitPlot(
   dc: StudyGeometry,
+  study: Study,
   o: StudyPlotMeta,
   vals: Float64Array,
   lp: number,
@@ -103,7 +115,7 @@ function hitPlot(
     case 'histogram':
     case 'columns': {
       const v = valueAt(dc, vals, o.offset, p);
-      if (v !== v) return false;
+      if (v !== v || !drawn(study, o, p - o.offset)) return false;
       const half = o.kind === 'histogram' ? Math.max(lw / 2, 2) : Math.max(2, ts.barSpacing * 0.4);
       if (Math.abs(ts.indexToX(p) - x) > half) return false;
       const yv = ps.priceToY(v);
@@ -113,7 +125,7 @@ function hitPlot(
     case 'circles':
     case 'cross': {
       const v = valueAt(dc, vals, o.offset, p);
-      if (v !== v) return false;
+      if (v !== v || !drawn(study, o, p - o.offset)) return false;
       const r = lw + 2 + tol;
       return Math.hypot(ts.indexToX(p) - x, ps.priceToY(v) - y) <= r;
     }
@@ -126,6 +138,8 @@ function hitPlot(
       const x0 = ts.indexToX(p0);
       const x1 = ts.indexToX(p0 + 1);
       if (v0 === v0 && v1 === v1) {
+        // The segment ending at bar p0 + 1 is drawn in that bar's colour.
+        if (!drawn(study, o, p0 + 1 - o.offset)) return false;
         const y0 = ps.priceToY(v0);
         const y1 = ps.priceToY(v1);
         if (o.kind === 'step')
@@ -135,7 +149,7 @@ function hitPlot(
         return segmentDistance(x, y, x0, y0, x1, y1) <= reach;
       }
       const v = valueAt(dc, vals, o.offset, p);
-      if (v !== v) return false;
+      if (v !== v || !drawn(study, o, p - o.offset)) return false;
       return Math.hypot(ts.indexToX(p) - x, ps.priceToY(v) - y) <= reach;
     }
   }

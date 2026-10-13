@@ -1,13 +1,29 @@
 """ORM <-> API conversion and the import/export logic."""
 
 import math
-from typing import Any, Literal
+import re
+from typing import Any, Literal, TypeVar, cast
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import CursorResult, Result, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import models as m
 from . import schemas as s
+
+_T = TypeVar("_T")
+
+
+def rowcount(result: Result[Any]) -> int:
+    """Rows matched by a Core UPDATE/DELETE executed through the session."""
+    return cast(CursorResult[Any], result).rowcount
+
+
+def reload(session: Session, model: type[_T], key: str) -> _T:
+    """Re-select a row the current transaction just wrote with a Core statement."""
+    row = session.get(model, key, populate_existing=True)
+    if row is None:
+        raise LookupError(f"{model.__name__} {key} vanished inside its own transaction")
+    return row
 
 
 def layout_summary(row: m.Layout) -> s.LayoutSummary:
@@ -88,8 +104,8 @@ def note(row: m.Note) -> s.Note:
 def drawing_fields(data: dict[str, Any]) -> tuple[str, str | None, str, int]:
     """(id, symbol, pane_id, z) of an engine `Drawing`. Raises ValueError.
 
-    Scope 'all' maps to symbol null (synced); otherwise the symbol is upper-cased
-    like `Chart.setSymbol`.
+    Scope 'all' maps to symbol null (synced); otherwise the symbol is required
+    (non-empty) and upper-cased like `Chart.setSymbol`.
     """
     did = data.get("id")
     if not isinstance(did, str) or not 1 <= len(did) <= 64:
@@ -101,9 +117,12 @@ def drawing_fields(data: dict[str, Any]) -> tuple[str, str | None, str, int]:
         raise ValueError(f"drawing {did}: paneId must be a string of 1-64 characters")
     symbol: str | None = None
     if data.get("scope") != "all":
-        raw = data.get("symbol", "")
-        if not isinstance(raw, str) or len(raw.strip()) > 32:
-            raise ValueError(f"drawing {did}: symbol must be a string of at most 32 characters")
+        raw = data.get("symbol")
+        if not isinstance(raw, str) or not 1 <= len(raw.strip()) <= 32:
+            raise ValueError(
+                f"drawing {did}: symbol must be a non-empty string of at most 32 characters "
+                "unless scope is 'all'"
+            )
         symbol = raw.strip().upper()
     z_raw = data.get("zIndex", 0)
     z = (
@@ -137,6 +156,7 @@ def export_bundle(session: Session) -> s.Bundle:
 
     return s.Bundle(
         version=s.BUNDLE_VERSION,
+        app="investopen",
         exported_at=s.now(),
         layouts=[
             s.BundleLayout(**layout(r).model_dump())
@@ -179,15 +199,26 @@ def _dupes(keys: list[Any], what: str) -> None:
         seen.add(k)
 
 
-USER_TABLES: list[Any] = [
-    m.Layout,
-    m.DrawingRow,
-    m.IndicatorTemplate,
-    m.DrawingTemplate,
-    m.ChartTemplate,
-    m.Setting,
-    m.Note,
-]
+#: Bundle section (field name) -> table it fills.
+SECTIONS: dict[str, Any] = {
+    "layouts": m.Layout,
+    "drawings": m.DrawingRow,
+    "indicator_templates": m.IndicatorTemplate,
+    "drawing_templates": m.DrawingTemplate,
+    "chart_templates": m.ChartTemplate,
+    "settings": m.Setting,
+    "notes": m.Note,
+}
+
+_SAFE_LAYOUT_ID = re.compile(r"[A-Za-z0-9_-]{1,36}")
+
+
+def _import_layout_id(wanted: str) -> str:
+    """Keep the bundle's layout id unless it would shadow a fixed route
+    (`/layouts/last-used`) or not round-trip through a URL path segment."""
+    if wanted in s.RESERVED_LAYOUT_IDS or not _SAFE_LAYOUT_ID.fullmatch(wanted):
+        return s.new_id()
+    return wanted
 
 
 def import_bundle(
@@ -197,8 +228,9 @@ def import_bundle(
 
     merge: layouts, drawings and notes match by id; templates by name
     (drawing templates by tool type + name); settings by key. Matches are
-    overwritten (revision bumped), the rest is created. replace: all user
-    data is deleted first.
+    overwritten (revision bumped), the rest is created. replace: the tables of
+    the sections present in the bundle are emptied first; absent sections are
+    left alone (so `{"version": 1, "app": "investopen"}` changes nothing).
     """
     if not 1 <= bundle.version <= s.BUNDLE_VERSION:
         raise BundleError(
@@ -216,19 +248,16 @@ def import_bundle(
     _dupes([(x.tool_type, x.name) for x in bundle.drawing_templates], "drawing template")
     _dupes([x.name for x in bundle.chart_templates], "chart template name")
     _dupes([x.id for x in bundle.notes], "note id")
+    for key, value in bundle.settings.items():
+        if value is None:
+            raise BundleError(f"setting {key}: value must not be null (omit the key instead)")
 
     summary = s.ImportSummary(mode=mode, dry_run=False)
     if mode == "replace":
-        counts = [
-            summary.layouts,
-            summary.drawings,
-            summary.indicator_templates,
-            summary.drawing_templates,
-            summary.chart_templates,
-            summary.settings,
-            summary.notes,
-        ]
-        for model, c in zip(USER_TABLES, counts, strict=True):
+        for section, model in SECTIONS.items():
+            if section not in bundle.model_fields_set:
+                continue
+            c: s.ImportCounts = getattr(summary, section)
             c.deleted = session.scalar(select(func.count()).select_from(model)) or 0
             session.execute(delete(model))
         session.flush()
@@ -236,11 +265,12 @@ def import_bundle(
     t = s.now()
     last_used: str | None = None
     for x in bundle.layouts:
-        lrow = session.get(m.Layout, x.id)
+        lid = _import_layout_id(x.id)
+        lrow = session.get(m.Layout, lid)
         if lrow is None:
             session.add(
                 m.Layout(
-                    id=x.id,
+                    id=lid,
                     name=x.name,
                     state=x.state,
                     schema_version=x.schema_version,
@@ -257,7 +287,7 @@ def import_bundle(
             lrow.updated_at = t
             summary.layouts.updated += 1
         if x.is_last_used:
-            last_used = x.id
+            last_used = lid
     session.flush()
     has_last = session.scalar(select(func.count()).where(m.Layout.is_last_used.is_(True)))
     if last_used is not None and (mode == "replace" or not has_last):
