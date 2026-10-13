@@ -5,12 +5,24 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .db import make_engine, run_migrations
 from .live import LiveHub, LiveSource, Poller, provider_poller
 from .providers.base import MarketDataProvider, ProviderError, SymbolNotFound
-from .routes import bars, live, market, symbols
+from .routes import (
+    bars,
+    drawings,
+    layouts,
+    live,
+    market,
+    notes,
+    symbols,
+    templates,
+    transfer,
+    user_settings,
+)
 from .services.bars import BarService
 from .services.market import MarketService
 from .services.symbols import SymbolService
@@ -30,6 +42,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         run_migrations(db_url)
         engine = make_engine(db_url)
+        app.state.sessionmaker = sessionmaker(engine, expire_on_commit=False)
         if provider is None:
             from .providers.yahoo import YahooProvider
 
@@ -82,6 +95,12 @@ def create_app(
     api.include_router(bars.router)
     api.include_router(symbols.router)
     api.include_router(market.router)
+    api.include_router(layouts.router)
+    api.include_router(drawings.router)
+    api.include_router(templates.router)
+    api.include_router(user_settings.router)
+    api.include_router(notes.router)
+    api.include_router(transfer.router)
     app.include_router(api)
     app.include_router(live.router)
     return app
