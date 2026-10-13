@@ -5,7 +5,25 @@ import { DEFAULT_OPTIONS, type ChartOptions, type ChartTheme } from './options';
 import { Pane, div, place } from './pane';
 import { CanvasLayer } from './render/canvas';
 import { dashedLine, font, hLine, labelBox, vLine } from './render/draw';
-import { CandleSeries, type PaneSeries } from './render/series';
+import { type PaneSeries } from './render/series';
+import { MainSeries, VolumeSeries, type VolumeMode } from './render/main-series';
+import {
+  BRICK_TYPES,
+  defaultChartStyle,
+  type ChartStyle,
+  type ChartType,
+  type TransformExtra,
+} from './chart-types';
+import {
+  heikinAshi,
+  kagi,
+  lastAtr,
+  lineBreak,
+  pointFigure,
+  rangeBars,
+  renko,
+  roundBoxSize,
+} from './transforms';
 import type { PriceScaleMode } from './scale/price-scale';
 import { decimalsForMinTick, formatPercent, formatPrice, formatVolume } from './scale/price-ticks';
 import {
@@ -81,6 +99,8 @@ export interface ChartState {
   version: 1;
   symbol: string;
   interval: string;
+  chartType?: ChartType;
+  volume?: VolumeMode;
   timeScale: { barSpacing: number; rightOffset: number };
   crosshair: { mode: ChartOptions['crosshair']; magnet: ChartOptions['magnet'] };
   timezone: ChartOptions['timezone'];
@@ -105,7 +125,20 @@ interface CrosshairPos {
 
 export class Chart {
   readonly root: HTMLDivElement;
-  readonly store = new SeriesStore();
+  /** Bars as loaded from the feed. */
+  private readonly raw = new SeriesStore();
+  /** Transformed bars (Heikin Ashi, bricks) when the chart type needs them. */
+  private readonly derived = new SeriesStore();
+  private _chartType: ChartType = 'candles';
+  private styleOverrides: DeepPartial<ChartStyle> = {};
+  private _chartStyle: ChartStyle;
+  private _extra: TransformExtra = {};
+  /** For transformed views: source (raw) bar index of each displayed bar. */
+  private sourceIndex: Int32Array | null = null;
+  /** Brick size resolved at load time (ATR mode), kept stable for live updates. */
+  private brickSize: number | null = null;
+  private volumeMode: VolumeMode = 'overlay';
+  private volumeOverlay: VolumeSeries;
   readonly timeScale = new TimeScale();
   readonly panes: Pane[] = [];
   readonly events = new Emitter<ChartEvents>();
@@ -153,7 +186,10 @@ export class Chart {
     applyThemeVars(this.root, this.options.theme);
 
     const main = new Pane(this.root, 3, 'main');
-    main.series.push(new CandleSeries(this.store));
+    this._chartStyle = defaultChartStyle(this.options.theme);
+    main.series.push(new MainSeries(this));
+    this.volumeOverlay = new VolumeSeries('volume', this, true);
+    main.series.push(this.volumeOverlay);
     this.panes.push(main);
 
     this.timeAxisEl = div(this.root, 'io-axis io-time-axis');
@@ -232,6 +268,8 @@ export class Chart {
       (opts.adjusted !== undefined && opts.adjusted !== this.options.adjusted);
     this.options = { ...this.options, ...opts };
     applyThemeVars(this.root, this.options.theme);
+    if (opts.theme)
+      this._chartStyle = mergeDeep(defaultChartStyle(opts.theme), this.styleOverrides);
     if (opts.timezone !== undefined) this.updateTimezone();
     if (reload && this.symbol) void this.load();
     this.invalidate(INVALIDATE_LAYOUT);
@@ -308,6 +346,171 @@ export class Chart {
     pane.priceScale.invert = invert;
     this.invalidate(INVALIDATE_MAIN);
     this.emitState();
+  }
+
+  // ------------------------------------------------------------ chart types
+
+  /** Displayed bars (transformed for Heikin Ashi / brick types). */
+  get store(): SeriesStore {
+    return this.usesTransform ? this.derived : this.raw;
+  }
+
+  get view(): SeriesStore {
+    return this.store;
+  }
+
+  get chartType(): ChartType {
+    return this._chartType;
+  }
+
+  get chartStyle(): ChartStyle {
+    return this._chartStyle;
+  }
+
+  get transformExtra(): TransformExtra {
+    return this._extra;
+  }
+
+  /** For transformed views, the raw (time) bar index behind displayed bar i. */
+  sourceIndexOf(i: number): number {
+    return this.sourceIndex ? (this.sourceIndex[i] ?? -1) : i;
+  }
+
+  private get usesTransform(): boolean {
+    return this._chartType === 'heikinAshi' || BRICK_TYPES.has(this._chartType);
+  }
+
+  setChartType(type: ChartType): void {
+    if (type === this._chartType) return;
+    const wasBrick = BRICK_TYPES.has(this._chartType);
+    this._chartType = type;
+    this.brickSize = null;
+    this.rebuildView();
+    this.recomputeWeights();
+    // Brick indices have no relation to time bars: start from the latest brick.
+    if (wasBrick || BRICK_TYPES.has(type)) this.resetBrickView();
+    else this.timeScale.baseIndex = this.store.length - 1;
+    this.crosshair = null;
+    for (const p of this.panes) p.priceScale.autoScale = true;
+    this.invalidate(INVALIDATE_LAYOUT);
+    this.emitState();
+  }
+
+  /** Override parts of the per-type styles (merged over theme defaults). */
+  setChartStyle(overrides: DeepPartial<ChartStyle>): void {
+    const brickBefore = JSON.stringify(this.brickParams());
+    this.styleOverrides = overrides;
+    this._chartStyle = mergeDeep(defaultChartStyle(this.options.theme), overrides);
+    if (JSON.stringify(this.brickParams()) !== brickBefore) {
+      this.brickSize = null;
+      this.rebuildView();
+      this.recomputeWeights();
+      this.resetBrickView();
+    }
+    this.invalidate(INVALIDATE_MAIN);
+  }
+
+  getVolumeMode(): VolumeMode {
+    return this.volumeMode;
+  }
+
+  setVolumeMode(mode: VolumeMode, force = false): void {
+    if (mode === this.volumeMode && !force) return;
+    this.volumeMode = mode;
+    const main = this.panes[0]!;
+    const idx = main.series.indexOf(this.volumeOverlay);
+    if (idx >= 0) main.series.splice(idx, 1);
+    this.removePane('volume');
+    if (mode === 'overlay') main.series.push(this.volumeOverlay);
+    else if (mode === 'pane')
+      this.addPane(1, 'volume').series.push(new VolumeSeries('volume-pane', this, false));
+    this.invalidate(INVALIDATE_LAYOUT);
+    this.emitState();
+  }
+
+  /** Start at the latest bar; sparse brick series (few bars) fill the width. */
+  private resetBrickView(): void {
+    const n = this.store.length;
+    const ts = this.timeScale;
+    ts.reset(n - 1);
+    if (BRICK_TYPES.has(this._chartType) && n > 0 && n * ts.barSpacing < ts.width * 0.8)
+      ts.fitRange(0, n - 1);
+  }
+
+  private brickParams(): unknown {
+    const t = this._chartType;
+    return BRICK_TYPES.has(t) ? this._chartStyle[t] : null;
+  }
+
+  /** Resolve an ATR-or-fixed size option to a price amount. */
+  private resolveSize(mode: string, fixed: number, atrLength: number): number {
+    if (mode !== 'atr') return fixed;
+    const size =
+      this.brickSize ?? roundBoxSize(lastAtr(this.raw, atrLength), this.symbolInfo?.minTick);
+    this.brickSize = size;
+    return size;
+  }
+
+  /** Recompute the displayed series from raw bars for the active chart type. */
+  private rebuildView(): void {
+    const t = this._chartType;
+    const st = this._chartStyle;
+    this._extra = {};
+    this.sourceIndex = null;
+    if (!this.usesTransform || !this.raw.length) {
+      if (this.usesTransform) this.derived.clear();
+      return;
+    }
+    if (t === 'heikinAshi') {
+      this.derived.setFrom(heikinAshi(this.raw));
+      return;
+    }
+    let res;
+    switch (t) {
+      case 'renko': {
+        const o = st.renko;
+        res = renko(this.raw, {
+          boxSize: this.resolveSize(o.boxSizeMode, o.boxSize, o.atrLength),
+          source: o.source,
+          wicks: o.wicks,
+        });
+        break;
+      }
+      case 'lineBreak':
+        res = lineBreak(this.raw, { lines: st.lineBreak.lines });
+        break;
+      case 'kagi': {
+        const o = st.kagi;
+        const percent = o.reversalMode === 'percent';
+        res = kagi(this.raw, {
+          reversal: percent
+            ? o.reversal
+            : this.resolveSize(o.reversalMode, o.reversal, o.atrLength),
+          reversalMode: percent ? 'percent' : 'fixed',
+          source: o.source,
+        });
+        break;
+      }
+      case 'pointFigure': {
+        const o = st.pointFigure;
+        res = pointFigure(this.raw, {
+          boxSize: this.resolveSize(o.boxSizeMode, o.boxSize, o.atrLength),
+          reversal: o.reversal,
+          source: o.source,
+        });
+        break;
+      }
+      default: {
+        const o = st.range;
+        res = rangeBars(this.raw, {
+          range: this.resolveSize(o.rangeMode, o.range, o.atrLength),
+          tick: this.symbolInfo?.minTick ?? 0,
+        });
+      }
+    }
+    this.derived.setFrom(res.bars);
+    this.sourceIndex = res.sourceIndex;
+    this._extra = res.extra;
   }
 
   /** Back to the latest bar with default zoom and auto-scale. */
@@ -414,6 +617,8 @@ export class Chart {
       version: 1,
       symbol: this.symbol,
       interval: formatInterval(this.interval),
+      chartType: this._chartType,
+      volume: this.volumeMode,
       timeScale: { barSpacing: this.timeScale.barSpacing, rightOffset: this.timeScale.rightOffset },
       crosshair: { mode: this.options.crosshair, magnet: this.options.magnet },
       timezone: this.options.timezone,
@@ -445,6 +650,7 @@ export class Chart {
     // Recreate extra panes to match the saved list (main pane always first).
     for (const p of this.panes.slice(1)) this.removePane(p.id);
     for (const ps of state.panes) {
+      if (ps.id === 'volume') continue; // recreated by setVolumeMode below
       const pane = ps.id === 'main' ? this.panes[0]! : this.addPane(ps.ratio, ps.id);
       pane.ratio = ps.ratio;
       pane.collapsed = ps.collapsed;
@@ -462,6 +668,8 @@ export class Chart {
         pane.priceScale.max = ps.priceScale.max;
       }
     }
+    if (state.chartType) this.setChartType(state.chartType);
+    if (state.volume) this.setVolumeMode(state.volume, true);
     this.maximized = this.panes.find((p) => p.id === state.maximizedPane) ?? null;
     this.timeScale.barSpacing = state.timeScale.barSpacing;
     const view = state.timeScale.rightOffset;
@@ -629,10 +837,12 @@ export class Chart {
         adjusted: this.options.adjusted,
       });
       if (gen !== this.loadGen) return;
-      this.store.setAll(res.bars);
+      this.raw.setAll(res.bars);
+      this.brickSize = null;
+      this.rebuildView();
       this.hasMore = res.hasMore;
       this.recomputeWeights();
-      this.timeScale.reset(this.store.length - 1);
+      this.resetBrickView();
       for (const p of this.panes) p.priceScale.autoScale = true;
       this.crosshair = null;
       this.setStatus(this.store.length ? null : 'No data');
@@ -647,7 +857,8 @@ export class Chart {
     } catch (err) {
       if (gen !== this.loadGen) return;
       const message = err instanceof Error ? err.message : String(err);
-      this.store.clear();
+      this.raw.clear();
+      this.rebuildView();
       this.setStatus(message);
       this.invalidate(INVALIDATE_LAYOUT);
       this.events.emit('error', { message });
@@ -666,12 +877,18 @@ export class Chart {
         timezone: info?.timezone ?? null,
         session: info?.session ?? null,
       },
-      this.store.last(),
+      this.raw.last(),
       (bar) => {
         if (gen !== this.loadGen) return;
-        const r = this.store.upsert(bar);
+        const r = this.raw.upsert(bar);
         if (r === 'ignored') return;
-        if (r === 'append') {
+        if (this.usesTransform) {
+          const before = this.store.length;
+          this.rebuildView();
+          const added = this.store.length - before;
+          for (let k = 0; k < added; k++) this.timeScale.onAppend();
+          if (added) this.recomputeWeights();
+        } else if (r === 'append') {
           this.timeScale.onAppend();
           this.recomputeWeights();
         }
@@ -688,7 +905,7 @@ export class Chart {
    * Resolves to the number of bars prepended. */
   private loadMore(): Promise<number> {
     if (this.loadMorePromise) return this.loadMorePromise;
-    if (!this.hasMore || !this.store.length) return Promise.resolve(0);
+    if (!this.hasMore || !this.raw.length) return Promise.resolve(0);
     this.loadingMore = true;
     const gen = this.loadGen;
     this.loadMorePromise = (async () => {
@@ -696,17 +913,20 @@ export class Chart {
         const res = await this.feed.getBars({
           symbol: this.symbol,
           interval: this.interval,
-          to: this.store.time[0]!,
+          to: this.raw.time[0]!,
           limit: this.options.pageSize,
           prepost: this.options.prepost,
           adjusted: this.options.adjusted,
         });
         if (gen !== this.loadGen) return 0;
-        const n = this.store.prepend(res.bars);
+        const before = this.store.length;
+        const n = this.raw.prepend(res.bars);
         this.hasMore = res.hasMore && n > 0;
         if (n > 0) {
-          this.timeScale.onPrepend(n);
-          if (this.crosshair) this.crosshair.index += n;
+          this.rebuildView();
+          const added = this.store.length - before;
+          this.timeScale.onPrepend(added);
+          if (this.crosshair) this.crosshair.index += added;
           this.recomputeWeights();
           this.invalidate(INVALIDATE_MAIN);
         }
@@ -725,12 +945,7 @@ export class Chart {
   /** Load history until the first bar is at or before `time` (or none is left). */
   private async ensureHistory(time: number): Promise<void> {
     const gen = this.loadGen;
-    while (
-      gen === this.loadGen &&
-      this.hasMore &&
-      this.store.length &&
-      this.store.time[0]! > time
-    ) {
+    while (gen === this.loadGen && this.hasMore && this.raw.length && this.raw.time[0]! > time) {
       if ((await this.loadMore()) === 0) break;
     }
   }
@@ -913,12 +1128,17 @@ export class Chart {
       const ticks = ps.ticks(pane.height < 120 ? 24 : 34);
       pane.labelDecimals = decimalsForStep(ticks);
       for (const tk of ticks) hLine(dev, tk.y, 0, paneW, this.dpr);
+      if (pane.id === 'main' && from <= to) this.shadeExtendedHours(dev, from, to, pane.height);
 
       // Series.
       pane.main.begin();
       const ctx = pane.main.device();
       if (from <= to) {
-        for (const s of pane.series) {
+        // Overlays (volume) go behind the price series.
+        const ordered = [...pane.series].sort(
+          (a, b) => Number(!!b.excludeFromAutoscale) - Number(!!a.excludeFromAutoscale),
+        );
+        for (const s of ordered) {
           s.draw({
             ctx,
             dpr: this.dpr,
@@ -938,6 +1158,13 @@ export class Chart {
         const c = pane.main.css();
         c.strokeStyle = last.color;
         dashedLine(c, 0, ps.priceToY(last.price), paneW, ps.priceToY(last.price), this.dpr, [1, 2]);
+      }
+      const prevClose = pane.id === 'main' ? this.prevDayClose() : null;
+      if (prevClose !== null) {
+        const c = pane.main.css();
+        c.strokeStyle = t.prevClose;
+        const y = ps.priceToY(prevClose);
+        dashedLine(c, 0, y, paneW, y, this.dpr, [6, 4]);
       }
 
       // Axis tick labels.
@@ -1010,6 +1237,28 @@ export class Chart {
         }
       }
 
+      const prevClose = pane.id === 'main' ? this.prevDayClose() : null;
+      if (prevClose !== null) {
+        const y = ps.priceToY(prevClose);
+        if (y >= 0 && y <= pane.height) {
+          const top = Math.max(
+            0,
+            Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2),
+          );
+          labelBox(
+            ax,
+            this.formatAxisValue(pane, prevClose),
+            1,
+            top,
+            this.axisWidth - 2,
+            AXIS_LABEL_HEIGHT,
+            t.prevClose,
+            '#ffffff',
+            fontStr,
+          );
+        }
+      }
+
       if (!c) continue;
       ctx.strokeStyle = t.crosshair;
       dashedLine(ctx, c.x, 0, c.x, pane.height, this.dpr, [4, 4]);
@@ -1063,6 +1312,77 @@ export class Chart {
       }
     }
     this.updateLegends();
+  }
+
+  /** Regular session as [startMinute, endMinute] in exchange time, if known. */
+  private sessionMinutes(): [number, number] | null {
+    const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(this.symbolInfo?.session ?? '');
+    if (!m) return null;
+    const start = Number(m[1]) * 60 + Number(m[2]);
+    const end = Number(m[3]) * 60 + Number(m[4]);
+    // 24h markets have nothing to shade.
+    return end - start >= 23 * 60 ? null : [start, end];
+  }
+
+  private outOfSession(t: number, session: [number, number]): boolean {
+    // Minutes in exchange time, regardless of the chart's display timezone.
+    const tz = this.exchangeTz;
+    const m = Math.floor((((tz.toLocal(t) % 86_400) + 86_400) % 86_400) / 60);
+    const [a, b] = session;
+    return a <= b ? m < a || m >= b : m >= b && m < a;
+  }
+
+  private get exchangeTz(): TzConverter {
+    return createTzConverter(this.symbolInfo?.timezone ?? 'UTC');
+  }
+
+  /** Shade pre/post-market bars (intraday with extended hours on). */
+  private shadeExtendedHours(
+    dev: CanvasRenderingContext2D,
+    from: number,
+    to: number,
+    height: number,
+  ): void {
+    if (!this.options.prepost || !isIntraday(this.interval) || this.usesTransform) return;
+    const session = this.sessionMinutes();
+    if (!session) return;
+    const ts = this.timeScale;
+    const half = ts.barSpacing / 2;
+    const time = this.store.time;
+    dev.fillStyle = this.theme.extendedHoursBg;
+    let runStart = -1;
+    const flush = (end: number) => {
+      const x0 = Math.round((ts.indexToX(runStart) - half) * this.dpr);
+      const x1 = Math.round((ts.indexToX(end) + half) * this.dpr);
+      dev.fillRect(x0, 0, x1 - x0, Math.round(height * this.dpr));
+      runStart = -1;
+    };
+    for (let i = from; i <= to; i++) {
+      const out = this.outOfSession(time[i]!, session);
+      if (out && runStart < 0) runStart = i;
+      else if (!out && runStart >= 0) flush(i - 1);
+    }
+    if (runStart >= 0) flush(to);
+  }
+
+  /** Close of the previous trading day's regular session (intraday charts). */
+  private prevDayClose(): number | null {
+    if (!this.options.showPrevClose || !isIntraday(this.interval) || this.usesTransform)
+      return null;
+    const s = this.store;
+    const n = s.length;
+    if (n < 2) return null;
+    const tz = this.exchangeTz;
+    const session = this.sessionMinutes();
+    const day = (t: number) => Math.floor(tz.toLocal(t) / 86_400);
+    const lastDay = day(s.time[n - 1]!);
+    for (let i = n - 1; i >= 0; i--) {
+      const t = s.time[i]!;
+      if (day(t) >= lastDay) continue;
+      if (session && this.outOfSession(t, session)) continue;
+      return s.close[i]!;
+    }
+    return null;
   }
 
   private countdown(): string | null {
@@ -1154,4 +1474,18 @@ function decimalsForStep(ticks: { value: number }[]): number {
   let d = 0;
   while (d < 8 && Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) > 1e-9 * 10 ** d) d++;
   return d;
+}
+
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+
+function mergeDeep<T extends object>(base: T, over: DeepPartial<T>): T {
+  const out = { ...base } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(over)) {
+    const b = out[k];
+    out[k] =
+      v && typeof v === 'object' && !Array.isArray(v) && b && typeof b === 'object'
+        ? mergeDeep(b as object, v as DeepPartial<object>)
+        : v;
+  }
+  return out as T;
 }

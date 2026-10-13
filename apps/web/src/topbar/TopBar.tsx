@@ -23,7 +23,7 @@ import { useChartStore } from '../store/chart';
 import { IconButton } from '../ui/IconButton';
 import { DropdownMenu, Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
-import { CHART_TYPES, chartTypeDef } from './chartTypes';
+import { CHART_TYPE_MENU, chartTypeDef } from './chartTypes';
 import { IntervalControl } from './IntervalControl';
 import { firstShortcut, useCommand } from './useCommand';
 import './topbar.css';
@@ -144,31 +144,16 @@ function ChartTypeButton() {
   const current = chartTypeDef(chartType);
   const Icon = current?.icon;
 
-  const items: MenuItem[] = CHART_TYPES.map((t): MenuItem => {
-    if (!t) return { type: 'separator' };
-    if (t.enabled) {
-      return {
-        label: t.label,
-        icon: t.icon,
-        checked: t.id === chartType,
-        onSelect: () => useAppStore.getState().set({ chartType: 'candles' }),
-      };
-    }
-    const TIcon = t.icon;
-    return {
-      type: 'custom',
-      render: () => (
-        <div className="io-menu-item disabled" role="menuitem" aria-disabled="true">
-          <span className="io-menu-check" />
-          <span className="io-menu-icon">
-            <TIcon size={16} />
-          </span>
-          <span className="io-menu-label">{t.label}</span>
-          <span className="tb-phase">Phase 4</span>
-        </div>
-      ),
-    };
-  });
+  const items: MenuItem[] = CHART_TYPE_MENU.map((t): MenuItem =>
+    t
+      ? {
+          label: t.label,
+          icon: t.icon,
+          checked: t.id === chartType,
+          onSelect: () => useAppStore.getState().set({ chartType: t.id }),
+        }
+      : { type: 'separator' },
+  );
 
   return (
     <>

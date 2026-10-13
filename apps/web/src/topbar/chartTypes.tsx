@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
+import type { ChartType } from '@investopen/engine';
 
 type IconProps = { size?: number };
 
@@ -143,39 +144,38 @@ const RangeIcon = icon(
 );
 
 export interface ChartTypeDef {
-  id: string;
+  id: ChartType;
   label: string;
   icon: ComponentType<IconProps>;
-  enabled: boolean;
 }
 
 /** Chart styles in reference order. `null` marks a group separator. */
-export const CHART_TYPES: (ChartTypeDef | null)[] = [
-  { id: 'bars', label: 'Bars', icon: BarsIcon, enabled: false },
-  { id: 'candles', label: 'Candles', icon: CandlesIcon, enabled: true },
-  { id: 'hollowCandles', label: 'Hollow candles', icon: HollowCandlesIcon, enabled: false },
-  { id: 'volumeCandles', label: 'Volume candles', icon: VolumeCandlesIcon, enabled: false },
+export const CHART_TYPE_MENU: (ChartTypeDef | null)[] = [
+  { id: 'bars', label: 'Bars', icon: BarsIcon },
+  { id: 'candles', label: 'Candles', icon: CandlesIcon },
+  { id: 'hollowCandles', label: 'Hollow candles', icon: HollowCandlesIcon },
+  { id: 'volumeCandles', label: 'Volume candles', icon: VolumeCandlesIcon },
   null,
-  { id: 'line', label: 'Line', icon: LineIcon, enabled: false },
-  { id: 'lineMarkers', label: 'Line with markers', icon: LineMarkersIcon, enabled: false },
-  { id: 'stepLine', label: 'Step line', icon: StepLineIcon, enabled: false },
+  { id: 'line', label: 'Line', icon: LineIcon },
+  { id: 'lineMarkers', label: 'Line with markers', icon: LineMarkersIcon },
+  { id: 'stepLine', label: 'Step line', icon: StepLineIcon },
   null,
-  { id: 'area', label: 'Area', icon: AreaIcon, enabled: false },
-  { id: 'hlcArea', label: 'HLC area', icon: HlcAreaIcon, enabled: false },
-  { id: 'baseline', label: 'Baseline', icon: BaselineIcon, enabled: false },
+  { id: 'area', label: 'Area', icon: AreaIcon },
+  { id: 'hlcArea', label: 'HLC area', icon: HlcAreaIcon },
+  { id: 'baseline', label: 'Baseline', icon: BaselineIcon },
   null,
-  { id: 'columns', label: 'Columns', icon: ColumnsIcon, enabled: false },
-  { id: 'highLow', label: 'High-low', icon: HighLowIcon, enabled: false },
+  { id: 'columns', label: 'Columns', icon: ColumnsIcon },
+  { id: 'highLow', label: 'High-low', icon: HighLowIcon },
   null,
-  { id: 'heikinAshi', label: 'Heikin Ashi', icon: HeikinAshiIcon, enabled: false },
+  { id: 'heikinAshi', label: 'Heikin Ashi', icon: HeikinAshiIcon },
   null,
-  { id: 'renko', label: 'Renko', icon: RenkoIcon, enabled: false },
-  { id: 'lineBreak', label: 'Line break', icon: LineBreakIcon, enabled: false },
-  { id: 'kagi', label: 'Kagi', icon: KagiIcon, enabled: false },
-  { id: 'pointFigure', label: 'Point & figure', icon: PointFigureIcon, enabled: false },
-  { id: 'range', label: 'Range', icon: RangeIcon, enabled: false },
+  { id: 'renko', label: 'Renko', icon: RenkoIcon },
+  { id: 'lineBreak', label: 'Line break', icon: LineBreakIcon },
+  { id: 'kagi', label: 'Kagi', icon: KagiIcon },
+  { id: 'pointFigure', label: 'Point & figure', icon: PointFigureIcon },
+  { id: 'range', label: 'Range', icon: RangeIcon },
 ];
 
-export function chartTypeDef(id: string): ChartTypeDef | undefined {
-  return CHART_TYPES.find((t): t is ChartTypeDef => !!t && t.id === id);
+export function chartTypeDef(id: ChartType): ChartTypeDef | undefined {
+  return CHART_TYPE_MENU.find((t): t is ChartTypeDef => !!t && t.id === id);
 }

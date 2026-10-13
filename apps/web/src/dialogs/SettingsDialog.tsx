@@ -9,12 +9,26 @@ import {
   Ruler,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import type { Chart, CrosshairMode, MagnetMode, PriceScaleMode } from '@investopen/engine';
+import {
+  DARK_THEME,
+  LIGHT_THEME,
+  defaultChartStyle,
+  type Chart,
+  type ChartStyle,
+  type ChartType,
+  type CrosshairMode,
+  type DeepPartial,
+  type MagnetMode,
+  type PriceScaleMode,
+  type VolumeMode,
+} from '@investopen/engine';
 import { changeScale } from '../chart/scaleActions';
 import { useAppStore, type Theme } from '../store/app';
+import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
 import { DropdownMenu } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
+import { ChartStyleEditor } from './ChartStyleEditor';
 import './dialogs.css';
 
 type TabId = 'symbol' | 'status' | 'scales' | 'canvas' | 'trading' | 'alerts' | 'events';
@@ -91,6 +105,9 @@ interface Draft {
   magnet: MagnetMode;
   prepost: boolean;
   timezone: string;
+  chartStyle: DeepPartial<ChartStyle>;
+  volume: VolumeMode;
+  showPrevClose: boolean;
   scale: { mode: PriceScaleMode; invert: boolean; autoScale: boolean } | null;
 }
 
@@ -100,8 +117,17 @@ const DEFAULTS: Omit<Draft, 'scale'> & { scale: NonNullable<Draft['scale']> } = 
   magnet: 'off',
   prepost: false,
   timezone: 'exchange',
+  chartStyle: {},
+  volume: 'overlay',
+  showPrevClose: false,
   scale: { mode: 'linear', invert: false, autoScale: true },
 };
+
+/** Effective style of one chart type: theme defaults with the user's overrides on top. */
+function effectiveStyle(theme: Theme, overrides: DeepPartial<ChartStyle>, type: ChartType) {
+  const base = defaultChartStyle(theme === 'dark' ? DARK_THEME : LIGHT_THEME)[type];
+  return { ...base, ...(overrides[type] ?? {}) } as ChartStyle[ChartType];
+}
 
 function readScale(chart: Chart | null): Draft['scale'] {
   const ps = chart?.getState().panes.find((p) => p.id === 'main')?.priceScale;
@@ -116,6 +142,9 @@ function readDraft(): Draft {
     magnet: s.magnet,
     prepost: s.prepost,
     timezone: s.timezone,
+    chartStyle: s.chartStyle,
+    volume: s.volume,
+    showPrevClose: s.showPrevClose,
     scale: readScale(getChart()),
   };
 }
@@ -140,6 +169,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   const [initial] = useState(readDraft);
   const [draft, setDraft] = useState(initial);
   const [tab, setTab] = useState<TabId>('symbol');
+  const chartType = useAppStore((st) => st.chartType);
   const [templateBtn, setTemplateBtn] = useState<HTMLButtonElement | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const settled = useRef(false);
@@ -156,6 +186,19 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     const next = { ...draft, ...patch };
     setDraft(next);
     applyDraft(next);
+  };
+  const updateStyle = (patch: Record<string, string | number | boolean>) => {
+    const cur = draft.chartStyle[chartType] ?? {};
+    update({
+      chartStyle: {
+        ...draft.chartStyle,
+        [chartType]: { ...cur, ...patch },
+      } as DeepPartial<ChartStyle>,
+    });
+  };
+  const resetStyle = () => {
+    const { [chartType]: _dropped, ...rest } = draft.chartStyle;
+    update({ chartStyle: rest });
   };
   const updateScale = (patch: Partial<NonNullable<Draft['scale']>>) => {
     if (draft.scale) update({ scale: { ...draft.scale, ...patch } });
@@ -219,10 +262,32 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     </>
   );
 
+  const typeDef = chartTypeDef(chartType);
+  const TypeIcon = typeDef?.icon;
   let content: ReactNode;
   if (tab === 'symbol') {
     content = (
       <>
+        <div className="dlg-style-head">
+          <span className="dlg-style-type">
+            {TypeIcon ? <TypeIcon size={18} /> : null}
+            {typeDef?.label ?? chartType}
+          </span>
+          <button
+            type="button"
+            className="dlg-link"
+            disabled={!draft.chartStyle[chartType]}
+            onClick={resetStyle}
+          >
+            Reset to defaults
+          </button>
+        </div>
+        <ChartStyleEditor
+          key={chartType}
+          type={chartType}
+          style={effectiveStyle(draft.theme, draft.chartStyle, chartType)}
+          onChange={updateStyle}
+        />
         <Section title="Session">
           <Row label="Extended trading hours">
             <Check
@@ -258,14 +323,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
             </select>
           </Row>
         </Section>
-        <Planned
-          items={[
-            'Body, border and wick colours',
-            'Colour bars based on previous close',
-            'Precision',
-            'Data modification (adjust for dividends)',
-          ]}
-        />
+        <Planned items={['Precision', 'Data modification (adjust for dividends)']} />
       </>
     );
   } else if (tab === 'scales') {
@@ -308,12 +366,33 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
             </div>
           )}
         </Section>
+        <Section title="Lines">
+          <Row label="Previous day close">
+            <Check
+              checked={draft.showPrevClose}
+              label="Previous day close price line"
+              onChange={(showPrevClose) => update({ showPrevClose })}
+            />
+          </Row>
+          <Row label="Volume" htmlFor="set-volume">
+            <select
+              id="set-volume"
+              className="io-input dlg-select"
+              value={draft.volume}
+              onChange={(e) => update({ volume: e.target.value as VolumeMode })}
+            >
+              <option value="overlay">In main pane</option>
+              <option value="pane">Separate pane</option>
+              <option value="hidden">Hidden</option>
+            </select>
+          </Row>
+        </Section>
         <Planned
           items={[
             'Scale placement and labels',
             'Countdown to bar close',
             'Grid lines and session breaks',
-            'Price line and previous-close line',
+            'Last price line style',
           ]}
         />
       </>

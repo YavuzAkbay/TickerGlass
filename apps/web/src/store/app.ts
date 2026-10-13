@@ -1,9 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CrosshairMode, MagnetMode } from '@investopen/engine';
+import type {
+  ChartStyle,
+  ChartType,
+  CrosshairMode,
+  DeepPartial,
+  MagnetMode,
+  VolumeMode,
+} from '@investopen/engine';
 
 export type Theme = 'dark' | 'light';
-export type ChartType = 'candles';
+export type { ChartType };
 
 /** Persisted user preferences and the active chart's symbol/interval. */
 interface AppState {
@@ -13,6 +20,10 @@ interface AppState {
   favoriteIntervals: string[];
   customIntervals: string[];
   chartType: ChartType;
+  /** Per-type style overrides on top of theme defaults. */
+  chartStyle: DeepPartial<ChartStyle>;
+  volume: VolumeMode;
+  showPrevClose: boolean;
   timezone: string; // 'exchange' | 'local' | 'UTC' | IANA
   prepost: boolean;
   crosshair: CrosshairMode;
@@ -36,6 +47,9 @@ export const useAppStore = create<AppState>()(
       favoriteIntervals: ['5m', '1h', '1D', '1W'],
       customIntervals: [],
       chartType: 'candles',
+      chartStyle: {},
+      volume: 'overlay',
+      showPrevClose: false,
       timezone: 'exchange',
       prepost: false,
       crosshair: 'cross',
@@ -60,6 +74,11 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ customIntervals: s.customIntervals.filter((x) => x !== iv) })),
       set: (patch) => set(patch),
     }),
-    { name: 'investopen-app', version: 2 },
+    {
+      name: 'investopen-app',
+      version: 3,
+      migrate: (s) =>
+        ({ chartStyle: {}, volume: 'overlay', showPrevClose: false, ...(s as object) }) as AppState,
+    },
   ),
 );

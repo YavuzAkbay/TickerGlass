@@ -11,6 +11,8 @@ export interface ChartTheme {
   down: string;
   wickUp: string;
   wickDown: string;
+  extendedHoursBg: string;
+  prevClose: string;
   fontFamily: string;
   fontSize: number;
 }
@@ -28,6 +30,8 @@ export const DARK_THEME: ChartTheme = {
   down: '#ef5350',
   wickUp: '#26a69a',
   wickDown: '#ef5350',
+  extendedHoursBg: '#2962ff12',
+  prevClose: '#787b86',
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
   fontSize: 11,
 };
@@ -46,6 +50,7 @@ export const LIGHT_THEME: ChartTheme = {
   down: '#f23645',
   wickUp: '#089981',
   wickDown: '#f23645',
+  extendedHoursBg: '#2962ff0d',
 };
 
 export type CrosshairMode = 'cross' | 'dot' | 'arrow';
@@ -61,6 +66,8 @@ export interface ChartOptions {
   pageSize: number;
   prepost: boolean;
   adjusted: boolean;
+  /** Dashed line at the previous session's close (intraday). */
+  showPrevClose: boolean;
   locale: string;
 }
 
@@ -72,5 +79,6 @@ export const DEFAULT_OPTIONS: ChartOptions = {
   pageSize: 2000,
   prepost: false,
   adjusted: false,
+  showPrevClose: false,
   locale: 'en-US',
 };

@@ -107,11 +107,16 @@ Phase 3 notes:
 
 ### Phase 4: Chart types
 
-- [ ] Bars, Candles, Hollow candles, Volume candles, Line, Line with markers, Step line, Area, HLC area, Baseline, Columns, High-Low
-- [ ] Heikin Ashi (transform)
-- [ ] Brick-type transforms on a non-time index: Renko (box size: ATR/fixed, wicks), Line Break, Kagi, Point & Figure, Range bars
-- [ ] Volume overlay/pane; extended-hours shading; price-line + bid/ask-style lines
-- [ ] Per-type style settings in the settings dialog (Symbol tab)
+- [x] Bars, Candles, Hollow candles, Volume candles, Line, Line with markers, Step line, Area, HLC area, Baseline, Columns, High-Low
+- [x] Heikin Ashi (transform)
+- [x] Brick-type transforms on a non-time index: Renko (box size: ATR/fixed, wicks), Line Break, Kagi, Point & Figure, Range bars
+- [x] Volume overlay/pane; extended-hours shading; price-line + bid/ask-style lines
+- [x] Per-type style settings in the settings dialog (Symbol tab)
+
+Phase 4 notes:
+
+- Bid/ask lines are not drawn: Yahoo's free data has no bid/ask. Instead there is a previous-day-close line (Settings → Scales and lines).
+- Brick types (Renko, Line break, Kagi, P&F, Range) size ATR-based boxes once per load, so bricks stay stable during live updates. Their indices are not time bars; indicators in Phase 5 should run on the displayed series (`chart.store`), with `chart.sourceIndexOf(i)` mapping back to time bars.
 
 ### Phase 5: Indicator framework + core set
 

@@ -10,6 +10,7 @@ export function ChartView() {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
   const { symbol, interval, theme, timezone, prepost, crosshair, magnet } = useAppStore();
+  const { chartType, chartStyle, volume, showPrevClose } = useAppStore();
 
   useEffect(() => {
     const s = useAppStore.getState();
@@ -19,7 +20,11 @@ export function ChartView() {
       prepost: s.prepost,
       crosshair: s.crosshair,
       magnet: s.magnet,
+      showPrevClose: s.showPrevClose,
     });
+    chart.setChartStyle(s.chartStyle);
+    chart.setChartType(s.chartType);
+    chart.setVolumeMode(s.volume);
     chartRef.current = chart;
     useChartStore.setState({ chart });
     // Expose for debugging and e2e tests.
@@ -51,6 +56,15 @@ export function ChartView() {
       magnet,
     });
   }, [theme, timezone, prepost, crosshair, magnet]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.setChartStyle(chartStyle);
+    chart.setChartType(chartType);
+    chart.setVolumeMode(volume);
+    chart.applyOptions({ showPrevClose });
+  }, [chartType, chartStyle, volume, showPrevClose]);
 
   return <div ref={hostRef} className="chart-host" />;
 }

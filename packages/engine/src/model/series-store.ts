@@ -1,3 +1,4 @@
+import type { OhlcvSource } from '../chart-types';
 import type { Bar, BarColumns } from '../types';
 
 const FIELDS = ['time', 'open', 'high', 'low', 'close', 'volume'] as const;
@@ -20,6 +21,19 @@ export class SeriesStore {
     const n = cols.time.length;
     this.ensureCapacity(n, false);
     for (const f of FIELDS) this[f].set(cols[f].subarray(0, n));
+    this.length = n;
+  }
+
+  /** Replace contents from any OHLCV source (e.g. a transform result). */
+  setFrom(src: OhlcvSource): void {
+    const n = src.length;
+    this.ensureCapacity(n, false);
+    for (const f of FIELDS) {
+      const from = src[f];
+      const to = this[f];
+      if (from instanceof Float64Array) to.set(from.subarray(0, n));
+      else for (let i = 0; i < n; i++) to[i] = from[i]!;
+    }
     this.length = n;
   }
 
