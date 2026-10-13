@@ -1,66 +1,45 @@
-.shell {
-  display: flex;
-  flex-direction: column;
+/* App frame: top bar across, left drawing toolbar, chart + bottom bar, right sidebar. */
+.app {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   height: 100vh;
+  background: var(--border);
+  gap: 1px;
 }
 
-.topbar {
+.app-top {
+  grid-area: 1 / 1 / 2 / -1;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
   background: var(--panel);
 }
 
-.brand {
-  font-weight: 600;
-  margin-right: 4px;
-}
-
-.symbol-input {
-  width: 110px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.group {
-  display: flex;
-  gap: 2px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border);
-}
-
-.spacer {
+.app-top > * {
   flex: 1;
+  min-width: 0;
 }
 
-.error {
-  color: var(--down);
-  font-size: 12px;
+.app-left {
+  grid-area: 2 / 1 / 3 / 2;
+  display: flex;
+  background: var(--panel);
 }
 
-.topbar button {
-  background: transparent;
-  color: var(--text);
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 3px 8px;
-  cursor: pointer;
+.app-right {
+  grid-area: 2 / 3 / 3 / 4;
+  display: flex;
+  min-height: 0;
+  background: var(--panel);
 }
 
-.topbar button:hover {
-  background: var(--border);
-}
-
-.topbar button.active {
-  color: var(--accent);
+.center {
+  grid-area: 2 / 2 / 3 / 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
 }
 
 .chart-area {

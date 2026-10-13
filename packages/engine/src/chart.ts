@@ -39,7 +39,22 @@ export interface CrosshairInfo {
   bar: Bar | null;
 }
 
+/** A point on the chart in chart terms (for context menus, drawings, alerts). */
+export interface ChartPoint {
+  clientX: number;
+  clientY: number;
+  kind: HitTarget['kind'];
+  paneId?: string;
+  price?: number;
+  index?: number;
+  time?: number | null;
+  seriesId?: string | null;
+}
+
 export interface ChartEvents {
+  contextMenu: ChartPoint;
+  /** Live update of the last bar (or a newly appended one). */
+  barUpdate: Bar;
   crosshairMove: CrosshairInfo;
   visibleRangeChange: { from: number; to: number };
   symbolResolved: SymbolInfo;
@@ -105,6 +120,7 @@ export class Chart {
   private decimals = 2;
   private hasMore = false;
   private loadingMore = false;
+  private loadPromise: Promise<void> = Promise.resolve();
   private loadGen = 0;
   private unsubscribe: Unsubscribe | null = null;
   private crosshair: CrosshairPos | null = null;
@@ -173,6 +189,11 @@ export class Chart {
     return this.load();
   }
 
+  /** Resolves when the current symbol/interval load has finished. */
+  whenLoaded(): Promise<void> {
+    return this.loadPromise;
+  }
+
   setInterval(interval: string): Promise<void> {
     this.interval = parseInterval(interval);
     return this.symbol ? this.load() : Promise.resolve();
@@ -180,8 +201,23 @@ export class Chart {
 
   /** Change symbol and interval with a single load. */
   setSymbolAndInterval(symbol: string, interval: string): Promise<void> {
-    this.symbol = symbol.trim().toUpperCase();
-    this.interval = parseInterval(interval);
+    const sym = symbol.trim().toUpperCase();
+    const iv = parseInterval(interval);
+    // Idempotent: React effects may re-apply the same pair.
+    if (
+      this.loadGen > 0 &&
+      sym === this.symbol &&
+      formatInterval(iv) === formatInterval(this.interval)
+    ) {
+      return this.loadPromise;
+    }
+    this.symbol = sym;
+    this.interval = iv;
+    return this.load();
+  }
+
+  /** Force a reload of the current symbol/interval. */
+  reload(): Promise<void> {
     return this.load();
   }
 
@@ -281,6 +317,91 @@ export class Chart {
     for (const p of this.panes) p.priceScale.autoScale = true;
     this.invalidate(INVALIDATE_MAIN);
     this.emitState();
+  }
+
+  /** Fit the bars between two times (unix s) to the width, loading history as needed. */
+  async setVisibleTimeRange(from: number, to: number = Infinity): Promise<void> {
+    await this.whenLoaded();
+    await this.ensureHistory(from);
+    const n = this.store.length;
+    if (!n) return;
+    const i0 = Math.max(0, this.store.indexAtOrBefore(from - 1) + 1);
+    const i1 = to === Infinity ? n - 1 : Math.max(i0, this.store.indexAtOrBefore(to));
+    this.timeScale.fitRange(i0, i1);
+    for (const p of this.panes) p.priceScale.autoScale = true;
+    this.viewChanged();
+    this.emitState();
+  }
+
+  /** Load all available history and fit it to the width. */
+  async showAllHistory(): Promise<void> {
+    await this.whenLoaded();
+    await this.ensureHistory(-Infinity);
+    if (this.store.length) await this.setVisibleTimeRange(this.store.time[0]!);
+  }
+
+  /** Centre the bar at (or just before) `time`, loading history as needed. */
+  async scrollToTime(time: number): Promise<void> {
+    await this.whenLoaded();
+    await this.ensureHistory(time);
+    const i = Math.max(0, this.store.indexAtOrBefore(time));
+    const ts = this.timeScale;
+    ts.rightOffset = ts.width / ts.barSpacing / 2 - (ts.baseIndex - i);
+    ts.clamp();
+    this.viewChanged();
+    this.emitState();
+  }
+
+  /** Composite all layers (panes, axes, legend text) into one canvas. */
+  takeScreenshot(): HTMLCanvasElement {
+    const dpr = this.dpr;
+    const out = document.createElement('canvas');
+    out.width = Math.round(this.width * dpr);
+    out.height = Math.round(this.height * dpr);
+    const ctx = out.getContext('2d')!;
+    ctx.fillStyle = this.theme.background;
+    ctx.fillRect(0, 0, out.width, out.height);
+    const blit = (layer: CanvasLayer, x: number, y: number) => {
+      if (layer.width && layer.height)
+        ctx.drawImage(layer.canvas, Math.round(x * dpr), Math.round(y * dpr));
+    };
+    for (const pane of this.panes) {
+      if (pane.height <= 0) continue;
+      for (const l of [pane.bg, pane.main, pane.overlay]) blit(l, 0, pane.top);
+      for (const l of [pane.axisMain, pane.axisOverlay]) blit(l, this.paneWidth, pane.top);
+      // Legend is DOM: redraw its text.
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.font = font(this.theme, 13);
+      ctx.fillStyle = this.theme.text;
+      ctx.textBaseline = 'top';
+      ctx.fillText(pane.legendEl.textContent ?? '', 8, pane.top + 8);
+      ctx.restore();
+    }
+    blit(this.timeAxisMain, 0, this.timeAxisTop);
+    blit(this.timeAxisOverlay, 0, this.timeAxisTop);
+    ctx.fillStyle = this.theme.border;
+    ctx.fillRect(0, Math.round(this.timeAxisTop * dpr), out.width, Math.max(1, Math.floor(dpr)));
+    ctx.fillRect(Math.round(this.paneWidth * dpr), 0, Math.max(1, Math.floor(dpr)), out.height);
+    return out;
+  }
+
+  /** Hit test at viewport coordinates, with chart-space details. */
+  describePoint(clientX: number, clientY: number): ChartPoint {
+    const r = this.root.getBoundingClientRect();
+    const hit = this.hitTest(clientX - r.left, clientY - r.top);
+    const base = { clientX, clientY, kind: hit.kind } as ChartPoint;
+    if (hit.kind === 'pane' || hit.kind === 'priceAxis') {
+      base.paneId = hit.pane.id;
+      base.price = hit.pane.priceScale.yToPrice(hit.y);
+    }
+    if (hit.kind === 'pane' || hit.kind === 'timeAxis') {
+      const i = this.timeScale.xToIndex(hit.x);
+      base.index = i;
+      base.time = this.store.time[Math.max(0, Math.min(i, this.store.length - 1))] ?? null;
+    }
+    if (hit.kind === 'pane') base.seriesId = hit.seriesId;
+    return base;
   }
 
   scrollToRealtime(): void {
@@ -479,7 +600,12 @@ export class Chart {
 
   // ---------------------------------------------------------------- data flow
 
-  private async load(): Promise<void> {
+  private load(): Promise<void> {
+    this.loadPromise = this.doLoad();
+    return this.loadPromise;
+  }
+
+  private async doLoad(): Promise<void> {
     const gen = ++this.loadGen;
     this.unsubscribe?.();
     this.unsubscribe = null;
@@ -551,36 +677,61 @@ export class Chart {
         }
         this.invalidate(INVALIDATE_MAIN);
         if (this.crosshair) this.emitCrosshair();
+        this.events.emit('barUpdate', bar);
       },
     );
   }
 
-  private async loadMore(): Promise<void> {
-    if (this.loadingMore || !this.hasMore || !this.store.length) return;
+  private loadMorePromise: Promise<number> | null = null;
+
+  /** Load one older page. Concurrent callers share the in-flight request.
+   * Resolves to the number of bars prepended. */
+  private loadMore(): Promise<number> {
+    if (this.loadMorePromise) return this.loadMorePromise;
+    if (!this.hasMore || !this.store.length) return Promise.resolve(0);
     this.loadingMore = true;
     const gen = this.loadGen;
-    try {
-      const res = await this.feed.getBars({
-        symbol: this.symbol,
-        interval: this.interval,
-        to: this.store.time[0]!,
-        limit: this.options.pageSize,
-        prepost: this.options.prepost,
-        adjusted: this.options.adjusted,
-      });
-      if (gen !== this.loadGen) return;
-      const n = this.store.prepend(res.bars);
-      this.hasMore = res.hasMore && n > 0;
-      if (n > 0) {
-        this.timeScale.onPrepend(n);
-        if (this.crosshair) this.crosshair.index += n;
-        this.recomputeWeights();
-        this.invalidate(INVALIDATE_MAIN);
+    this.loadMorePromise = (async () => {
+      try {
+        const res = await this.feed.getBars({
+          symbol: this.symbol,
+          interval: this.interval,
+          to: this.store.time[0]!,
+          limit: this.options.pageSize,
+          prepost: this.options.prepost,
+          adjusted: this.options.adjusted,
+        });
+        if (gen !== this.loadGen) return 0;
+        const n = this.store.prepend(res.bars);
+        this.hasMore = res.hasMore && n > 0;
+        if (n > 0) {
+          this.timeScale.onPrepend(n);
+          if (this.crosshair) this.crosshair.index += n;
+          this.recomputeWeights();
+          this.invalidate(INVALIDATE_MAIN);
+        }
+        return n;
+      } catch (err) {
+        this.events.emit('error', { message: err instanceof Error ? err.message : String(err) });
+        return 0;
+      } finally {
+        this.loadingMore = false;
+        this.loadMorePromise = null;
       }
-    } catch (err) {
-      this.events.emit('error', { message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      this.loadingMore = false;
+    })();
+    return this.loadMorePromise;
+  }
+
+  /** Load history until the first bar is at or before `time` (or none is left). */
+  private async ensureHistory(time: number): Promise<void> {
+    const gen = this.loadGen;
+    while (
+      gen === this.loadGen &&
+      this.hasMore &&
+      this.store.length &&
+      this.store.time[0]! > time
+    ) {
+      if ((await this.loadMore()) === 0) break;
     }
   }
 

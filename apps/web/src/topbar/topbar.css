@@ -1,0 +1,295 @@
+/* ---- top bar ---- */
+.top-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 6px;
+  background: var(--panel);
+  user-select: none;
+}
+/* Keep the right-most tooltip on screen. */
+.top-bar > [data-tip]:last-child:hover::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.top-bar .io-icon-btn {
+  height: 32px;
+  min-width: 32px;
+  padding: 0 7px;
+  color: var(--text);
+}
+.top-bar .io-icon-btn.tb-labeled {
+  gap: 6px;
+  padding: 0 10px 0 8px;
+}
+.tb-label {
+  font-size: 14px;
+}
+.tb-muted {
+  color: var(--text-muted);
+}
+.tb-sep {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 5px;
+  background: var(--border);
+}
+.tb-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+/* Text/dropdown buttons share the icon button look. */
+.tb-btn {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  min-width: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tb-btn:hover,
+.tb-btn.open {
+  background: var(--hover);
+}
+.tb-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+}
+.tb-btn:focus-visible,
+.top-bar .io-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tb-symbol {
+  padding: 0 10px 0 8px;
+  color: var(--text-strong);
+}
+.tb-symbol svg {
+  color: var(--text-muted);
+}
+.tb-symbol-text {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.top-bar .tb-compare {
+  min-width: 30px;
+  padding: 0 5px;
+}
+
+/* ---- intervals ---- */
+.tb-intervals {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.tb-interval {
+  min-width: 30px;
+  padding: 0 6px;
+  font-weight: 500;
+}
+.tb-interval.active {
+  color: var(--accent-text);
+}
+.tb-chevron {
+  min-width: 22px;
+  padding: 0 3px;
+  color: var(--text-muted);
+}
+.tb-chevron.open svg,
+.tb-split-chevron.open svg {
+  transform: rotate(180deg);
+}
+
+.tb-ivmenu {
+  /* Favorite star, the one accent reference keeps yellow in both themes. */
+  --tb-star: var(--star);
+  width: 220px;
+  padding: 6px 0;
+  outline: none;
+}
+.tb-ivrow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+.tb-ivrow:hover,
+.tb-ivrow:focus-visible {
+  background: var(--hover);
+}
+.tb-ivrow.active {
+  background: var(--active-bg);
+  color: var(--accent-text);
+}
+.tb-ivlabel {
+  flex: 1;
+}
+.tb-ivadd {
+  gap: 10px;
+  padding-left: 12px;
+  color: var(--text);
+}
+.tb-ivadd svg {
+  color: var(--text-muted);
+}
+.tb-ivgroup {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 4px;
+}
+.tb-ivheader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.tb-ivheader:hover {
+  color: var(--text);
+}
+.tb-ivicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.tb-ivrow:hover .tb-ivicon,
+.tb-ivrow:focus-visible .tb-ivicon,
+.tb-ivstar.on {
+  opacity: 1;
+}
+.tb-ivicon:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.tb-ivstar.on {
+  color: var(--tb-star);
+}
+.tb-ivform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px 8px;
+}
+.tb-ivform-row {
+  display: flex;
+  gap: 6px;
+}
+.tb-ivcount {
+  width: 72px;
+  height: 30px;
+}
+.tb-ivunit {
+  flex: 1;
+  height: 30px;
+}
+.tb-ivform-error {
+  color: var(--down);
+  font-size: 12px;
+}
+.tb-ivform-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.tb-small-btn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+/* ---- chart type / layout / snapshot ---- */
+.tb-charttype {
+  min-width: 34px;
+}
+.tb-phase {
+  margin-left: 24px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--hover);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.tb-layout {
+  gap: 6px;
+  padding: 0 8px;
+}
+.tb-layout-name {
+  font-size: 14px;
+}
+.tb-menu-note {
+  padding: 4px 12px 2px 32px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.tb-split {
+  display: flex;
+  align-items: center;
+}
+.top-bar .tb-split .io-icon-btn {
+  border-radius: 4px 0 0 4px;
+  padding-right: 4px;
+}
+.tb-split-chevron {
+  min-width: 18px;
+  padding: 0 2px;
+  border-radius: 0 4px 4px 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 1180px) {
+  .tb-collapsible {
+    display: none;
+  }
+}
+@media (max-width: 980px) {
+  .tb-layout-name,
+  .tb-label {
+    display: none;
+  }
+}

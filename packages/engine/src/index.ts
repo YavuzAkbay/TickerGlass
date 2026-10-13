@@ -1,6 +1,13 @@
 export * from './types';
 export { Chart, createChart } from './chart';
-export type { ChartEvents, ChartState, CrosshairInfo, HitTarget, PaneState } from './chart';
+export type {
+  ChartEvents,
+  ChartPoint,
+  ChartState,
+  CrosshairInfo,
+  HitTarget,
+  PaneState,
+} from './chart';
 export { DARK_THEME, LIGHT_THEME, DEFAULT_OPTIONS } from './options';
 export type { ChartOptions, ChartTheme, CrosshairMode, MagnetMode } from './options';
 export { Pane } from './pane';

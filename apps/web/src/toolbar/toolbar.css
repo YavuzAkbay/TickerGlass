@@ -1,0 +1,275 @@
+/* ---- left drawing toolbar ---- */
+.left-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 52px;
+  flex: 0 0 52px;
+  padding: 4px 0;
+  background: var(--panel);
+  user-select: none;
+}
+
+.lt-group {
+  position: relative;
+  width: 52px;
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.io-icon-btn.lt-btn {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 4px;
+  color: var(--text);
+}
+.io-icon-btn.lt-btn:hover {
+  background: var(--hover);
+}
+.io-icon-btn.lt-btn.active {
+  color: var(--accent-text);
+  background: var(--active-bg);
+}
+.io-icon-btn.lt-btn.active:hover {
+  background: var(--active-bg);
+}
+.lt-group.open .io-icon-btn.lt-btn {
+  background: var(--hover);
+}
+
+/* corner arrow that opens the group's flyout */
+.lt-arrow {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  width: 10px;
+  height: 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 1px 3px 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.lt-group:hover .lt-arrow,
+.lt-group.open .lt-arrow,
+.lt-arrow:focus-visible {
+  opacity: 1;
+}
+.lt-arrow:hover {
+  color: var(--text-strong);
+  background: var(--hover);
+}
+.lt-group.open .lt-arrow svg {
+  color: var(--accent-text);
+}
+
+.lt-sep {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border);
+}
+.lt-spacer {
+  flex: 1 1 0;
+  min-height: 4px;
+}
+
+.lt-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
+@media (max-height: 780px) {
+  .io-icon-btn.lt-btn {
+    height: 34px;
+  }
+  .lt-sep {
+    margin: 3px 0;
+  }
+}
+@media (max-height: 660px) {
+  .io-icon-btn.lt-btn {
+    height: 30px;
+  }
+  .io-icon-btn.lt-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* ---- flyouts ---- */
+.lt-popover {
+  overscroll-behavior: contain;
+}
+.lt-fly {
+  min-width: 260px;
+  padding: 6px 0;
+  outline: none;
+}
+.lt-fly-section + .lt-fly-section {
+  margin-top: 4px;
+}
+.lt-fly-header {
+  padding: 8px 14px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lt-fly-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  outline: none;
+}
+.lt-fly-row:hover,
+.lt-fly-row:focus-visible {
+  background: var(--hover);
+}
+.lt-fly-row.active {
+  color: var(--accent-text);
+  background: var(--active-bg);
+}
+.lt-fly-icon {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+}
+.lt-fly-name {
+  flex: 1;
+}
+.lt-fly-shortcut {
+  margin-left: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.lt-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  visibility: hidden;
+}
+.lt-fly-row:hover .lt-star,
+.lt-fly-row:focus-visible .lt-star,
+.lt-star.on,
+.lt-star:focus-visible {
+  visibility: visible;
+}
+.lt-star:hover {
+  color: var(--text-strong);
+}
+.lt-star.on {
+  color: var(--accent-text);
+}
+
+/* icons (emoji / sticker) flyout */
+.lt-icons {
+  width: 244px;
+  padding: 0 0 8px;
+}
+.lt-icons-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.lt-icons-tab {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.lt-icons-tab:hover {
+  color: var(--text);
+}
+.lt-icons-tab.active {
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
+}
+.lt-icons-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+  padding: 8px 8px 0;
+}
+.lt-icons-cell {
+  height: 36px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  outline: none;
+}
+.lt-icons-cell:hover,
+.lt-icons-cell:focus-visible {
+  background: var(--hover);
+}
+.lt-icons-cell.active {
+  background: var(--active-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---- floating favorites bar ---- */
+.lt-favbar {
+  position: fixed;
+  z-index: 700;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 2px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  user-select: none;
+}
+.lt-favbar-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 32px;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+.lt-favbar-grip:active {
+  cursor: grabbing;
+}
+.io-icon-btn.lt-favbar-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
+.io-icon-btn.lt-favbar-btn.active {
+  background: var(--active-bg);
+}

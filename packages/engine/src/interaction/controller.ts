@@ -41,7 +41,15 @@ export class InteractionController {
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e), opts);
     this.el.addEventListener('wheel', (e) => this.onWheel(e), { ...opts, passive: false });
     this.el.addEventListener('keydown', (e) => this.onKey(e), opts);
-    this.el.addEventListener('contextmenu', (e) => e.preventDefault(), opts);
+    this.el.addEventListener(
+      'contextmenu',
+      (e) => {
+        e.preventDefault();
+        this.drag = null;
+        this.chart.events.emit('contextMenu', this.chart.describePoint(e.clientX, e.clientY));
+      },
+      opts,
+    );
   }
 
   destroy(): void {

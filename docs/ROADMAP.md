@@ -91,13 +91,19 @@ Phase 2 notes:
 
 ### Phase 3: App shell (standard layout)
 
-- [ ] Top toolbar: symbol button/search dialog (keyboard-first, type anywhere to search), interval picker + favorites + custom intervals, chart type menu, indicators button, compare, alert, replay, layout menu, undo/redo, settings, screenshot, fullscreen
-- [ ] Left drawing toolbar with grouped flyouts, favorites bar, magnet, stay-in-drawing-mode, lock all, hide all, remove all
-- [ ] Right sidebar: watchlist, alerts, object tree/data window, details, news, notes; resizable
-- [ ] Bottom panel: date range presets (1D 5D 1M 3M 6M YTD 1Y 5Y All), go-to-date, timezone, session toggle (ETH/RTH), %/log/auto toggles
-- [ ] Command bus + keyboard shortcut registry + command palette
-- [ ] Generic context-menu system (shared by chart, scales, drawings, indicators, watchlist rows)
-- [ ] Toasts, modals, settings dialog shell; themes
+- [x] Top toolbar: symbol button/search dialog (keyboard-first, type anywhere to search), interval picker + favorites + custom intervals, chart type menu, indicators button, compare, alert, replay, layout menu, undo/redo, settings, screenshot, fullscreen
+- [x] Left drawing toolbar with grouped flyouts, favorites bar, magnet, stay-in-drawing-mode, lock all, hide all, remove all
+- [x] Right sidebar: watchlist, alerts, object tree/data window, details, news, notes; resizable
+- [x] Bottom panel: date range presets (1D 5D 1M 3M 6M YTD 1Y 5Y All), go-to-date, timezone, session toggle (ETH/RTH), %/log/auto toggles
+- [x] Command bus + keyboard shortcut registry + command palette
+- [x] Generic context-menu system (shared by chart, scales, drawings, indicators, watchlist rows)
+- [x] Toasts, modals, settings dialog shell; themes
+
+Phase 3 notes:
+
+- Shell entries for later phases are present but inert, with a phase hint: chart types (4), indicators (5), drawing tools are selectable state only (6), layouts (7), compare (9), alerts (10), replay (13).
+- Watchlist panel is a basic recent-symbols list with live quotes; the full version is Phase 8.
+- Settings dialog: Symbol, Canvas, and Scales tabs work; others are placeholders until Phase 15.
 
 ### Phase 4: Chart types
 
