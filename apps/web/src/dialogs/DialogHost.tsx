@@ -3,6 +3,7 @@ import CommandPalette from './CommandPalette';
 import CompareDialog from './CompareDialog';
 import IndicatorsDialog from './IndicatorsDialog';
 import IndicatorSettingsDialog from './IndicatorSettingsDialog';
+import DrawingSettingsDialog from './DrawingSettingsDialog';
 import SettingsDialog from './SettingsDialog';
 import ShortcutsDialog from './ShortcutsDialog';
 import SymbolSearchDialog from './SymbolSearchDialog';
@@ -16,6 +17,7 @@ const DIALOGS: Record<DialogId, DialogComponent> = {
   compare: CompareDialog,
   indicators: IndicatorsDialog,
   indicatorSettings: IndicatorSettingsDialog,
+  drawingSettings: DrawingSettingsDialog,
   settings: SettingsDialog,
   commandPalette: CommandPalette,
   goToDate: GoToDateDialog,

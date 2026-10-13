@@ -1,0 +1,862 @@
+import type { DrawingPane } from './geometry';
+import { pointAt, withPrice, withTime } from './geometry';
+import { cloneDrawing, newDrawingId, type DrawingHit, type DrawingLayer } from './layer';
+import { logicalToTime, timeToLogical, type AnchorTimeline } from './mapping';
+import { getDrawingTool } from './registry';
+import type {
+  AnyDrawingToolDefinition,
+  Drawing,
+  DrawingChange,
+  DrawingHitPart,
+  DrawingPoint,
+  PixelPoint,
+} from './types';
+
+/** Pointer travel (px) before a press becomes a drag. */
+export const DRAG_SLOP = 3;
+/** Min distance (px) between freehand samples. */
+const FREEHAND_STEP = 3;
+/** Weak magnet radius (px), the crosshair rule. */
+const MAGNET_PX = 20;
+/** `setActiveTool(ERASER_TOOL)`: click/drag over drawings removes them. */
+export const ERASER_TOOL = 'eraser';
+
+export interface DrawingPointerMods {
+  shift: boolean;
+  alt: boolean;
+  /** Ctrl, or Cmd on macOS. */
+  mod: boolean;
+}
+
+/** Pane under the pointer and the drawing hit there (null: none). */
+export interface DrawingPointerTarget {
+  pane: DrawingPane;
+  drawing: DrawingHit | null;
+}
+
+interface PointStart {
+  points: DrawingPoint[];
+  logical: number[];
+  ys: number[];
+}
+
+type Gesture =
+  | {
+      kind: 'create';
+      def: AnyDrawingToolDefinition;
+      pane: DrawingPane;
+      /** Anchors fixed so far (the last draft anchor follows the pointer). */
+      placed: number;
+      /** Pointer releases so far. */
+      ups: number;
+      pressed: boolean;
+      dragged: boolean;
+      downX: number;
+      downY: number;
+      /** Last freehand sample (root px). */
+      lastX: number;
+      lastY: number;
+    }
+  /** Pressed on a drawing, not yet moved past DRAG_SLOP. `toggleOff`: a
+   * Shift-click on a selected drawing deselects it on release (not on drag). */
+  | {
+      kind: 'press';
+      pane: DrawingPane;
+      hit: DrawingHit;
+      downX: number;
+      downY: number;
+      toggleOff: boolean;
+      alt: boolean;
+    }
+  | {
+      kind: 'move';
+      pane: DrawingPane;
+      ids: string[];
+      start: Map<string, PointStart>;
+      before: Drawing[];
+      downX: number;
+      downY: number;
+      /** Alt+drag: `ids` are clones inserted at drag start; `prevSelection` restores on Esc. */
+      clones: boolean;
+      prevSelection: string[];
+    }
+  /** Eraser press/drag: drawings removed so far. */
+  | { kind: 'erase'; pane: DrawingPane; removed: Drawing[] }
+  | {
+      kind: 'handle';
+      pane: DrawingPane;
+      id: string;
+      index: number;
+      cursor: string;
+      start: DrawingPoint[];
+      before: Drawing[];
+    };
+
+/**
+ * Drawing pointer/keyboard state machine (docs/drawings.md §4). Coordinates
+ * are chart-root CSS px; the InteractionController forwards events here first
+ * and falls back to pan/zoom when a method returns false.
+ */
+export class DrawingInteraction {
+  private tool: string | null = null;
+  private gesture: Gesture | null = null;
+
+  constructor(private readonly layer: DrawingLayer) {}
+
+  get activeTool(): string | null {
+    return this.tool;
+  }
+
+  /** A press or creation is in progress. */
+  get busy(): boolean {
+    return this.gesture !== null;
+  }
+
+  setActiveTool(type: string | null): void {
+    if (type !== null && type !== ERASER_TOOL && !getDrawingTool(type))
+      throw new Error(`Unknown drawing tool: ${type}`);
+    this.abort();
+    this.tool = type;
+    this.layer.host.invalidate();
+  }
+
+  /** Cancel any gesture without events (API calls): drop the draft, undo a drag. */
+  abort(): void {
+    const g = this.gesture;
+    this.gesture = null;
+    this.layer.draft = null;
+    if (g?.kind === 'move' || g?.kind === 'handle') this.cancelDrag(g);
+    else if (g?.kind === 'erase' && g.removed.length)
+      // The removals already happened: report them rather than losing them.
+      this.layer.host.emit('drawingsRemoved', { drawings: g.removed.map(cloneDrawing) });
+    this.layer.host.invalidate();
+  }
+
+  // ------------------------------------------------------------ pointer
+
+  pointerDown(
+    target: DrawingPointerTarget | null,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): boolean {
+    const g = this.gesture;
+    if (g?.kind === 'create') {
+      // Next anchor of a click-click creation.
+      if (!g.pressed) {
+        g.pressed = true;
+        g.dragged = false;
+        g.downX = x;
+        g.downY = y;
+        this.updateDraft(x, y, mods);
+      }
+      return true;
+    }
+    if (g) return true;
+    if (!target) return false;
+    if (this.tool === ERASER_TOOL) {
+      const erase: Gesture = { kind: 'erase', pane: target.pane, removed: [] };
+      this.gesture = erase;
+      if (target.drawing) this.eraseId(erase, target.drawing.id);
+      return true;
+    }
+    if (this.tool) return this.startCreate(this.tool, target.pane, x, y, mods);
+    const hit = target.drawing;
+    if (!hit) return false;
+    const sel = this.layer.selection;
+    let toggleOff = false;
+    if (mods.shift) {
+      if (sel.has(hit.id)) toggleOff = true;
+      else this.layer.setSelection([...sel, hit.id]);
+    } else if (!sel.has(hit.id)) this.layer.setSelection([hit.id]);
+    this.gesture = {
+      kind: 'press',
+      pane: target.pane,
+      hit,
+      downX: x,
+      downY: y,
+      toggleOff,
+      alt: mods.alt,
+    };
+    return true;
+  }
+
+  /** Pointer moved with the button down. Returns whether a drawing gesture consumed it. */
+  pointerMove(x: number, y: number, mods: DrawingPointerMods): boolean {
+    const g = this.gesture;
+    if (!g) return false;
+    switch (g.kind) {
+      case 'create':
+        if (g.pressed && Math.hypot(x - g.downX, y - g.downY) > DRAG_SLOP) g.dragged = true;
+        this.updateDraft(x, y, mods);
+        return true;
+      case 'press':
+        if (Math.hypot(x - g.downX, y - g.downY) > DRAG_SLOP) this.startDrag(g, x, y, mods);
+        return true;
+      case 'move':
+        this.applyMove(g, x, y, mods);
+        return true;
+      case 'handle':
+        this.applyHandle(g, x, y, mods);
+        return true;
+      case 'erase': {
+        const h = this.layer.hitTest(g.pane, x, y - g.pane.top);
+        const hit = h.strong ?? h.weak;
+        if (hit) this.eraseId(g, hit.id);
+        return true;
+      }
+    }
+  }
+
+  /** Pointer moved with no button: hover highlight, or the floating anchor of a creation. */
+  hover(target: DrawingPointerTarget | null, x: number, y: number, mods: DrawingPointerMods): void {
+    const g = this.gesture;
+    if (g?.kind === 'create' && !g.pressed) this.updateDraft(x, y, mods);
+    // The eraser highlights what it would remove.
+    const next = (this.tool && this.tool !== ERASER_TOOL) || g ? null : (target?.drawing ?? null);
+    const prev = this.layer.hovered;
+    if (sameHit(prev, next)) return;
+    this.layer.hovered = next;
+    this.layer.host.invalidate();
+  }
+
+  pointerUp(x: number, y: number, mods: DrawingPointerMods): boolean {
+    const g = this.gesture;
+    if (!g) return false;
+    switch (g.kind) {
+      case 'create':
+        this.createUp(g, x, y, mods);
+        return true;
+      case 'press':
+        this.gesture = null;
+        if (g.toggleOff)
+          this.layer.setSelection([...this.layer.selection].filter((id) => id !== g.hit.id));
+        return true;
+      case 'move':
+        this.gesture = null;
+        if (g.clones) this.endClone(g);
+        else this.endDrag(g.before);
+        return true;
+      case 'handle':
+        this.gesture = null;
+        this.endDrag(g.before);
+        return true;
+      case 'erase':
+        this.gesture = null;
+        if (g.removed.length)
+          this.layer.host.emit('drawingsRemoved', { drawings: g.removed.map(cloneDrawing) });
+        return true;
+    }
+  }
+
+  /** Click (no drag) on empty chart space: clears the selection. */
+  clickEmpty(): void {
+    if (!this.tool && this.layer.selection.size) this.layer.setSelection([]);
+  }
+
+  /** Right-click: cancels a creation, or opens the drawing menu. */
+  contextMenu(target: DrawingPointerTarget | null, clientX: number, clientY: number): boolean {
+    if (this.gesture?.kind === 'create') {
+      this.cancelCreate();
+      return true;
+    }
+    const hit = target?.drawing;
+    if (!target || !hit) return false;
+    if (!this.layer.selection.has(hit.id)) this.layer.setSelection([hit.id]);
+    this.layer.host.emit('drawingContextMenu', {
+      id: hit.id,
+      part: hit.part,
+      paneId: target.pane.id,
+      clientX,
+      clientY,
+    });
+    return true;
+  }
+
+  doubleClick(target: DrawingPointerTarget | null, clientX: number, clientY: number): boolean {
+    // Clicks that place anchors also produce dblclick events: swallow them.
+    if (this.tool || this.gesture) return true;
+    const hit = target?.drawing;
+    if (!target || !hit) return false;
+    this.layer.host.emit('drawingDoubleClick', {
+      id: hit.id,
+      part: hit.part,
+      paneId: target.pane.id,
+      clientX,
+      clientY,
+    });
+    return true;
+  }
+
+  /** Esc cancels (creation, drag, tool, selection); Delete/Backspace removes the
+   * selected unlocked drawings; arrows nudge the selection (one `drawingChanged`
+   * per key). Returns whether the key was handled. */
+  key(key: string, mods: DrawingPointerMods = NO_MODS): boolean {
+    const g = this.gesture;
+    if (key === 'Escape') {
+      if (g?.kind === 'create') this.cancelCreate();
+      else if (g?.kind === 'move' || g?.kind === 'handle') {
+        this.gesture = null;
+        this.cancelDrag(g);
+      } else if (this.tool) {
+        const type = this.tool;
+        this.tool = null;
+        this.layer.host.emit('toolFinished', { type, drawingId: null, active: false });
+      } else if (this.layer.selection.size) this.layer.setSelection([]);
+      else return false;
+      return true;
+    }
+    if ((key === 'Delete' || key === 'Backspace') && !g && this.layer.selection.size) {
+      const ids = this.editable([...this.layer.selection]).map((d) => d.id);
+      const removed = this.layer.remove(ids);
+      if (removed.length)
+        this.layer.host.emit('drawingsRemoved', { drawings: removed.map(cloneDrawing) });
+      return true;
+    }
+    if (key in NUDGE && !g) return this.nudge(NUDGE[key]!, mods.shift ? 10 : 1);
+    return false;
+  }
+
+  /** Shown, unlocked drawings among `ids`. */
+  private editable(ids: Iterable<string>): Drawing[] {
+    const out: Drawing[] = [];
+    for (const id of ids) {
+      const d = this.layer.items.get(id);
+      if (d && this.layer.isShown(d) && !this.layer.isLocked(d)) out.push(d);
+    }
+    return out;
+  }
+
+  /** Arrow keys: move the editable selection by whole bars / pixels. */
+  private nudge([bx, py]: readonly [number, number], step: number): boolean {
+    const layer = this.layer;
+    const list = this.editable(layer.selection);
+    if (!list.length) return false;
+    const tl = layer.refreshView().timeline;
+    const changes: DrawingChange[] = [];
+    for (const d of list) {
+      const pane = layer.host.pane(d.paneId);
+      if (!pane) continue;
+      const before = cloneDrawing(d);
+      d.points = movePoints(d, startOf(d, tl, pane), bx * step, py * step, tl, pane);
+      if (JSON.stringify(d.points) !== JSON.stringify(before.points))
+        changes.push({ before, after: cloneDrawing(d) });
+    }
+    layer.host.invalidate();
+    if (changes.length) layer.host.emit('drawingChanged', { changes });
+    return true;
+  }
+
+  /** Eraser: remove `id` if it is shown and unlocked. */
+  private eraseId(g: Extract<Gesture, { kind: 'erase' }>, id: string): void {
+    const d = this.layer.items.get(id);
+    if (!d || !this.layer.isShown(d) || this.layer.isLocked(d)) return;
+    g.removed.push(...this.layer.remove([id]));
+  }
+
+  /** Cursor override for the pointer over `target`, or null for the default. */
+  cursor(target: DrawingPointerTarget | null): string | null {
+    const g = this.gesture;
+    if (g?.kind === 'move') return 'grabbing';
+    if (g?.kind === 'handle') return g.cursor;
+    if (this.tool === ERASER_TOOL || g?.kind === 'erase')
+      return target ? (target.drawing ? 'pointer' : 'crosshair') : null;
+    if (this.tool || g?.kind === 'create') return target ? 'crosshair' : null;
+    return target?.drawing?.cursor ?? null;
+  }
+
+  // ----------------------------------------------------------- creation
+
+  private startCreate(
+    type: string,
+    pane: DrawingPane,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): boolean {
+    const def = getDrawingTool(type);
+    if (!def) return false;
+    const p = this.pointer(pane, x, y, mods, null, def.creation.kind !== 'freehand');
+    if (!Number.isFinite(p.time)) return true; // no bars yet
+    const c = def.creation;
+    const points = c.kind === 'points' && c.count >= 2 ? [p, { ...p }] : [p];
+    this.layer.draft = this.layer.build({ type, points, paneId: pane.id });
+    this.gesture = {
+      kind: 'create',
+      def,
+      pane,
+      placed: 1,
+      ups: 0,
+      pressed: true,
+      dragged: false,
+      downX: x,
+      downY: y,
+      lastX: x,
+      lastY: y,
+    };
+    this.layer.host.invalidate();
+    return true;
+  }
+
+  /** Move the floating anchor (or sample a freehand point) to the pointer. */
+  private updateDraft(x: number, y: number, mods: DrawingPointerMods): void {
+    const g = this.gesture;
+    const d = this.layer.draft;
+    if (g?.kind !== 'create' || !d) return;
+    const freehand = g.def.creation.kind === 'freehand';
+    const n = d.points.length;
+    const from =
+      !freehand && mods.shift && n >= 2 && angleConstraint(g.def)
+        ? this.anchorPixel(g.pane, d.points[n - 2]!)
+        : null;
+    const p = this.pointer(g.pane, x, y, mods, from, !freehand);
+    if (!Number.isFinite(p.time)) return;
+    if (freehand) {
+      if (!g.pressed || Math.hypot(x - g.lastX, y - g.lastY) < FREEHAND_STEP) return;
+      g.lastX = x;
+      g.lastY = y;
+      // Freehand keeps the raw pointer price/time (no bar snapping in y).
+      d.points.push(p);
+    } else d.points[d.points.length - 1] = p;
+    this.layer.host.invalidate();
+  }
+
+  private createUp(
+    g: Extract<Gesture, { kind: 'create' }>,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): void {
+    const d = this.layer.draft;
+    if (!d) {
+      this.gesture = null;
+      return;
+    }
+    if (g.pressed) this.updateDraft(x, y, mods);
+    g.pressed = false;
+    const c = g.def.creation;
+    if (c.kind === 'click') return this.finishCreate(g);
+    if (c.kind === 'freehand')
+      return d.points.length >= 2 ? this.finishCreate(g) : this.cancelCreate();
+    // points: the first release only fixes anchor 2 when it ended a drag.
+    if (g.ups++ === 0) {
+      if (g.dragged) g.placed++;
+    } else g.placed++;
+    if (g.placed >= c.count) return this.finishCreate(g);
+    if (g.placed >= d.points.length) d.points.push({ ...d.points[d.points.length - 1]! });
+  }
+
+  private finishCreate(g: Extract<Gesture, { kind: 'create' }>): void {
+    const layer = this.layer;
+    const d = layer.draft;
+    this.gesture = null;
+    if (!d) return;
+    if (g.def.completePoints) {
+      layer.refreshView();
+      const geo = layer.geometry(d, g.pane);
+      if (geo) d.points = g.def.completePoints(d.points, geo, d.style);
+    }
+    layer.draft = null;
+    layer.insert(d);
+    layer.host.emit('drawingCreated', { drawing: cloneDrawing(d) });
+    layer.setSelection([d.id]);
+    const stay = layer.options.stayInDrawingMode;
+    if (!stay) this.tool = null;
+    layer.host.emit('toolFinished', { type: d.type, drawingId: d.id, active: stay });
+  }
+
+  /** Drop the draft and leave the tool (Esc, right-click). */
+  private cancelCreate(): void {
+    const type = this.layer.draft?.type ?? this.tool ?? '';
+    this.gesture = null;
+    this.layer.draft = null;
+    this.tool = null;
+    this.layer.host.invalidate();
+    this.layer.host.emit('toolFinished', { type, drawingId: null, active: false });
+  }
+
+  // ---------------------------------------------------------------- drag
+
+  private startDrag(
+    g: Extract<Gesture, { kind: 'press' }>,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): void {
+    const layer = this.layer;
+    const d = layer.items.get(g.hit.id);
+    if (!d || layer.isLocked(d)) return; // stays a press: locked drawings do not move
+    g.toggleOff = false; // Shift+drag moves the selection instead of deselecting
+    const part = g.hit.part;
+    if (g.alt || mods.alt) {
+      this.startClone(g, x, y, mods);
+      return;
+    }
+    if (part.kind === 'handle') {
+      this.gesture = {
+        kind: 'handle',
+        pane: g.pane,
+        id: d.id,
+        index: part.index,
+        cursor: g.hit.cursor,
+        start: d.points.map((p) => ({ ...p })),
+        before: [cloneDrawing(d)],
+      };
+      this.beginDrag([d.id]);
+      this.applyHandle(this.gesture, x, y, mods);
+      return;
+    }
+    const ids = this.paneSelection(g.pane);
+    this.startMove(g, ids, false, [], x, y, mods);
+  }
+
+  /** Editable selected drawings on `pane`, in draw order. */
+  private paneSelection(pane: DrawingPane): string[] {
+    return this.layer
+      .list()
+      .filter(
+        (s) =>
+          this.layer.selection.has(s.id) &&
+          s.paneId === pane.id &&
+          !this.layer.isLocked(s) &&
+          this.layer.isShown(s),
+      )
+      .map((s) => s.id);
+  }
+
+  private startMove(
+    g: Extract<Gesture, { kind: 'press' }>,
+    ids: string[],
+    clones: boolean,
+    prevSelection: string[],
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): void {
+    const layer = this.layer;
+    const tl = layer.refreshView().timeline;
+    const before: Drawing[] = [];
+    const start = new Map<string, PointStart>();
+    for (const id of ids) {
+      const s = layer.items.get(id)!;
+      before.push(cloneDrawing(s));
+      start.set(id, startOf(s, tl, g.pane));
+    }
+    this.gesture = {
+      kind: 'move',
+      pane: g.pane,
+      ids,
+      start,
+      before,
+      downX: g.downX,
+      downY: g.downY,
+      clones,
+      prevSelection,
+    };
+    this.beginDrag(ids);
+    this.applyMove(this.gesture, x, y, mods);
+  }
+
+  /** Alt+drag: insert copies of the pressed selection on top and drag them. */
+  private startClone(
+    g: Extract<Gesture, { kind: 'press' }>,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): void {
+    const layer = this.layer;
+    const prevSelection = [...layer.selection];
+    let z = layer.topZ();
+    const ids: string[] = [];
+    for (const id of this.paneSelection(g.pane)) {
+      const c = cloneDrawing(layer.items.get(id)!);
+      c.id = newDrawingId();
+      c.zIndex = ++z;
+      layer.insert(c);
+      ids.push(c.id);
+    }
+    layer.setSelection(ids);
+    this.startMove(g, ids, true, prevSelection, x, y, mods);
+  }
+
+  /** Clone drag ended: one drawingCreated per clone. */
+  private endClone(g: Extract<Gesture, { kind: 'move' }>): void {
+    const layer = this.layer;
+    for (const id of g.ids) layer.editing.delete(id);
+    layer.host.invalidate();
+    layer.host.emit('drawingDrag', { ids: g.ids, phase: 'end' });
+    for (const id of g.ids) {
+      const d = layer.items.get(id);
+      if (d) layer.host.emit('drawingCreated', { drawing: cloneDrawing(d) });
+    }
+  }
+
+  private beginDrag(ids: string[]): void {
+    for (const id of ids) this.layer.editing.add(id);
+    this.layer.host.emit('drawingDrag', { ids, phase: 'start' });
+  }
+
+  /** Body drag: whole bars in x, pixels in y (so log/percent scales keep the
+   * shape). Shift locks the move to the dominant axis. */
+  private applyMove(
+    g: Extract<Gesture, { kind: 'move' }>,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): void {
+    const layer = this.layer;
+    const tl = layer.refreshView().timeline;
+    let dx = x - g.downX;
+    let dy = y - g.downY;
+    if (mods.shift) {
+      if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+      else dx = 0;
+    }
+    const dl = Math.round(dx / layer.host.timeScale.barSpacing);
+    for (const id of g.ids) {
+      const d = layer.items.get(id);
+      const s = g.start.get(id);
+      if (!d || !s) continue;
+      d.points = movePoints(d, s, dl, dy, tl, g.pane);
+    }
+    layer.host.invalidate();
+  }
+
+  private applyHandle(
+    g: Extract<Gesture, { kind: 'handle' }>,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+  ): void {
+    const layer = this.layer;
+    const d = layer.items.get(g.id);
+    const def = d ? getDrawingTool(d.type) : undefined;
+    if (!d || !def) return;
+    layer.refreshView();
+    const geo = layer.geometry(d, g.pane);
+    if (!geo) return;
+    const n = g.start.length;
+    const other = g.index === 0 ? 1 : g.index - 1;
+    const from =
+      mods.shift && g.index < n && other < n && angleConstraint(def)
+        ? this.anchorPixel(g.pane, g.start[other]!)
+        : null;
+    const s = this.snap(g.pane, x, y - g.pane.top, mods, from);
+    let target = geo.toPoint(s.x, s.y);
+    if (s.price !== undefined) target = withPrice(target, s.price);
+    if (!Number.isFinite(target.time)) return;
+    if (def.moveHandle) {
+      d.points = def.moveHandle({
+        start: g.start,
+        handle: g.index,
+        target,
+        x: s.x,
+        y: s.y,
+        geometry: geo,
+        style: d.style,
+      });
+    } else if (g.index < g.start.length) {
+      const axes = def.axes ?? 'both';
+      const old = g.start[g.index]!;
+      const pts = g.start.map((p) => ({ ...p }));
+      pts[g.index] =
+        axes === 'price'
+          ? withPrice(old, target.price)
+          : axes === 'time'
+            ? withTime(old, target)
+            : target;
+      d.points = pts;
+    }
+    layer.host.invalidate();
+  }
+
+  /** Drag ended: one drawingChanged for everything that moved. */
+  private endDrag(before: Drawing[]): void {
+    const layer = this.layer;
+    const changes: DrawingChange[] = [];
+    for (const b of before) {
+      const after = layer.items.get(b.id);
+      if (after && JSON.stringify(after.points) !== JSON.stringify(b.points))
+        changes.push({ before: b, after: cloneDrawing(after) });
+    }
+    const ids = before.map((b) => b.id);
+    for (const id of ids) layer.editing.delete(id);
+    layer.host.invalidate();
+    layer.host.emit('drawingDrag', { ids, phase: 'end' });
+    if (changes.length) layer.host.emit('drawingChanged', { changes });
+  }
+
+  /** Undo a drag in progress without change events (Esc, abort). Clones are removed. */
+  private cancelDrag(g: Extract<Gesture, { kind: 'move' | 'handle' }>): void {
+    if (g.kind === 'move' && g.clones) {
+      for (const id of g.ids) this.layer.editing.delete(id);
+      this.layer.remove(g.ids);
+      this.layer.setSelection(g.prevSelection);
+      this.layer.host.emit('drawingDrag', { ids: g.ids, phase: 'end' });
+      return;
+    }
+    this.restore(g.before, g.kind === 'move' ? g.ids : [g.id]);
+  }
+
+  /** Put dragged drawings back (Esc, abort). */
+  private restore(before: Drawing[], ids: string[]): void {
+    for (const b of before) {
+      const d = this.layer.items.get(b.id);
+      if (d) d.points = b.points.map((p) => ({ ...p }));
+    }
+    for (const id of ids) this.layer.editing.delete(id);
+    this.layer.host.invalidate();
+    this.layer.host.emit('drawingDrag', { ids, phase: 'end' });
+  }
+
+  // ------------------------------------------------------------- snapping
+
+  /**
+   * Snap a pane-local pointer position for anchors (docs/drawings.md §7): x to
+   * the nearest bar slot; y to the magnet values of that bar (`options.magnet`:
+   * weak within MAGNET_PX, strong always; Ctrl/Cmd toggles off <-> weak); with
+   * Shift and `from` (the other anchor, pane px), the segment from `from` to
+   * multiples of 45°.
+   */
+  snap(
+    pane: DrawingPane,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+    from: PixelPoint | null = null,
+    magnet = true,
+  ): Snapped {
+    const host = this.layer.host;
+    const ts = host.timeScale;
+    const index = Math.round(ts.xToLogical(x));
+    const sx = ts.indexToX(index);
+    let sy = y;
+    let price: number | undefined;
+    let mode = host.magnet ?? 'off';
+    if (mods.mod) mode = mode === 'off' ? 'weak' : 'off';
+    if (magnet && mode !== 'off' && host.magnetValues) {
+      const ps = pane.priceScale;
+      let best = NaN;
+      let bestDist = Infinity;
+      for (const v of host.magnetValues(pane.id, index)) {
+        const dist = Math.abs(ps.priceToY(v) - y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = v;
+        }
+      }
+      if (best === best && (mode === 'strong' || bestDist <= MAGNET_PX)) {
+        price = best; // exact value, not a pixel round trip
+        sy = ps.priceToY(best);
+      }
+    }
+    if (!from || !mods.shift || from.x !== from.x || from.y !== from.y)
+      return price === undefined ? { x: sx, y: sy } : { x: sx, y: sy, price };
+    const c = constrain45(from, sx, sy);
+    // Vertical segments keep the magnet price; other directions dictate y.
+    return price !== undefined && c.y === sy ? { ...c, price } : c;
+  }
+
+  /** Pane-local pixel of an anchor. */
+  private anchorPixel(pane: DrawingPane, p: DrawingPoint): PixelPoint {
+    const tl = this.layer.refreshView().timeline;
+    return {
+      x: this.layer.host.timeScale.indexToX(timeToLogical(tl, p)),
+      y: pane.priceScale.priceToY(p.price),
+    };
+  }
+
+  /** Anchor under a root-relative pointer position in `pane`. */
+  private pointer(
+    pane: DrawingPane,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+    from: PixelPoint | null = null,
+    magnet = true,
+  ): DrawingPoint {
+    const s = this.snap(pane, x, y - pane.top, mods, from, magnet);
+    const tl = this.layer.refreshView().timeline;
+    const p = pointAt(tl, this.layer.host.timeScale, pane.priceScale, s.x, s.y);
+    return s.price === undefined ? p : withPrice(p, s.price);
+  }
+}
+
+/** Snapped pane-local pointer; `price` = exact magnet value when snapped to one. */
+interface Snapped {
+  x: number;
+  y: number;
+  price?: number;
+}
+
+const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };
+
+/** Arrow key -> [bars, px] direction. */
+const NUDGE: Record<string, readonly [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
+/** Anchors of `d` with their logical indices and pixel ys in `pane`. */
+function startOf(d: Readonly<Drawing>, tl: AnchorTimeline, pane: DrawingPane): PointStart {
+  const ps = pane.priceScale;
+  return {
+    points: d.points.map((p) => ({ ...p })),
+    logical: d.points.map((p) => timeToLogical(tl, p)),
+    ys: d.points.map((p) => ps.priceToY(p.price)),
+  };
+}
+
+/** `s` moved by `dl` whole bars and `dy` px, honouring the tool's `axes`. */
+function movePoints(
+  d: Readonly<Drawing>,
+  s: PointStart,
+  dl: number,
+  dy: number,
+  tl: AnchorTimeline,
+  pane: DrawingPane,
+): DrawingPoint[] {
+  const axes = getDrawingTool(d.type)?.axes ?? 'both';
+  const ps = pane.priceScale;
+  return s.points.map((p, i) => {
+    let q = p;
+    if (axes !== 'price' && dl !== 0) {
+      const t = logicalToTime(tl, s.logical[i]! + dl);
+      if (t) q = withTime(q, t);
+    }
+    if (axes !== 'time' && dy !== 0) q = withPrice(q, ps.yToPrice(s.ys[i]! + dy));
+    return q;
+  });
+}
+
+/** Whether Shift constrains anchors of `def` to 45° steps (docs/drawings.md §7). */
+function angleConstraint(def: AnyDrawingToolDefinition): boolean {
+  if (def.shiftConstraint) return def.shiftConstraint === 'angle';
+  const c = def.creation;
+  return c.kind === 'points' && c.count === 2 && (def.axes ?? 'both') === 'both';
+}
+
+/** (x, y) constrained to the nearest 45° ray from `from`; x stays on its bar slot
+ * except for vertical segments (x = from.x). */
+function constrain45(from: PixelPoint, x: number, y: number): { x: number; y: number } {
+  const dx = x - from.x;
+  const dy = y - from.y;
+  if (!dx && !dy) return { x, y };
+  const k = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)); // -4..4
+  if (k === 0 || k === 4 || k === -4) return { x, y: from.y };
+  if (k === 2 || k === -2) return { x: from.x, y };
+  const sign = k === 1 || k === -3 ? 1 : -1;
+  return { x, y: from.y + sign * dx };
+}
+
+function sameHit(a: DrawingHit | null, b: DrawingHit | null): boolean {
+  if (!a || !b) return a === b;
+  return a.id === b.id && samePart(a.part, b.part);
+}
+
+function samePart(a: DrawingHitPart, b: DrawingHitPart): boolean {
+  if (a.kind !== b.kind) return false;
+  return a.kind !== 'handle' || a.index === (b as { index: number }).index;
+}

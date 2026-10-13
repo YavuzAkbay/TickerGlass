@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
-import { findSticker, findTool, selectTool } from './tools';
+import { findSticker, findTool, isToolAvailable, selectTool, UNAVAILABLE_HINT } from './tools';
 
 const POS_KEY = 'investopen-favbar-pos';
 
@@ -93,14 +93,16 @@ export function FavoritesBar() {
         const sticker = tool ? undefined : findSticker(id);
         if (!tool && !sticker) return null;
         const Icon = tool?.icon;
+        const name = tool?.name ?? sticker?.name ?? id;
+        const available = isToolAvailable(id);
         return (
           <IconButton
             key={id}
-            label={tool?.name ?? sticker?.name ?? id}
-            {...(tool?.shortcut ? { shortcut: tool.shortcut } : {})}
+            label={available ? name : `${name} (${UNAVAILABLE_HINT.toLowerCase()})`}
+            {...(tool?.shortcut && available ? { shortcut: tool.shortcut } : {})}
             tipSide="bottom"
             active={activeTool === id}
-            className="lt-favbar-btn"
+            className={`lt-favbar-btn${available ? '' : ' unavailable'}`}
             onClick={() => selectTool(id)}
           >
             {Icon ? <Icon /> : <span className="lt-glyph">{sticker?.glyph}</span>}

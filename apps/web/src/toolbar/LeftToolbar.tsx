@@ -19,11 +19,13 @@ import {
   findTool,
   groupOf,
   ICON_TABS,
+  isToolAvailable,
   ICONS_GROUP_ID,
   MEASURE_TOOL,
   selectTool,
   TOOL_GROUPS,
   toggleFavorite,
+  UNAVAILABLE_HINT,
   ZOOM_TOOL,
   type ToolDef,
   type ToolGroup,
@@ -39,21 +41,32 @@ interface SplitProps {
   /** Flyout content; receives a close callback. */
   flyout: (close: () => void) => ReactNode;
   flyoutLabel: string;
+  /** No drawing definition yet: dimmed, click shows a hint. */
+  unavailable?: boolean;
 }
 
 /** 40x40 toolbar button with a hover corner arrow that opens a flyout. */
-function SplitButton({ label, shortcut, active, icon, onClick, flyout, flyoutLabel }: SplitProps) {
+function SplitButton({
+  label,
+  shortcut,
+  active,
+  icon,
+  onClick,
+  flyout,
+  flyoutLabel,
+  unavailable,
+}: SplitProps) {
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   return (
     <div ref={setWrap} className={`lt-group${open ? ' open' : ''}`}>
       <IconButton
-        label={label}
-        {...(shortcut ? { shortcut } : {})}
+        label={unavailable ? `${label} (${UNAVAILABLE_HINT.toLowerCase()})` : label}
+        {...(shortcut && !unavailable ? { shortcut } : {})}
         tipSide="right"
         active={active}
-        className="lt-btn"
+        className={`lt-btn${unavailable ? ' unavailable' : ''}`}
         onClick={() => {
           setOpen(false);
           onClick();
@@ -129,6 +142,7 @@ function ToolFlyout({ group, onClose }: { group: ToolGroup; onClose: () => void 
           {section.title ? <div className="lt-fly-header">{section.title}</div> : null}
           {section.tools.map((tool) => {
             const fav = favorites.includes(tool.id);
+            const available = isToolAvailable(tool.id);
             const Icon = tool.icon;
             return (
               <div
@@ -136,7 +150,9 @@ function ToolFlyout({ group, onClose }: { group: ToolGroup; onClose: () => void 
                 data-row
                 role="menuitem"
                 tabIndex={-1}
-                className={`lt-fly-row${activeTool === tool.id ? ' active' : ''}`}
+                aria-disabled={!available}
+                title={available ? undefined : UNAVAILABLE_HINT}
+                className={`lt-fly-row${activeTool === tool.id ? ' active' : ''}${available ? '' : ' unavailable'}`}
                 onClick={() => pick(tool)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -149,7 +165,8 @@ function ToolFlyout({ group, onClose }: { group: ToolGroup; onClose: () => void 
                   <Icon />
                 </span>
                 <span className="lt-fly-name">{tool.name}</span>
-                {tool.shortcut ? (
+                {available ? null : <span className="lt-fly-soon">{UNAVAILABLE_HINT}</span>}
+                {available && tool.shortcut ? (
                   <span className="lt-fly-shortcut">{formatShortcut(tool.shortcut)}</span>
                 ) : null}
                 <button
@@ -202,9 +219,10 @@ function IconsFlyout({ onClose }: { onClose: () => void }) {
             type="button"
             data-row
             role="menuitem"
-            title={it.name}
+            title={`${it.name} (${UNAVAILABLE_HINT.toLowerCase()})`}
             aria-label={it.name}
-            className={`lt-icons-cell${activeTool === it.id ? ' active' : ''}`}
+            aria-disabled
+            className={`lt-icons-cell unavailable${activeTool === it.id ? ' active' : ''}`}
             onClick={() => {
               selectTool(it.id);
               onClose();
@@ -230,6 +248,7 @@ function ToolGroupButton({ group }: { group: ToolGroup }) {
       label={tool.name}
       shortcut={tool.shortcut}
       active={groupOf(activeTool) === group.id}
+      unavailable={!isToolAvailable(tool.id)}
       icon={<Icon />}
       onClick={() => selectTool(tool.id)}
       flyoutLabel={`More ${group.label.toLowerCase()}`}
@@ -246,6 +265,7 @@ function IconsGroupButton() {
     <SplitButton
       label={sticker ? sticker.name : 'Icons'}
       active={groupOf(activeTool) === ICONS_GROUP_ID}
+      unavailable
       icon={sticker ? <span className="lt-glyph">{sticker.glyph}</span> : <I.IconSmile />}
       onClick={() => {
         if (last && sticker) selectTool(last);
@@ -364,14 +384,15 @@ function RemoveButton() {
 
 function SingleToolButton({ tool }: { tool: ToolDef }) {
   const active = useUiStore((s) => s.activeTool === tool.id);
+  const available = isToolAvailable(tool.id);
   const Icon = tool.icon;
   return (
     <div className="lt-group">
       <IconButton
-        label={tool.name}
+        label={available ? tool.name : `${tool.name} (${UNAVAILABLE_HINT.toLowerCase()})`}
         tipSide="right"
         active={active}
-        className="lt-btn"
+        className={`lt-btn${available ? '' : ' unavailable'}`}
         onClick={() => selectTool(tool.id)}
       >
         <Icon />
@@ -406,8 +427,9 @@ function ToggleButton({
   );
 }
 
-/** standard vertical drawing toolbar. Tool state only; drawing
- * itself lands in Phase 6. */
+/** standard vertical drawing toolbar. Tools without a registered
+ * drawing definition are dimmed and only show a hint (drawings/attach syncs
+ * the active tool and options to the chart). */
 export function LeftToolbar() {
   const stay = useUiStore((s) => s.stayInDrawingMode);
   const lockAll = useUiStore((s) => s.lockAll);

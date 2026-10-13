@@ -1,0 +1,225 @@
+# Drawings (Phase 6 design)
+
+Contract for the drawing framework. Source of truth for types: `packages/engine/src/drawings/types.ts`
+(exported from `@investopen/engine`). Change it only additively, and say so in the PR.
+
+## 1. Model
+
+A `Drawing` is plain JSON. The engine keeps it in memory but never persists it; the app does (§6).
+
+```ts
+interface Drawing {
+  id: string; // 'drw_*' when created by the user
+  type: string; // tool type = left-toolbar tool id ('trend-line')
+  points: { time: number; price: number; brick?: number }[];
+  style: Record<string, JsonValue>; // full style: tool defaults + user edits
+  text: string; // '' = none
+  locked: boolean; // no pointer move/edit (still selectable/removable via API)
+  hidden: boolean;
+  zIndex: number; // draw order within the pane, higher on top
+  visibility: DrawingIntervalVisibility | null; // same shape as indicators' IntervalVisibility
+  scope: 'symbol' | 'all'; // 'all' = synced across symbols
+  symbol: string;
+  paneId: string; // drawings on a missing pane are kept but not drawn
+}
+```
+
+- `price` is in the pane's units (price on `main`, study values on study panes).
+- `style` keys are per tool; common names: `lineColor lineWidth lineStyle extendLeft extendRight textColor
+fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color, visible }`). The
+  framework uses `lineColor` (fallback `#2962ff`) for handles and default axis labels.
+
+## 2. Tool definition API
+
+`defineDrawingTool({...})` (infers the style type from `defaults`), `registerDrawingTool`, `getDrawingTool`,
+`listDrawingTools`. Built-ins register in `drawings/tools/index.ts`, imported by `chart.ts`.
+
+| Field                                    | Meaning                                                                                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`, `name`, `group`                  | `group` = left-toolbar group id (`lines fib patterns forecasting shapes annotation measure`)                                           |
+| `creation`                               | `{kind:'click'}` one anchor · `{kind:'points',count}` click-click (count 2 also press-drag-release) · `{kind:'freehand'}`              |
+| `defaults`, `properties`                 | complete default style; Style/Text tab fields (`color lineWidth lineStyle bool number enum fontSize levels`, `tab`, `group`, `inline`) |
+| `text`                                   | `{ default, multiline }`: the Text tab edits `Drawing.text`                                                                            |
+| `axes`                                   | `'price'` (horizontal line) / `'time'` (vertical line): drags keep the other coordinate; the Coordinates tab hides it                  |
+| `render(rc, g, style, state)`            | draw in pane CSS px (`rc.ctx` has the dpr transform; `ctx.save/restore` is done for you). Never draw handles                           |
+| `hitTest(g, style, x, y, tol)`           | `{kind:'body', weak?}` / `{kind:'text'}` / null. Add `lineWidth/2` to `tol` yourself                                                   |
+| `handles(g, style)` + `moveHandle(args)` | editing handles (default: anchors). Derived handles (rect edge midpoints, channel width) map back to anchors in `moveHandle`           |
+| `completePoints(points, g, style)`       | normalise/expand anchors when creation finishes (one-click Long position derives target/stop)                                          |
+| `priceAxisLabels` / `timeAxisLabels`     | default: each anchor while selected; return `[]` to suppress                                                                           |
+| `isVisible(g, style)`                    | culling; default `anchorsInView`. Tools drawing past their anchors (rays, extended lines, H/V lines) must override                     |
+
+`DrawingGeometry` (`g`): `points` (px per anchor), `logical` (fractional bar index per anchor), `width`,
+`height`, `barSpacing`, `intervalSeconds`, `format` (`price percent time`), and mappers `toPixel toPoint
+priceToY yToPrice logicalToX xToLogical`. It is reused between frames: never keep references.
+Helpers for tools: `drawings/draw-utils.ts` (`setLineStyle extendSegment lineDistance infoLabel
+formatDuration hitRotatedText anchorsInView BODY_HIT WEAK_BODY_HIT TEXT_HIT`). Reference tools:
+`tools/trend-line.ts` (2 points, extend, middle-point derived handle, text, stats label) and
+`tools/horizontal-line.ts` (single click, `axes:'price'`, always-on price label).
+
+## 3. Coordinate mapping and interval changes (`drawings/mapping.ts`)
+
+Anchors are stored as times and mapped to logical bar indices on every frame; stored anchors change only
+when the user edits the drawing. So a drawing survives interval changes, chart-type changes, history prepends
+and reloads without migration. `timeToLogical(timeline, point)`:
+
+- **Inside the data**: the bar containing `time` (`open <= time < open + interval`); a time in a gap (weekend,
+  overnight, a daily midnight anchor on an intraday chart) maps to the next bar. Switching 1h -> 1D puts
+  a Wed 16:30 anchor on Wednesday's bar; switching back puts it exactly where it was made.
+- **Past the last bar**: `last + (time - endTime) / interval` where `endTime` = newest raw bar; months step
+  by calendar month. Anchors created in the future area are whole slots (`endTime + k` intervals). Not
+  session-aware (an overnight gap counts as slots), a known limitation.
+- **Before the first bar**: extrapolated back from the first bar; resolves exactly once history loads.
+- **Brick types** (Renko, Kagi, Line break, P&F, Range): the run of bricks at the last brick time `<= time`,
+  offset by `brick` (position within bricks sharing a time). Up to `endTime` (newest raw bar) maps to the
+  last brick; beyond extrapolates by the raw interval. Anchors from time charts land on the brick current
+  at that time.
+- `logicalToTime` is the inverse (rounds to a bar slot). Prices map through the pane's `PriceScale`, so
+  log/percent/indexed/inverted scales just work; body drags move in pixels (shape kept on log scales).
+
+## 4. Interaction state machine (`drawings/interaction.ts`)
+
+The `InteractionController` forwards pointer/key events to `chart.drawingInput` first and pans/zooms only
+when it declines. Coordinates are chart-root px; anchors snap to bar slots (`snap()`).
+
+- **idle**: hover sets `layer.hovered` (handles shown on hover); press on a drawing selects it (keeps an
+  existing multi-selection) -> `press`; press on empty space pans; a click (<= 3 px) on empty space clears
+  the selection. Handles of unlocked drawings are hit before any stroke.
+- **press -> move** (body) or **handle** after 3 px: live preview mutates the model, `drawingDrag start`;
+  on release one `drawingChanged` with all moved drawings (`before`/`after`), `drawingDrag end`. Locked
+  drawings stay a press. Esc during a drag restores `before` (no change event).
+- **create** (tool active, press in a pane): draft drawn on top, not in `getDrawings()`. `click`: release
+  finishes. `points`: first release fixes anchor 2 only if it ended a drag, else anchor 2 follows the
+  pointer until the next click; each click fixes one. `freehand`: samples every 3 px, release finishes
+  (< 2 points cancels). Finish: `completePoints`, insert, `drawingCreated`, select, `toolFinished`; the
+  tool is cleared unless `stayInDrawingMode`. Esc or right-click cancels (`toolFinished`, `drawingId: null`).
+- **keys** (chart focused): Esc = cancel creation / drag / tool / selection, in that order; Delete and
+  Backspace remove selected _unlocked_ drawings (`drawingsRemoved`). Handled keys are `preventDefault`ed,
+  so app-level shortcuts skip them.
+- **cursor**: `crosshair` with a tool, `pointer` over drawings, handle cursor (`ns-resize`, `move`), `grabbing`.
+- **hit order** (`chart.hitTest`): drawings (handles, strong parts) > series lines/bars/marks > weak drawing
+  parts (background fills) > study fills (Phase 5 rule). `HitTarget.drawing = { id, part, cursor }`;
+  `ChartPoint.drawingId`.
+
+## 5. Chart API, events and the undo contract
+
+`DrawingApi` on `Chart`: `setActiveTool(type|null)`, `getActiveTool`, `setDrawingOptions({stayInDrawingMode,
+lockAll, hideAll})`, `getDrawingOptions`, `addDrawing(input)` (fills id/defaults; throws on unknown type or
+duplicate id), `updateDrawing(id, patch)` (style merged per key; `id`/`type` ignored, so a full `Drawing` is a
+valid patch), `removeDrawings`, `getDrawings` (copies, draw order), `getDrawing`, `setDrawings` (bulk replace;
+unknown types kept), `selectDrawings(ids, {add})`, `getSelection`. Magnet reuses `options.magnet`.
+
+Editing API (B, exact signatures):
+
+- `selectAllDrawings(): void` — selects every drawing shown on the current symbol/interval.
+- `copyDrawings(ids: readonly string[]): string` — JSON `{ version: 1, drawings: Drawing[] }` (draw order).
+- `pasteDrawings(json: string, opts?: { offset?: number; at?: { time: number; price: number } }): Drawing[]`
+  — a user gesture: inserts copies with new ids on top, current symbol (scope `'symbol'`), selects them and
+  emits one `drawingCreated` per drawing. `offset` shifts every anchor by whole bars (default 0); `at` moves
+  the earliest anchor of the group to that time (+ price delta for drawings on the same pane as that anchor).
+  Throws on malformed JSON; unknown tool types are skipped.
+- `bringToFront(ids)`, `sendToBack(ids)`, `bringForward(ids)`, `sendBackward(ids)`: `(ids: readonly
+string[]) => DrawingChange[]` — within each drawing's pane; no events (app edit), the returned changes are
+  the app's undo entry (`[]` = nothing moved).
+- `setActiveTool(ERASER_TOOL)` (`'eraser'`, exported constant): eraser mode. Press/drag over drawings removes
+  every unlocked drawing touched; one `drawingsRemoved` per gesture. Stays active until Esc /
+  `setActiveTool(null)` (Esc emits `toolFinished {type:'eraser', drawingId:null, active:false}`).
+- `replaceDrawing(d: Drawing): void` (additive) — replaces the drawing with id `d.id` wholesale: style keys
+  missing from `d` are dropped (`updateDrawing` merges them, so removed keys would never leave the engine).
+  No events; unknown ids ignored; an ongoing drag of it is cancelled. The app's store sync and the settings
+  dialog preview use it.
+- `getDrawingBounds(ids: readonly string[]): DrawingBounds | null` (additive) — `{ left, top, right, bottom }`
+  around the shown drawings' anchors and editing handles (padded by the handle radius), in CSS px relative to
+  the chart root element `chart.root` (add `root.getBoundingClientRect()` for viewport px). Same mapping as
+  rendering (brick charts, the future area); may extend past the visible area. `null` when none of `ids` is
+  shown/mappable. The app positions the floating mini-toolbar with it (no engine internals).
+- Pointer cancel (`pointercancel` / `lostpointercapture` during a gesture) aborts it like Esc: a drag is
+  restored, a creation dropped, no events; a pan just stops.
+- Keys (chart focused, selection, no gesture): ArrowLeft/Right move the selection one bar, ArrowUp/Down
+  one px (Shift: 10 bars / 10 px) -> one `drawingChanged` per key press.
+
+Events (`DrawingEvents`, copies): `drawingCreated {drawing}`, `drawingChanged {changes:[{before,after}]}`,
+`drawingsRemoved {drawings}`, `selectionChanged {ids}`, `drawingDrag {ids, phase}`, `drawingContextMenu`,
+`drawingDoubleClick` (`{id, part, paneId, clientX, clientY}`; a drawing right-click does not emit
+`contextMenu`), `toolFinished {type, drawingId|null, active}`.
+
+**Undo is app-owned.** Only user gestures emit mutation events; API calls never do (selection changes always
+emit). The app records each event as one command-bus/`useHistory` entry: created -> undo `removeDrawings([id])`,
+redo `addDrawing(drawing)`; changed -> undo `updateDrawing(before.id, before)` for each change, redo with
+`after`; removed -> undo `addDrawing` each, redo `removeDrawings`. App edits (properties dialog, toolbar,
+z-order, lock) go through commands that call the API and push their own entry. The engine has no history.
+
+## 6. Persistence
+
+Now (C): localStorage `investopen-drawings` = `{ version: 1, bySymbol: { [symbol]: Drawing[] }, synced:
+Drawing[] }`; scope `'all'` drawings live in `synced`. Symbols are upper case (the app normalizes like
+`Chart.setSymbol`). On symbol change: `setDrawings([...bySymbol[sym], ...synced])`; afterwards only store
+objects that changed are reconciled (`replaceDrawing`). Debounced save on every store change. Data that
+cannot be fully read (bad JSON, unknown version, invalid entries) is first copied to
+`investopen-drawings.backup-<ms>` and the user is warned once; if that backup fails, saving is disabled for
+the session. Saves from other tabs (`storage` event) are merged by id: this tab's unsaved edits are
+re-applied on top of the other tab's data; unreadable data from another tab is not adopted. Phase 7 moves the same JSON to the API (`drawings`
+table keyed by layout + symbol, synced bucket per layout) and adds drawing templates (per-tool named styles).
+The engine also filters by scope/symbol (B), so a stale list never shows another symbol's drawings.
+
+## 7. Magnet and Shift constraints (B)
+
+Implemented in `DrawingInteraction.snap()` and applied to creation and handle drags (not to body drags):
+
+- Magnet `options.magnet`: `weak` snaps y to the nearest O/H/L/C of the bar under the pointer within 20 px
+  (the crosshair rule); `strong` always snaps to the nearest OHLC. Holding Ctrl/Cmd (`mods.mod`) inverts
+  off <-> weak while drawing. Main pane only (study panes: nearest series value, as `magnetY`).
+- Shift while placing/dragging an anchor of a 2-point line: constrain the segment from the other anchor
+  to multiples of 45° in pixel space (horizontal, vertical, diagonal); Shift on body drag locks to the
+  dominant axis. Tools opt in/out with `shiftConstraint: 'angle' | 'none'` (default `'angle'` for
+  `{kind:'points', count:2}` tools with `axes` `'both'`, else `'none'`); with `'angle'`, creation constrains
+  the floating anchor against the previous one, handle drags of anchor i against anchor 1 (i = 0) or i - 1.
+  Freehand tools get neither magnet nor Shift.
+- Shift-click on a drawing toggles it in the selection (deselect happens on release if no drag followed);
+  Alt+drag on a selected/pressed unlocked drawing clones the pressed selection: clones are inserted and
+  dragged, originals stay unchanged, one `drawingCreated` per clone at gesture end (Esc removes them,
+  no events).
+
+## 7b. Shown drawings (B)
+
+`DrawingLayer.isShown(d)`: not `hidden`, not `hideAll`, `scope === 'all' || symbol === chart symbol`, and
+`visibility` matches the chart interval (same rule as the app's `visibleOnInterval`: "60m" counts as 1h).
+Not-shown drawings are neither drawn, hit, dragged, nudged, selected by `selectAllDrawings` nor erased. Hiding
+a drawing (API `hidden: true` or `hideAll`) drops it from the selection.
+
+## 8. Work split (follow-up agents)
+
+| Agent        | Owns (create/modify)                                                                                                                                                            | Must not touch                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **A** tools  | `packages/engine/src/drawings/tools/**` (one file per tool, registered in `tools/index.ts` in toolbar order), additive helpers in `draw-utils.ts`, tool tests `tools/*.test.ts` | `types.ts` (request additive changes), layer/interaction, chart, apps/web |
+| **B** engine | rest of `packages/engine/**`: `layer.ts`, `interaction.ts`, `geometry.ts`, `mapping.ts`, `chart.ts`, `interaction/controller.ts`, engine tests; `types.ts` additive only        | `drawings/tools/**`, apps/web                                             |
+| **C** web    | `apps/web/**` + `e2e/**`                                                                                                                                                        | packages/**                                                               |
+
+**A**: Ray, Extended line, Info line, Horizontal ray, Vertical line, Cross line, Parallel channel, Fib
+retracement, Trend-based fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price range,
+Date range, Date & price range. Types = toolbar ids: `ray extended-line info-line horizontal-ray
+vertical-line cross-line parallel-channel fib-retracement fib-extension rectangle text arrow-line brush
+long-position short-position price-range date-range date-price-range`. Shape interiors you can grab
+(rectangle) are strong hits; decorative zones (fib backgrounds, position zones) are `WEAK_BODY_HIT`.
+Text tool: `click` creation; C opens the text editor on `drawingCreated` when `text` is empty.
+
+**B**: multi-select (Shift-click toggles in `pointerDown`; optional box select), clone (Alt+drag: copy the
+pressed selection, emit `drawingCreated` per clone and drag the clones), copy/paste API
+(`copyDrawings(ids)` -> JSON, `pasteDrawings(json, {offset})`, pasted = user gesture -> `drawingCreated`),
+z-order API (`bringToFront/sendToBack/bringForward/sendBackward` returning `DrawingChange[]` for the app's undo),
+magnet + Shift (§7), per-interval `visibility` and scope/symbol filtering in `DrawingLayer.isShown`, eraser
+mode (`setActiveTool('eraser')`-style: click removes -> `drawingsRemoved`), keyboard nudge (arrows move the
+selection one bar/px -> one `drawingChanged`), lock/hide-all polish, perf (100 drawings at 60 fps while
+panning; geometry cache), touch (bigger tolerance). Already in core: per-drawing `locked/hidden`, `lockAll`,
+`hideAll`, `stayInDrawingMode`, multi-drag of an existing multi-selection.
+
+**C**: drawing store (`apps/web/src/drawings/`) + localStorage (§6) + sync to the engine; command-bus
+undo/redo (§5); wire the left toolbar (`activeTool` -> `setActiveTool` for registered types, `null` for
+cursors; `toolFinished` -> back to cursor unless `active`; magnet/stay/lock/hide/remove-all ->
+`applyOptions`/`setDrawingOptions`/`removeDrawings`; hide mode 'drawings'/'all' -> `hideAll`); floating
+mini-toolbar on `selectionChanged` (color, width, style, settings, lock, delete; hidden during
+`drawingDrag`); context menus for drawings (settings, clone, copy, z-order, visibility, lock, hide, remove,
+template) and the chart/scale/pane entries per roadmap; properties dialog generated from `properties`
+(Style/Text tabs) + Coordinates (anchors, honour `axes`) + Visibility (reuse the indicator visibility
+editor) with per-tool templates (Save as / Apply default); object tree (list per pane, reorder via
+`zIndex`, hide/lock/delete); drop drawings of panes listed in `paneRemoved` with the studies' undo step; e2e:
+draw, drag, undo, reload persistence. Until B lands, C develops against the core (no multi-select/clone).

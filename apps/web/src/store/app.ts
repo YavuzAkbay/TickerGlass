@@ -38,6 +38,9 @@ interface AppState {
   set: (patch: Partial<AppState>) => void;
 }
 
+/** Symbol as the engine stores it (`Chart.getSymbol()`): trimmed, upper case. */
+export const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
@@ -56,11 +59,15 @@ export const useAppStore = create<AppState>()(
       magnet: 'off',
       recentSymbols: [],
       toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
-      setSymbol: (symbol) =>
+      // Upper-cased like the engine (Chart.setSymbol), so drawing bucket keys
+      // match the symbol the engine filters by.
+      setSymbol: (raw) => {
+        const symbol = normalizeSymbol(raw);
         set((s) => ({
           symbol,
           recentSymbols: [symbol, ...s.recentSymbols.filter((x) => x !== symbol)].slice(0, 12),
-        })),
+        }));
+      },
       setInterval: (interval) => set({ interval }),
       toggleFavoriteInterval: (iv) =>
         set((s) => ({
@@ -79,6 +86,14 @@ export const useAppStore = create<AppState>()(
       version: 3,
       migrate: (s) =>
         ({ chartStyle: {}, volume: 'overlay', showPrevClose: false, ...(s as object) }) as AppState,
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppState>;
+        return {
+          ...current,
+          ...p,
+          symbol: typeof p.symbol === 'string' ? normalizeSymbol(p.symbol) : current.symbol,
+        };
+      },
     },
   ),
 );

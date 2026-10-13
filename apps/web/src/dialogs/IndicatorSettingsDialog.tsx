@@ -442,7 +442,7 @@ function InputControl({
 }
 
 /** Number field that commits every valid value and shows the stored value again on blur. */
-function NumberInput({
+export function NumberInput({
   id,
   value,
   min,
@@ -621,7 +621,7 @@ const isAllVisible = (v: IntervalVisibility) =>
     ({ unit, limit }) => v[unit].enabled && v[unit].min === limit[0] && v[unit].max === limit[1],
   );
 
-function VisibilityTab({
+export function VisibilityTab({
   vis,
   set,
 }: {

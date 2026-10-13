@@ -1,6 +1,7 @@
-import type { CrosshairMode } from '@investopen/engine';
+import { getDrawingTool, type CrosshairMode } from '@investopen/engine';
 import { useAppStore } from '../store/app';
 import { useUiStore, type DrawingToolId } from '../store/ui';
+import { toast } from '../ui/Toast';
 import * as I from './icons';
 import type { ToolIcon } from './icons';
 
@@ -356,11 +357,25 @@ export function isCursorTool(id: string): boolean {
   return groupOf(id) === 'cursors';
 }
 
+/** Hint for toolbar tools without a registered drawing definition yet. */
+export const UNAVAILABLE_HINT = 'Coming in Phase 11';
+
+/** Cursors (incl. the eraser) and tools with a registered drawing definition. */
+export function isToolAvailable(id: string): boolean {
+  return isCursorTool(id) || !!getDrawingTool(id);
+}
+
 /** Select a tool: updates the active tool, the group's last-used tool and,
- * for cross/dot/arrow, the chart crosshair mode. */
+ * for cross/dot/arrow, the chart crosshair mode. Unavailable tools only show
+ * a hint. */
 export function selectTool(id: string): void {
   const group = groupOf(id);
   if (!group) return;
+  if (!isToolAvailable(id)) {
+    const name = findTool(id)?.name ?? findSticker(id)?.name ?? id;
+    toast(`${name}: ${UNAVAILABLE_HINT.toLowerCase()}`);
+    return;
+  }
   const ui = useUiStore.getState();
   ui.set({ activeTool: id, groupTools: { ...ui.groupTools, [group]: id } });
   if ((CURSOR_IDS as readonly string[]).includes(id)) {

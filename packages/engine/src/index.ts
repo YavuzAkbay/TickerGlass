@@ -21,3 +21,13 @@ export type { PriceScaleMode } from './scale/price-scale';
 export { SeriesStore } from './model/series-store';
 export * from './feed';
 export type * from './studies/types';
+export type * from './drawings/types';
+export {
+  defineDrawingTool,
+  getDrawingTool,
+  listDrawingTools,
+  registerDrawingTool,
+} from './drawings/registry';
+export { logicalToTime, timeToLogical } from './drawings/mapping';
+export type { AnchorTimeline } from './drawings/mapping';
+export { ERASER_TOOL } from './drawings/interaction';

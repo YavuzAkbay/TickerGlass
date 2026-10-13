@@ -1,0 +1,102 @@
+/* ---- floating drawing toolbar ---- */
+.drw-toolbar {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  padding: 0 4px 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--popover);
+  box-shadow: var(--shadow);
+  user-select: none;
+}
+.drw-tb-grip {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 6px;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+.drw-tb-grip:active {
+  cursor: grabbing;
+}
+.drw-toolbar .cp-swatch {
+  margin: 0 2px;
+}
+.io-icon-btn.drw-tb-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.drw-tb-width {
+  font-size: 12px;
+}
+.drw-tb-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+/* ---- inline text editor ---- */
+.drw-text-editor {
+  position: fixed;
+  z-index: 45;
+  width: 260px;
+  resize: both;
+  font: inherit;
+}
+
+/* ---- settings dialog ---- */
+.drw-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.drw-inline .dlg-select {
+  width: auto;
+}
+.drw-prop-row {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+}
+.drw-text-input {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+.drw-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.drw-level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.drw-level .ind-num {
+  width: 90px;
+}
+.drw-level-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.drw-template-save {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.drw-template-save .io-input {
+  width: 160px;
+}

@@ -1,9 +1,9 @@
 import type { MagnetMode } from '@investopen/engine';
 import { commands, type Command } from '../commands/registry';
+import { removeAllDrawings, removeAllObjects } from '../drawings/actions';
 import { removeAllIndicators } from '../indicators/actions';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
-import { toast } from '../ui/Toast';
 import { isCursorTool, resetToCursor, selectTool, TOOL_GROUPS } from './tools';
 
 /** Hide-button modes; the chosen one is remembered in `groupTools.hide`. */
@@ -37,8 +37,6 @@ export function setHideMode(mode: HideMode): void {
   const ui = useUiStore.getState();
   ui.set({ hideAll: true, groupTools: { ...ui.groupTools, hide: mode } });
 }
-
-const phase6 = () => toast('Drawings arrive in Phase 6');
 
 const modalOpen = () => !!document.querySelector('[data-modal-open], .io-popover');
 
@@ -105,7 +103,12 @@ export function registerToolbarCommands(): () => void {
       category: 'Drawings',
       run: () => useUiStore.setState((s) => ({ hideAll: !s.hideAll })),
     },
-    { id: 'drawings.removeAll', title: 'Remove drawings', category: 'Drawings', run: phase6 },
+    {
+      id: 'drawings.removeAll',
+      title: 'Remove drawings',
+      category: 'Drawings',
+      run: removeAllDrawings,
+    },
     {
       id: 'drawings.removeIndicators',
       title: 'Remove indicators',
@@ -116,7 +119,7 @@ export function registerToolbarCommands(): () => void {
       id: 'drawings.removeAllObjects',
       title: 'Remove drawings & indicators',
       category: 'Drawings',
-      run: phase6,
+      run: removeAllObjects,
     },
   ];
   return commands.register(list);

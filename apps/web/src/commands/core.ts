@@ -10,6 +10,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { changeScale, toggleScaleMode } from '../chart/scaleActions';
+import { useDrawingRuntime } from '../drawings/store';
 import { getChart } from '../store/chart';
 import { useAppStore } from '../store/app';
 import { useUiStore, type RightPanel } from '../store/ui';
@@ -18,6 +19,11 @@ import { useHistory } from './history';
 import { commands, type Command } from './registry';
 
 const hasChart = () => !!getChart();
+/** Undo/redo would fight an ongoing drawing drag or the open text editor. */
+const drawingBusy = () => {
+  const r = useDrawingRuntime.getState();
+  return r.dragging || !!r.textEdit;
+};
 const open = (
   id: Parameters<ReturnType<typeof useUiStore.getState>['openDialog']>[0],
   arg?: unknown,
@@ -217,7 +223,7 @@ export function registerCoreCommands(): () => void {
       category: 'Edit',
       shortcut: 'Mod+z',
       icon: Undo2,
-      enabled: () => useHistory.getState().past.length > 0,
+      enabled: () => useHistory.getState().past.length > 0 && !drawingBusy(),
       run: () => useHistory.getState().undo(),
     },
     {
@@ -226,7 +232,7 @@ export function registerCoreCommands(): () => void {
       category: 'Edit',
       shortcut: ['Shift+Mod+z', 'Mod+y'],
       icon: Redo2,
-      enabled: () => useHistory.getState().future.length > 0,
+      enabled: () => useHistory.getState().future.length > 0 && !drawingBusy(),
       run: () => useHistory.getState().redo(),
     },
     {

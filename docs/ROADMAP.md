@@ -137,14 +137,23 @@ Phase 5 notes:
 
 ### Phase 6: Drawing framework + core tools
 
-- [ ] Drawing model: anchors in (time, price) space mapped to bar index; survives interval changes; per-symbol storage, or synced across all symbols
-- [ ] Create/select/drag/anchor-edit/multi-select/clone (Alt+drag)/copy-paste/lock/hide/z-order
-- [ ] Magnet snap to OHLC; Shift-constrain angles; floating mini-toolbar on select (color, width, style, settings, lock, delete)
-- [ ] Right-click menus for drawings (and the chart, scales, panes): settings, clone, copy, z-order, visibility per interval, lock, hide, remove, template
-- [ ] Properties dialog generated from the schema: Style / Text / Coordinates / Visibility tabs; per-tool style templates ("Save as… / Apply default")
-- [ ] Undo/redo via the command bus
-- [ ] Core tools: Trend line, Ray, Extended line, Info line, Horizontal line/ray, Vertical line, Cross line, Parallel channel, Fib retracement, Trend-based fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price range, Date range, Date & price range (measure)
-- [ ] Object tree panel (list, reorder, hide/lock, delete)
+- [x] Drawing model: anchors in (time, price) space mapped to bar index; survives interval changes; per-symbol storage, or synced across all symbols
+- [x] Create/select/drag/anchor-edit/multi-select/clone (Alt+drag)/copy-paste/lock/hide/z-order
+- [x] Magnet snap to OHLC; Shift-constrain angles; floating mini-toolbar on select (color, width, style, settings, lock, delete)
+- [x] Right-click menus for drawings (and the chart, scales, panes): settings, clone, copy, z-order, visibility per interval, lock, hide, remove, template
+- [x] Properties dialog generated from the schema: Style / Text / Coordinates / Visibility tabs; per-tool style templates ("Save as… / Apply default")
+- [x] Undo/redo via the command bus
+- [x] Core tools: Trend line, Ray, Extended line, Info line, Horizontal line/ray, Vertical line, Cross line, Parallel channel, Fib retracement, Trend-based fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price range, Date range, Date & price range (measure)
+- [x] Object tree panel (list, reorder, hide/lock, delete)
+
+Phase 6 notes:
+
+- Design, tool definition API, and undo/persistence contract: `docs/drawings.md`.
+- 20 core tools registered; toolbar entries without a definition are dimmed until Phase 11.
+- Anchors extrapolated past the last bar ignore sessions (overnight gaps count as bar slots).
+- Measure tools show no volume yet (tool geometry has no bar-data accessor).
+- Drawings persist to localStorage (`investopen-drawings`, per-symbol + synced buckets, backup on unreadable data, cross-tab merge) until Phase 7 moves them to the API.
+- No box select; Bar # in the Coordinates tab assumes a time-based chart (wrong on brick types).
 
 ### Phase 7: Persistence, layouts, templates
 

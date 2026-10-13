@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BottomBar } from './bottombar/BottomBar';
 import { ChartView } from './chart/ChartView';
 import { registerCoreCommands } from './commands/core';
+import { registerDrawingCommands } from './drawings/commands';
 import { registerIndicatorCommands } from './indicators/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { DialogHost } from './dialogs/DialogHost';
@@ -25,6 +26,7 @@ export function App() {
   useEffect(() => {
     const unregister = registerCoreCommands();
     const unregisterIndicators = registerIndicatorCommands();
+    const unregisterDrawings = registerDrawingCommands();
     // Digits open the interval input, anything else symbol search .
     const uninstall = installShortcuts((initial) =>
       useUiStore
@@ -34,6 +36,7 @@ export function App() {
     return () => {
       unregister();
       unregisterIndicators();
+      unregisterDrawings();
       uninstall();
     };
   }, []);

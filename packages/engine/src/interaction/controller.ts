@@ -1,4 +1,5 @@
 import type { Chart, HitTarget } from '../chart';
+import type { DrawingPointerMods } from '../drawings/interaction';
 import type { Pane } from '../pane';
 
 const VERTICAL_PAN_THRESHOLD = 10;
@@ -23,7 +24,9 @@ type Drag =
   | { kind: 'priceAxis'; pane: Pane; lastY: number }
   | { kind: 'timeAxis'; lastX: number }
   | { kind: 'separator'; index: number; lastY: number }
-  | { kind: 'pinch'; pane: Pane; lastDist: number };
+  | { kind: 'pinch'; pane: Pane; lastDist: number }
+  /** A drawing gesture owns the pointer (creation, select press, drag). */
+  | { kind: 'drawing' };
 
 /** Mouse, touch, wheel and keyboard handling for a Chart. */
 export class InteractionController {
@@ -40,7 +43,8 @@ export class InteractionController {
     this.el.addEventListener('pointerdown', (e) => this.onDown(e), opts);
     this.el.addEventListener('pointermove', (e) => this.onMove(e), opts);
     this.el.addEventListener('pointerup', (e) => this.onUp(e), opts);
-    this.el.addEventListener('pointercancel', (e) => this.onUp(e), opts);
+    this.el.addEventListener('pointercancel', (e) => this.onCancel(e), opts);
+    this.el.addEventListener('lostpointercapture', (e) => this.onCancel(e), opts);
     this.el.addEventListener('pointerleave', () => this.onLeave(), opts);
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e), opts);
     this.el.addEventListener('wheel', (e) => this.onWheel(e), { ...opts, passive: false });
@@ -51,6 +55,9 @@ export class InteractionController {
         if (inLegendSlot(e)) return;
         e.preventDefault();
         this.drag = null;
+        const p = this.local(e);
+        const target = this.chart.drawingTarget(this.chart.hitTest(p.x, p.y));
+        if (this.chart.drawingInput.contextMenu(target, e.clientX, e.clientY)) return;
         this.chart.events.emit('contextMenu', this.chart.describePoint(e.clientX, e.clientY));
       },
       opts,
@@ -92,6 +99,11 @@ export class InteractionController {
     }
 
     const hit = this.chart.hitTest(p.x, p.y);
+    if (this.chart.drawingInput.pointerDown(this.chart.drawingTarget(hit), p.x, p.y, mods(e))) {
+      this.drag = { kind: 'drawing' };
+      this.updateCursor(hit);
+      return;
+    }
     switch (hit.kind) {
       case 'pane':
         this.drag = {
@@ -128,8 +140,10 @@ export class InteractionController {
     const d = this.drag;
     const chart = this.chart;
 
-    if (!d) {
+    if (!d || d.kind === 'drawing') {
+      if (d) chart.drawingInput.pointerMove(p.x, p.y, mods(e));
       const hit = chart.hitTest(p.x, p.y);
+      if (!d) chart.drawingInput.hover(chart.drawingTarget(hit), p.x, p.y, mods(e));
       this.updateCursor(hit);
       chart.hoverStudy(hit);
       if (hit.kind === 'pane') chart.setCrosshair(hit.pane, hit.x, hit.y);
@@ -198,16 +212,39 @@ export class InteractionController {
     }
     this.drag = null;
     const p = this.local(e);
+    if (d?.kind === 'drawing') {
+      this.chart.drawingInput.pointerUp(p.x, p.y, mods(e));
+      this.updateCursor(this.chart.hitTest(p.x, p.y));
+      return;
+    }
     const hit = this.chart.hitTest(p.x, p.y);
-    if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= CLICK_SLOP)
+    if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= CLICK_SLOP) {
+      this.chart.drawingInput.clickEmpty();
       this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
-    else if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
+    } else if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
     if (d) this.chart.viewSettled();
     this.updateCursor(hit);
   }
 
+  /**
+   * The browser took the pointer away (pointercancel, capture lost): abandon
+   * the gesture instead of committing it. A drawing drag is restored and a
+   * creation dropped (no events); a pan just stops (no click, no kinetics).
+   * After a normal pointerup the pointer is already gone, so this is a no-op.
+   */
+  private onCancel(e: PointerEvent): void {
+    if (!this.pointers.delete(e.pointerId)) return;
+    if (this.el.hasPointerCapture(e.pointerId)) this.el.releasePointerCapture(e.pointerId);
+    const d = this.drag;
+    this.drag = null;
+    if (d?.kind === 'drawing') this.chart.drawingInput.abort();
+    else if (d) this.chart.viewSettled();
+    this.el.style.cursor = '';
+  }
+
   private onLeave(): void {
     this.chart.hoverStudy(null);
+    if (!this.drag) this.chart.drawingInput.hover(null, 0, 0, NO_MODS);
     if (!this.drag) this.chart.setCrosshair(null, 0, 0);
   }
 
@@ -215,6 +252,8 @@ export class InteractionController {
     if (inLegendSlot(e)) return;
     const p = this.local(e);
     const hit = this.chart.hitTest(p.x, p.y);
+    if (this.chart.drawingInput.doubleClick(this.chart.drawingTarget(hit), e.clientX, e.clientY))
+      return;
     if (hit.kind === 'priceAxis') this.chart.setAutoScale(hit.pane.id, true);
     else if (hit.kind === 'timeAxis') this.chart.resetView();
     else this.chart.emitStudyPointer('studyDoubleClick', hit, e.clientX, e.clientY);
@@ -248,6 +287,10 @@ export class InteractionController {
   }
 
   private onKey(e: KeyboardEvent): void {
+    if (this.chart.drawingInput.key(e.key, mods(e))) {
+      e.preventDefault();
+      return;
+    }
     const ts = this.chart.timeScale;
     const step = ts.barSpacing * (e.shiftKey ? 10 : 1);
     switch (e.key) {
@@ -310,6 +353,11 @@ export class InteractionController {
   }
 
   private updateCursor(hit: HitTarget): void {
+    const dc = this.chart.drawingInput.cursor(this.chart.drawingTarget(hit));
+    if (dc) {
+      this.el.style.cursor = dc;
+      return;
+    }
     let cursor = 'default';
     switch (hit.kind) {
       case 'pane':
@@ -339,4 +387,10 @@ export class InteractionController {
 /** Event started inside a pane's app-owned legend slot. */
 function inLegendSlot(e: Event): boolean {
   return e.target instanceof Element && e.target.closest('.io-legend-slot') !== null;
+}
+
+const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };
+
+function mods(e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }) {
+  return { shift: e.shiftKey, alt: e.altKey, mod: e.ctrlKey || e.metaKey };
 }

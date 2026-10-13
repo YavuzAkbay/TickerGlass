@@ -273,3 +273,17 @@
 .io-icon-btn.lt-favbar-btn.active {
   background: var(--active-bg);
 }
+
+/* tools without a drawing definition yet (hint instead of selecting) */
+.lt-fly-row.unavailable .lt-fly-icon,
+.lt-fly-row.unavailable .lt-fly-name,
+.lt-icons-cell.unavailable,
+.io-icon-btn.lt-btn.unavailable,
+.io-icon-btn.lt-favbar-btn.unavailable {
+  opacity: 0.45;
+}
+.lt-fly-soon {
+  margin-left: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+}

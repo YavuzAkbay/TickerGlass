@@ -2,7 +2,10 @@ import type { Chart, ChartPoint } from '@investopen/engine';
 import {
   Bell,
   ClipboardCopy,
+  ClipboardPaste,
   Eye,
+  EyeOff,
+  Lock,
   LineChart,
   Maximize2,
   Minimize2,
@@ -13,8 +16,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { commands } from '../commands/registry';
+import { currentDrawings, removeDrawings } from '../drawings/actions';
+import { useDrawingRuntime } from '../drawings/store';
 import { findIndicator } from '../indicators/actions';
 import { indicatorMenuItems } from '../indicators/menu';
+import { useUiStore } from '../store/ui';
+import { toHideMode } from '../toolbar/commands';
 import { changeScale, toggleScaleMode } from './scaleActions';
 import { openContextMenu } from '../ui/ContextMenu';
 import type { MenuItem } from '../ui/Menu';
@@ -89,6 +96,13 @@ function paneItems(chart: Chart, paneId: string): MenuItem[] {
       },
     );
   }
+  const paneDrawings = currentDrawings().filter((d) => d.paneId === paneId);
+  items.push({
+    label: 'Remove drawings in pane',
+    icon: Trash2,
+    disabled: !paneDrawings.length,
+    onSelect: () => removeDrawings(paneDrawings.map((d) => d.id)),
+  });
   if (paneId !== 'main') {
     items.push({
       label: 'Remove pane',
@@ -137,6 +151,9 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
   }
   if (p.kind !== 'pane' || !p.paneId) return;
   const symbol = chart.getSymbol();
+  const ui = useUiStore.getState();
+  const drawingsHidden = ui.hideAll && ['drawings', 'all'].includes(toHideMode(ui.groupTools.hide));
+  const drawingCount = currentDrawings().length;
   openContextMenu(x, y, [
     {
       label: 'Reset chart view',
@@ -170,14 +187,34 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
     { type: 'separator' },
     { label: 'Price scale', submenu: scaleItems(chart, p.paneId) },
     { label: 'Pane', submenu: paneItems(chart, p.paneId) },
+    { type: 'separator' },
     {
-      label: 'Hide drawings',
-      icon: Eye,
-      onSelect: () => commands.execute('drawings.toggleHideAll'),
+      label: 'Paste',
+      icon: ClipboardPaste,
+      shortcut: 'Mod+v',
+      disabled: !useDrawingRuntime.getState().clipboard,
+      onSelect: () => commands.execute('drawings.paste'),
     },
     {
-      label: 'Remove drawings',
+      label: drawingsHidden ? 'Show drawings' : 'Hide drawings',
+      icon: drawingsHidden ? Eye : EyeOff,
+      onSelect: () =>
+        drawingsHidden
+          ? ui.set({ hideAll: false })
+          : ui.set({ hideAll: true, groupTools: { ...ui.groupTools, hide: 'drawings' } }),
+    },
+    {
+      label: ui.lockAll ? 'Unlock all drawings' : 'Lock all drawings',
+      icon: Lock,
+      checked: ui.lockAll,
+      onSelect: () => commands.execute('drawings.toggleLockAll'),
+    },
+    {
+      label: drawingCount
+        ? `Remove ${drawingCount} drawing${drawingCount > 1 ? 's' : ''}`
+        : 'Remove drawings',
       icon: Trash2,
+      disabled: !drawingCount,
       onSelect: () => commands.execute('drawings.removeAll'),
     },
     { type: 'separator' },

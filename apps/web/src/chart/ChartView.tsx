@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@investopen/engine';
 import { feed } from './feed';
+import { attachDrawings } from '../drawings/attach';
+import { DrawingToolbar } from '../drawings/DrawingToolbar';
+import { DrawingTextEditor } from '../drawings/TextEditor';
 import { attachIndicators } from '../indicators/attach';
 import { IndicatorLegends } from '../indicators/Legend';
 import { openChartContextMenu } from './contextMenus';
@@ -37,6 +40,8 @@ export function ChartView() {
       chart.on('crosshairMove', (c) => useChartStore.setState({ crosshair: c })),
       chart.on('loading', (loading) => useChartStore.setState({ loading })),
       chart.on('contextMenu', (p) => openChartContextMenu(chart, p)),
+      // Drawings first: a pane removal folds their undo step with the studies'.
+      attachDrawings(chart, hostRef.current!),
       attachIndicators(chart, feed),
     ];
     return () => {
@@ -74,6 +79,8 @@ export function ChartView() {
     <>
       <div ref={hostRef} className="chart-host" />
       <IndicatorLegends chart={chartState} />
+      <DrawingToolbar />
+      <DrawingTextEditor />
     </>
   );
 }

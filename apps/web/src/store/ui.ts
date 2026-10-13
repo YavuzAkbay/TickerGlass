@@ -9,6 +9,7 @@ export type DialogId =
   | 'compare'
   | 'indicators'
   | 'indicatorSettings'
+  | 'drawingSettings'
   | 'settings'
   | 'commandPalette'
   | 'goToDate'

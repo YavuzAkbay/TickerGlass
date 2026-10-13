@@ -53,6 +53,26 @@ import type {
   StudySpec,
   StudyTarget,
 } from './studies/types';
+import { DrawingInteraction, type DrawingPointerTarget } from './drawings/interaction';
+import { cloneDrawing, DrawingLayer, type DrawingHit, type DrawingHost } from './drawings/layer';
+import { withTime } from './drawings/geometry';
+import { logicalToTime, timeToLogical, type AnchorTimeline } from './drawings/mapping';
+import { getDrawingTool } from './drawings/registry';
+import type {
+  Drawing,
+  DrawingApi,
+  DrawingAxisLabel,
+  DrawingBounds,
+  DrawingChange,
+  DrawingClipboard,
+  DrawingEvents,
+  DrawingFormat,
+  DrawingInput,
+  DrawingOptions,
+  DrawingPasteOptions,
+  DrawingPatch,
+} from './drawings/types';
+import './drawings/tools';
 
 const TIME_AXIS_HEIGHT = 28;
 const MIN_AXIS_WIDTH = 56;
@@ -86,9 +106,11 @@ export interface ChartPoint {
   index?: number;
   time?: number | null;
   seriesId?: string | null;
+  /** Drawing under the point, if any. */
+  drawingId?: string | null;
 }
 
-export interface ChartEvents extends StudyEvents {
+export interface ChartEvents extends StudyEvents, DrawingEvents {
   contextMenu: ChartPoint;
   /** Live update of the last bar (or a newly appended one). */
   barUpdate: Bar;
@@ -139,6 +161,9 @@ export type HitTarget =
       /** Only a study fill's interior is under the pointer (a weak hit: no
        * pointer cursor; any line, mark or bar of any series wins over it). */
       fill?: boolean;
+      /** Drawing part under the pointer (drawings sit above all series). With a
+       * drawing hit, `seriesId` is null unless the drawing hit is weak. */
+      drawing?: DrawingHit;
     }
   | { kind: 'priceAxis'; pane: Pane; y: number }
   | { kind: 'timeAxis'; x: number }
@@ -153,7 +178,7 @@ interface CrosshairPos {
   rawY: number;
 }
 
-export class Chart implements StudyApi {
+export class Chart implements StudyApi, DrawingApi {
   readonly root: HTMLDivElement;
   /** Bars as loaded from the feed. */
   private readonly raw = new SeriesStore();
@@ -209,6 +234,19 @@ export class Chart implements StudyApi {
   private readonly studies = new Map<string, StudySeries>();
   private _seriesRevision = 0;
   private hoveredStudy: { id: string; outputId: string | null } | null = null;
+  private readonly drawingLayer: DrawingLayer;
+  /** Drawing pointer/keyboard state machine (used by the InteractionController). */
+  readonly drawingInput: DrawingInteraction;
+  private readonly timeline = {
+    time: new Float64Array(0) as ArrayLike<number>,
+    length: 0,
+    interval: { unit: 'day', count: 1 } as Interval,
+    bricks: false,
+    endTime: NaN,
+  };
+  private readonly drawingFormats = new Map<string, DrawingFormat>();
+  private readonly intervalCache: { iv: Interval | null; str: string } = { iv: null, str: '' };
+  private readonly axisLabelBuf: DrawingAxisLabel[] = [];
 
   constructor(container: HTMLElement, feed: DataFeed, options: Partial<ChartOptions> = {}) {
     injectStyle();
@@ -236,6 +274,8 @@ export class Chart implements StudyApi {
     this.countdownTimer = setInterval(() => {
       if (isIntraday(this.interval) && this.store.length) this.invalidate(INVALIDATE_OVERLAY);
     }, 1000);
+    this.drawingLayer = new DrawingLayer(this.createDrawingHost());
+    this.drawingInput = new DrawingInteraction(this.drawingLayer);
     this.controller = new InteractionController(this);
     this.invalidate(INVALIDATE_LAYOUT);
   }
@@ -331,6 +371,8 @@ export class Chart implements StudyApi {
     const i = this.panes.findIndex((p) => p.id === id);
     if (i <= 0) return null; // the main pane stays
     const [pane] = this.panes.splice(i, 1);
+    // Drawings on the pane stay in the model (not drawn); stop any gesture there.
+    if (this.drawingInput.busy) this.drawingInput.abort();
     const studyIds: string[] = [];
     for (const s of pane?.series ?? []) {
       if (s instanceof StudySeries) {
@@ -572,6 +614,266 @@ export class Chart implements StudyApi {
 
   private emitSeriesChange(change: SeriesChange): void {
     this.events.emit('seriesChange', change);
+  }
+
+  // --------------------------------------------------------------- drawings
+
+  setActiveTool(type: string | null): void {
+    this.drawingInput.setActiveTool(type);
+  }
+
+  getActiveTool(): string | null {
+    return this.drawingInput.activeTool;
+  }
+
+  setDrawingOptions(patch: Partial<DrawingOptions>): void {
+    this.drawingLayer.options = { ...this.drawingLayer.options, ...patch };
+    if (this.drawingLayer.options.hideAll || this.drawingLayer.options.lockAll)
+      this.drawingInput.abort();
+    this.drawingLayer.pruneSelection();
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  getDrawingOptions(): DrawingOptions {
+    return { ...this.drawingLayer.options };
+  }
+
+  addDrawing(input: DrawingInput): Drawing {
+    const layer = this.drawingLayer;
+    return cloneDrawing(layer.insert(layer.build(input)));
+  }
+
+  updateDrawing(id: string, patch: DrawingPatch): void {
+    // An API edit wins over a gesture on the same drawing.
+    if (this.drawingInput.busy && this.drawingLayer.editing.has(id)) this.drawingInput.abort();
+    if (this.drawingLayer.update(id, patch)) this.drawingLayer.pruneSelection();
+  }
+
+  replaceDrawing(d: Drawing): void {
+    if (this.drawingInput.busy && this.drawingLayer.editing.has(d.id)) this.drawingInput.abort();
+    if (this.drawingLayer.replace(d)) this.drawingLayer.pruneSelection();
+  }
+
+  removeDrawings(ids: readonly string[]): void {
+    this.drawingLayer.remove(ids);
+  }
+
+  getDrawingBounds(ids: readonly string[]): DrawingBounds | null {
+    return this.drawingLayer.bounds(ids);
+  }
+
+  getDrawings(): Drawing[] {
+    return this.drawingLayer.list().map(cloneDrawing);
+  }
+
+  getDrawing(id: string): Drawing | null {
+    const d = this.drawingLayer.items.get(id);
+    return d ? cloneDrawing(d) : null;
+  }
+
+  setDrawings(list: readonly Drawing[]): void {
+    this.drawingInput.abort();
+    this.drawingLayer.replaceAll(list);
+  }
+
+  selectDrawings(ids: readonly string[], opts: { add?: boolean } = {}): void {
+    const layer = this.drawingLayer;
+    layer.setSelection(opts.add ? [...layer.selection, ...ids] : ids);
+  }
+
+  getSelection(): string[] {
+    return [...this.drawingLayer.selection];
+  }
+
+  selectAllDrawings(): void {
+    const layer = this.drawingLayer;
+    layer.setSelection(
+      layer
+        .list()
+        .filter((d) => layer.isShown(d))
+        .map((d) => d.id),
+    );
+  }
+
+  copyDrawings(ids: readonly string[]): string {
+    const want = new Set(ids);
+    const clip: DrawingClipboard = {
+      version: 1,
+      drawings: this.drawingLayer
+        .list()
+        .filter((d) => want.has(d.id))
+        .map(cloneDrawing),
+    };
+    return JSON.stringify(clip);
+  }
+
+  pasteDrawings(json: string, opts: DrawingPasteOptions = {}): Drawing[] {
+    const layer = this.drawingLayer;
+    const clip = JSON.parse(json) as Partial<DrawingClipboard> | null;
+    if (!clip || clip.version !== 1 || !Array.isArray(clip.drawings))
+      throw new Error('Not a drawings clipboard');
+    const src = clip.drawings.filter(
+      (d) => d && typeof d.type === 'string' && Array.isArray(d.points) && getDrawingTool(d.type),
+    );
+    if (!src.length) return [];
+    this.drawingInput.abort();
+    const tl = layer.refreshView().timeline;
+    // `at`: the earliest anchor of the group lands on at.time (bars) / at.price.
+    let dl = opts.offset ?? 0;
+    let dp = 0;
+    let refPane: string | null = null;
+    if (opts.at && tl.length) {
+      let first: { l: number; price: number; pane: string } | null = null;
+      for (const d of src)
+        for (const p of d.points) {
+          const l = timeToLogical(tl, p);
+          if (Number.isFinite(l) && (!first || l < first.l))
+            first = { l, price: p.price, pane: d.paneId };
+        }
+      if (first) {
+        dl += Math.round(timeToLogical(tl, opts.at) - first.l);
+        dp = opts.at.price - first.price;
+        refPane = first.pane;
+      }
+    }
+    const out: Drawing[] = [];
+    let z = layer.topZ();
+    for (const d of src) {
+      const points = d.points.map((p) => {
+        let q = { ...p };
+        if (dl && tl.length) {
+          const t = logicalToTime(tl, timeToLogical(tl, p) + dl);
+          if (t) q = withTime(q, t);
+        }
+        if (dp && d.paneId === refPane) q.price += dp;
+        return q;
+      });
+      const { id: _id, ...rest } = d;
+      const pasted = layer.build({
+        ...rest,
+        points,
+        zIndex: ++z,
+        symbol: d.scope === 'all' ? d.symbol : this.symbol,
+      });
+      out.push(layer.insert(pasted));
+    }
+    for (const d of out) this.events.emit('drawingCreated', { drawing: cloneDrawing(d) });
+    layer.setSelection(out.map((d) => d.id));
+    return out.map(cloneDrawing);
+  }
+
+  bringToFront(ids: readonly string[]): DrawingChange[] {
+    return this.drawingLayer.reorder(ids, 'front');
+  }
+
+  sendToBack(ids: readonly string[]): DrawingChange[] {
+    return this.drawingLayer.reorder(ids, 'back');
+  }
+
+  bringForward(ids: readonly string[]): DrawingChange[] {
+    return this.drawingLayer.reorder(ids, 'forward');
+  }
+
+  sendBackward(ids: readonly string[]): DrawingChange[] {
+    return this.drawingLayer.reorder(ids, 'backward');
+  }
+
+  /** Drawing target of a hit (for the drawing state machine), or null off-pane. */
+  drawingTarget(hit: HitTarget): DrawingPointerTarget | null {
+    return hit.kind === 'pane' ? { pane: hit.pane, drawing: hit.drawing ?? null } : null;
+  }
+
+  /** `formatInterval(this.interval)`, cached per interval object (assignments
+   * replace it), so per-drawing visibility checks do not allocate. */
+  private intervalString(): string {
+    const c = this.intervalCache;
+    if (c.iv !== this.interval) {
+      c.iv = this.interval;
+      c.str = formatInterval(this.interval);
+    }
+    return c.str;
+  }
+
+  private createDrawingHost(): DrawingHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const chart = this;
+    return {
+      get timeScale() {
+        return chart.timeScale;
+      },
+      get theme() {
+        return chart.theme;
+      },
+      get paneWidth() {
+        return chart.paneWidth;
+      },
+      get symbol() {
+        return chart.symbol;
+      },
+      get interval() {
+        return chart.intervalString();
+      },
+      get magnet() {
+        return chart.options.magnet;
+      },
+      magnetValues: (paneId, index) => this.drawingMagnetValues(paneId, index),
+      timeline: () => this.refreshTimeline(),
+      pane: (id) => this.panes.find((p) => p.id === id) ?? null,
+      format: (paneId) => this.drawingFormat(paneId),
+      invalidate: () => this.invalidate(INVALIDATE_OVERLAY),
+      // ChartEvents extends DrawingEvents, so this view of the emitter is exact.
+      emit: (event, payload) =>
+        (this.events as unknown as Emitter<DrawingEvents>).emit(event, payload),
+    };
+  }
+
+  /** Drawing magnet targets at displayed bar `index`: OHLC of the displayed
+   * series (bricks on brick types) on 'main', series values on other panes. */
+  private drawingMagnetValues(paneId: string, index: number): number[] {
+    if (paneId === 'main') {
+      const s = this.store;
+      if (index < 0 || index >= s.length) return [];
+      return [s.open[index]!, s.high[index]!, s.low[index]!, s.close[index]!];
+    }
+    const pane = this.panes.find((p) => p.id === paneId);
+    return pane ? pane.series.flatMap((s) => s.valuesAt(index)) : [];
+  }
+
+  /** The displayed series as an anchor timeline (one reused object). */
+  private refreshTimeline(): AnchorTimeline {
+    const tl = this.timeline;
+    const s = this.store;
+    tl.time = s.time;
+    tl.length = s.length;
+    tl.interval = this.interval;
+    tl.bricks = BRICK_TYPES.has(this._chartType);
+    tl.endTime = this.raw.length ? this.raw.time[this.raw.length - 1]! : NaN;
+    return tl;
+  }
+
+  private drawingFormat(paneId: string): DrawingFormat {
+    let f = this.drawingFormats.get(paneId);
+    if (!f) {
+      f = {
+        price: (v) => {
+          const pane = this.panes.find((p) => p.id === paneId);
+          return pane ? this.formatValue(pane, v) : formatPrice(v, this.decimals);
+        },
+        percent: (v) => formatPercent(v),
+        time: (t) => formatCrosshairTime(t, this.interval.unit, this.tz, this.options.locale),
+      };
+      this.drawingFormats.set(paneId, f);
+    }
+    return f;
+  }
+
+  /** A value in the pane's own units (price for main), ignoring percent/indexed display. */
+  private formatValue(pane: Pane, v: number): string {
+    const st = this.paneStudy(pane)?.study.spec;
+    if (st) return formatStudyValue(v, st.format, st.precision, pane.labelDecimals + 1);
+    return pane.id === 'main'
+      ? formatPrice(v, this.decimals)
+      : formatAxisNumber(v, pane.labelDecimals + 1);
   }
 
   // ------------------------------------------------------------ chart types
@@ -840,7 +1142,10 @@ export class Chart implements StudyApi {
       base.index = i;
       base.time = this.store.time[Math.max(0, Math.min(i, this.store.length - 1))] ?? null;
     }
-    if (hit.kind === 'pane') base.seriesId = hit.seriesId;
+    if (hit.kind === 'pane') {
+      base.seriesId = hit.seriesId;
+      base.drawingId = hit.drawing?.id ?? null;
+    }
     return base;
   }
 
@@ -978,16 +1283,20 @@ export class Chart implements StudyApi {
       seriesId: s.id,
       outputId: s.outputId,
       ...(s.fill ? { fill: true } : {}),
+      ...(s.drawing ? { drawing: s.drawing } : {}),
     };
   }
 
-  /** Topmost series under (x, y): lines, marks and bars of every series
-   * first, study fill interiors only as a last resort. */
+  /** Topmost object under (x, y), in this order: drawings (handles, strokes,
+   * strong parts), lines/marks/bars of every series, weak drawing parts
+   * (background fills), study fill interiors. */
   private hitSeries(
     pane: Pane,
     x: number,
     y: number,
-  ): { id: string | null; outputId: string | null; fill: boolean } {
+  ): { id: string | null; outputId: string | null; fill: boolean; drawing?: DrawingHit } {
+    const dh = this.drawingLayer.hitTest(pane, x, y);
+    if (dh.strong) return { id: null, outputId: null, fill: false, drawing: dh.strong };
     const i = this.timeScale.xToIndex(x);
     const ps = pane.priceScale;
     const price = ps.yToPrice(y);
@@ -999,6 +1308,7 @@ export class Chart implements StudyApi {
         if (out !== null) return { id: s.id, outputId: out, fill: false };
       } else if (s.hitTest(i, price, tol)) return { id: s.id, outputId: null, fill: false };
     }
+    if (dh.weak) return { id: null, outputId: null, fill: false, drawing: dh.weak };
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
       if (!(s instanceof StudySeries)) continue;
@@ -1081,6 +1391,9 @@ export class Chart implements StudyApi {
   // ---------------------------------------------------------------- data flow
 
   private load(): Promise<void> {
+    // Symbol/interval changed: drawings shown there may differ (scope, visibility).
+    if (this.drawingInput.busy) this.drawingInput.abort();
+    this.drawingLayer.pruneSelection();
     this.loadPromise = this.doLoad();
     return this.loadPromise;
   }
@@ -1516,6 +1829,7 @@ export class Chart implements StudyApi {
       const ctx = pane.overlay.begin();
       const ax = pane.axisOverlay.begin();
       const ps = pane.priceScale;
+      this.drawingLayer.render(pane, ctx, this.dpr);
 
       // Study last values (below the series' own label).
       for (const s of pane.series) {
@@ -1583,6 +1897,30 @@ export class Chart implements StudyApi {
         }
       }
 
+      // Drawing price labels (above last-value labels, below the crosshair label).
+      const labels = this.axisLabelBuf;
+      labels.length = 0;
+      this.drawingLayer.axisLabels('price', pane, labels);
+      for (const l of labels) {
+        const y = ps.priceToY(l.value);
+        if (!(y >= 0 && y <= pane.height)) continue;
+        const top = Math.max(
+          0,
+          Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2),
+        );
+        labelBox(
+          ax,
+          this.formatAxisValue(pane, l.value),
+          1,
+          top,
+          this.axisWidth - 2,
+          AXIS_LABEL_HEIGHT,
+          l.color,
+          l.textColor ?? '#ffffff',
+          fontStr,
+        );
+      }
+
       if (!c) continue;
       ctx.strokeStyle = t.crosshair;
       dashedLine(ctx, c.x, 0, c.x, pane.height, this.dpr, [4, 4]);
@@ -1614,6 +1952,32 @@ export class Chart implements StudyApi {
     }
 
     const tc = this.timeAxisOverlay.begin();
+    const tLabels = this.axisLabelBuf;
+    tLabels.length = 0;
+    this.drawingLayer.axisLabels('time', null, tLabels);
+    if (tLabels.length) {
+      const tl = this.refreshTimeline();
+      tc.font = fontStr;
+      for (const l of tLabels) {
+        const x = this.timeScale.indexToX(timeToLogical(tl, { time: l.value }));
+        if (!(x >= 0 && x <= paneW)) continue;
+        const text = formatCrosshairTime(l.value, this.interval.unit, this.tz, this.options.locale);
+        const w = tc.measureText(text).width + 16;
+        const lx = Math.max(0, Math.min(paneW - w, x - w / 2));
+        labelBox(
+          tc,
+          text,
+          lx,
+          3,
+          w,
+          AXIS_LABEL_HEIGHT,
+          l.color,
+          l.textColor ?? '#ffffff',
+          fontStr,
+          'center',
+        );
+      }
+    }
     if (c) {
       const time = this.store.time[c.index];
       if (time !== undefined) {
