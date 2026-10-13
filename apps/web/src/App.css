@@ -7,46 +7,69 @@
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  height: 38px;
-  padding: 0 12px;
+  gap: 10px;
+  height: 40px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
 
 .brand {
   font-weight: 600;
+  margin-right: 4px;
+}
+
+.symbol-input {
+  width: 110px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.group {
+  display: flex;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
 }
 
 .spacer {
   flex: 1;
 }
 
-.api {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.api-ok {
-  color: var(--up);
-}
-
-.api-down {
+.error {
   color: var(--down);
+  font-size: 12px;
 }
 
 .topbar button {
   background: transparent;
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 4px;
   padding: 3px 8px;
   cursor: pointer;
 }
 
+.topbar button:hover {
+  background: var(--border);
+}
+
+.topbar button.active {
+  color: var(--accent);
+}
+
 .chart-area {
   flex: 1;
-  display: grid;
-  place-items: center;
-  color: var(--text-muted);
+  min-height: 0;
+  position: relative;
+}
+
+.chart-host {
+  position: absolute;
+  inset: 0;
 }

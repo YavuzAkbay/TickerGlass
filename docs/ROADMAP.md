@@ -70,18 +70,24 @@ Phase 1 notes (yfinance 1.7.0 quirks, revisit on upgrades):
 
 ### Phase 2: Chart engine core (MVP chart)
 
-- [ ] DataFeed interface + HTTP/WS implementation; client resampler for non-native intervals
-- [ ] Columnar series store (Float64Array) with append/update-last-bar
-- [ ] Time scale: index-based (removes weekend/session gaps), bar spacing, right offset, visible range, smart time labels per zoom level, timezone support
-- [ ] Price scale: auto-scale, linear/log/percent/indexed-to-100, invert, left/right/overlay scales, tick-size-aware labels, last-price label + countdown to bar close
-- [ ] Layered canvases per pane (background/grid, series, overlay for drawings and crosshair); HiDPI; rAF render loop with dirty flags; render only the visible range
-- [ ] Panes: add/remove/resize/reorder/maximize/collapse
-- [ ] Interactions: drag pan, wheel zoom, axis drag scaling, double-click axis reset, kinetic scroll, pinch/touch, keyboard (arrows, +/-)
-- [ ] Crosshair (cross/dot/arrow), magnet modes (weak/strong), status line (OHLC + change under the symbol), legend
-- [ ] Lazy history loading on scroll-left; live bar updates
-- [ ] Hit-testing infrastructure (series, drawings, scales, panes) + cursor management
-- [ ] Engine public API + event emitter; `chart.getState()/setState()` JSON
-- [ ] Benchmark: 100k bars at 60fps pan/zoom; Vitest for scales and math
+- [x] DataFeed interface + HTTP/WS implementation; client resampler for non-native intervals
+- [x] Columnar series store (Float64Array) with append/update-last-bar
+- [x] Time scale: index-based (removes weekend/session gaps), bar spacing, right offset, visible range, smart time labels per zoom level, timezone support
+- [x] Price scale: auto-scale, linear/log/percent/indexed-to-100, invert, left/right/overlay scales, tick-size-aware labels, last-price label + countdown to bar close
+- [x] Layered canvases per pane (background/grid, series, overlay for drawings and crosshair); HiDPI; rAF render loop with dirty flags; render only the visible range
+- [x] Panes: add/remove/resize/reorder/maximize/collapse
+- [x] Interactions: drag pan, wheel zoom, axis drag scaling, double-click axis reset, kinetic scroll, pinch/touch, keyboard (arrows, +/-)
+- [x] Crosshair (cross/dot/arrow), magnet modes (weak/strong), status line (OHLC + change under the symbol), legend
+- [x] Lazy history loading on scroll-left; live bar updates
+- [x] Hit-testing infrastructure (series, drawings, scales, panes) + cursor management
+- [x] Engine public API + event emitter; `chart.getState()/setState()` JSON
+- [x] Benchmark: 100k bars at 60fps pan/zoom; Vitest for scales and math
+
+Phase 2 notes:
+
+- Benchmark (`pnpm e2e`): 100k bars fully zoomed out, pan+zoom every frame: p50 16.7ms, p95 16.8ms (vsync-locked 60fps).
+- `?feed=synthetic` runs the app on an offline random-walk feed (used by e2e tests).
+- Pane resize/reorder/maximize/collapse exist in the engine API; UI controls arrive with Phase 3 context menus.
 
 ### Phase 3: App shell (standard layout)
 
