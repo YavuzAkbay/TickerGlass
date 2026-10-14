@@ -1,4 +1,4 @@
-# Persistence (Phase 7, watchlists Phase 8)
+# Persistence (Phase 7, watchlists Phase 8, compares Phase 9)
 
 User data lives in the API database (SQLite by default, Postgres via `DATABASE_URL`). The web app talks to it
 through `apps/web/src/api/persistence.ts` and `autosave.ts`. Server code: `api/src/investopen_api/userdata/`,
@@ -135,6 +135,8 @@ replace everything. `dryRun=true` returns the same summary and rolls back.
 - JSON shapes: the **client** owns them. Bump `schemaVersion` when a state/template/drawing shape changes; on read,
   upgrade older versions with `upgrade[v]: (old) => new` steps and write back the current version on the next save.
   The server never rewrites JSON; only if a change must be applied server-side add an Alembic data migration.
+- Layout `state` versions: v1 (Phase 7), v2 (volume as an indicator), v3 (Phase 9, adds `compares`). Each step is
+  an entry in `UPGRADES` in `apps/web/src/persist/layoutState.ts`; details in §6.
 - Bundle format: bump `BUNDLE_VERSION` (server + `types.ts`) only for incompatible changes; the server must keep
   reading every older version (convert in `store.import_bundle`).
 
@@ -149,14 +151,20 @@ Watchlist cache keys: `investopen-watchlists` (lists, flags, dirty flags, pendin
 list id or `flag:<color>`). The first run seeds one list "Watchlist" with the current and recent symbols; seeded
 offline, it is kept only if the first successful load finds no lists on the server (or it was edited).
 
-Layout `state` (schemaVersion 2): `{ chart: chart.getState(), indicators: IndicatorState[],
-chartSettings: { chartType, chartStyle, showPrevClose, timezone, prepost } }`. v1 also had
+Layout `state` (schemaVersion 3): `{ chart: chart.getState(), indicators: IndicatorState[],
+chartSettings: { chartType, chartStyle, showPrevClose, timezone, prepost },
+compares: { items: CompareState[], scaleRestore: PriceScaleMode | null } }`. v1 also had
 `chartSettings.volume` (engine built-in volume); `parseLayoutState` upgrades it to a Volume indicator
 (`'overlay'` -> price pane, `'pane'` -> own pane taking over the `volume` pane's size, none if a Volume
 indicator exists) and drops it. The step is content based and idempotent, because the local cache, the
 recovery copy and the orphan copy store no schema version and are read as v1; the server copy is rewritten as
-v2 on the next save. The local stores migrate the same way (`investopen-indicators` v2 reads the legacy
+the current version on the next save. The local stores migrate the same way (`investopen-indicators` v2 reads the legacy
 `investopen-app` `volume`). Chart templates ignore a stored `volume`.
+
+v3 (Phase 9) adds `compares` (`docs/compare.md` §6). The upgrade step `UPGRADES[2]` adds
+`{items: [], scaleRestore: null}` when the key is missing. `parseLayoutState` drops invalid compare items and
+re-canonicalizes their symbols. A client that only knows v2 rejects a v3 layout, as for any newer version. The
+server needs no change: layout `state` is opaque JSON. Compares are not part of indicator or chart templates.
 
 | localStorage key                                                                                     | Goes to                                                                           |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |

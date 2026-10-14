@@ -189,9 +189,20 @@ Phase 8 notes:
 
 ### Phase 9: Compare & symbol math
 
-- [ ] Compare dialog: add overlay symbols (same scale, new scale, new pane); auto-switch to percent scale
-- [ ] Symbol expressions: spread/ratio/arithmetic (`AAPL/MSFT`, `(A+B)/2`) through an expression feed wrapper
-- [ ] Time alignment across symbols with different sessions
+- [x] Compare dialog: add overlay symbols (same scale, new scale, new pane); auto-switch to percent scale
+- [x] Symbol expressions: spread/ratio/arithmetic (`AAPL/MSFT`, `(A+B)/2`) through an expression feed wrapper
+- [x] Time alignment across symbols with different sessions
+
+Phase 9 notes:
+
+- Design, grammar, OHLC and alignment math, paging and persistence: `docs/compare.md`. Code: `apps/web/src/compare/` (store, controller, actions, attach, legend, menu) and `packages/engine/src/feed/expression/` (lexer, parser, printer, evaluation, alignment) plus `packages/engine/src/feed/expression-feed.ts`.
+- Overlays are engine studies whose data the app owns, like indicators. Each overlay has a placement: same percent scale as the main series, its own price scale, or a new pane. The first "same scale" overlay switches the main pane to percent mode (one undo step) and removing the last one (hiding does not) restores the previous mode.
+- Grammar: `+ - * / ( )`, numbers and symbols, at most 8 distinct symbols. A hyphen inside a symbol run is part of the symbol when a letter or digit follows and the run already contains a letter, so `BRK-B`, `BTC-USD` and `AAPL-MSFT` are single symbols. A spread needs spaces: `AAPL - MSFT`. Quote a symbol to include other characters: `"BRK/B"` (quotes stay in the canonical form).
+- Time axis: the first symbol is the primary leg and sets the bar times; other legs are joined as of each primary bar. Intraday intervals match on the UTC open time. Daily and higher intervals match on the calendar date in each leg's own exchange timezone. A leg is forward-filled for a limited time (4 days intraday, 10 days daily, 21 weekly, 93 monthly) and then leaves a gap.
+- Expression bars: open and close are exact, high and low are an envelope and approximate; volume is always 0. See [LIMITATIONS.md](LIMITATIONS.md#compare--symbol-expressions).
+- Watchlists reject expressions. The daily bar stamp assumption (00:00 local in the exchange timezone) was verified against the live API.
+- Layout schema is now v3 (`compares`, with an upgrade step from v2); see `docs/persistence.md` §5/§6. Compares are not part of indicator or chart templates.
+- e2e: `?feed=synthetic-multi` gives each symbol its own synthetic series; `e2e/compare.spec.ts` (4 tests) covers the dialog, placements, undo, reload and expressions as the main symbol.
 
 ### Phase 10: Alerts
 
