@@ -2,13 +2,7 @@
  * Chart templates (Settings dialog "Template" menu): every chart setting
  * except the per-chart price scale, stored in `/chart-templates`.
  */
-import type {
-  ChartStyle,
-  CrosshairMode,
-  DeepPartial,
-  MagnetMode,
-  VolumeMode,
-} from '@investopen/engine';
+import type { ChartStyle, CrosshairMode, DeepPartial, MagnetMode } from '@investopen/engine';
 import type { Theme } from '../store/app';
 import { pickTyped } from './settingsSync';
 
@@ -21,7 +15,6 @@ export interface ChartTemplateData {
   prepost: boolean;
   timezone: string;
   chartStyle: DeepPartial<ChartStyle>;
-  volume: VolumeMode;
   showPrevClose: boolean;
 }
 
@@ -34,7 +27,6 @@ export function templateData<D extends ChartTemplateData>(d: D): ChartTemplateDa
     prepost: d.prepost,
     timezone: d.timezone,
     chartStyle: d.chartStyle,
-    volume: d.volume,
     showPrevClose: d.showPrevClose,
   };
 }
@@ -43,7 +35,6 @@ const ENUMS: Partial<Record<keyof ChartTemplateData, readonly string[]>> = {
   theme: ['dark', 'light'],
   crosshair: ['cross', 'dot', 'arrow'],
   magnet: ['off', 'weak', 'strong'],
-  volume: ['overlay', 'pane', 'hidden'],
 };
 
 /** `base` with a stored template's values on top (unknown or mistyped fields are ignored). */

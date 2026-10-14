@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Chart } from './chart';
-import type { SeriesChange, StudySpec } from './studies/types';
+import type { SeriesChange, StudyPlotMeta, StudySpec } from './studies/types';
 import type {
   Bar,
   BarListener,
@@ -399,6 +399,63 @@ describe('Chart studies', () => {
     onCandle.mockReturnValue(false);
     expect(chart.hitTest(100, 100)).toMatchObject({ seriesId: 'bb', outputId: 'fill', fill: true });
     expect(layers).toContain('marks');
+  });
+
+  it('hits own-scale volume columns only where no candle or drawing is', async () => {
+    const { chart } = await load(20);
+    const spec = studySpec('vol', { paneId: 'main' });
+    spec.priceScale = 'none';
+    spec.format = 'volume';
+    spec.outputs = [{ ...(spec.outputs[0] as StudyPlotMeta), id: 'volume', kind: 'columns' }];
+    chart.addStudy(spec);
+    // A line study on the price scale, above the volume in hit order.
+    chart.addStudy(studySpec('sma', { paneId: 'main' }));
+    chart.setStudyData('vol', {
+      revision: chart.seriesRevision,
+      length: 20,
+      values: { volume: new Float64Array(20).fill(1000) },
+      colors: {},
+    });
+    const pane = chart.panes[0]!;
+    chart['width'] = 800;
+    chart['height'] = 600;
+    pane.top = 0;
+    pane.height = 500;
+    const ts = chart.timeScale;
+    ts.width = 700;
+    ts.barSpacing = 10;
+    ts.rightOffset = 0;
+    ts.baseIndex = 19;
+    const noop = () => undefined;
+    const ctx = { fillRect: noop, save: noop, restore: noop, beginPath: noop, fill: noop };
+    const vol = pane.series.find((s) => s.id === 'vol')!;
+    vol.draw({
+      ctx: ctx as unknown as CanvasRenderingContext2D,
+      dpr: 1,
+      width: 700,
+      height: 500,
+      timeScale: ts,
+      priceScale: pane.priceScale,
+      theme: chart.theme,
+      from: 0,
+      to: 19,
+    });
+    const main = pane.series.find((s) => s.id === 'main')!;
+    const onCandle = vi.spyOn(main, 'hitTest').mockReturnValue(true);
+    const x = ts.indexToX(15);
+    // Candles are drawn above the volume overlay: they win where both are.
+    expect(chart.hitTest(x, 495)).toMatchObject({ seriesId: 'main' });
+    onCandle.mockReturnValue(false);
+    expect(chart.hitTest(x, 495)).toMatchObject({ seriesId: 'vol', outputId: 'volume' });
+    expect(chart.hitTest(x, 495)).not.toHaveProperty('fill');
+    // Above the bottom 20% (own scale) there is no column.
+    expect(chart.hitTest(x, 200)).toMatchObject({ seriesId: null });
+    // A line study on the price scale wins over the columns.
+    const sma = pane.series.find((s) => s.id === 'sma')!;
+    vi.spyOn(sma as never as { hitTestPx: () => string | null }, 'hitTestPx').mockReturnValue(
+      'v' as never,
+    );
+    expect(chart.hitTest(x, 495)).toMatchObject({ seriesId: 'sma' });
   });
 
   it('keeps a volume pane that holds studies when volume moves back to overlay', async () => {

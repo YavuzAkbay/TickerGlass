@@ -6,7 +6,6 @@ import type {
   CrosshairMode,
   DeepPartial,
   MagnetMode,
-  VolumeMode,
 } from '@investopen/engine';
 
 export type Theme = 'dark' | 'light';
@@ -22,7 +21,6 @@ interface AppState {
   chartType: ChartType;
   /** Per-type style overrides on top of theme defaults. */
   chartStyle: DeepPartial<ChartStyle>;
-  volume: VolumeMode;
   showPrevClose: boolean;
   timezone: string; // 'exchange' | 'local' | 'UTC' | IANA
   prepost: boolean;
@@ -51,7 +49,6 @@ export const useAppStore = create<AppState>()(
       customIntervals: [],
       chartType: 'candles',
       chartStyle: {},
-      volume: 'overlay',
       showPrevClose: false,
       timezone: 'exchange',
       prepost: false,
@@ -84,10 +81,14 @@ export const useAppStore = create<AppState>()(
     {
       name: 'investopen-app',
       version: 3,
-      migrate: (s) =>
-        ({ chartStyle: {}, volume: 'overlay', showPrevClose: false, ...(s as object) }) as AppState,
+      migrate: (s) => ({ chartStyle: {}, showPrevClose: false, ...(s as object) }) as AppState,
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<AppState>;
+        // `volume` (built-in volume mode) is legacy: the indicator store migrates
+        // it to the Volume indicator (see legacyAppVolume) and the key is dropped
+        // on this store's next write.
+        const { volume: _legacy, ...p } = (persisted ?? {}) as Partial<AppState> & {
+          volume?: unknown;
+        };
         return {
           ...current,
           ...p,

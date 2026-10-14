@@ -803,6 +803,12 @@ describe('StudySeries', () => {
       expect(r.args[1]!).toBeGreaterThanOrEqual(200 * 0.8 - 1);
       expect(r.args[1]! + r.args[3]!).toBeLessThanOrEqual(201);
     }
+    // Hit testing uses the own scale: a column at the pane bottom, nothing above it.
+    const x = h.timeScale.indexToX(2);
+    expect(ser.hitTestPx(x, 195)).toBe('v');
+    expect(ser.hitTestPx(x, 195, 'marks')).toBe('v');
+    expect(ser.hitTestPx(x, 60)).toBeNull();
+    expect(ser.hitTestPx(x + 5, 195)).toBeNull(); // between columns
   });
 
   it('reports last values, magnet values and hit tests after a draw', () => {

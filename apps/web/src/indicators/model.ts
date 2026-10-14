@@ -13,6 +13,7 @@ import {
   resolveInputs,
   sourceRefs,
   timeframeInputValue,
+  VOLUME,
   type AnyIndicatorDefinition,
   type InputValueMap,
   type OutputSourceRef,
@@ -159,6 +160,32 @@ export function createInstance(
     visibility: defaults?.visibility ? structuredClone(defaults.visibility) : null,
     placement: 'auto',
   };
+}
+
+/** Id of the Volume instance of a new chart (and of migrated built-in volume). */
+export const DEFAULT_VOLUME_ID = 'volume_default';
+
+/**
+ * The Volume indicator as a new chart shows it: columns at the bottom of the
+ * price pane on their own scale ('main'), or in a pane of its own ('own').
+ */
+export function defaultVolumeInstance(placement: Placement = 'main'): IndicatorState {
+  return { ...createInstance(VOLUME, undefined), id: DEFAULT_VOLUME_ID, placement };
+}
+
+/**
+ * `list` with the Volume indicator that replaces the engine's built-in volume
+ * of older saved state (`mode`: 'overlay' -> price pane, 'pane' -> own pane).
+ * Idempotent: unchanged when `mode` is 'hidden'/unknown or a Volume
+ * indicator is already there (never two volume displays).
+ */
+export function withLegacyVolume<T extends { type: string }>(
+  list: readonly T[],
+  mode: unknown,
+): (T | IndicatorState)[] {
+  if ((mode !== 'overlay' && mode !== 'pane') || list.some((i) => i.type === VOLUME.id))
+    return [...list];
+  return [defaultVolumeInstance(mode === 'pane' ? 'own' : 'main'), ...list];
 }
 
 /** Key of the definition's first `source` input, if any. */

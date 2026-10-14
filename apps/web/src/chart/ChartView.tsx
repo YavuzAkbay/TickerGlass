@@ -15,7 +15,7 @@ export function ChartView() {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
   const { symbol, interval, theme, timezone, prepost, crosshair, magnet } = useAppStore();
-  const { chartType, chartStyle, volume, showPrevClose } = useAppStore();
+  const { chartType, chartStyle, showPrevClose } = useAppStore();
   const chartState = useChartStore((s) => s.chart);
 
   useEffect(() => {
@@ -30,7 +30,6 @@ export function ChartView() {
     });
     chart.setChartStyle(s.chartStyle);
     chart.setChartType(s.chartType);
-    chart.setVolumeMode(s.volume);
     chartRef.current = chart;
     useChartStore.setState({ chart });
     // Expose for debugging and e2e tests.
@@ -71,9 +70,8 @@ export function ChartView() {
     if (!chart) return;
     chart.setChartStyle(chartStyle);
     chart.setChartType(chartType);
-    chart.setVolumeMode(volume);
     chart.applyOptions({ showPrevClose });
-  }, [chartType, chartStyle, volume, showPrevClose]);
+  }, [chartType, chartStyle, showPrevClose]);
 
   return (
     <>

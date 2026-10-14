@@ -4,27 +4,19 @@
  * The client owns this shape; bump LAYOUT_SCHEMA_VERSION and add an upgrade
  * step when it changes.
  */
-import type {
-  Chart,
-  ChartState,
-  ChartStyle,
-  ChartType,
-  DeepPartial,
-  VolumeMode,
-} from '@investopen/engine';
+import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@investopen/engine';
 import { useHistory } from '../commands/history';
-import type { IndicatorState } from '../indicators/model';
+import { DEFAULT_VOLUME_ID, withLegacyVolume, type IndicatorState } from '../indicators/model';
 import { useIndicatorPreview, useIndicatorStore } from '../indicators/store';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
 import { isObj } from './net';
 
-export const LAYOUT_SCHEMA_VERSION = 1;
+export const LAYOUT_SCHEMA_VERSION = 2;
 
 export interface ChartSettings {
   chartType: ChartType;
   chartStyle: DeepPartial<ChartStyle>;
-  volume: VolumeMode;
   showPrevClose: boolean;
   timezone: string;
   prepost: boolean;
@@ -42,7 +34,6 @@ export function currentChartSettings(): ChartSettings {
   return {
     chartType: s.chartType,
     chartStyle: s.chartStyle,
-    volume: s.volume,
     showPrevClose: s.showPrevClose,
     timezone: s.timezone,
     prepost: s.prepost,
@@ -75,8 +66,44 @@ const isChartState = (v: unknown): v is ChartState =>
   isObj(v.timeScale) &&
   Array.isArray(v.panes);
 
+/**
+ * v1 -> v2: the engine's built-in volume (`chartSettings.volume`, mirrored in
+ * `chart.volume`) became the Volume indicator. 'overlay' adds it to the price
+ * pane, 'pane' to its own pane (taking over the old volume pane's size); the
+ * built-in volume is dropped. Idempotent and content based, because the local
+ * cache and recovery copies store no schema version and are read as v1.
+ */
+export function migrateLegacyVolume(state: Record<string, unknown>): Record<string, unknown> {
+  const cs = isObj(state.chartSettings) ? state.chartSettings : null;
+  const chart = isObj(state.chart) ? state.chart : null;
+  const mode = cs && 'volume' in cs ? cs.volume : chart?.volume;
+  if (mode === undefined) return state;
+  const out: Record<string, unknown> = { ...state };
+  if (cs) {
+    const { volume: _v, ...rest } = cs;
+    out.chartSettings = rest;
+  }
+  const list = (Array.isArray(state.indicators) ? state.indicators : []).filter(isObj);
+  const indicators = withLegacyVolume(list as { type: string }[], mode);
+  const added = indicators.length > list.length;
+  if (added) out.indicators = indicators;
+  if (chart) {
+    const ownPane = `pane-${DEFAULT_VOLUME_ID}`;
+    out.chart = { ...chart, volume: 'hidden' };
+    if (Array.isArray(chart.panes))
+      // The old volume pane keeps its size as the Volume indicator's own pane.
+      (out.chart as Record<string, unknown>).panes =
+        added && mode === 'pane'
+          ? chart.panes.map((p) => (isObj(p) && p.id === 'volume' ? { ...p, id: ownPane } : p))
+          : chart.panes.filter((p) => !(isObj(p) && p.id === 'volume'));
+  }
+  return out;
+}
+
 /** Upgrade steps: `UPGRADES[v]` turns a version-v state into version v + 1. */
-const UPGRADES: Record<number, (old: Record<string, unknown>) => Record<string, unknown>> = {};
+const UPGRADES: Record<number, (old: Record<string, unknown>) => Record<string, unknown>> = {
+  1: migrateLegacyVolume,
+};
 
 /**
  * Read a stored layout state of `schemaVersion`. Missing or invalid parts fall
@@ -103,7 +130,6 @@ export function parseLayoutState(raw: unknown, schemaVersion = 1): LayoutState |
     chartSettings: {
       chartType: pick('chartType', (v) => typeof v === 'string'),
       chartStyle: pick('chartStyle', isObj),
-      volume: pick('volume', (v) => v === 'overlay' || v === 'pane' || v === 'hidden'),
       showPrevClose: pick('showPrevClose', (v) => typeof v === 'boolean'),
       timezone: pick('timezone', (v) => typeof v === 'string'),
       prepost: pick('prepost', (v) => typeof v === 'boolean'),
@@ -140,7 +166,8 @@ export async function applyLayoutState(
     await chart.setState({
       ...state.chart,
       chartType: state.chartSettings.chartType,
-      volume: state.chartSettings.volume,
+      // Volume is the Volume indicator; the engine's built-in one stays off.
+      volume: 'hidden',
       timezone: state.chartSettings.timezone,
       crosshair: { mode: now.crosshair, magnet: now.magnet },
     });

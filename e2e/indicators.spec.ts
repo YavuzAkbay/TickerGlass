@@ -7,7 +7,7 @@ declare global {
 }
 
 test('add an indicator, edit its settings, hide and remove it', async ({ page }) => {
-  // Start without persisted indicators.
+  // Start without persisted indicators (a new chart: the default Volume only).
   await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
   await page.goto('/?feed=synthetic');
   await page.waitForFunction(() => window.chart?.store.length > 0);
@@ -29,11 +29,13 @@ test('add an indicator, edit its settings, hide and remove it', async ({ page })
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  const row = page.locator('.ind-legend-row').first();
-  await expect(row).toContainText(short);
+  const row = page.locator('.ind-legend-row', { hasText: short });
+  await expect(row).toHaveCount(1);
   // Values arrive from the worker.
   await expect(row.locator('.ind-legend-value').first()).toHaveText(/\d/);
-  expect(await page.evaluate(() => window.chart.getStudies().length)).toBe(1);
+  const study = () =>
+    page.evaluate(() => window.chart.getStudies().find((s) => s.id !== 'volume_default'));
+  expect(await page.evaluate(() => window.chart.getStudies().length)).toBe(2);
 
   // Settings: change the length.
   await row.hover();
@@ -42,17 +44,18 @@ test('add an indicator, edit its settings, hide and remove it', async ({ page })
   await length.fill('21');
   await page.getByRole('button', { name: 'Ok' }).click();
   await expect(row.locator('.ind-legend-inputs')).toContainText('21');
-  expect(await page.evaluate(() => window.chart.getStudies()[0]!.title)).toContain('21');
+  expect((await study())!.title).toContain('21');
 
   // Hide.
   await row.hover();
   await row.getByRole('button', { name: 'Hide' }).click();
   await expect(row).toHaveClass(/\boff\b/);
-  expect(await page.evaluate(() => window.chart.getStudies()[0]!.visible)).toBe(false);
+  expect((await study())!.visible).toBe(false);
 
   // Remove.
   await row.hover();
   await row.getByRole('button', { name: 'Remove' }).click();
-  await expect(page.locator('.ind-legend-row')).toHaveCount(0);
-  expect(await page.evaluate(() => window.chart.getStudies().length)).toBe(0);
+  await expect(row).toHaveCount(0);
+  expect(await study()).toBeUndefined();
+  await expect(page.locator('.ind-legend-row')).toHaveCount(1); // Volume
 });

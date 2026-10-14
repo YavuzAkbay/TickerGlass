@@ -99,8 +99,9 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await search.press('Enter');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.chart.getStudies().length)).toBe(1);
-  const study = await page.evaluate(() => window.chart.getStudies()[0]!.title);
+  // New charts also show the default Volume indicator.
+  await expect.poll(() => page.evaluate(() => window.chart.getStudies().length)).toBe(2);
+  const study = await page.evaluate(() => window.chart.getStudies().at(-1)!.title);
 
   // A drawing.
   await page.getByRole('button', { name: 'Trend line', exact: true }).click();

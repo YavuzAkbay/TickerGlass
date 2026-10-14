@@ -20,7 +20,6 @@ import {
   type DeepPartial,
   type MagnetMode,
   type PriceScaleMode,
-  type VolumeMode,
 } from '@investopen/engine';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
@@ -117,7 +116,6 @@ interface Draft {
   prepost: boolean;
   timezone: string;
   chartStyle: DeepPartial<ChartStyle>;
-  volume: VolumeMode;
   showPrevClose: boolean;
   scale: { mode: PriceScaleMode; invert: boolean; autoScale: boolean } | null;
 }
@@ -129,7 +127,6 @@ const DEFAULTS: Omit<Draft, 'scale'> & { scale: NonNullable<Draft['scale']> } = 
   prepost: false,
   timezone: 'exchange',
   chartStyle: {},
-  volume: 'overlay',
   showPrevClose: false,
   scale: { mode: 'linear', invert: false, autoScale: true },
 };
@@ -154,7 +151,6 @@ function readDraft(): Draft {
     prepost: s.prepost,
     timezone: s.timezone,
     chartStyle: s.chartStyle,
-    volume: s.volume,
     showPrevClose: s.showPrevClose,
     scale: readScale(getChart()),
   };
@@ -452,18 +448,6 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
               label="Previous day close price line"
               onChange={(showPrevClose) => update({ showPrevClose })}
             />
-          </Row>
-          <Row label="Volume" htmlFor="set-volume">
-            <select
-              id="set-volume"
-              className="io-input dlg-select"
-              value={draft.volume}
-              onChange={(e) => update({ volume: e.target.value as VolumeMode })}
-            >
-              <option value="overlay">In main pane</option>
-              <option value="pane">Separate pane</option>
-              <option value="hidden">Hidden</option>
-            </select>
           </Row>
         </Section>
         <Planned

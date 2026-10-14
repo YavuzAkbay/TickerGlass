@@ -193,7 +193,8 @@ export class Chart implements StudyApi, DrawingApi {
   private sourceIndex: Int32Array | null = null;
   /** Brick size resolved at load time (ATR mode), kept stable for live updates. */
   private brickSize: number | null = null;
-  private volumeMode: VolumeMode = 'overlay';
+  /** Built-in volume (kept for API compatibility; the app shows volume as a study). */
+  private volumeMode: VolumeMode = 'hidden';
   private volumeOverlay: VolumeSeries;
   readonly timeScale = new TimeScale();
   readonly panes: Pane[] = [];
@@ -266,7 +267,6 @@ export class Chart implements StudyApi, DrawingApi {
     this._chartStyle = defaultChartStyle(this.options.theme);
     main.series.push(new MainSeries(this));
     this.volumeOverlay = new VolumeSeries('volume', this, true);
-    main.series.push(this.volumeOverlay);
     this.panes.push(main);
 
     this.timeAxisEl = div(this.root, 'io-axis io-time-axis');
@@ -1341,7 +1341,7 @@ export class Chart implements StudyApi, DrawingApi {
 
   /** Topmost object under (x, y), in this order: drawings (handles, strokes,
    * strong parts), lines/marks/bars of every series, weak drawing parts
-   * (background fills), study fill interiors. */
+   * (background fills), marks of own-scale ('none') studies, study fill interiors. */
   private hitSeries(
     pane: Pane,
     x: number,
@@ -1356,11 +1356,20 @@ export class Chart implements StudyApi, DrawingApi {
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
       if (s instanceof StudySeries) {
+        if (s.excludeFromAutoscale) continue; // background overlay: tested below
         const out = s.hitTestPx(x, y, 'marks');
         if (out !== null) return { id: s.id, outputId: out, fill: false };
       } else if (s.hitTest(i, price, tol)) return { id: s.id, outputId: null, fill: false };
     }
     if (dh.weak) return { id: null, outputId: null, fill: false, drawing: dh.weak };
+    // Own-scale studies (e.g. Volume at the bottom of the price pane) are drawn
+    // behind the price series and drawings, so those win where they overlap.
+    for (let k = pane.series.length - 1; k >= 0; k--) {
+      const s = pane.series[k]!;
+      if (!(s instanceof StudySeries) || !s.excludeFromAutoscale) continue;
+      const out = s.hitTestPx(x, y, 'marks');
+      if (out !== null) return { id: s.id, outputId: out, fill: false };
+    }
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
       if (!(s instanceof StudySeries)) continue;
@@ -2168,7 +2177,8 @@ export class Chart implements StudyApi, DrawingApi {
             const sign = ch >= 0 ? '+' : '';
             html += `<span class="io-legend-item" style="color:${color}">${sign}${f(ch)} (${formatPercent(pct)})</span>`;
           }
-          html += `<span class="io-legend-item"><span class="io-legend-label">Vol</span><span style="color:${color}">${formatVolume(bar.volume)}</span></span>`;
+          if (this.volumeMode !== 'hidden')
+            html += `<span class="io-legend-item"><span class="io-legend-label">Vol</span><span style="color:${color}">${formatVolume(bar.volume)}</span></span>`;
         }
         setHtml(pane.legendInfo, html);
       } else {

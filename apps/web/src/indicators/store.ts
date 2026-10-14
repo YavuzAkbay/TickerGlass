@@ -2,7 +2,8 @@ import type { InstanceStatus } from '@investopen/indicators';
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { IndicatorDefaults, IndicatorState } from './model';
+import { isObj, readJson, safeStorage } from '../persist/net';
+import { withLegacyVolume, type IndicatorDefaults, type IndicatorState } from './model';
 
 /**
  * Indicators on the chart (localStorage for now; Phase 7 moves layouts to the
@@ -17,10 +18,20 @@ interface IndicatorStore {
   replaceAll: (list: IndicatorState[]) => void;
 }
 
+/**
+ * Built-in volume mode the app stored before volume became an indicator
+ * (`investopen-app` state `volume`; 'overlay', the old default, when unset).
+ */
+export function legacyAppVolume(raw = safeStorage().get('investopen-app')): unknown {
+  const app = readJson<unknown>(raw);
+  return isObj(app) && isObj(app.state) && 'volume' in app.state ? app.state.volume : 'overlay';
+}
+
 export const useIndicatorStore = create<IndicatorStore>()(
   persist(
     (set) => ({
-      instances: [],
+      // A new chart shows Volume (or what the old built-in volume setting said).
+      instances: withLegacyVolume([], legacyAppVolume()) as IndicatorState[],
       add: (inst, index) =>
         set((s) => {
           const list = s.instances.filter((i) => i.id !== inst.id);
@@ -35,7 +46,17 @@ export const useIndicatorStore = create<IndicatorStore>()(
         })),
       replaceAll: (list) => set({ instances: list }),
     }),
-    { name: 'investopen-indicators', version: 1 },
+    {
+      name: 'investopen-indicators',
+      version: 2,
+      // v1 -> v2: the engine's built-in volume became the Volume indicator.
+      migrate: (persisted, version) => {
+        const s = isObj(persisted) ? persisted : {};
+        const list = Array.isArray(s.instances) ? (s.instances as IndicatorState[]) : [];
+        const instances = version < 2 ? withLegacyVolume(list, legacyAppVolume()) : list;
+        return { ...s, instances } as unknown as IndicatorStore;
+      },
+    },
   ),
 );
 

@@ -23,8 +23,10 @@ async function addSma(page: Page) {
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');
-  await expect(page.locator('.ind-legend-row').first()).toContainText('SMA');
+  await expect(smaRow(page)).toHaveCount(1);
 }
+
+const smaRow = (page: Page) => page.locator('.ind-legend-row', { hasText: 'SMA' });
 
 const layoutButton = (page: Page) => page.getByRole('button', { name: /^Layout:/ });
 
@@ -59,9 +61,9 @@ test('draw + add indicator, reload: restored from the server (not the browser ca
   await expect
     .poll(() => {
       const l = [...server.layouts.values()][0]!;
-      return (l.state.indicators as unknown[]).length;
+      return (l.state.indicators as { type: string }[]).map((i) => i.type);
     })
-    .toBe(1);
+    .toEqual(['volume', 'sma']);
   await saved(page);
 
   // Drop the browser copy: everything must come back from the API.
@@ -69,8 +71,8 @@ test('draw + add indicator, reload: restored from the server (not the browser ca
   await page.reload();
   await restored(page);
   await expect.poll(() => page.evaluate(() => window.chart.getDrawings().length)).toBe(1);
-  await expect(page.locator('.ind-legend-row').first()).toContainText('SMA');
-  await expect.poll(() => page.evaluate(() => window.chart.getStudies().length)).toBe(1);
+  await expect(smaRow(page)).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => window.chart.getStudies().length)).toBe(2);
 });
 
 test('save as a named layout, switch between layouts, delete one', async ({ page, server }) => {
@@ -87,7 +89,7 @@ test('save as a named layout, switch between layouts, delete one', async ({ page
   await saved(page);
   expect([...server.layouts.values()].map((l) => l.name).sort()).toEqual(['Swing', 'Untitled']);
 
-  // Load "Untitled": no indicators there.
+  // Load "Untitled": only the default Volume there.
   await layoutMenu(page, 'Load layout…');
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('option')).toHaveCount(2);
@@ -95,7 +97,8 @@ test('save as a named layout, switch between layouts, delete one', async ({ page
   await expect(dialog.getByRole('option')).toHaveCount(1);
   await dialog.getByRole('option', { name: /Untitled/ }).click();
   await expect(layoutButton(page)).toHaveAttribute('aria-label', /^Layout: Untitled/);
-  await expect(page.locator('.ind-legend-row')).toHaveCount(0);
+  await expect(page.locator('.ind-legend-row')).toHaveCount(1);
+  await expect(smaRow(page)).toHaveCount(0);
 
   // And back to "Swing" (keyboard: Enter on the filtered row).
   await layoutMenu(page, 'Load layout…');
@@ -103,7 +106,7 @@ test('save as a named layout, switch between layouts, delete one', async ({ page
   await expect(page.getByRole('option', { name: /Swing/ })).toBeVisible();
   await page.getByLabel('Search layouts').press('Enter');
   await expect(layoutButton(page)).toHaveAttribute('aria-label', /^Layout: Swing/);
-  await expect(page.locator('.ind-legend-row').first()).toContainText('SMA');
+  await expect(smaRow(page)).toHaveCount(1);
 
   // Rename, then delete "Untitled" from the list.
   await layoutMenu(page, 'Rename…');
@@ -121,7 +124,7 @@ test('save as a named layout, switch between layouts, delete one', async ({ page
   await page.keyboard.press('Escape');
   await page.reload();
   await restored(page, 'Swing 2');
-  await expect(page.locator('.ind-legend-row').first()).toContainText('SMA');
+  await expect(smaRow(page)).toHaveCount(1);
 });
 
 test('export the layout and all data as downloads', async ({ page }) => {

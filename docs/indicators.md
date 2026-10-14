@@ -198,10 +198,12 @@ pane held studies, or when a study's removal/move emptied it with `studyIds: []`
 (`{ ids }`, from `setState` after its panes are restored); right-click uses the existing `contextMenu` with
 `seriesId` = study id. Hit testing checks lines, marks and bars of every series of a pane (top-down) before
 any study fill interior; a fill-only hit is weak (`HitTarget.fill`: no pointer cursor) and never beats a
-candle, so the main series keeps its context menu over Bollinger/Keltner/Ichimoku/Supertrend fills.
+candle, so the main series keeps its context menu over Bollinger/Keltner/Ichimoku/Supertrend fills. Studies with
+`priceScale: 'none'` (Volume in the price pane) are drawn behind the price series, so their marks are tested
+after candles, price-scale studies and weak drawing parts (before fill interiors).
 Rules: values align to `chart.store` indices; data with a stale revision is not drawn; plot `offset` draws
 past the last bar (Ichimoku); `scaleRange` fixes the pane scale (also while the study has no current data);
-`priceScale: 'none'` behaves like the volume overlay. Auto-scale uses visible plots and hlines, plus hidden
+`priceScale: 'none'` draws on an own scale in the bottom 20% of the pane. Auto-scale uses visible plots and hlines, plus hidden
 plots/hlines that bound a visible fill (e.g. Bollinger bands hidden, background kept), so fills are not
 clipped. A history prepend on plain/Heikin Ashi charts emits
 `SeriesChange` `{ kind: 'prepend', revision, length, added }` (new revision, consumers resend all bars like
@@ -212,6 +214,13 @@ types still emit `reset` on prepend (bricks are rebuilt from the first bar). A l
 snapshot and the new series), re-stamped with the new revision; indicators are causal, so those values equal
 the recomputed ones and only the changed tail is blank until `setStudyData` arrives. Study panes are ordinary panes, so `getState/setState` keep their ids/ratios; `setState` drops all
 studies and emits `studiesCleared`, on which the app re-adds them from its own persisted instance list.
+
+Volume is an ordinary indicator (`volume` built-in), not the engine's built-in volume (`setVolumeMode`, kept
+for API compatibility, default `'hidden'`; the app never turns it on). New charts start with a Volume
+instance (`DEFAULT_VOLUME_ID`, placement `main`). The controller gives a study `priceScale: 'none'` when it
+is in the price pane and has `format: 'volume'` (or plots such a study through its source), else `'pane'`,
+and updates it when the study moves (legend "More" > Move to). Older state with built-in volume
+(`chartSettings.volume` / `investopen-app` `volume`) becomes a Volume instance once (docs/persistence.md §5).
 
 ## 7. Heikin Ashi and brick chart types
 

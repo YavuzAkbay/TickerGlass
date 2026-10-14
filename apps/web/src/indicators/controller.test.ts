@@ -398,6 +398,32 @@ describe('IndicatorController', () => {
     expect(log.at(-1)).toEqual({ type: 'remove', id: a.id });
   });
 
+  it('draws volume in the price pane on its own scale, on the pane scale elsewhere', async () => {
+    const { chart, ctl } = setup();
+    const vol = inst('volume', {}, { placement: 'main' });
+    const ma = inst('sma', { length: 3, source: { instanceId: vol.id, outputId: 'volume' } });
+    ctl.sync([vol, ma]);
+    chart.load(makeBars(30));
+    await settle();
+    expect(chart.studies.get(vol.id)!.paneId).toBe('main');
+    expect(chart.studies.get(vol.id)!.spec.priceScale).toBe('none');
+    // An indicator on Volume in the price pane must not squash the price scale either.
+    expect(chart.studies.get(ma.id)!.spec.priceScale).toBe('none');
+    ctl.sync([{ ...vol, placement: 'own' }, ma]);
+    expect(chart.studies.get(vol.id)!.paneId).toBe(`pane-${vol.id}`);
+    expect(chart.studies.get(vol.id)!.spec.priceScale).toBe('pane');
+    // The dependent stays where it is (in the price pane), so keeps its own scale.
+    expect(chart.studies.get(ma.id)!.paneId).toBe('main');
+    expect(chart.studies.get(ma.id)!.spec.priceScale).toBe('none');
+    ctl.sync([vol, ma]);
+    expect(chart.studies.get(vol.id)!.paneId).toBe('main');
+    expect(chart.studies.get(vol.id)!.spec.priceScale).toBe('none');
+    // Price-scaled studies stay on the pane scale.
+    const sma = inst('sma', { length: 5 });
+    ctl.sync([vol, ma, sma]);
+    expect(chart.studies.get(sma.id)!.spec.priceScale).toBe('pane');
+  });
+
   it('runs indicator-on-indicator on the source pane', async () => {
     const { chart, ctl } = setup();
     const rsiLike = inst('ema', { length: 4 }, { placement: 'own' });

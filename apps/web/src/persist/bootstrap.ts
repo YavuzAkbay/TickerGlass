@@ -59,7 +59,6 @@ const LAYOUT_FIELDS = [
   'interval',
   'chartType',
   'chartStyle',
-  'volume',
   'showPrevClose',
   'timezone',
   'prepost',

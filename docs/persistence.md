@@ -121,8 +121,14 @@ Implemented in `apps/web/src/persist/` (Phase 7): `migration.ts` (step 1), `boot
 2–4), `drawingSync.ts`, `settingsSync.ts` (keys `app.prefs`, `ui.prefs`, `indicators.favorites`,
 `indicators.defaults`), `drawingTemplatesSync.ts`, `notes.ts`. Layout cache key: `investopen-layout`.
 
-Suggested layout `state` (schemaVersion 1): `{ chart: chart.getState(), indicators: IndicatorState[],
-chartSettings: { chartType, chartStyle, volume, showPrevClose, timezone, prepost } }`.
+Layout `state` (schemaVersion 2): `{ chart: chart.getState(), indicators: IndicatorState[],
+chartSettings: { chartType, chartStyle, showPrevClose, timezone, prepost } }`. v1 also had
+`chartSettings.volume` (engine built-in volume); `parseLayoutState` upgrades it to a Volume indicator
+(`'overlay'` -> price pane, `'pane'` -> own pane taking over the `volume` pane's size, none if a Volume
+indicator exists) and drops it. The step is content based and idempotent, because the local cache, the
+recovery copy and the orphan copy store no schema version and are read as v1; the server copy is rewritten as
+v2 on the next save. The local stores migrate the same way (`investopen-indicators` v2 reads the legacy
+`investopen-app` `volume`). Chart templates ignore a stored `volume`.
 
 | localStorage key                                                                                     | Goes to                                                                           |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |

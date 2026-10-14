@@ -90,6 +90,7 @@ interface Applied {
   outputsKey: string;
   visible: boolean;
   targetKey: string;
+  priceScale: StudySpec['priceScale'];
 }
 
 interface TfSeries {
@@ -241,6 +242,8 @@ export class IndicatorController {
         const target = this.target(inst, def);
         this.engine(() => this.setPane(inst.id, this.chart.moveStudy(inst.id, target)));
       }
+      if (next.priceScale !== prev.priceScale)
+        this.engine(() => this.chart.updateStudySpec(inst.id, { priceScale: next.priceScale }));
       this.applied.set(inst.id, next);
     }
   }
@@ -256,7 +259,37 @@ export class IndicatorController {
       outputsKey: JSON.stringify(resolveOutputs(def, inst.inputs, inst.styles)),
       visible: this.effectiveVisible(inst),
       targetKey: inst.placement,
+      priceScale: this.priceScale(inst, def),
     };
+  }
+
+  /**
+   * 'none' (own scale at the bottom of the pane, like the common volume
+   * overlay) for volume-scaled studies in the price pane and for studies that
+   * plot them (e.g. an SMA on Volume), so they never squash the price scale.
+   */
+  private priceScale(inst: IndicatorState, def: AnyIndicatorDefinition): StudySpec['priceScale'] {
+    // The pane it is in, or goes to when added or its placement changed.
+    const placed = this.applied.get(inst.id)?.targetKey === inst.placement;
+    const target = this.target(inst, def);
+    const paneId = placed
+      ? useIndicatorRuntime.getState().panes[inst.id]
+      : 'paneId' in target
+        ? target.paneId
+        : null;
+    if (paneId !== 'main') return 'pane';
+    let cur: IndicatorState | undefined = inst;
+    let d: AnyIndicatorDefinition | undefined = def;
+    // Bounded: validateInstances rejects source cycles.
+    for (let depth = 0; cur && d && depth <= this.list.length; depth++) {
+      const format = d.format ?? 'inherit';
+      if (format === 'volume') return 'none';
+      if (format !== 'inherit') return 'pane';
+      const ref = sourceRefOf(cur);
+      cur = ref ? this.lookup(ref.instanceId) : undefined;
+      d = cur ? getIndicator(cur.type) : undefined;
+    }
+    return 'pane';
   }
 
   private effectiveVisible(inst: IndicatorState): boolean {
@@ -285,8 +318,7 @@ export class IndicatorController {
       format,
       precision: def.precision ?? null,
       scaleRange: def.scaleRange ? { ...def.scaleRange } : null,
-      // A volume-scaled overlay must not squash the price scale.
-      priceScale: def.overlay && format === 'volume' ? 'none' : 'pane',
+      priceScale: next.priceScale,
       visible: next.visible,
     };
     const ok = this.engine(() => this.setPane(inst.id, this.chart.addStudy(spec)));

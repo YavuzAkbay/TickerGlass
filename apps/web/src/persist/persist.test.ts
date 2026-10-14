@@ -4,8 +4,13 @@ import { ApiError } from '../api/client';
 import type { Layout, LayoutSummary, StoredDrawing } from '../api/types';
 import { useHistory } from '../commands/history';
 import { useDrawingStore, useDrawingTemplates, withRemoteApply } from '../drawings/store';
-import type { IndicatorState } from '../indicators/model';
-import { useIndicatorPrefs, useIndicatorStore } from '../indicators/store';
+import {
+  DEFAULT_VOLUME_ID,
+  defaultVolumeInstance,
+  withLegacyVolume,
+  type IndicatorState,
+} from '../indicators/model';
+import { legacyAppVolume, useIndicatorPrefs, useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { readChartTemplate } from './chartTemplates';
 import { DrawingSync, DRAWING_SYNC_KEY, type DrawingApi } from './drawingSync';
@@ -79,7 +84,6 @@ const state = (symbol: string, extra: Partial<LayoutState> = {}): LayoutState =>
   chartSettings: {
     chartType: 'candles',
     chartStyle: {},
-    volume: 'overlay',
     showPrevClose: false,
     timezone: 'exchange',
     prepost: false,
@@ -492,6 +496,97 @@ describe('layout state parsing', () => {
     expect(s!.chart).toBeNull();
     expect(s!.chartSettings.chartType).toBe(useAppStore.getState().chartType);
     expect(parseLayoutState({}, 99)).toBeNull();
+  });
+
+  const legacyChart = (volume: string, panes: { id: string; ratio: number }[] = []) => ({
+    version: 1,
+    symbol: 'AAPL',
+    interval: '1D',
+    volume,
+    timeScale: { barSpacing: 6, rightOffset: 5 },
+    crosshair: { mode: 'cross', magnet: 'off' },
+    timezone: 'exchange',
+    panes: [{ id: 'main', ratio: 3 }, ...panes].map((p) => ({
+      ...p,
+      collapsed: false,
+      priceScale: { mode: 'linear', autoScale: true, invert: false },
+    })),
+    maximizedPane: null,
+  });
+  const legacy = (
+    volume: string,
+    indicators: unknown[] = [],
+    panes: { id: string; ratio: number }[] = [],
+  ) => ({
+    chart: legacyChart(volume, panes),
+    indicators,
+    chartSettings: { chartType: 'candles', chartStyle: {}, volume, showPrevClose: false },
+  });
+
+  it('turns the built-in overlay volume of v1 layouts into a Volume indicator, once', () => {
+    const s = parseLayoutState(legacy('overlay', [indicator('a')]), 1)!;
+    expect(s.indicators.map((i) => [i.id, i.type, i.placement])).toEqual([
+      [DEFAULT_VOLUME_ID, 'volume', 'main'],
+      ['a', 'sma', 'auto'],
+    ]);
+    expect(s.chartSettings).not.toHaveProperty('volume');
+    expect(s.chart!.volume).toBe('hidden');
+    // Idempotent: the migrated state (saved as v2, or cached without a version) is unchanged.
+    expect(parseLayoutState(s, 2)).toEqual(s);
+    expect(parseLayoutState(s)).toEqual(s);
+    expect(parseLayoutState(JSON.parse(JSON.stringify(s)))).toEqual(s);
+  });
+
+  it('moves a built-in volume pane to the Volume indicator, keeping its size', () => {
+    const s = parseLayoutState(legacy('pane', [], [{ id: 'volume', ratio: 1.5 }]), 1)!;
+    expect(s.indicators.map((i) => [i.id, i.placement])).toEqual([[DEFAULT_VOLUME_ID, 'own']]);
+    expect(s.chart!.panes.map((p) => [p.id, p.ratio])).toEqual([
+      ['main', 3],
+      [`pane-${DEFAULT_VOLUME_ID}`, 1.5],
+    ]);
+    expect(parseLayoutState(s)).toEqual(s);
+  });
+
+  it('adds no Volume indicator for hidden volume or when one exists', () => {
+    const hidden = parseLayoutState(legacy('hidden', [], [{ id: 'volume', ratio: 1 }]), 1)!;
+    expect(hidden.indicators).toEqual([]);
+    expect(hidden.chart!.panes.map((p) => p.id)).toEqual(['main']);
+    const own = { ...indicator('v1'), type: 'volume', placement: 'own' as const };
+    const both = parseLayoutState(legacy('overlay', [own]), 1)!;
+    expect(both.indicators).toEqual([own]);
+    expect(both.chart!.volume).toBe('hidden');
+    // Indicator templates (no chart settings) are left alone.
+    expect(parseLayoutState({ indicators: [indicator('x')] })!.indicators).toEqual([
+      indicator('x'),
+    ]);
+  });
+});
+
+describe('default chart and local store migration', () => {
+  it('starts new charts with Volume at the bottom of the price pane', () => {
+    expect(defaultVolumeInstance()).toMatchObject({
+      id: DEFAULT_VOLUME_ID,
+      type: 'volume',
+      placement: 'main',
+      visible: true,
+    });
+    expect(withLegacyVolume([], legacyAppVolume(null)).map((i) => i.placement)).toEqual(['main']);
+  });
+
+  it('migrates the pre-indicator app volume setting of localStorage', () => {
+    const app = (volume?: string) =>
+      JSON.stringify({ state: volume ? { theme: 'dark', volume } : { theme: 'dark' }, version: 3 });
+    expect(legacyAppVolume(app('pane'))).toBe('pane');
+    expect(legacyAppVolume(app())).toBe('overlay');
+    expect(
+      withLegacyVolume([indicator('a')], legacyAppVolume(app('pane'))).map((i) => i.placement),
+    ).toEqual(['own', 'auto']);
+    expect(withLegacyVolume([indicator('a')], legacyAppVolume(app('hidden')))).toEqual([
+      indicator('a'),
+    ]);
+    // Idempotent: a Volume indicator already there is kept as the only one.
+    const once = withLegacyVolume([], 'overlay');
+    expect(withLegacyVolume(once, 'overlay')).toEqual(once);
   });
 });
 
@@ -1167,13 +1262,13 @@ describe('chart templates', () => {
       prepost: false,
       timezone: 'exchange',
       chartStyle: {},
-      volume: 'overlay' as const,
       showPrevClose: false,
       scale: null,
     };
     const out = readChartTemplate(base, {
       theme: 'light',
-      volume: 'sideways',
+      // Legacy built-in volume mode (now the Volume indicator): ignored.
+      volume: 'pane',
       prepost: 'yes',
       chartStyle: { candles: { upColor: '#0f0' } },
       extra: 1,
