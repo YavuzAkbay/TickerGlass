@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@investopen/engine';
 import { feed } from './feed';
+import { attachCompares } from '../compare/attach';
+import { CompareLegends } from '../compare/Legend';
 import { attachDrawings } from '../drawings/attach';
 import { DrawingToolbar } from '../drawings/DrawingToolbar';
 import { DrawingTextEditor } from '../drawings/TextEditor';
@@ -42,6 +44,7 @@ export function ChartView() {
       // Drawings first: a pane removal folds their undo step with the studies'.
       attachDrawings(chart, hostRef.current!),
       attachIndicators(chart, feed),
+      attachCompares(chart, feed),
     ];
     return () => {
       offs.forEach((off) => off());
@@ -76,6 +79,7 @@ export function ChartView() {
   return (
     <>
       <div ref={hostRef} className="chart-host" />
+      <CompareLegends chart={chartState} />
       <IndicatorLegends chart={chartState} />
       <DrawingToolbar />
       <DrawingTextEditor />

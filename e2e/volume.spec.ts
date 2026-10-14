@@ -111,7 +111,7 @@ test('new charts show Volume as an indicator: click, menus, hide, remove, undo, 
       const l = [...server.layouts.values()][0]!;
       return [l.schemaVersion, (l.state.indicators as unknown[]).length];
     })
-    .toEqual([2, 0]);
+    .toEqual([3, 0]);
   await saved(page);
   await page.evaluate(() => localStorage.clear());
   await page.reload();

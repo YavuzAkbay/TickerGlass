@@ -1,7 +1,9 @@
 import { Check, Clock, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { SymbolSearchResult } from '@investopen/engine';
+import { MAX_CHART_SYMBOL, TOO_LONG_FOR_CHART } from '../commands/core';
 import { commands } from '../commands/registry';
+import { ExpressionErrorBox, ExpressionRow, classifyQuery } from '../compare/ExpressionRow';
 import { useAppStore } from '../store/app';
 import { flagRows, isFlagRef, resolveActive } from '../watchlist/model';
 import { useWatchlistPrefs } from '../watchlist/prefs';
@@ -55,15 +57,20 @@ export default function SymbolSearchDialog({
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const recent = useAppStore((s) => s.recentSymbols);
-  const search = useSymbolSearch(query);
   const addMode = isAddMode(arg);
+  const q = query.trim();
+  const kind = addMode ? ({ kind: 'plain' } as const) : classifyQuery(q);
+  // Operator queries are expressions, not names to look up.
+  const search = useSymbolSearch(kind.kind === 'plain' ? query : '');
   const inList = useActiveSymbols();
 
-  const q = query.trim();
   const rows: SymbolSearchResult[] =
     q === ''
       ? recent.map((s) => ({ symbol: s, name: '', exchange: null, type: null }))
-      : search.items.filter((r) => matchesTab(r, tab));
+      : kind.kind === 'plain'
+        ? search.items.filter((r) => matchesTab(r, tab))
+        : [];
+  const expr = kind.kind === 'expression' ? kind.canonical : null;
   const idx = Math.max(0, Math.min(active, rows.length - 1));
 
   useEffect(() => {
@@ -80,6 +87,10 @@ export default function SymbolSearchDialog({
   const select = (ticker: string) => {
     const t = ticker.trim().toUpperCase();
     if (!t) return;
+    if (!addMode && t.length > MAX_CHART_SYMBOL) {
+      toast(TOO_LONG_FOR_CHART, 'error');
+      return;
+    }
     if (addMode) {
       if (!validSymbol(t)) {
         toast(`“${t}” is not a valid symbol`, 'error');
@@ -100,6 +111,15 @@ export default function SymbolSearchDialog({
     else if (e.key === 'ArrowUp')
       setActive(rows.length ? (idx - 1 + rows.length) % rows.length : 0);
     else if (e.key === 'Enter') {
+      if (kind.kind === 'error') {
+        e.preventDefault();
+        return;
+      }
+      if (expr) {
+        select(expr);
+        e.preventDefault();
+        return;
+      }
       // While results are loading the typed ticker wins, so fast typists get what they typed.
       const row = search.fresh || q === '' ? rows[idx] : undefined;
       select(row ? row.symbol : q);
@@ -108,7 +128,18 @@ export default function SymbolSearchDialog({
   };
 
   let body: ReactNode;
-  if (q === '' && rows.length === 0) {
+  if (kind.kind === 'error') {
+    body = <ExpressionErrorBox query={q} error={kind.error} />;
+  } else if (expr) {
+    body = (
+      <ExpressionRow
+        canonical={expr}
+        active
+        onHover={() => undefined}
+        onSelect={() => select(expr)}
+      />
+    );
+  } else if (q === '' && rows.length === 0) {
     body = (
       <div className="dlg-empty">Type a ticker or company name, e.g. AAPL, BTC-USD, EURUSD=X</div>
     );
@@ -193,7 +224,7 @@ export default function SymbolSearchDialog({
           </button>
         ) : null}
       </div>
-      {q !== '' ? (
+      {q !== '' && kind.kind === 'plain' ? (
         <SymbolTabs
           tab={tab}
           onChange={(t) => {

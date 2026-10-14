@@ -12,11 +12,15 @@ import {
 import { changeScale, toggleScaleMode } from '../chart/scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
 import { getChart } from '../store/chart';
-import { useAppStore } from '../store/app';
+import { normalizeSymbol, useAppStore } from '../store/app';
 import { useUiStore, type RightPanel } from '../store/ui';
 import { toast } from '../ui/Toast';
 import { useHistory } from './history';
 import { commands, type Command } from './registry';
+
+/** Longest main-chart symbol: drawings and notes store it in a String(32) column. */
+export const MAX_CHART_SYMBOL = 32;
+export const TOO_LONG_FOR_CHART = `Too long for a chart symbol (max ${MAX_CHART_SYMBOL}), add it with Compare instead`;
 
 const hasChart = () => !!getChart();
 /** Undo/redo would fight an ongoing drawing drag or the open text editor. */
@@ -72,7 +76,13 @@ export function registerCoreCommands(): () => void {
       title: 'Set symbol',
       hidden: true,
       run: (arg) => {
-        if (typeof arg === 'string' && arg) useAppStore.getState().setSymbol(arg.toUpperCase());
+        if (typeof arg !== 'string' || !arg) return;
+        const symbol = normalizeSymbol(arg);
+        if (symbol.length > MAX_CHART_SYMBOL) {
+          toast(TOO_LONG_FOR_CHART, 'error');
+          return;
+        }
+        useAppStore.getState().setSymbol(symbol);
       },
     },
     {

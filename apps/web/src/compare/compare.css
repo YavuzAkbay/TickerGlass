@@ -1,0 +1,179 @@
+/* ---- compare legend rows (rendered into the engine's compare legend slot) ---- */
+.cmp-legend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: auto;
+}
+.cmp-legend-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 4px;
+  margin-left: -4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: default;
+}
+.cmp-legend-row:hover,
+.cmp-legend-row.menu-open {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+}
+.cmp-legend-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cmp-legend-name {
+  max-width: 260px;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.cmp-legend-row.off .cmp-legend-name,
+.cmp-legend-row.off .cmp-legend-dot {
+  opacity: 0.5;
+}
+.cmp-legend-actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+}
+.cmp-legend-row:hover .cmp-legend-actions,
+.cmp-legend-row:focus-within .cmp-legend-actions,
+.cmp-legend-row.menu-open .cmp-legend-actions {
+  display: inline-flex;
+}
+.cmp-legend-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.cmp-legend-btn:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.cmp-legend-value {
+  font-variant-numeric: tabular-nums;
+}
+.cmp-legend-muted {
+  color: var(--text-muted);
+}
+.cmp-legend-error {
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--down);
+  text-overflow: ellipsis;
+}
+
+/* ---- colour menu ---- */
+.cmp-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 22px);
+  gap: 6px;
+  padding: 8px 12px;
+}
+.cmp-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.cmp-swatch.on {
+  border-color: var(--text-strong);
+}
+
+/* ---- compare dialog: current overlays ---- */
+.cmp-current {
+  border-top: 1px solid var(--border);
+}
+.cmp-current-list {
+  max-height: 150px;
+  overflow-y: auto;
+  padding-bottom: 6px;
+}
+.cmp-current-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 20px;
+}
+.cmp-current-row.off .cmp-current-name {
+  opacity: 0.5;
+}
+.cmp-current-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.cmp-current-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmp-current-select {
+  flex: none;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+.cmp-current-status {
+  flex: none;
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--down);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- compare dialog: add buttons ---- */
+.cmp-add {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+}
+.cmp-add-btn {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cmp-add-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.cmp-add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.dlg-compare-actions {
+  padding: 0 20px;
+}

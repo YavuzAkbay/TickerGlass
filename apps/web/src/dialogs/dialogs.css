@@ -839,3 +839,27 @@
   margin-left: 6px;
   color: var(--up);
 }
+
+/* ---- symbol expression row ---- */
+.dlg-symexpr {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dlg-expr-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 20px;
+  color: var(--down);
+  font-size: 12px;
+}
+.dlg-expr-error pre {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}

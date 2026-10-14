@@ -16,6 +16,9 @@ import {
   Trash2,
 } from 'lucide-react';
 import { commands } from '../commands/registry';
+import { isCompareId } from '../compare/model';
+import { findCompare } from '../compare/actions';
+import { compareMenuItems } from '../compare/menu';
 import { currentDrawings, removeDrawings } from '../drawings/actions';
 import { useDrawingRuntime } from '../drawings/store';
 import { findIndicator } from '../indicators/actions';
@@ -117,6 +120,10 @@ function paneItems(chart: Chart, paneId: string): MenuItem[] {
 /** Right-click menus for the chart canvas, price axis and time axis. */
 export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
   const { clientX: x, clientY: y } = p;
+  if (p.seriesId && isCompareId(p.seriesId) && findCompare(p.seriesId)) {
+    openContextMenu(x, y, compareMenuItems(p.seriesId));
+    return;
+  }
   if (p.seriesId && findIndicator(p.seriesId)) {
     openContextMenu(x, y, indicatorMenuItems(p.seriesId));
     return;

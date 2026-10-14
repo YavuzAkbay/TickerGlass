@@ -3,7 +3,7 @@ import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
 import { toast } from '../ui/Toast';
-import { removeIndicators } from './actions';
+import { findIndicator, removeIndicators } from './actions';
 import { IndicatorController, createIndicatorWorker } from './controller';
 import { openIndicatorSettings } from './menu';
 import { effectiveInstances, useIndicatorPreview, useIndicatorStore } from './store';
@@ -33,7 +33,10 @@ export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
     useIndicatorStore.subscribe(sync),
     useIndicatorPreview.subscribe(sync),
     useUiStore.subscribe((s) => ctl.setHidden(indicatorsHidden(s))),
-    chart.on('studyDoubleClick', (e) => openIndicatorSettings(e.id)),
+    chart.on('studyDoubleClick', (e) => {
+      // Compare overlays are studies too: they have no indicator settings.
+      if (findIndicator(e.id)) openIndicatorSettings(e.id);
+    }),
   ];
   return () => {
     offs.forEach((off) => off());

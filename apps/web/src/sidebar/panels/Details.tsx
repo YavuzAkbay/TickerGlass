@@ -1,3 +1,4 @@
+import { isExpressionSymbol } from '@investopen/engine';
 import { ChevronDown } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import type { Fundamentals, FundamentalsInfo, Performance, SymbolMeta } from '../../api/types';
@@ -192,6 +193,23 @@ function hostOf(url: string): string {
 
 export function Details() {
   const symbol = useAppStore((s) => s.symbol);
+  // No quote, fundamentals or events exist for an expression: mount nothing that fetches.
+  if (isExpressionSymbol(symbol))
+    return (
+      <div className="rs-details">
+        <div className="rs-det-head">
+          <div className="rs-det-ticker">
+            <span className="rs-det-symbol">{symbol}</span>
+            <span className="rs-badge">expression</span>
+          </div>
+        </div>
+        <div className="rs-pad rs-muted">Not available for symbol expressions</div>
+      </div>
+    );
+  return <SymbolDetails symbol={symbol} />;
+}
+
+function SymbolDetails({ symbol }: { symbol: string }) {
   const enc = encodeURIComponent(symbol);
   const meta = useApi<SymbolMeta>(`/symbols/${enc}`, TEN_MIN);
   const fund = useApi<Fundamentals>(`/fundamentals/${enc}`, TEN_MIN);
