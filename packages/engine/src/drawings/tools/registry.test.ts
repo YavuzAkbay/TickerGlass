@@ -35,6 +35,8 @@ const PROP_KINDS = [
   'enum',
   'fontSize',
   'levels',
+  'string',
+  'image',
 ];
 
 describe('built-in tools', () => {
@@ -52,7 +54,8 @@ describe('built-in tools', () => {
 
   it.each(TYPES)('%s: renders/hit-tests drafts with 1..n anchors and offscreen', (type) => {
     const def = tool(type);
-    const n = def.creation.kind === 'points' ? def.creation.count : 3;
+    const c = def.creation;
+    const n = c.kind === 'points' ? c.count : c.kind === 'multi' ? Math.min(c.max ?? 3, 3) : 3;
     const all: DrawingPoint[] = [pt(20, 20), pt(40, 60), pt(30, 50)];
     for (let k = 1; k <= n; k++) {
       const d = makeDrawing(type, all.slice(0, k), {}, 'txt');

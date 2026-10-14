@@ -12,8 +12,8 @@ import {
 } from './draw-utils';
 
 /** Extra handle reach (px) for touch; mouse uses 2. */
-const TOUCH_EXTRA = 8;
-import { Geometry, type DrawingPane, type GeometryView } from './geometry';
+export const TOUCH_EXTRA = 8;
+import { Geometry, isPaneCoords, type DrawingPane, type GeometryView } from './geometry';
 import type { AnchorTimeline } from './mapping';
 import { getDrawingTool } from './registry';
 import type {
@@ -117,7 +117,12 @@ export class DrawingLayer {
 
   constructor(readonly host: DrawingHost) {
     this.view = { timeline: host.timeline(), timeScale: host.timeScale, width: 0 };
-    this.rc = { ctx: null as unknown as CanvasRenderingContext2D, dpr: 1, theme: host.theme };
+    this.rc = {
+      ctx: null as unknown as CanvasRenderingContext2D,
+      dpr: 1,
+      theme: host.theme,
+      invalidate: () => host.invalidate(),
+    };
   }
 
   // ------------------------------------------------------------ model
@@ -448,7 +453,7 @@ export class DrawingLayer {
     if (!def) return;
     const g = this.geometry(d, pane);
     if (!g) return;
-    if (!(def.isVisible ? def.isVisible(g, d.style) : anchorsInView(g))) return;
+    if (!inView(def, g, d)) return;
     const state = this.renderState(d);
     const { ctx, theme } = this.rc;
     ctx.save();
@@ -482,7 +487,8 @@ export class DrawingLayer {
         for (const l of fn(d, d.style, state)) out.push(l);
         return;
       }
-      if (!state.selected && !state.editing) return;
+      // Pane fractions are not prices or times.
+      if ((!state.selected && !state.editing) || isPaneCoords(d.type)) return;
       const color = colorOf(d.style);
       for (const p of d.points) out.push({ value: axis === 'price' ? p.price : p.time, color });
     };
@@ -540,7 +546,7 @@ export class DrawingLayer {
       const g = def ? this.geometry(d, pane) : null;
       if (!def || !g) continue;
       // Culled drawings (off screen) are not drawn, so they cannot be hit.
-      if (!(def.isVisible ? def.isVisible(g, d.style) : anchorsInView(g))) continue;
+      if (!inView(def, g, d)) continue;
       if (!this.isLocked(d)) {
         const hs = this.handlesOf(def, d, g);
         for (let i = 0; i < hs.length; i++) {
@@ -568,6 +574,13 @@ export class DrawingLayer {
     }
     return res;
   }
+}
+
+/** Culling: the tool's `isVisible`, else anchors in view; pane-coordinate
+ * drawings are always on screen. */
+function inView(def: AnyDrawingToolDefinition, g: Geometry, d: Readonly<Drawing>): boolean {
+  if (def.isVisible) return def.isVisible(g, d.style);
+  return def.coords === 'pane' || anchorsInView(g);
 }
 
 const VIS_UNIT: Record<Interval['unit'], keyof DrawingIntervalVisibility> = {

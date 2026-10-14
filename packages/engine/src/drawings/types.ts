@@ -30,9 +30,11 @@ export interface DrawingPoint {
    * Unix seconds. Inside the data: the bar's open time. Past the last bar:
    * last bar time + k intervals (calendar months for M intervals); before the
    * first bar: first bar time - k intervals. See docs/drawings.md §3.
+   * `coords: 'pane'` tools: x as a fraction (0..1) of the pane width.
    */
   time: number;
-  /** In the pane's value units (price on the main pane, study units elsewhere). */
+  /** In the pane's value units (price on the main pane, study units elsewhere).
+   * `coords: 'pane'` tools: y as a fraction (0..1) of the pane height. */
   price: number;
   /**
    * Brick charts only (Renko, Kagi, ...): position inside a run of bricks that
@@ -154,6 +156,9 @@ export interface DrawingRenderContext {
   ctx: CanvasRenderingContext2D;
   dpr: number;
   theme: ChartTheme;
+  /** Request another frame (additive), e.g. once an async image has decoded
+   * (drawings/images.ts). Stable function: safe to keep as a callback. */
+  invalidate(): void;
 }
 
 /** What a hit test found. Handles are hit-tested by the framework, tools return body/text. */
@@ -212,7 +217,20 @@ export type DrawingCreation =
    * count 2, press-drag-release also works (release places anchor 2). */
   | { kind: 'points'; count: number }
   /** Press, drag (anchors sampled every few px), release. */
-  | { kind: 'freehand' };
+  | { kind: 'freehand' }
+  /**
+   * Additive. A variable number of anchors, one per click; the next anchor
+   * follows the pointer. Finishes on double-click, Enter, reaching `max`, or a
+   * click on the first anchor (then the last anchor is an exact copy of anchor
+   * 0: tools that draw closed shapes detect it). Esc/right-click finish with
+   * >= `min` anchors, else cancel. Anchors cannot be added or removed later.
+   */
+  | { kind: 'multi'; min: number; max?: number };
+
+/** Anchor space (additive). 'chart' (default): time/price. 'pane': screen-anchored,
+ * `time`/`price` hold the x/y fraction (0..1) of the pane; no bar snapping or magnet,
+ * drags and nudges move in px, always visible, ignores paste `offset`/`at`. */
+export type DrawingCoords = 'chart' | 'pane';
 
 /** Properties dialog tab of a property ('style' by default). Coordinates and
  * Visibility tabs are generated from the anchors and `visibility`. */
@@ -239,7 +257,11 @@ export type DrawingProperty =
   | (PropertyBase & { kind: 'enum'; options: readonly string[]; labels?: readonly string[] })
   | (PropertyBase & { kind: 'fontSize' })
   /** `DrawingLevel[]` (fib levels). */
-  | (PropertyBase & { kind: 'levels' });
+  | (PropertyBase & { kind: 'levels' })
+  /** Single-line text (additive). */
+  | (PropertyBase & { kind: 'string'; maxLength?: number })
+  /** Image as a data URL string, '' = none (additive). Decode with drawings/images.ts. */
+  | (PropertyBase & { kind: 'image' });
 
 /** One fib-style level. */
 export type DrawingLevel = { value: number; color: string; visible: boolean };
@@ -286,6 +308,12 @@ export interface DrawingToolDefinition<S extends DrawingStyle = DrawingStyle> {
    * the other anchor to multiples of 45° (docs/drawings.md §7). Default 'angle'
    * for `{kind:'points', count: 2}` tools with `axes` 'both', else 'none'. */
   shiftConstraint?: 'angle' | 'none';
+  /** Anchor space (additive), default 'chart'. See `DrawingCoords`. */
+  coords?: DrawingCoords;
+  /** Panes the tool can be created on (additive), default 'any'. 'main': tools
+   * that read `g.bars` (price data); creation on study panes is refused. Such
+   * tools must render nothing when `g.bars.length` is 0. */
+  panes?: 'main' | 'any';
 }
 
 /** A definition with its style type erased (registry entries). */
@@ -347,8 +375,10 @@ export interface DrawingEvents {
 /** Methods `Chart` implements for drawings. */
 export interface DrawingApi {
   /** Start drawing with a registered tool; null = cursor. Cancels a draft
-   * silently (no `toolFinished`). Throws for an unknown type. */
-  setActiveTool(type: string | null): void;
+   * silently (no `toolFinished`). Throws for an unknown type. `opts.style`
+   * (additive) is merged over the tool defaults of every drawing created until
+   * the tool changes (sticker presets). */
+  setActiveTool(type: string | null, opts?: DrawingToolOptions): void;
   getActiveTool(): string | null;
   setDrawingOptions(patch: Partial<DrawingOptions>): void;
   getDrawingOptions(): DrawingOptions;
@@ -402,6 +432,12 @@ export interface DrawingApi {
    * (hidden, other symbol/interval, missing pane, no bars).
    */
   getDrawingBounds(ids: readonly string[]): DrawingBounds | null;
+}
+
+/** `setActiveTool` options (additive). */
+export interface DrawingToolOptions {
+  /** Preset style keys for drawings created with this tool. */
+  style?: DrawingStyle;
 }
 
 /** `getDrawingBounds` result (chart-root CSS px). */

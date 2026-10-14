@@ -25,6 +25,8 @@ interface Drawing {
 ```
 
 - `price` is in the pane's units (price on `main`, study values on study panes).
+- Tools with `coords: 'pane'` (additive; screen-anchored text/notes) store `time`/`price` as the x/y fraction
+  (0..1) of the pane instead: they ignore pan/zoom, bar snapping and the magnet, and are never culled.
 - `style` keys are per tool; common names: `lineColor lineWidth lineStyle extendLeft extendRight textColor
 fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color, visible }`). The
   framework uses `lineColor` (fallback `#2962ff`) for handles and default axis labels.
@@ -34,19 +36,21 @@ fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color,
 `defineDrawingTool({...})` (infers the style type from `defaults`), `registerDrawingTool`, `getDrawingTool`,
 `listDrawingTools`. Built-ins register in `drawings/tools/index.ts`, imported by `chart.ts`.
 
-| Field                                    | Meaning                                                                                                                                |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`, `name`, `group`                  | `group` = left-toolbar group id (`lines fib patterns forecasting shapes annotation measure`)                                           |
-| `creation`                               | `{kind:'click'}` one anchor · `{kind:'points',count}` click-click (count 2 also press-drag-release) · `{kind:'freehand'}`              |
-| `defaults`, `properties`                 | complete default style; Style/Text tab fields (`color lineWidth lineStyle bool number enum fontSize levels`, `tab`, `group`, `inline`) |
-| `text`                                   | `{ default, multiline }`: the Text tab edits `Drawing.text`                                                                            |
-| `axes`                                   | `'price'` (horizontal line) / `'time'` (vertical line): drags keep the other coordinate; the Coordinates tab hides it                  |
-| `render(rc, g, style, state)`            | draw in pane CSS px (`rc.ctx` has the dpr transform; `ctx.save/restore` is done for you). Never draw handles                           |
-| `hitTest(g, style, x, y, tol)`           | `{kind:'body', weak?}` / `{kind:'text'}` / null. Add `lineWidth/2` to `tol` yourself                                                   |
-| `handles(g, style)` + `moveHandle(args)` | editing handles (default: anchors). Derived handles (rect edge midpoints, channel width) map back to anchors in `moveHandle`           |
-| `completePoints(points, g, style)`       | normalise/expand anchors when creation finishes (one-click Long position derives target/stop)                                          |
-| `priceAxisLabels` / `timeAxisLabels`     | default: each anchor while selected; return `[]` to suppress                                                                           |
-| `isVisible(g, style)`                    | culling; default `anchorsInView`. Tools drawing past their anchors (rays, extended lines, H/V lines) must override                     |
+| Field                                    | Meaning                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`, `name`, `group`                  | `group` = left-toolbar group id (`lines fib patterns forecasting shapes annotation measure`)                                                                                                                                                                                             |
+| `creation`                               | `{kind:'click'}` one anchor · `{kind:'points',count}` click-click (count 2 also press-drag-release) · `{kind:'freehand'}` · `{kind:'multi',min,max?}` (additive) variable anchor count, see §4                                                                                           |
+| `defaults`, `properties`                 | complete default style; Style/Text tab fields (`color lineWidth lineStyle bool number enum fontSize levels`, additive `string {maxLength?}` and `image` (data URL, `''` = none), `tab`, `group`, `inline`)                                                                               |
+| `coords`                                 | additive, `'chart'` (default) / `'pane'`: anchors are pane fractions (§1); drags and nudges move in px, kept inside the pane; paste ignores `offset`/`at`; no default axis labels                                                                                                        |
+| `panes`                                  | additive, `'any'` (default) / `'main'`: creation on study panes is refused (tools that read `g.bars`; they must render nothing when `g.bars.length` is 0)                                                                                                                                |
+| `text`                                   | `{ default, multiline }`: the Text tab edits `Drawing.text`                                                                                                                                                                                                                              |
+| `axes`                                   | `'price'` (horizontal line) / `'time'` (vertical line): drags keep the other coordinate; the Coordinates tab hides it                                                                                                                                                                    |
+| `render(rc, g, style, state)`            | draw in pane CSS px (`rc.ctx` has the dpr transform; `ctx.save/restore` is done for you). Never draw handles. `rc.invalidate()` (additive) requests another frame, e.g. `drawingImage(src, rc.invalidate)` (`drawings/images.ts`, LRU decode cache, null until decoded or without a DOM) |
+| `hitTest(g, style, x, y, tol)`           | `{kind:'body', weak?}` / `{kind:'text'}` / null. Add `lineWidth/2` to `tol` yourself                                                                                                                                                                                                     |
+| `handles(g, style)` + `moveHandle(args)` | editing handles (default: anchors). Derived handles (rect edge midpoints, channel width) map back to anchors in `moveHandle`                                                                                                                                                             |
+| `completePoints(points, g, style)`       | normalise/expand anchors when creation finishes (one-click Long position derives target/stop)                                                                                                                                                                                            |
+| `priceAxisLabels` / `timeAxisLabels`     | default: each anchor while selected; return `[]` to suppress                                                                                                                                                                                                                             |
+| `isVisible(g, style)`                    | culling; default `anchorsInView`. Tools drawing past their anchors (rays, extended lines, H/V lines) must override                                                                                                                                                                       |
 
 `DrawingGeometry` (`g`): `points` (px per anchor), `logical` (fractional bar index per anchor), `width`,
 `height`, `barSpacing`, `intervalSeconds`, `format` (`price percent time`), `bars` (additive:
@@ -61,7 +65,10 @@ extended segment clipped against the pane plus 50 px), not with the anchors' x s
 stretch the stroke (samples move by the handle offset scaled by path length from the fixed end). The
 parallel channel's width is a pixel offset (`channelOffsetPx`), so it stays parallel on log scales.
 Helpers for tools: `drawings/draw-utils.ts` (`setLineStyle extendSegment lineDistance infoLabel
-formatDuration hitRotatedText anchorsInView BODY_HIT WEAK_BODY_HIT TEXT_HIT`). Reference tools:
+formatDuration hitRotatedText anchorsInView BODY_HIT WEAK_BODY_HIT TEXT_HIT`) and `drawings/shape-utils.ts`
+(additive: `polylineDistance pointInPolygon quadBezierPoint quadBezierDistance cubicBezierDistance
+ellipseDistance circleThrough3 arcDistance rotate linearRegression strokePolyline tracePolyline`; canvas
+angles, y down). Reference tools:
 `tools/trend-line.ts` (2 points, extend, middle-point derived handle, text, stats label) and
 `tools/horizontal-line.ts` (single click, `axes:'price'`, always-on price label).
 
@@ -115,8 +122,14 @@ when it declines. Coordinates are chart-root px; anchors snap to bar slots (`sna
 - **create** (tool active, press in a pane): draft drawn on top, not in `getDrawings()`. `click`: release
   finishes. `points`: first release fixes anchor 2 only if it ended a drag, else anchor 2 follows the
   pointer until the next click; each click fixes one. `freehand`: samples every 3 px, release finishes
-  (< 2 points cancels). Finish: `completePoints`, insert, `drawingCreated`, select, `toolFinished`; the
+  (< 2 points cancels). `multi` (additive): like `points`, each click fixes one anchor; double-click (its
+  second click's duplicate anchor is dropped), Enter, reaching `max`, or a click within handle reach of the
+  first anchor (with >= 2 fixed; the last anchor is then an exact copy of anchor 0, so closed shapes can
+  detect it) finish; double-click/Enter below `min` keep creating; Esc/right-click finish with >= `min`
+  anchors, else cancel. Finish: `completePoints`, insert, `drawingCreated`, select, `toolFinished`; the
   tool is cleared unless `stayInDrawingMode`. Esc or right-click cancels (`toolFinished`, `drawingId: null`).
+  `setActiveTool(type, { style })` (additive) merges `style` over the tool defaults of every drawing created
+  until the tool changes (sticker presets).
 - **keys** (chart focused): Esc = cancel creation / drag / tool / selection, in that order; Delete and
   Backspace remove selected _unlocked_ drawings (`drawingsRemoved`). Handled keys are `preventDefault`ed,
   so app-level shortcuts skip them.

@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Chart } from './chart';
 import type { DrawingHost } from './drawings/layer';
 import { logicalToTime, timeToLogical } from './drawings/mapping';
+import { defineDrawingTool, registerDrawingTool } from './drawings/registry';
 import type {
   Bar,
   BarListener,
@@ -407,5 +408,59 @@ describe('Chart drawing API', () => {
     expect(chart.getDrawings()).toHaveLength(1); // kept, not shown
     chart.setActiveTool('eraser');
     expect(chart.getActiveTool()).toBe('eraser');
+  });
+
+  it('setActiveTool forwards a preset style', async () => {
+    const { chart } = await load(10);
+    chart.setActiveTool('horizontal-line', { style: { lineColor: '#abcdef' } });
+    expect(chart.getActiveTool()).toBe('horizontal-line');
+    // The draft is built with the preset (white-box: no pointer in this harness).
+    const input = chart.drawingInput as unknown as { toolStyle?: object };
+    expect(input.toolStyle).toEqual({ lineColor: '#abcdef' });
+    chart.setActiveTool(null);
+    expect(input.toolStyle).toBeUndefined();
+  });
+
+  it('pastes pane-coordinate drawings in place (offset/at ignored)', async () => {
+    registerDrawingTool(
+      defineDrawingTool({
+        type: 'test-pane-coords',
+        name: 'Pane',
+        group: 'annotation',
+        creation: { kind: 'click' },
+        coords: 'pane',
+        defaults: {},
+        properties: [],
+        render: () => undefined,
+        hitTest: () => null,
+      }),
+    );
+    const { chart } = await load(50);
+    const a = chart.addDrawing({ type: 'test-pane-coords', points: [{ time: 0.25, price: 0.5 }] });
+    const t = chart.addDrawing({
+      type: 'trend-line',
+      points: [{ time: START + 10 * DAY, price: 1 }],
+    });
+    const json = chart.copyDrawings([a.id, t.id]);
+    const [p, q] = chart.pasteDrawings(json, {
+      offset: 3,
+      at: { time: START + 20 * DAY, price: 9 },
+    });
+    expect(p!.points).toEqual([{ time: 0.25, price: 0.5 }]);
+    expect(q!.points).toEqual([{ time: START + 23 * DAY, price: 9 }]);
+  });
+
+  it('setVisibleLogicalRange shows the given bar span and emits state', async () => {
+    const { chart } = await load(50);
+    const states: unknown[] = [];
+    chart.on('stateChange', (s) => states.push(s));
+    chart.timeScale.width = 700; // no layout in this harness
+    chart.setVisibleLogicalRange(10, 30);
+    const r = chart.timeScale.logicalRange();
+    expect(r.from).toBeCloseTo(10);
+    expect(r.to).toBeCloseTo(30);
+    expect(states).toHaveLength(1);
+    chart.setVisibleLogicalRange(30, 10); // ignored
+    expect(states).toHaveLength(1);
   });
 });

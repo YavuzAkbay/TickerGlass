@@ -7,6 +7,8 @@ import { HANDLE_RADIUS } from './draw-utils';
 import { DrawingInteraction, ERASER_TOOL, type DrawingPointerMods } from './interaction';
 import { DrawingLayer, type DrawingHost } from './layer';
 import type { AnchorTimeline } from './mapping';
+import { defineDrawingTool, registerDrawingTool } from './registry';
+import { polylineDistance } from './shape-utils';
 import type { Drawing, DrawingAxisLabel, DrawingEvents } from './types';
 import { trendLine } from './tools';
 
@@ -842,5 +844,287 @@ describe('performance', () => {
       render.mockRestore();
       hit.mockRestore();
     }
+  });
+});
+
+// ------------------------------------------------- framework extensions (Phase 11)
+
+/** Fixture tools (test-only types, not built-ins). */
+const fixture = {
+  defaults: { lineColor: '#ff0000' },
+  properties: [],
+  render: () => undefined,
+  hitTest: (
+    g: { points: readonly { x: number; y: number }[] },
+    _s: unknown,
+    x: number,
+    y: number,
+  ) => (polylineDistance(g.points, x, y) <= 4 ? ({ kind: 'body' } as const) : null),
+};
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-multi',
+    name: 'Multi',
+    group: 'shapes',
+    creation: { kind: 'multi', min: 3, max: 5 },
+  }),
+);
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-pane',
+    name: 'Pane',
+    group: 'annotation',
+    creation: { kind: 'points', count: 2 },
+    coords: 'pane',
+  }),
+);
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-main',
+    name: 'Main only',
+    group: 'forecasting',
+    creation: { kind: 'click' },
+    panes: 'main',
+    // Asks for a redraw like an image tool waiting for its decode.
+    render: (rc) => rc.invalidate(),
+  }),
+);
+
+describe('multi-point creation', () => {
+  const pts = () => of('drawingCreated')[0]!.drawing.points;
+  const at = (i: number, p: number) => ({ time: START + i * D, price: p });
+  const dbl = (x: number, y: number) => {
+    click(x, y);
+    click(x, y);
+    return input.doubleClick(target(x, y), x, y);
+  };
+
+  it('each click adds an anchor; a double-click finishes (second click dropped)', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    expect(layer.draft?.points).toHaveLength(2); // anchor 2 floats
+    click(X(20), Y(30));
+    hover(X(25), Y(40));
+    expect(layer.draft?.points).toEqual([at(10, 10), at(20, 30), at(25, 40)]);
+    expect(dbl(X(30), Y(20))).toBe(true);
+    expect(pts()).toEqual([at(10, 10), at(20, 30), at(30, 20)]);
+    expect(of('toolFinished')[0]).toMatchObject({ type: 'test-multi', active: false });
+    expect(layer.draft).toBeNull();
+  });
+
+  it('a double-click with fewer than min anchors keeps creating', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    dbl(X(20), Y(20));
+    expect(of('drawingCreated')).toHaveLength(0);
+    // Two fixed anchors and a floating one; the next clicks continue.
+    expect(layer.draft?.points).toHaveLength(3);
+    click(X(30), Y(30));
+    input.key('Enter');
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+  });
+
+  it('Enter finishes with >= min anchors and is ignored below', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(input.key('Enter')).toBe(true);
+    expect(layer.draft?.points).toHaveLength(3);
+    click(X(30), Y(30));
+    hover(X(40), Y(40));
+    input.key('Enter');
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+  });
+
+  it('Esc and right-click finish with >= min anchors, else cancel', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    input.key('Escape');
+    expect(of('toolFinished')).toEqual([{ type: 'test-multi', drawingId: null, active: false }]);
+    expect(layer.items.size).toBe(0);
+    expect(input.activeTool).toBeNull();
+
+    events = [];
+    input.setActiveTool('test-multi');
+    for (const i of [10, 20, 30]) click(X(i), Y(i));
+    input.contextMenu(target(X(40), Y(40)), 0, 0);
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+    expect(of('toolFinished')[0]!.drawingId).toBe(of('drawingCreated')[0]!.drawing.id);
+
+    events = [];
+    input.setActiveTool('test-multi');
+    for (const i of [10, 20, 30, 40]) click(X(i), Y(i));
+    input.key('Escape');
+    expect(pts()).toHaveLength(4);
+  });
+
+  it('finishes when max anchors are placed', () => {
+    input.setActiveTool('test-multi');
+    for (const i of [10, 20, 30, 40]) click(X(i), Y(50));
+    expect(layer.items.size).toBe(0);
+    click(X(50), Y(50));
+    expect(pts().map((p) => p.time)).toEqual([10, 20, 30, 40, 50].map((i) => START + i * D));
+  });
+
+  it('a click on the first anchor closes: the last anchor copies anchor 0', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(40));
+    click(X(30), Y(10));
+    // Within handle reach, off the bar slot: still an exact copy.
+    click(X(10) + 3, Y(10) - 2);
+    expect(pts()).toEqual([at(10, 10), at(20, 40), at(30, 10), at(10, 10)]);
+  });
+
+  it('closing needs at least two fixed anchors (no degenerate shape)', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(10), Y(10)); // fixes anchor 2 on anchor 1, does not close
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(layer.draft?.points).toHaveLength(3);
+  });
+
+  it('press-drag-release places anchor 2, then clicks continue', () => {
+    input.setActiveTool('test-multi');
+    down(X(10), Y(10));
+    move(X(15), Y(20));
+    up(X(20), Y(20));
+    expect(layer.draft?.points).toEqual([at(10, 10), at(20, 20), at(20, 20)]);
+    click(X(30), Y(30));
+    input.key('Enter');
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+  });
+});
+
+describe('pane coordinates', () => {
+  // X(i) = 10 i - 195, Y(p) = 400 - 4 p on the 800 x 400 pane.
+  const create = () => {
+    input.setActiveTool('test-pane');
+    click(X(50), Y(40)); // (305, 240)
+    click(X(60) + 3, Y(60) + 1); // (408, 161): no bar snapping
+    return of('drawingCreated')[0]!.drawing;
+  };
+
+  it('stores x/y fractions of the pane, unsnapped and without magnet', () => {
+    env.magnet = 'strong';
+    env.values = () => [50];
+    const d = create();
+    expect(d.points).toEqual([
+      { time: 305 / 800, price: 240 / 400 },
+      { time: 408 / 800, price: 161 / 400 },
+    ]);
+  });
+
+  it('stays put on screen across pan and zoom, and is never culled', () => {
+    const d = create();
+    const g = () => {
+      layer.refreshView();
+      return layer.geometry(layer.items.get(d.id)!, pane)!.points.map((p) => ({ ...p }));
+    };
+    const before = g();
+    expect(before[0]!.x).toBeCloseTo(305);
+    expect(before[0]!.y).toBeCloseTo(240);
+    ts.rightOffset = -300; // the anchors' bars are far off screen now
+    ts.barSpacing = 3;
+    expect(g()).toEqual(before);
+    expect(layer.hitTest(pane, 305, 240).strong?.id).toBe(d.id);
+  });
+
+  it('body drags and nudges move by px, kept inside the pane', () => {
+    const d = create();
+    layer.setSelection([]);
+    // Press on the body (midpoint), drag 17 px right, 9 px down.
+    const mx = (305 + 408) / 2;
+    const my = (240 + 161) / 2;
+    down(mx, my);
+    move(mx + 17, my + 9);
+    up(mx + 17, my + 9);
+    const p = layer.items.get(d.id)!.points;
+    expect(p[0]!.time * 800).toBeCloseTo(322);
+    expect(p[0]!.price * 400).toBeCloseTo(249);
+    expect(p[1]!.time * 800).toBeCloseTo(425);
+    events = [];
+    input.key('ArrowLeft'); // 1 px, not 1 bar
+    expect(layer.items.get(d.id)!.points[0]!.time * 800).toBeCloseTo(321);
+    input.key('ArrowUp', { ...NO, shift: true }); // 10 px
+    expect(layer.items.get(d.id)!.points[0]!.price * 400).toBeCloseTo(239);
+    expect(of('drawingChanged')).toHaveLength(2);
+    // Dragging far right stops when the right-most anchor reaches the edge.
+    layer.refreshView();
+    const q = layer.geometry(layer.items.get(d.id)!, pane)!.points;
+    const [hx, hy] = [(q[0]!.x + q[1]!.x) / 2, (q[0]!.y + q[1]!.y) / 2];
+    down(hx, hy);
+    move(hx + 2000, hy);
+    up(hx + 2000, hy);
+    const r = layer.items.get(d.id)!.points;
+    expect(r[1]!.time).toBeCloseTo(1);
+    expect((r[1]!.time - r[0]!.time) * 800).toBeCloseTo(103);
+  });
+
+  it('handle drags follow the raw pointer; no default axis labels', () => {
+    const d = create();
+    down(305, 240); // handle 0
+    move(311, 231);
+    up(311, 231);
+    expect(layer.items.get(d.id)!.points[0]).toEqual({ time: 311 / 800, price: 231 / 400 });
+    const out: DrawingAxisLabel[] = [];
+    layer.axisLabels('price', pane, out);
+    layer.axisLabels('time', null, out);
+    expect(out).toEqual([]);
+  });
+});
+
+describe('tool options and pane restrictions', () => {
+  it('a preset style reaches the created drawing and leaves with the tool', () => {
+    input.setActiveTool('trend-line', { style: { lineColor: '#00ff00', glyph: 'x' } });
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(of('drawingCreated')[0]!.drawing.style).toMatchObject({
+      lineColor: '#00ff00',
+      glyph: 'x',
+      lineWidth: 2,
+    });
+    input.setActiveTool('trend-line');
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(of('drawingCreated')[1]!.drawing.style.lineColor).toBe('#2962ff');
+  });
+
+  it('stay mode keeps the preset style for the next drawing', () => {
+    layer.options.stayInDrawingMode = true;
+    input.setActiveTool('horizontal-line', { style: { lineColor: '#123456' } });
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(of('drawingCreated').map((e) => e.drawing.style.lineColor)).toEqual([
+      '#123456',
+      '#123456',
+    ]);
+  });
+
+  it("panes: 'main' tools are not created on study panes", () => {
+    const ps = new PriceScale();
+    ps.height = 100;
+    const study: DrawingPane = { id: 'pane-rsi', priceScale: ps, height: 100, top: 400 };
+    input.setActiveTool('test-main');
+    expect(input.pointerDown({ pane: study, drawing: null }, 100, 450, NO)).toBe(true);
+    input.pointerUp(100, 450, NO);
+    expect(layer.draft).toBeNull();
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(input.activeTool).toBe('test-main');
+    click(X(10), Y(10));
+    expect(of('drawingCreated')[0]!.drawing.paneId).toBe('main');
+  });
+
+  it('rc.invalidate requests an overlay redraw', () => {
+    const inv = vi.spyOn(layer.host, 'invalidate');
+    layer.insert(layer.build({ type: 'test-main', points: [{ time: START + 50 * D, price: 1 }] }));
+    inv.mockClear();
+    const ctx = new Proxy({}, { get: () => () => undefined, set: () => true });
+    layer.render(pane, ctx as CanvasRenderingContext2D, 1);
+    expect(inv).toHaveBeenCalledTimes(1);
   });
 });

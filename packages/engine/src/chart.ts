@@ -72,7 +72,7 @@ import type {
 } from './studies/types';
 import { DrawingInteraction, type DrawingPointerTarget } from './drawings/interaction';
 import { cloneDrawing, DrawingLayer, type DrawingHit, type DrawingHost } from './drawings/layer';
-import { withTime } from './drawings/geometry';
+import { isPaneCoords, withTime } from './drawings/geometry';
 import { buildTradingCalendar, type TradingCalendar } from './drawings/calendar';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './drawings/mapping';
 import { getDrawingTool } from './drawings/registry';
@@ -89,6 +89,7 @@ import type {
   DrawingOptions,
   DrawingPasteOptions,
   DrawingPatch,
+  DrawingToolOptions,
 } from './drawings/types';
 import './drawings/tools';
 
@@ -681,8 +682,8 @@ export class Chart implements StudyApi, DrawingApi {
 
   // --------------------------------------------------------------- drawings
 
-  setActiveTool(type: string | null): void {
-    this.drawingInput.setActiveTool(type);
+  setActiveTool(type: string | null, opts?: DrawingToolOptions): void {
+    this.drawingInput.setActiveTool(type, opts);
   }
 
   getActiveTool(): string | null {
@@ -789,7 +790,8 @@ export class Chart implements StudyApi, DrawingApi {
     let refPane: string | null = null;
     if (opts.at && tl.length) {
       let first: { l: number; price: number; pane: string } | null = null;
-      for (const d of src)
+      // Pane-coordinate drawings stay where they were on screen (no offset/at).
+      for (const d of src.filter((d) => !isPaneCoords(d.type)))
         for (const p of d.points) {
           const l = timeToLogical(tl, p);
           if (Number.isFinite(l) && (!first || l < first.l))
@@ -804,8 +806,10 @@ export class Chart implements StudyApi, DrawingApi {
     const out: Drawing[] = [];
     let z = layer.topZ();
     for (const d of src) {
+      const fixed = isPaneCoords(d.type);
       const points = d.points.map((p) => {
         let q = { ...p };
+        if (fixed) return q;
         if (dl && tl.length) {
           const t = logicalToTime(tl, timeToLogical(tl, p) + dl);
           if (t) q = withTime(q, t);
@@ -1173,6 +1177,15 @@ export class Chart implements StudyApi, DrawingApi {
     const i1 = to === Infinity ? n - 1 : Math.max(i0, this.store.indexAtOrBefore(to));
     this.timeScale.fitRange(i0, i1);
     for (const p of this.panes) p.priceScale.autoScale = true;
+    this.viewChanged();
+    this.emitState();
+  }
+
+  /** Show logical bar indices [from, to] (fractional, may extend past the data)
+   * across the pane width; the inverse of the visible logical span. Price scales
+   * are left alone. Ignored unless both are finite and from < to. */
+  setVisibleLogicalRange(from: number, to: number): void {
+    if (!this.timeScale.setVisibleLogicalRange(from, to)) return;
     this.viewChanged();
     this.emitState();
   }

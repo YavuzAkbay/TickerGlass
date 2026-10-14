@@ -75,4 +75,31 @@ describe('TimeScale', () => {
     expect(r.from).toBe(0);
     expect(r.to).toBe(49);
   });
+
+  it('setVisibleLogicalRange is the inverse of logicalRange', () => {
+    const ts = scale();
+    expect(ts.setVisibleLogicalRange(100, 300)).toBe(true);
+    expect(ts.barSpacing).toBeCloseTo(4); // 800 px / 200 bars
+    const r = ts.logicalRange();
+    expect(r.from).toBeCloseTo(100);
+    expect(r.to).toBeCloseTo(300);
+  });
+
+  it('setVisibleLogicalRange clamps the spacing and centres the range', () => {
+    const ts = scale();
+    ts.setVisibleLogicalRange(500, 502); // 400 px per bar -> MAX_BAR_SPACING
+    expect(ts.barSpacing).toBe(MAX_BAR_SPACING);
+    const half = 800 / MAX_BAR_SPACING / 2;
+    expect(ts.logicalRange().from).toBeCloseTo(501 - half);
+    expect(ts.logicalRange().to).toBeCloseTo(501 + half);
+  });
+
+  it('setVisibleLogicalRange ignores empty or non-finite ranges', () => {
+    const ts = scale();
+    const before = ts.logicalRange();
+    expect(ts.setVisibleLogicalRange(5, 5)).toBe(false);
+    expect(ts.setVisibleLogicalRange(9, 3)).toBe(false);
+    expect(ts.setVisibleLogicalRange(NaN, 3)).toBe(false);
+    expect(ts.logicalRange()).toEqual(before);
+  });
 });
