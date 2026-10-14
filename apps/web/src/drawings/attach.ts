@@ -1,9 +1,9 @@
-import { getDrawingTool, type Chart } from '@investopen/engine';
+import { getDrawingTool, type Chart, type DrawingStyle } from '@investopen/engine';
 import { useHistory } from '../commands/history';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
-import { isCursorTool, resetToCursor } from '../toolbar/tools';
+import { findSticker, isCursorTool, resetToCursor } from '../toolbar/tools';
 import { openContextMenu } from '../ui/ContextMenu';
 import { toast } from '../ui/Toast';
 import {
@@ -32,10 +32,21 @@ type UiSnapshot = ReturnType<typeof useUiStore.getState>;
 const drawingsHidden = (s: UiSnapshot) =>
   s.hideAll && ['drawings', 'all'].includes(toHideMode(s.groupTools.hide));
 
-/** Engine tool for a left-toolbar tool id: a registered type, 'eraser', or null (cursors). */
-function engineTool(id: string): string | null {
-  if (getDrawingTool(id)) return id;
-  if (id === 'eraser') return id;
+/** Engine tool for a left-toolbar tool id and the preset style it is armed with. */
+export interface EngineTool {
+  type: string;
+  style?: DrawingStyle;
+}
+
+/**
+ * Engine tool for a left-toolbar tool id: a registered type, 'eraser', the engine
+ * `icon` tool preset with the glyph for emoji-*, sticker-* and icon-* ids, or null (cursors).
+ */
+export function engineTool(id: string): EngineTool | null {
+  if (getDrawingTool(id)) return { type: id };
+  if (id === 'eraser') return { type: id };
+  const sticker = findSticker(id);
+  if (sticker && getDrawingTool('icon')) return { type: 'icon', style: { glyph: sticker.glyph } };
   return null;
 }
 
@@ -94,12 +105,16 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
     }
   };
 
+  // Tool + preset glyph last armed: stickers share the engine `icon` type.
+  let armed: string | null = null;
   const syncTool = () => {
     const ui = useUiStore.getState();
     const want = engineTool(ui.activeTool);
-    if (chart.getActiveTool() === want) return;
+    const key = want ? `${want.type}:${String(want.style?.glyph ?? '')}` : null;
+    if (chart.getActiveTool() === (want?.type ?? null) && key === armed) return;
     try {
-      chart.setActiveTool(want);
+      chart.setActiveTool(want?.type ?? null, want?.style ? { style: want.style } : undefined);
+      armed = key;
     } catch {
       toast('This tool is not available yet');
       resetToCursor();
@@ -211,9 +226,14 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
       if (drawingId) {
         // The user's saved default style applies to drawings made with the tool.
         const style = useDrawingTemplates.getState().defaults[type];
-        if (style) amendGesture(drawingId, { style });
         const def = getDrawingTool(type);
         const d = chart.getDrawing(drawingId);
+        // A saved icon default must not replace the sticker that was just placed.
+        if (style)
+          amendGesture(drawingId, {
+            style:
+              type === 'icon' ? { ...style, glyph: d?.style.glyph ?? style.glyph ?? '' } : style,
+          });
         const at = useDrawingRuntime.getState().pointer;
         if (def?.text && def.group === 'annotation' && d && !d.text && at)
           openTextEditor(drawingId, at.x, at.y, true);

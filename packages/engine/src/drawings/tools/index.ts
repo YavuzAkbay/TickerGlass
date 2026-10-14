@@ -11,6 +11,7 @@ import { fibExtension } from './fib-extension';
 import { fibRetracement } from './fib-retracement';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
+import { icon } from './icon';
 import { infoLine } from './info-line';
 import { longPosition } from './long-position';
 import { parallelChannel } from './parallel-channel';
@@ -47,6 +48,7 @@ registerDrawingTool(arrowLine);
 registerDrawingTool(rectangle);
 // annotation
 registerDrawingTool(text);
+registerDrawingTool(icon);
 
 export {
   arrowLine,
@@ -59,6 +61,7 @@ export {
   fibRetracement,
   horizontalLine,
   horizontalRay,
+  icon,
   infoLine,
   longPosition,
   parallelChannel,

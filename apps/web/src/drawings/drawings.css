@@ -100,3 +100,18 @@
 .drw-template-save .io-input {
   width: 160px;
 }
+.drw-image {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.drw-image-input {
+  display: none;
+}
+.drw-image-preview {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}

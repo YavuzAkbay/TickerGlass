@@ -24,6 +24,7 @@ const TYPES = [
   'arrow-line',
   'rectangle',
   'text',
+  'icon',
 ];
 
 const PROP_KINDS = [

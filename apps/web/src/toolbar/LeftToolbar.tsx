@@ -213,24 +213,27 @@ function IconsFlyout({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="lt-icons-grid" ref={focusInitialRow}>
-        {current?.items.map((it) => (
-          <button
-            key={it.id}
-            type="button"
-            data-row
-            role="menuitem"
-            title={`${it.name} (${UNAVAILABLE_HINT.toLowerCase()})`}
-            aria-label={it.name}
-            aria-disabled
-            className={`lt-icons-cell unavailable${activeTool === it.id ? ' active' : ''}`}
-            onClick={() => {
-              selectTool(it.id);
-              onClose();
-            }}
-          >
-            {it.glyph}
-          </button>
-        ))}
+        {current?.items.map((it) => {
+          const available = isToolAvailable(it.id);
+          return (
+            <button
+              key={it.id}
+              type="button"
+              data-row
+              role="menuitem"
+              title={available ? it.name : `${it.name} (${UNAVAILABLE_HINT.toLowerCase()})`}
+              aria-label={it.name}
+              {...(available ? {} : { 'aria-disabled': true })}
+              className={`lt-icons-cell${available ? '' : ' unavailable'}${activeTool === it.id ? ' active' : ''}`}
+              onClick={() => {
+                selectTool(it.id);
+                onClose();
+              }}
+            >
+              {it.glyph}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -265,7 +268,7 @@ function IconsGroupButton() {
     <SplitButton
       label={sticker ? sticker.name : 'Icons'}
       active={groupOf(activeTool) === ICONS_GROUP_ID}
-      unavailable
+      unavailable={!!last && !isToolAvailable(last)}
       icon={sticker ? <span className="lt-glyph">{sticker.glyph}</span> : <I.IconSmile />}
       onClick={() => {
         if (last && sticker) selectTool(last);

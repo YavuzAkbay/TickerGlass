@@ -15,6 +15,7 @@ import { ChevronDown, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { scopePatch, updateDrawings } from '../drawings/actions';
 import { defaultStyleOf, type DrawingSettingsTab } from '../drawings/menu';
+import { imageToDataUrl } from '../drawings/image';
 import { deepEqual } from '../drawings/model';
 import { useDrawingStore, useDrawingTemplates, type DrawingBuckets } from '../drawings/store';
 import { DEFAULT_TEMPLATE_NAME } from '../persist/drawingTemplatesSync';
@@ -438,6 +439,21 @@ function PropertyControl({
           ))}
         </select>
       );
+    case 'string':
+      return (
+        <input
+          type="text"
+          className="io-input"
+          aria-label={p.label}
+          maxLength={p.maxLength}
+          value={str(v, '')}
+          onChange={(e) => set({ [p.key]: e.target.value })}
+        />
+      );
+    case 'image':
+      return (
+        <ImageField label={p.label} value={str(v, '')} onChange={(u) => set({ [p.key]: u })} />
+      );
     case 'levels':
       return (
         <LevelsEditor
@@ -446,6 +462,51 @@ function PropertyControl({
         />
       );
   }
+}
+
+/** File picker + preview + remove for an `image` property (a downscaled data URL). */
+function ImageField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (dataUrl: string) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      onChange(await imageToDataUrl(file));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not load the image', 'error');
+    }
+  };
+  return (
+    <div className="drw-image">
+      {value ? <img className="drw-image-preview" src={value} alt={`${label} preview`} /> : null}
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        className="drw-image-input"
+        aria-label={label}
+        onChange={(e) => {
+          void pick(e.target.files?.[0]);
+          e.target.value = '';
+        }}
+      />
+      <button type="button" className="io-btn" onClick={() => input.current?.click()}>
+        {value ? 'Replace' : 'Choose image'}
+      </button>
+      {value ? (
+        <button type="button" className="io-btn" onClick={() => onChange('')}>
+          Remove
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function LevelsEditor({
@@ -621,6 +682,9 @@ const fromUtcInput = (s: string) => {
   return Number.isFinite(ms) ? ms / 1000 : null;
 };
 
+const clampPct = (n: number) => Math.min(100, Math.max(0, n));
+const roundPct = (n: number) => Math.round(n * 100) / 100;
+
 function CoordinatesTab({
   def,
   draft,
@@ -632,6 +696,7 @@ function CoordinatesTab({
 }) {
   const tl = useTimeline();
   const axes = def.axes ?? 'both';
+  const pane = def.coords === 'pane';
   const minTick = useChartStore((s) => s.symbolInfo?.minTick ?? 0.01);
   const setPoint = (i: number, patch: Partial<DrawingPoint>) =>
     set({
@@ -645,6 +710,31 @@ function CoordinatesTab({
   return (
     <div className="dlg-section">
       {draft.points.map((p, i) => {
+        if (pane)
+          return (
+            <Section key={i} title={`Point ${i + 1}`}>
+              <Row label="X (%)">
+                <NumberInput
+                  value={roundPct(p.time * 100)}
+                  min={0}
+                  max={100}
+                  step={1}
+                  label={`Point ${i + 1} X`}
+                  onChange={(n) => setPoint(i, { time: clampPct(n) / 100 })}
+                />
+              </Row>
+              <Row label="Y (%)">
+                <NumberInput
+                  value={roundPct(p.price * 100)}
+                  min={0}
+                  max={100}
+                  step={1}
+                  label={`Point ${i + 1} Y`}
+                  onChange={(n) => setPoint(i, { price: clampPct(n) / 100 })}
+                />
+              </Row>
+            </Section>
+          );
         const bar = tl ? Math.round(timeToLogical(tl, p)) : NaN;
         return (
           <Section key={i} title={`Point ${i + 1}`}>

@@ -5,7 +5,8 @@ import { useChartStore } from '../store/chart';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
-import { attachDrawings } from './attach';
+import { isToolAvailable } from '../toolbar/tools';
+import { attachDrawings, engineTool } from './attach';
 import {
   amendCreated,
   amendGesture,
@@ -573,6 +574,8 @@ describe('attach (engine events and sync)', () => {
     const handlers = new Map<string, Handler[]>();
     let list: Drawing[] = [];
     let beforeSet: (() => void) | null = null;
+    let active: string | null = null;
+    const toolCalls: { type: string | null; opts: unknown }[] = [];
     const chart = {
       on: (ev: string, fn: Handler) => {
         handlers.set(ev, [...(handlers.get(ev) ?? []), fn]);
@@ -582,8 +585,11 @@ describe('attach (engine events and sync)', () => {
             (handlers.get(ev) ?? []).filter((f) => f !== fn),
           );
       },
-      getActiveTool: () => null,
-      setActiveTool: () => {},
+      getActiveTool: () => active,
+      setActiveTool: (type: string | null, opts?: unknown) => {
+        active = type;
+        toolCalls.push({ type, opts });
+      },
       getDrawingOptions: () => ({ stayInDrawingMode: false, lockAll: false, hideAll: false }),
       setDrawingOptions: () => {},
       getSelection: () => [],
@@ -607,6 +613,7 @@ describe('attach (engine events and sync)', () => {
       chart: chart as unknown as Chart,
       emit,
       ids: () => list.map((d) => d.id),
+      toolCalls,
       onNextSet: (fn: () => void) => (beforeSet = fn),
     };
   }
@@ -637,6 +644,30 @@ describe('attach (engine events and sync)', () => {
     expect(findDrawing(synced.id)).toBeUndefined();
     expect(f.ids()).toEqual([]);
     f.detach();
+  });
+
+  it('maps emoji/sticker/icon toolbar ids to the engine icon tool with a preset glyph', () => {
+    const f = attach();
+    f.toolCalls.length = 0;
+    useUiStore.setState({ activeTool: 'sticker-bull' });
+    expect(f.toolCalls).toEqual([{ type: 'icon', opts: { style: { glyph: '\u{1F402}' } } }]);
+    // Another sticker re-arms the same engine type with its own glyph.
+    useUiStore.setState({ activeTool: 'emoji-fire' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'icon', opts: { style: { glyph: '\u{1F525}' } } });
+    useUiStore.setState({ activeTool: 'icon-star' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'icon', opts: { style: { glyph: '\u2605' } } });
+    expect(f.toolCalls).toHaveLength(3);
+    useUiStore.setState({ activeTool: 'trend-line' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'trend-line', opts: undefined });
+    f.detach();
+  });
+
+  it('engineTool and isToolAvailable cover stickers', () => {
+    expect(engineTool('emoji-rocket')).toEqual({ type: 'icon', style: { glyph: '\u{1F680}' } });
+    expect(engineTool('trend-line')).toEqual({ type: 'trend-line' });
+    expect(engineTool('cross')).toBeNull();
+    for (const id of ['emoji-smile', 'sticker-whale', 'icon-bolt'])
+      expect(isToolAvailable(id)).toBe(true);
   });
 
   it('labels Alt+drag clones "Clone", not "Create"', async () => {

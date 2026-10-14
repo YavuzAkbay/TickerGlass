@@ -360,9 +360,11 @@ export function isCursorTool(id: string): boolean {
 /** Hint for toolbar tools without a registered drawing definition yet. */
 export const UNAVAILABLE_HINT = 'Coming in Phase 11';
 
-/** Cursors (incl. the eraser) and tools with a registered drawing definition. */
+/** Cursors (incl. the eraser), stickers (engine `icon` tool) and tools with a registered drawing definition. */
 export function isToolAvailable(id: string): boolean {
-  return isCursorTool(id) || !!getDrawingTool(id);
+  return (
+    isCursorTool(id) || !!getDrawingTool(id) || (!!findSticker(id) && !!getDrawingTool('icon'))
+  );
 }
 
 /** Select a tool: updates the active tool, the group's last-used tool and,
