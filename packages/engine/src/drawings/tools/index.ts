@@ -4,6 +4,7 @@ import { registerDrawingTool } from '../registry';
 import { arrowLine } from './arrow-line';
 import { brush } from './brush';
 import { crossLine } from './cross-line';
+import { cyclicLines } from './cyclic-lines';
 import { datePriceRange } from './date-price-range';
 import { dateRange } from './date-range';
 import { disjointChannel } from './disjoint-channel';
@@ -19,6 +20,10 @@ import { fibTimeZone } from './fib-time-zone';
 import { fibTrendTime } from './fib-trend-time';
 import { fibWedge } from './fib-wedge';
 import { flatTopBottom } from './flat-top-bottom';
+import { gannBox } from './gann-box';
+import { gannFan } from './gann-fan';
+import { gannSquare } from './gann-square';
+import { gannSquareFixed } from './gann-square-fixed';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
 import { icon } from './icon';
@@ -35,7 +40,9 @@ import { rectangle } from './rectangle';
 import { regressionTrend } from './regression-trend';
 import { schiffPitchfork } from './schiff-pitchfork';
 import { shortPosition } from './short-position';
+import { sineLine } from './sine-line';
 import { text } from './text';
+import { timeCycles } from './time-cycles';
 import { trendAngle } from './trend-angle';
 import { trendLine } from './trend-line';
 import { verticalLine } from './vertical-line';
@@ -70,6 +77,14 @@ registerDrawingTool(fibSpiral);
 registerDrawingTool(fibSpeedArcs);
 registerDrawingTool(fibWedge);
 registerDrawingTool(pitchfan);
+registerDrawingTool(gannBox);
+registerDrawingTool(gannSquareFixed);
+registerDrawingTool(gannSquare);
+registerDrawingTool(gannFan);
+// patterns (cycles)
+registerDrawingTool(cyclicLines);
+registerDrawingTool(timeCycles);
+registerDrawingTool(sineLine);
 // forecasting
 registerDrawingTool(longPosition);
 registerDrawingTool(shortPosition);
@@ -88,6 +103,7 @@ export {
   arrowLine,
   brush,
   crossLine,
+  cyclicLines,
   datePriceRange,
   dateRange,
   disjointChannel,
@@ -103,6 +119,10 @@ export {
   fibTrendTime,
   fibWedge,
   flatTopBottom,
+  gannBox,
+  gannFan,
+  gannSquare,
+  gannSquareFixed,
   horizontalLine,
   horizontalRay,
   icon,
@@ -119,7 +139,9 @@ export {
   regressionTrend,
   schiffPitchfork,
   shortPosition,
+  sineLine,
   text,
+  timeCycles,
   trendAngle,
   trendLine,
   verticalLine,

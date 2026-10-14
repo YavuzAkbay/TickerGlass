@@ -50,6 +50,7 @@ const THREE: [number, number][] = [
 ];
 const LINES = 'Trend line tools';
 const FIB = 'Gann and Fibonacci tools';
+const PATTERNS = 'Patterns';
 
 /** Flyout (toolbar group label), tool name, engine type, clicks (viewport px), stored anchors. */
 const LINE_TOOL_CASES: {
@@ -100,6 +101,13 @@ const LINE_TOOL_CASES: {
     count: 2,
   },
   { group: FIB, name: 'Fib wedge', type: 'fib-wedge', clicks: THREE, count: 3 },
+  { group: FIB, name: 'Gann box', type: 'gann-box', clicks: TWO, count: 2 },
+  { group: FIB, name: 'Gann square fixed', type: 'gann-square-fixed', clicks: TWO, count: 2 },
+  { group: FIB, name: 'Gann square', type: 'gann-square', clicks: TWO, count: 2 },
+  { group: FIB, name: 'Gann fan', type: 'gann-fan', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'Cyclic lines', type: 'cyclic-lines', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'Time cycles', type: 'time-cycles', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'Sine line', type: 'sine-line', clicks: TWO, count: 2 },
 ];
 
 for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {

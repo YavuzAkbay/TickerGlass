@@ -32,6 +32,13 @@ const TYPES = [
   'fib-speed-arcs',
   'fib-wedge',
   'pitchfan',
+  'gann-box',
+  'gann-square-fixed',
+  'gann-square',
+  'gann-fan',
+  'cyclic-lines',
+  'time-cycles',
+  'sine-line',
   'long-position',
   'short-position',
   'price-range',
@@ -85,7 +92,7 @@ describe('built-in tools', () => {
       def.priceAxisLabels?.(d, d.style, IDLE);
     }
     // Lines extending right of far-left anchors are legitimately visible (also
-    // the speed fan's rays).
+    // fan rays and cycles/waves repeating across the pane).
     const far = makeDrawing(type, [pt(-500, 20), pt(-480, 30), pt(-490, 25)]);
     if (
       def.isVisible &&
@@ -96,6 +103,10 @@ describe('built-in tools', () => {
         'extended-line',
         'horizontal-ray',
         'fib-speed-fan',
+        'gann-fan',
+        'cyclic-lines',
+        'time-cycles',
+        'sine-line',
       ].includes(type)
     )
       expect(def.isVisible(geometryOf(far), far.style)).toBe(false);
