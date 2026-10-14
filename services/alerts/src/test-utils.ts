@@ -102,6 +102,10 @@ export class FakeControl implements ControlLike {
   onConnection(fn: (up: boolean) => void): void {
     this.c.push(fn);
   }
+  connection(up: boolean): void {
+    this.connected = up;
+    for (const f of this.c) f(up);
+  }
   alertsChanged(ids: string[], deleted: string[] = []): void {
     for (const f of this.a) f(ids, deleted);
   }

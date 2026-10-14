@@ -128,6 +128,31 @@ describe('evaluator state', () => {
     expect(ev.isExpired(Date.parse('2026-01-01T00:00:00Z'))).toBe(true);
   });
 
+  it('once: a fired alert stays done across a re-seed (history reload)', () => {
+    const ev = createAlertEvaluator({
+      symbol: 'X',
+      interval: '1D',
+      prepost: false,
+      spec: {
+        ...crossUp,
+        trigger: 'once',
+        condition: { op: 'greater', right: { kind: 'value', value: 10 } },
+      },
+      expiresAt: null,
+    });
+    const ctx = { now: 1, lastBarTime: 0, previousBarTime: null };
+    ev.seed(null, ctx);
+    expect(
+      ev.onSample({ kind: 'tick', barIndex: 0, barTime: 0, now: 1, values: v(11) })?.final,
+    ).toBe(true);
+    expect(ev.done).toBe(true);
+    ev.seed(ev.state(), ctx);
+    expect(ev.done).toBe(true);
+    expect(
+      ev.onSample({ kind: 'tick', barIndex: 0, barTime: 0, now: 2, values: v(12) }),
+    ).toBeNull();
+  });
+
   it('delayed uses max(120 s, 1 interval)', () => {
     const mk = (interval: string) =>
       createAlertEvaluator({

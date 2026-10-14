@@ -52,6 +52,7 @@ const TF_MAX_BARS = 5000;
 const RETRY_MIN_MS = 5000;
 const RETRY_MAX_MS = 300_000;
 const DAY = 86_400;
+const MAX_FAILURES = 5;
 
 export type SeriesState = 'idle' | 'loading' | 'ready' | 'retrying' | 'disposed';
 
@@ -260,7 +261,7 @@ export class Series {
       const need = this.windowFor([runner]);
       if (
         need > this.window ||
-        (runner.drawingIds.length && !this.historyExhausted && this.cols.length < need)
+        (runner.deep && !this.historyExhausted && this.cols.length < need)
       ) {
         await this.load();
         return;
@@ -285,6 +286,19 @@ export class Series {
         this.instanceUsers.delete(h.hash);
         rt?.remove(h.hash);
       }
+    }
+    this.pruneTimeframes();
+  }
+
+  /** Release timeframe subscriptions no remaining indicator needs. */
+  private pruneTimeframes(): void {
+    const rt = this.runtime;
+    if (!rt) return;
+    const need = new Set(rt.requiredTimeframes());
+    for (const [tf, unsub] of [...this.tfSeries]) {
+      if (need.has(tf)) continue;
+      unsub?.();
+      this.tfSeries.delete(tf);
     }
   }
 
@@ -332,7 +346,7 @@ export class Series {
   }
 
   private hasDrawings(): boolean {
-    for (const r of this.runners.values()) if (r.drawingIds.length) return true;
+    for (const r of this.runners.values()) if (r.deep) return true;
     return false;
   }
 
@@ -411,11 +425,13 @@ export class Series {
 
   private minAnchorTime(): number | null {
     let min = Infinity;
-    for (const r of this.runners.values())
+    for (const r of this.runners.values()) {
+      if (r.since !== null) min = Math.min(min, r.since);
       for (const id of r.drawingIds) {
         const d = this.drawings.get(id);
         for (const p of d?.points ?? []) min = Math.min(min, p.time);
       }
+    }
     return Number.isFinite(min) ? min : null;
   }
 
@@ -668,10 +684,13 @@ export class Series {
       if (this.instanceError(r)) continue;
       try {
         const job = r.seed(env, this.cache, this.host.savedState(r), now);
+        r.needsSeed = false;
+        r.failures = 0;
         if (job) this.fire(r, job);
         else if (n > 0 && r.alert.spec.trigger !== 'oncePerBarClose' && !r.done)
           this.sampleOne(r, env, 'tick', n - 1, now);
       } catch (err) {
+        r.needsSeed = true;
         this.runnerFailure(r, err);
       }
       this.host.markState(r);
@@ -694,12 +713,17 @@ export class Series {
   private runnerFailure(r: AlertRunner, err: unknown): void {
     if (err instanceof DrawingLevelError) this.failRunner(r, err.message);
     else {
+      r.failures++;
       this.host.log.error('alert evaluation failed', {
         alertId: r.id,
         series: this.key,
+        failures: r.failures,
         error: errText(err),
       });
-      this.failRunner(r, `evaluation failed: ${errText(err)}`.slice(0, 500));
+      // Possibly transient: back off and retry; escalate only when it keeps failing.
+      if (r.failures >= MAX_FAILURES)
+        this.failRunner(r, `evaluation failed: ${errText(err)}`.slice(0, 500));
+      else r.blockedUntil = this.host.clock.now() + backoffMs(r.failures - 1, 1000, 30_000);
     }
   }
 
@@ -720,8 +744,10 @@ export class Series {
     now: number,
     eventAt?: number,
   ): void {
+    if (r.needsSeed || now < r.blockedUntil) return;
     try {
       const job = r.sample(env, this.cache, kind, i, now, eventAt);
+      r.failures = 0;
       if (job) this.fire(r, job);
     } catch (err) {
       this.runnerFailure(r, err);
@@ -772,14 +798,14 @@ export class Series {
       if (!tracker.closed) this.emit('tick', n - 1);
       return;
     }
-    if (r.closed) await this.closeBar(n - 1, r.closed.at);
+    if (r.closed && n > 0) await this.closeBar(this.cols.time[n - 1]!, r.closed.at);
     this.append(b);
     this.cache.clear();
     this.emit('tick', this.cols.length - 1);
   }
 
-  /** Refetch the newest 3 bars, take the final values of bar `i`, emit its close sample (§2.4). */
-  private async closeBar(i: number, at: number): Promise<void> {
+  /** Refetch the newest 3 bars, take the final values of the bar opening at `barTime`, emit its close sample (§2.4). */
+  private async closeBar(barTime: number, at: number): Promise<void> {
     let full = false;
     try {
       const res = await this.host.feed.getBars({
@@ -803,7 +829,9 @@ export class Series {
     }
     if (full) this.runtime?.setBars(this.cols.arrays());
     this.cache.clear();
-    this.emit('close', i, at);
+    // Resolved by time: a trim during the refetch shifts indexes.
+    const i = this.indexOfTime(barTime);
+    if (i >= 0) this.emit('close', i, at);
   }
 
   private indexOfTime(t: number): number {
@@ -831,10 +859,19 @@ export class Series {
       return;
     }
     if (this.state !== 'ready' || !this.tracker) return;
+    for (const r of this.runners.values()) {
+      if (r.needsSeed && now >= r.blockedUntil) {
+        r.blockedUntil = now + RETRY_MIN_MS; // no duplicate retries while this one runs
+        this.serial(() => this.activate([r]));
+      }
+    }
     const ev = this.tracker.onClock(now);
     if (ev) {
-      const i = this.cols.length - 1;
-      this.serial(() => this.closeBar(i, ev.at));
+      const n = this.cols.length;
+      if (n > 0) {
+        const t = this.cols.time[n - 1]!;
+        this.serial(() => this.closeBar(t, ev.at));
+      }
     }
     if (!this.polling && now >= this.nextPollAt && this.needsPoll()) {
       this.polling = true;
@@ -941,12 +978,35 @@ export class Series {
     const refs = new Set<string>();
     for (const r of this.runners.values()) for (const id of r.drawingIds) refs.add(id);
     if (!ids.some((id) => refs.has(id))) return;
+    this.queueDrawingsRefresh();
+  }
+
+  /** Reconnect / periodic resync: refetch drawings if any alert of this series uses them. */
+  resyncDrawings(): void {
+    if (this.runners.size === 0) return;
+    for (const r of this.runners.values())
+      if (r.drawingIds.length) return this.queueDrawingsRefresh();
+  }
+
+  private queueDrawingsRefresh(): void {
     this.serial(async () => {
       try {
         await this.refreshDrawings();
       } catch (err) {
         this.host.log.warn('drawings refresh failed', { series: this.key, error: errText(err) });
+        return;
       }
+      // An anchor moved earlier than the loaded history: load further back.
+      const min = this.minAnchorTime();
+      if (
+        this.state === 'ready' &&
+        min !== null &&
+        this.cols.length > 0 &&
+        this.cols.length < this.host.cfg.maxDrawingBars &&
+        !this.historyExhausted &&
+        min - 2 * this.ivSec < this.cols.time[0]!
+      )
+        await this.load();
     });
   }
 }

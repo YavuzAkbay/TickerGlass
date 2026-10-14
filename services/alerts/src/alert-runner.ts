@@ -4,6 +4,7 @@ import {
   createAlertEvaluator,
   renderMessage,
   specRefs,
+  warmupSince,
   type AlertDecision,
   type AlertEvaluator,
   type Alert,
@@ -45,6 +46,14 @@ export class AlertRunner {
   readonly drawingIds: string[];
   /** Activated at least once (its evaluator holds live state). */
   seeded = false;
+  /** Earliest anchored-VWAP anchor (unix s) among the indicators, or null. */
+  readonly since: number | null;
+  /** Consecutive unexpected evaluation failures (reset on success). */
+  failures = 0;
+  /** Backoff after a failure: no evaluation before this clock time (ms). */
+  blockedUntil = 0;
+  /** The last seed attempt threw; retried once `blockedUntil` passed. */
+  needsSeed = false;
 
   constructor(
     readonly alert: Alert,
@@ -55,6 +64,17 @@ export class AlertRunner {
     for (const ref of specRefs(alert.spec)) for (const h of refHashes(ref)) seen.set(h.hash, h);
     this.instances = [...seen.values()];
     this.drawingIds = specDrawingIds(alert.spec);
+    let since: number | null = null;
+    for (const ref of specRefs(alert.spec)) {
+      const t = warmupSince(ref);
+      if (t !== null) since = since === null ? t : Math.min(since, t);
+    }
+    this.since = since;
+  }
+
+  /** Needs history back to a drawing anchor or an anchored-VWAP anchor. */
+  get deep(): boolean {
+    return this.drawingIds.length > 0 || this.since !== null;
   }
 
   get id(): string {

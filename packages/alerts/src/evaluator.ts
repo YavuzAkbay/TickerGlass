@@ -190,7 +190,7 @@ export function createAlertEvaluator(
     const st = state && state.v === 1 && state.seriesKey === key ? state : null;
     prev = null;
     newestBarTime = -Infinity;
-    done = false;
+    // `done` survives a re-seed (history reload): a fired `once` alert never fires again.
     lastFiredBarTime = timeOrNull(st?.lastFiredBarTime);
     lastFiredAt = timeOrNull(st?.lastFiredAt);
     lastClosedBarTime = timeOrNull(st?.lastClosedBarTime);

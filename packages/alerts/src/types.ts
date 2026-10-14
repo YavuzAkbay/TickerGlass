@@ -319,4 +319,9 @@ export interface AlertRuntimeState {
   /** ms */
   lastFiredAt: number | null;
   lastClosedBarTime: number | null;
+  /**
+   * Fires accepted by the service but not yet acknowledged by `POST /fire`
+   * (resent on startup; `fireId` makes that idempotent). Optional: older blobs lack it.
+   */
+  pendingFires?: { revision: number; body: FireIn }[];
 }

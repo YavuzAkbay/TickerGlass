@@ -13,6 +13,8 @@ export interface ControlLike {
 }
 
 const PING_MS = 25_000;
+/** No frame (pong included) for this long = the socket is dead. */
+const DEAD_MS = 2 * PING_MS;
 
 export class ControlSocket implements ControlLike {
   private ws: WebSocket | null = null;
@@ -81,16 +83,30 @@ export class ControlSocket implements ControlLike {
       return;
     }
     this.ws = ws;
+    let lastRx = Date.now();
     ws.onopen = () => {
       if (this.ws !== ws) return;
       this.attempt = 0;
+      lastRx = Date.now();
       ws.send(JSON.stringify({ op: 'events', topics: ['alerts', 'drawings'] }));
       this.ping = setInterval(() => {
+        if (this.ws !== ws) return;
+        if (Date.now() - lastRx >= DEAD_MS) {
+          this.log.warn('control socket silent, reconnecting');
+          try {
+            ws.close();
+          } catch {
+            /* already closed */
+          }
+          lost();
+          return;
+        }
         if (ws.readyState === 1) ws.send(JSON.stringify({ op: 'ping' }));
       }, PING_MS);
     };
     ws.onmessage = (ev: MessageEvent) => {
       if (this.ws !== ws) return;
+      lastRx = Date.now();
       this.handle(ev.data);
     };
     const lost = () => {

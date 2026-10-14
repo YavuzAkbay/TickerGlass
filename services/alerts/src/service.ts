@@ -24,6 +24,9 @@ const DOWN_SYNC_MS = 10_000;
 const LIVE_CAP = 200;
 const LIVE_DOWN_MS = 20_000;
 const BULK_IDS = 20;
+const STOP_FIRE_WAIT_MS = 4000;
+const MAX_PENDING_PERSISTED = 20;
+const MAX_STATE_BYTES = 12 * 1024;
 
 export interface ServiceDeps {
   api: ApiClient;
@@ -71,10 +74,45 @@ export function createService(deps: ServiceDeps): Service {
     clock,
     log,
     onConflict: (id) => void sync([id]),
+    onFired: (job) => {
+      lastError = null;
+      // The fire is acknowledged: persist the state without it.
+      const r = runners.get(job.alertId);
+      if (r && r.revision === job.revision) host.markState(r);
+    },
     onError: (m) => {
       lastError = m;
     },
   });
+
+  /** Evaluator state plus the still-unacknowledged fires (resent after a restart). */
+  function stateWithPending(runner: AlertRunner): AlertRuntimeState {
+    const st = runner.evaluator.state();
+    let pending = fires
+      .pendingFor(runner.id)
+      .filter((j) => j.revision === runner.revision)
+      .map((j) => ({ revision: j.revision, body: j.body }));
+    // The API rejects state blobs over 16 KB: bound the persisted copy.
+    if (pending.length > MAX_PENDING_PERSISTED) {
+      const keepFirst = runner.alert.spec.trigger !== 'everyTime';
+      pending = keepFirst
+        ? pending.slice(0, MAX_PENDING_PERSISTED)
+        : pending.slice(-MAX_PENDING_PERSISTED);
+    }
+    let out: AlertRuntimeState = pending.length ? { ...st, pendingFires: pending } : st;
+    let dropped = 0;
+    while (pending.length > 0 && JSON.stringify(out).length > MAX_STATE_BYTES) {
+      pending = pending.slice(1);
+      dropped++;
+      out = pending.length ? { ...st, pendingFires: pending } : st;
+    }
+    if (dropped > 0)
+      log.warn('pending fires trimmed to fit the state size limit', {
+        alertId: runner.id,
+        dropped,
+      });
+    return out;
+  }
 
   // --------------------------------------------------------------- host
 
@@ -84,9 +122,13 @@ export function createService(deps: ServiceDeps): Service {
     clock,
     log,
     cfg: config,
-    enqueueFire: (job) => fires.enqueue(job),
+    enqueueFire(job) {
+      fires.enqueue(job);
+      const r = runners.get(job.alertId);
+      if (r) host.markState(r);
+    },
     markState(runner) {
-      states.mark(runner.id, runner.revision, () => runner.evaluator.state());
+      states.mark(runner.id, runner.revision, () => stateWithPending(runner));
     },
     savedState(runner): AlertRuntimeState | null {
       if (runner.seeded) return runner.evaluator.state();
@@ -212,6 +254,7 @@ export function createService(deps: ServiceDeps): Service {
             } else throw err;
           }
         }
+        lastError = null;
         return;
       }
       const list = await api.listAlerts();
@@ -222,6 +265,7 @@ export function createService(deps: ServiceDeps): Service {
         if (a.status === 'active') attach(a);
       }
       // Alerts equal in registry but never attached (e.g. a failed attach) stay as they are.
+      lastError = null;
     } catch (err) {
       lastError = errText(err);
       log.warn('sync failed', { error: lastError });
@@ -284,6 +328,26 @@ export function createService(deps: ServiceDeps): Service {
     }
   }
 
+  /** Alerts plus the drawings of every series that uses any (events may have been missed). */
+  async function resync(): Promise<void> {
+    await sync();
+    for (const s of seriesMap.values()) s.resyncDrawings();
+  }
+
+  /** Re-send fires a previous run accepted but never saw acknowledged (idempotent by fireId). */
+  function resendPending(): void {
+    for (const row of savedRows.values()) {
+      const alert = registry.get(row.alertId);
+      if (!alert || alert.revision !== row.revision) continue;
+      for (const p of row.state.pendingFires ?? []) {
+        if (p.revision !== row.revision) continue;
+        fires.enqueue({ alertId: row.alertId, revision: p.revision, body: p.body });
+      }
+      const r = runners.get(row.alertId);
+      if (r) host.markState(r);
+    }
+  }
+
   async function start(): Promise<void> {
     log.info('starting', { api: config.apiUrl });
     await waitForApi();
@@ -300,15 +364,18 @@ export function createService(deps: ServiceDeps): Service {
       }
       if (ids.length) void sync(ids);
     });
-    control.onDrawingsChanged((ids) => {
-      for (const s of seriesMap.values()) s.onDrawingsChanged(ids);
+    control.onDrawingsChanged((ids, deleted) => {
+      // A deleted drawing is listed only in `deleted`; the refetch then misses it.
+      const all = [...ids, ...deleted];
+      for (const s of seriesMap.values()) s.onDrawingsChanged(all);
     });
     control.onConnection((up) => {
-      if (up) void sync();
+      if (up) void resync();
     });
     control.start();
     await sync();
-    cancels.push(clock.setInterval(() => void sync(), SYNC_MS));
+    resendPending();
+    cancels.push(clock.setInterval(() => void resync(), SYNC_MS));
     cancels.push(clock.setInterval(() => !control.connected && void sync(), DOWN_SYNC_MS));
     cancels.push(clock.setInterval(tick, 1000));
     cancels.push(clock.setInterval(() => void states.flush(), config.stateFlushMs));
@@ -322,7 +389,17 @@ export function createService(deps: ServiceDeps): Service {
     cancels.length = 0;
     heartbeat.stop();
     control.stop();
+    // Give queued fires a moment to go out; whatever is left is persisted with the state.
+    let cancelWait = (): void => {};
+    await Promise.race([
+      fires.whenIdle(),
+      new Promise<void>((resolve) => {
+        cancelWait = clock.setTimeout(resolve, STOP_FIRE_WAIT_MS);
+      }),
+    ]);
+    cancelWait();
     fires.stop();
+    for (const r of runners.values()) host.markState(r);
     for (const s of seriesMap.values()) s.dispose();
     seriesMap.clear();
     await states.flush();

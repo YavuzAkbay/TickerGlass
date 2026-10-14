@@ -41,6 +41,11 @@ export class FireQueue {
     if (!this.running.has(job.alertId)) void this.drain(job.alertId);
   }
 
+  /** Queued (unacknowledged) jobs of an alert, oldest first. */
+  pendingFor(alertId: string): readonly FireJob[] {
+    return this.queues.get(alertId) ?? [];
+  }
+
   /** Drop queued fires of an alert (it was edited or detached). */
   drop(alertId: string): void {
     const q = this.queues.get(alertId);
@@ -80,10 +85,17 @@ export class FireQueue {
         const q = this.queues.get(alertId);
         const job = q?.[0];
         if (!q || !job || this.stopped) break;
-        const ok = await this.send(job);
+        const res = await this.send(job);
+        // Stopped mid-send: keep the job queued so it is persisted with the state.
+        if (res === 'stopped') break;
         // The queue may have been cleared (drop) while sending.
         if (q[0] === job) q.shift();
-        if (!ok) q.length = 0;
+        // A rejected job only invalidates jobs of its own or an older revision.
+        if (res === 'gone') q.length = 0;
+        else if (res === 'stale') {
+          for (let i = q.length - 1; i >= 0; i--)
+            if (q[i]!.revision <= job.revision) q.splice(i, 1);
+        }
       }
     } finally {
       this.running.delete(alertId);
@@ -96,18 +108,17 @@ export class FireQueue {
     }
   }
 
-  /** True when the job is finished (sent or dropped without invalidating later jobs). */
-  private async send(job: FireJob): Promise<boolean> {
+  private async send(job: FireJob): Promise<'ok' | 'stale' | 'gone' | 'stopped'> {
     for (let attempt = 0; !this.stopped; attempt++) {
       try {
         const entry = await this.o.api.fire(job.alertId, job.body);
         this.o.onFired?.(job, entry);
-        return true;
+        return 'ok';
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           this.o.log.info('fire rejected (stale), reloading', { alertId: job.alertId });
           this.o.onConflict(job.alertId, 'conflict');
-          return false;
+          return 'stale';
         }
         if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
           this.o.log.warn('fire dropped', {
@@ -116,13 +127,13 @@ export class FireQueue {
             error: err.message,
           });
           this.o.onConflict(job.alertId, err.status === 404 ? 'gone' : 'invalid');
-          return false;
+          return err.status === 404 ? 'gone' : 'stale';
         }
         this.o.onError?.(errText(err));
         this.o.log.warn('fire failed, will retry', { alertId: job.alertId, error: errText(err) });
         await this.wait(jitter(backoffMs(attempt, 1000, 60_000)));
       }
     }
-    return false;
+    return 'stopped';
   }
 }
