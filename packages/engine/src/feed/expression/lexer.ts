@@ -9,6 +9,8 @@ export type Token =
 
 const NUMBER_RE = /^([0-9]+)(?:\.([0-9]+))?$/;
 const MAX_SIGNIFICANT_DIGITS = 15;
+/** Charset allowed inside quotes (a leading '.' is rejected separately). */
+const QUOTED_RE = /^[A-Z0-9^_.=&/ -]+$/;
 
 const isUpper = (c: string): boolean => c >= 'A' && c <= 'Z';
 const isDigit = (c: string): boolean => c >= '0' && c <= '9';
@@ -79,6 +81,11 @@ function lexQuoted(input: string, start: number, out: Token[]): number {
     symbol += upperAscii(ch);
   }
   if (symbol.length === 0) throw new ExpressionError(`Unexpected character '"'`, start);
+  // Quoted symbols become URL path segments: no '..', no leading '.', and only
+  // the unquoted-run charset plus '/' (and the space the parser tests rely on).
+  if (!QUOTED_RE.test(symbol) || symbol.startsWith('.')) {
+    throw new ExpressionError(`Invalid number or symbol '${symbol}'`, start);
+  }
   if (symbol.length > EXPR_LIMITS.maxSymbolLength) {
     throw new ExpressionError(`Symbol too long (max ${EXPR_LIMITS.maxSymbolLength})`, start);
   }

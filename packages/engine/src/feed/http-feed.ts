@@ -68,6 +68,8 @@ const WS_OPEN = 1;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 30_000;
 const PING_MS = 25_000;
+/** Mirrors SYMBOL_RE in api/src/investopen_api/routes/live.py: one bad symbol rejects a whole frame. */
+const WS_SYMBOL_RE = /^[A-Za-z0-9.\-=^]{1,32}$/;
 /** Keep an unused socket around briefly so symbol switches do not reconnect. */
 const IDLE_CLOSE_MS = 10_000;
 
@@ -278,7 +280,9 @@ export class HttpDataFeed implements DataFeed {
     }
     set.add(sub);
     this.clearIdleTimer();
-    if (first) this.sendIfOpen({ op: 'subscribe', symbols: [symbol] });
+    if (first && WS_SYMBOL_RE.test(symbol)) {
+      this.sendIfOpen({ op: 'subscribe', symbols: [symbol] });
+    }
     try {
       this.ensureSocket();
     } catch (err) {
@@ -297,7 +301,7 @@ export class HttpDataFeed implements DataFeed {
       s.delete(sub);
       if (s.size === 0) {
         this.subsBySymbol.delete(symbol);
-        this.sendIfOpen({ op: 'unsubscribe', symbols: [symbol] });
+        if (WS_SYMBOL_RE.test(symbol)) this.sendIfOpen({ op: 'unsubscribe', symbols: [symbol] });
       }
       if (this.subsBySymbol.size === 0) this.scheduleIdleClose();
     };
@@ -366,7 +370,7 @@ export class HttpDataFeed implements DataFeed {
       if (this.ws !== ws) return;
       this.reconnectAttempt = 0;
       this.setStatus({ connection: 'open' });
-      const symbols = [...this.subsBySymbol.keys()];
+      const symbols = [...this.subsBySymbol.keys()].filter((s) => WS_SYMBOL_RE.test(s));
       if (symbols.length > 0) this.send({ op: 'subscribe', symbols });
       this.pingTimer = setInterval(() => this.sendIfOpen({ op: 'ping' }), PING_MS);
     };

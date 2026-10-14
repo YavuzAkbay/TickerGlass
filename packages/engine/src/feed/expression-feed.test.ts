@@ -9,9 +9,16 @@ import type {
   SubscribeRequest,
   SymbolInfo,
 } from '../types';
+import * as expressionModule from './expression';
 import { ExpressionFeed } from './expression-feed';
 import { FeedError } from './http-feed';
 import { SyntheticFeed } from './synthetic-feed';
+
+// Spy wrapper so tests can count calendar-context rebuilds.
+vi.mock('./expression', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./expression')>();
+  return { ...m, calendarContext: vi.fn(m.calendarContext) };
+});
 
 const DAY = 86_400;
 const HOUR = 3600;
@@ -328,6 +335,57 @@ describe('ExpressionFeed getBars', () => {
     expect(legReq.limit).toBe(Math.ceil(span / DAY) + 2);
   });
 
+  it('steps back instead of returning an empty page with hasMore (cut rule empties attempt 1)', async () => {
+    const inner = dailyFeed();
+    // First BTC page is truncated to Jan 6+ (claims more); an older window is complete.
+    const wrapped: DataFeed = {
+      resolveSymbol: inner.resolveSymbol,
+      searchSymbols: inner.searchSymbols,
+      subscribe: inner.subscribe,
+      getBars: async (req) => {
+        const r = await inner.getBars(req);
+        if (req.symbol !== 'BTC-USD' || (req.to ?? Infinity) <= (BTC_T[5] as number)) return r;
+        let s = 0;
+        while (s < r.bars.time.length && (r.bars.time[s] as number) < (BTC_T[5] as number)) s++;
+        return {
+          bars: {
+            time: r.bars.time.slice(s),
+            open: r.bars.open.slice(s),
+            high: r.bars.high.slice(s),
+            low: r.bars.low.slice(s),
+            close: r.bars.close.slice(s),
+            volume: r.bars.volume.slice(s),
+          },
+          hasMore: true,
+        };
+      },
+    };
+    const feed = new ExpressionFeed(wrapped);
+    // Primary page is Jan 3, 4, 5; every row precedes the truncated BTC page.
+    const res = await feed.getBars({
+      symbol: 'AAPL/BTC-USD',
+      interval: D1,
+      limit: 2,
+      to: AAPL_T[4] as number,
+    });
+    expect(res.bars.time.length).toBeGreaterThan(0);
+    expect([...res.bars.time]).toEqual([AAPL_T[0]]);
+    expectCloses(res.bars, [185 / 101]);
+    expect(res.hasMore).toBe(false);
+    // Bounded: a leg that never has history stops after 5 primary fetches.
+    const stuck = dailyFeed();
+    const btc = stuck.data['BTC-USD'] as Series;
+    stuck.data['BTC-USD'] = fromCloses(btc.time.slice(7), btc.close.slice(7));
+    stuck.forceHasMore.add('BTC-USD');
+    stuck.data.AAPL = fromCloses(
+      Array.from({ length: 30 }, (_, k) => AAPL_T[0]! - (30 - k) * DAY),
+      Array.from({ length: 30 }, () => 100),
+    );
+    const f2 = new ExpressionFeed(stuck);
+    await f2.getBars({ symbol: 'AAPL/BTC-USD', interval: D1, limit: 2, to: AAPL_T[0] as number });
+    expect(stuck.requests.filter((r) => r.symbol === 'AAPL').length).toBeLessThanOrEqual(5);
+  });
+
   it('omits rows where a divisor leg is 0', async () => {
     const inner = dailyFeed();
     (inner.data['BTC-USD'] as Series).close[3] = 0; // Jan 4
@@ -358,6 +416,30 @@ describe('ExpressionFeed getBars', () => {
     );
     const small = new ExpressionFeed(dailyFeed(), { maxLegs: 1 });
     await expect(small.resolveSymbol('AAPL/BTC-USD')).rejects.toThrow('Too many symbols (max 1)');
+  });
+});
+
+describe('ExpressionFeed leg info cache', () => {
+  it('resolves each leg once across resolveSymbol and daily getBars', async () => {
+    const inner = dailyFeed();
+    const feed = new ExpressionFeed(inner);
+    await feed.resolveSymbol('AAPL/BTC-USD');
+    await feed.getBars({ symbol: 'AAPL/BTC-USD', interval: D1, limit: 100 });
+    await feed.getBars({ symbol: 'AAPL/BTC-USD', interval: D1, limit: 100 });
+    expect(inner.resolveSymbol).toHaveBeenCalledTimes(2);
+  });
+
+  it('is bounded (LRU of 64)', async () => {
+    const infos: Record<string, SymbolInfo> = {};
+    for (let k = 0; k < 70; k++) infos[`S${k}`] = info(`S${k}`);
+    const inner = new FakeFeed({}, infos);
+    const feed = new ExpressionFeed(inner);
+    for (let k = 0; k < 70; k++) await feed.resolveSymbol(`S${k}*2`);
+    expect(inner.resolveSymbol).toHaveBeenCalledTimes(70);
+    await feed.resolveSymbol('S69*2'); // newest: still cached
+    expect(inner.resolveSymbol).toHaveBeenCalledTimes(70);
+    await feed.resolveSymbol('S0*2'); // oldest: evicted
+    expect(inner.resolveSymbol).toHaveBeenCalledTimes(71);
   });
 });
 
@@ -401,7 +483,7 @@ describe('ExpressionFeed resolveSymbol', () => {
 
   it('names an unknown leg, with a spread hint for hyphenated symbols', async () => {
     await expect(feed.resolveSymbol('AAPL/FOO')).rejects.toThrow(
-      /^Unknown symbol in expression: FOO$/,
+      /^Unknown symbol in expression: FOO — to use a symbol containing '\/', quote it: "BRK\/B"$/,
     );
     const err = await feed.resolveSymbol('AAPL-MSFT*2').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(FeedError);
@@ -549,6 +631,32 @@ describe('ExpressionFeed subscribe', () => {
     expect(inner.subs.every((s) => s.listener === null)).toBe(true);
   });
 
+  it('ignores a late leg tick after unsubscribe', async () => {
+    const { inner, bars, unsub } = await setup();
+    const cb = inner.subscribe.mock.calls[0]?.[2] as BarListener;
+    unsub();
+    const n = bars.length;
+    cb({ time: T[3] as number, open: 1, high: 1, low: 1, close: 1, volume: 1 });
+    expect(bars).toHaveLength(n);
+  });
+
+  it('builds the calendar context once per ring state, not on every key() call', async () => {
+    const inner = hourlyFeed();
+    const feed = new ExpressionFeed(inner);
+    const D = { unit: 'day', count: 1 } as const;
+    feed.subscribe({ symbol: 'A/B', interval: D }, null, () => {});
+    await new Promise((r) => setTimeout(r, 0));
+    const ctx = vi.mocked(expressionModule.calendarContext);
+    inner.push('B', { time: T[0] as number, open: 4, high: 4, low: 4, close: 4 });
+    inner.push('A', { time: T[0] as number, open: 8, high: 8, low: 8, close: 8 });
+    const before = ctx.mock.calls.length;
+    for (let k = 0; k < 5; k++) {
+      inner.push('A', { time: T[0] as number, open: 8, high: 9 + k, low: 8, close: 9 + k });
+      inner.push('B', { time: T[0] as number, open: 4, high: 5 + k, low: 4, close: 5 + k });
+    }
+    expect(ctx.mock.calls.length).toBe(before);
+  });
+
   it('resolves legs first when subscribing without history', async () => {
     const inner = hourlyFeed();
     const feed = new ExpressionFeed(inner);
@@ -562,6 +670,19 @@ describe('ExpressionFeed subscribe', () => {
     expect(bars).toHaveLength(0);
     inner.push('A', { time: T[0] as number, open: 8, high: 8, low: 8, close: 8 });
     expect(bars).toEqual([{ time: T[0], open: 2, high: 2, low: 2, close: 2, volume: 0 }]);
+  });
+});
+
+describe('ExpressionFeed hints and guards', () => {
+  it("hints to quote a symbol containing '/'", async () => {
+    const feed = new ExpressionFeed(dailyFeed());
+    const err = await feed.resolveSymbol('BRK/B').catch((e: unknown) => e);
+    expect((err as FeedError).message).toBe(
+      'Unknown symbol in expression: BRK — to use a symbol containing \'/\', quote it: "BRK/B"',
+    );
+    // No slash between letters: no hint.
+    const e2 = await feed.resolveSymbol('AAPL/2*FOO').catch((e: unknown) => e);
+    expect((e2 as FeedError).message).toBe('Unknown symbol in expression: FOO');
   });
 });
 

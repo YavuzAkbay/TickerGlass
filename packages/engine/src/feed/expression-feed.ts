@@ -37,6 +37,9 @@ const PARSE_CACHE = 64;
 const TAIL_CACHE = 32;
 /** Bars per leg kept from the newest page to seed live updates. */
 const TAIL_BARS = 16;
+/** Max primary fetches per getBars when the cut rule empties a page. */
+const MAX_EMPTY_ATTEMPTS = 5;
+const LEG_INFO_CACHE = 64;
 /** Bars per leg kept while live. */
 const RING_BARS = 64;
 
@@ -117,7 +120,7 @@ export class ExpressionFeed implements DataFeed {
   async resolveSymbol(symbol: string): Promise<SymbolInfo> {
     const p = this.parse(symbol);
     if (p.plain) return this.inner.resolveSymbol(p.symbols[0] as string);
-    const infos = await this.resolveLegs(p);
+    const infos = await this.resolveLegs(p, symbol);
     const primary = infos[0] as SymbolInfo;
     const currency = primary.currency;
     const sameCurrency = currency !== null && infos.every((i) => i.currency === currency);
@@ -154,7 +157,7 @@ export class ExpressionFeed implements DataFeed {
     const mode = alignModeFor(req.interval);
     const calendar = mode === 'calendar';
     // Leg infos are needed for calendar keys (each leg's own exchange date).
-    const infosP = calendar ? this.resolveLegs(p) : Promise.resolve(null);
+    const infosP = calendar ? this.resolveLegs(p, req.symbol) : Promise.resolve(null);
     // A guaranteed handler: if the primary fetch throws first, the rejection is
     // not reported as unhandled. The await below still sees it.
     infosP.catch(() => {});
@@ -165,6 +168,26 @@ export class ExpressionFeed implements DataFeed {
     const P = await this.inner.getBars({ ...req, symbol: primarySym, limit: primaryLimit });
     const pn = P.bars.time.length;
     if (pn === 0) return { bars: emptyColumns(), hasMore: P.hasMore };
+    return this.buildPage(req, p, mode, calendar, infosP, P, 1);
+  }
+
+  /**
+   * Align and evaluate one primary page. If the cut rule leaves nothing but the
+   * primary has more history, step back (at most MAX_EMPTY_RETRIES times)
+   * rather than hand the chart an empty page with hasMore, which it reads as
+   * the end of history.
+   */
+  private async buildPage(
+    req: GetBarsRequest,
+    p: ParsedSymbol,
+    mode: AlignMode,
+    calendar: boolean,
+    infosP: Promise<SymbolInfo[] | null>,
+    P: GetBarsResult,
+    attempt: number,
+  ): Promise<GetBarsResult> {
+    const legs = p.symbols;
+    const pn = P.bars.time.length;
 
     const stale = maxStaleSeconds(req.interval);
     const ivl = intervalSeconds(req.interval);
@@ -207,7 +230,27 @@ export class ExpressionFeed implements DataFeed {
     }
     // Without a lead-in row the first primary row's fill state is unknown.
     const first = Math.max(cut, P.hasMore ? 1 : 0);
-    if (first >= pn) return { bars: emptyColumns(), hasMore: true };
+    if (first >= pn) {
+      if (attempt >= MAX_EMPTY_ATTEMPTS || !P.hasMore) {
+        return { bars: emptyColumns(), hasMore: P.hasMore };
+      }
+      const next = await this.inner.getBars({
+        ...req,
+        symbol: legs[0] as string,
+        limit: req.limit < MAX_LEG_LIMIT ? req.limit + 1 : req.limit,
+        to: P.bars.time[0] as number,
+      });
+      if (next.bars.time.length === 0) return { bars: emptyColumns(), hasMore: next.hasMore };
+      return this.buildPage(
+        { ...req, to: P.bars.time[0] as number },
+        p,
+        mode,
+        calendar,
+        infosP,
+        next,
+        attempt + 1,
+      );
+    }
     const lead = Math.max(0, first - 1);
     const rn = pn - lead;
 
@@ -234,7 +277,8 @@ export class ExpressionFeed implements DataFeed {
     if (truncated) s = on - req.limit;
     const bars = s === 0 ? out : sliceColumns(out, s, on);
 
-    if (req.to === undefined) {
+    // Only the newest page seeds live updates, not a step-back page.
+    if (req.to === undefined && attempt === 1) {
       const tail = new Map<string, LegTail>();
       results.forEach((r, k) => {
         tail.set(legs[k] as string, { bars: tailBars(r.bars), ctx: ctxs[k] ?? null });
@@ -276,15 +320,19 @@ export class ExpressionFeed implements DataFeed {
           session: info.session,
         };
         if (req.prepost !== undefined) legReq.prepost = req.prepost;
-        unsubs.push(this.inner.subscribe(legReq, live.lastLegBar(k), (b) => live.onLegBar(k, b)));
+        unsubs.push(
+          this.inner.subscribe(legReq, live.lastLegBar(k), (b) => {
+            if (active) live.onLegBar(k, b);
+          }),
+        );
       });
     };
 
-    const known = legs.map((s) => this.legInfo.get(s));
+    const known = legs.map((s) => lruGet(this.legInfo, s));
     if (known.every((i) => i !== undefined)) {
       start(known as SymbolInfo[]);
     } else {
-      this.resolveLegs(parsed).then(
+      this.resolveLegs(parsed, req.symbol).then(
         (infos) => {
           if (active) start(infos);
         },
@@ -324,27 +372,32 @@ export class ExpressionFeed implements DataFeed {
   }
 
   /** Resolve every leg in parallel (symbols order). Failures name the leg. */
-  private resolveLegs(p: ParsedSymbol): Promise<SymbolInfo[]> {
+  private resolveLegs(p: ParsedSymbol, input: string): Promise<SymbolInfo[]> {
     return Promise.all(
-      p.symbols.map((symbol) =>
-        this.inner.resolveSymbol(symbol).then(
+      p.symbols.map((symbol) => {
+        const cached = lruGet(this.legInfo, symbol);
+        if (cached !== undefined) return Promise.resolve(cached);
+        return this.inner.resolveSymbol(symbol).then(
           (info) => {
-            this.legInfo.set(symbol, info);
+            lruSet(this.legInfo, symbol, info, LEG_INFO_CACHE);
             return info;
           },
           (err: unknown) => {
-            throw legError(symbol, err);
+            throw legError(symbol, input, err);
           },
-        ),
-      ),
+        );
+      }),
     );
   }
 }
 
-function legError(symbol: string, err: unknown): FeedError {
+function legError(symbol: string, input: string, err: unknown): FeedError {
   const status = err instanceof FeedError ? err.status : 0;
   if (status >= 400 && status < 500) {
-    const hint = symbol.includes('-') ? ' — for a spread put spaces around the minus: A - B' : '';
+    let hint = symbol.includes('-') ? ' — for a spread put spaces around the minus: A - B' : '';
+    if (!symbol.includes('/') && /[A-Za-z]\/[A-Za-z]/.test(input)) {
+      hint += ' — to use a symbol containing \'/\', quote it: "BRK/B"';
+    }
     return new FeedError(`Unknown symbol in expression: ${symbol}${hint}`, status, { cause: err });
   }
   const detail = err instanceof Error ? err.message : String(err);
@@ -362,6 +415,8 @@ class LiveExpression {
   private readonly rings: Bar[][];
   private readonly tailCtx: (BucketContext | null)[];
   private timezones: (string | null)[];
+  /** Per-leg calendar context built from the ring, keyed by the ring's first time. */
+  private readonly memoCtx: ({ head: number; len: number; ctx: BucketContext } | undefined)[] = [];
   private lastEmitted: number;
 
   constructor(
@@ -381,6 +436,7 @@ class LiveExpression {
 
   setInfos(infos: readonly SymbolInfo[]): void {
     this.timezones = infos.map((i) => i.timezone);
+    this.memoCtx.length = 0;
   }
 
   lastLegBar(k: number): Bar | null {
@@ -444,12 +500,22 @@ class LiveExpression {
 
   private key(k: number, t: number): number {
     if (this.mode === 'instant') return t;
-    let ctx = this.tailCtx[k] ?? null;
-    if (ctx === null) {
-      const times = (this.rings[k] as Bar[]).map((b) => b.time);
-      ctx = calendarContext(this.timezones[k] ?? null, times, times.length);
+    const seeded = this.tailCtx[k] ?? null;
+    if (seeded !== null) return localDay(t, seeded) * DAY;
+    const ring = this.rings[k] as Bar[];
+    const head = ring.length > 0 ? (ring[0] as Bar).time : NaN;
+    let memo = this.memoCtx[k];
+    // Rebuild only when the ring's first bar or size changed (once per new bar).
+    if (memo === undefined || !Object.is(memo.head, head) || memo.len !== ring.length) {
+      const times = ring.map((b) => b.time);
+      memo = {
+        head,
+        len: ring.length,
+        ctx: calendarContext(this.timezones[k] ?? null, times, times.length),
+      };
+      this.memoCtx[k] = memo;
     }
-    return localDay(t, ctx) * DAY;
+    return localDay(t, memo.ctx) * DAY;
   }
 }
 

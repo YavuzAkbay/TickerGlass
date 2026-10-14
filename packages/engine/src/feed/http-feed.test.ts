@@ -264,6 +264,29 @@ describe('HttpDataFeed live', () => {
     feed.dispose();
   });
 
+  it('never sends symbols the server would reject (one bad symbol rejects the frame)', () => {
+    const feed = makeFeed();
+    const i1 = parseInterval('1m');
+    feed.subscribe({ symbol: 'M&M.NS', interval: i1, ...NY }, null, () => {});
+    feed.subscribe({ symbol: 'AAPL', interval: i1, ...NY }, null, () => {});
+    feed.subscribe({ symbol: 'BRK/B', interval: i1, ...NY }, null, () => {});
+    feed.subscribe({ symbol: '^GSPC', interval: i1, ...NY }, null, () => {});
+    const ws = FakeWebSocket.last();
+    ws.open();
+    expect(ws.sent).toEqual([{ op: 'subscribe', symbols: ['AAPL', '^GSPC'] }]);
+    // Live subscribe after open and the final unsubscribe skip them too.
+    const u = feed.subscribe({ symbol: 'A&B', interval: i1, ...NY }, null, () => {});
+    u();
+    expect(ws.sent).toHaveLength(1);
+    // Reconnect re-subscribes only valid symbols.
+    ws.drop();
+    vi.advanceTimersByTime(500);
+    const ws2 = FakeWebSocket.last();
+    ws2.open();
+    expect(ws2.sent).toEqual([{ op: 'subscribe', symbols: ['AAPL', '^GSPC'] }]);
+    feed.dispose();
+  });
+
   it('reconnects with backoff and re-subscribes', () => {
     const feed = makeFeed();
     const statuses: LiveStatus[] = [];

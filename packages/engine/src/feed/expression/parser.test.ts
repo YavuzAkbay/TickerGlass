@@ -49,6 +49,27 @@ describe('canonicalSymbol', () => {
   });
 });
 
+describe('quoted symbol charset', () => {
+  it.each([
+    ['".."', "Invalid number or symbol '..'", 0],
+    ['"."', "Invalid number or symbol '.'", 0],
+    ['A*"..B"', "Invalid number or symbol '..B'", 2],
+    ['"AB$"', "Invalid number or symbol 'AB$'", 0],
+    ['"A?B"', "Invalid number or symbol 'A?B'", 0],
+    ['"A%2FB"', "Invalid number or symbol 'A%2FB'", 0],
+  ])('rejects %s', (input, message, pos) => {
+    const e = errorOf(input);
+    expect(e.message).toBe(message);
+    expect(e.pos).toBe(pos);
+  });
+
+  it('keeps legitimate quoted symbols', () => {
+    expect(canonicalSymbol('"BRK/B"')).toBe('"BRK/B"');
+    expect(canonicalSymbol('"^gspc"')).toBe('^GSPC');
+    expect(canonicalSymbol('"M&M.NS"')).toBe('M&M.NS');
+  });
+});
+
 describe('plain quoted symbols', () => {
   it('stay quoted when they would not re-lex as one symbol', () => {
     const p = parseSymbolExpression('"brk/b"');
