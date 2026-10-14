@@ -507,6 +507,89 @@ describe('Chart studies', () => {
     expect((chart.panes[1]!.legendInfo as unknown as FakeEl).innerHTML).toBe('');
   });
 
+  it('has a compare legend slot between the info line and the study slot', async () => {
+    const { chart } = await load(5);
+    const pane = chart.panes[0]!;
+    const cmp = chart.getLegendSlot('main', 'compare') as unknown as FakeEl;
+    expect(cmp).not.toBeNull();
+    expect(chart.getLegendSlot('main', 'studies')).toBe(chart.getLegendSlot('main'));
+    expect(chart.getLegendSlot('missing', 'compare')).toBeNull();
+    const kids = (pane.legendEl as unknown as FakeEl).children;
+    expect(kids).toEqual([pane.legendInfo, cmp, pane.legendSlot]);
+    cmp.innerHTML = '<div>cmp</div>';
+    chart['updateLegends']();
+    expect(cmp.innerHTML).toBe('<div>cmp</div>');
+  });
+
+  it('rescales same-% overlays to the main series and labels them by pane mode', async () => {
+    const { chart, recent } = await load(20);
+    const spec = studySpec('cmp-a', { paneId: 'main' });
+    spec.compare = true;
+    chart.addStudy(spec);
+    const doubled = Float64Array.from(recent, (b) => b.close * 2);
+    chart.setStudyData('cmp-a', {
+      revision: chart.seriesRevision,
+      length: 20,
+      values: { v: doubled },
+      colors: {},
+    });
+    expect(chart.compareReference(3)).toBe(recent[3]!.close);
+    const pane = chart.panes[0]!;
+    const ser = pane.series.find((s) => s.id === 'cmp-a')! as unknown as {
+      priceRange(f: number, t: number): { min: number; max: number } | null;
+      valuesAt(i: number): number[];
+      lastValues(): { price: number; raw: number }[];
+    };
+    const r = ser.priceRange(0, 19)!;
+    expect(r.min).toBeCloseTo(Math.min(...recent.map((b) => b.close)), 9);
+    expect(ser.valuesAt(7)[0]).toBeCloseTo(recent[7]!.close, 9);
+    // Legend stays raw.
+    expect(chart.getStudyValues('cmp-a', 7)[0]!.value).toBe(doubled[7]);
+    const [lv] = ser.lastValues();
+    const label = (l: unknown) => chart['studyLabelText'](pane, ser as never, l as never);
+    pane.priceScale.mode = 'linear';
+    expect(label(lv)).toBe(doubled[19]!.toFixed(2));
+    pane.priceScale.mode = 'percent';
+    pane.priceScale.base = lv!.price / 1.1;
+    expect(label(lv)).toBe('10.00%');
+    // Own-scale labels (with y) are always raw.
+    expect(label({ ...lv, y: 5 })).toBe(doubled[19]!.toFixed(2));
+  });
+
+  it("hit-tests 'own' studies with normal priority and 'none' studies behind", async () => {
+    const { chart } = await load(20);
+    const own = studySpec('own', { paneId: 'main' });
+    own.priceScale = 'own';
+    chart.addStudy(own);
+    const none = studySpec('bg', { paneId: 'main' });
+    none.priceScale = 'none';
+    chart.addStudy(none);
+    const pane = chart.panes[0]!;
+    chart['width'] = 800;
+    chart['height'] = 600;
+    pane.top = 0;
+    pane.height = 500;
+    const spy = (id: string, out: string | null) =>
+      vi
+        .spyOn(
+          pane.series.find((s) => s.id === id)! as never as { hitTestPx: () => string | null },
+          'hitTestPx',
+        )
+        .mockImplementation(((_x: number, _y: number, layer: string) =>
+          layer === 'marks' ? out : null) as never);
+    const main = pane.series.find((s) => s.id === 'main')!;
+    const onCandle = vi.spyOn(main, 'hitTest').mockReturnValue(true);
+    spy('bg', 'v');
+    const ownSpy = spy('own', 'v');
+    // 'own' is above the candles (added later, not behind).
+    expect(chart.hitTest(100, 100)).toMatchObject({ seriesId: 'own' });
+    ownSpy.mockImplementation((() => null) as never);
+    // Candles beat the background study.
+    expect(chart.hitTest(100, 100)).toMatchObject({ seriesId: 'main' });
+    onCandle.mockReturnValue(false);
+    expect(chart.hitTest(100, 100)).toMatchObject({ seriesId: 'bg' });
+  });
+
   it('clears studies on setState so the app can re-add them', async () => {
     const { chart } = await load(5);
     chart.addStudy(studySpec('rsi', { newPane: { id: 'p2', ratio: 2 } }));

@@ -20,7 +20,8 @@ export interface StudyGeometry {
   width: number;
   height: number;
   timeScale: TimeScale;
-  priceScale: PriceScale;
+  /** Only `priceToY` is used, so callers may pass a rescaled view (compare overlays). */
+  priceScale: Pick<PriceScale, 'priceToY'>;
   theme: ChartTheme;
   /** Displayed bars (shape anchors at high/low). */
   bars: OhlcvSource;

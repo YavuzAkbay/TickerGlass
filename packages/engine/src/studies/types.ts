@@ -138,10 +138,21 @@ export interface StudySpec {
   /**
    * 'pane' shares and auto-scales the pane's price scale. 'none' draws on an
    * implicit own scale excluded from auto-scale (like the volume overlay).
+   * 'own' draws on a full-height implicit linear scale (pane margins),
+   * auto-scaled to the study alone and excluded from the pane's auto-scale.
    */
-  priceScale: 'pane' | 'none';
+  priceScale: 'pane' | 'none' | 'own';
+  /**
+   * Compare overlay ("same % scale"): values are rescaled so that the first
+   * visible value meets the main series' base value there. Only with
+   * priceScale 'pane' on the main pane; default false. Legends stay raw.
+   */
+  compare?: boolean;
   visible: boolean;
 }
+
+/** Legend containers of a pane: compare rows, then study rows. */
+export type LegendSlotKind = 'studies' | 'compare';
 
 /**
  * Computed values. Arrays may be longer than `length`; read [0, length).
@@ -283,6 +294,7 @@ export interface StudyApi {
   /** Values of visible plots at displayed bar `index` (crosshair or last bar). */
   getStudyValues(id: string, index: number): StudyLegendValue[];
   /** DOM container in the pane's legend that the app renders study legend
-   * rows into (the engine never writes to it). Null for an unknown pane. */
-  getLegendSlot(paneId: string): HTMLElement | null;
+   * rows ('studies', default) or compare overlay rows ('compare', above the
+   * study rows) into (the engine never writes to it). Null for an unknown pane. */
+  getLegendSlot(paneId: string, kind?: LegendSlotKind): HTMLElement | null;
 }

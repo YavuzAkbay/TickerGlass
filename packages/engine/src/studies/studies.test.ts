@@ -747,7 +747,13 @@ describe('StudySeries', () => {
     ts.barSpacing = 10;
     ts.baseIndex = n - 1;
     ts.rightOffset = 0;
-    return { store: flatBars(n), timeScale: ts, seriesRevision: revision, theme: DARK_THEME };
+    return {
+      store: flatBars(n),
+      timeScale: ts,
+      seriesRevision: revision,
+      theme: DARK_THEME,
+      compareReference: () => null,
+    };
   }
 
   it('uses the fixed scale range and skips stale or hidden studies', () => {
@@ -819,7 +825,7 @@ describe('StudySeries', () => {
     );
     const h = host(3);
     const ser = new StudySeries(s, h);
-    expect(ser.lastValues()).toEqual([{ outputId: 'a', price: 30, color: '#f00' }]);
+    expect(ser.lastValues()).toEqual([{ outputId: 'a', price: 30, raw: 30, color: '#f00' }]);
     expect(ser.valuesAt(1)).toEqual([20, 2]);
     expect(ser.hitTestPx(0, 0)).toBeNull(); // not drawn yet
     const ps = new PriceScale();
@@ -838,6 +844,158 @@ describe('StudySeries', () => {
       to: 2,
     });
     expect(ser.hitTestPx(h.timeScale.indexToX(2), ps.priceToY(30))).toBe('a');
+  });
+});
+
+describe('StudySeries compare and own scale', () => {
+  /** Host whose main series closes are `closes` (compare reference = close). */
+  function refHost(closes: number[]): StudyHost {
+    const n = closes.length;
+    const ts = new TimeScale();
+    ts.width = 400;
+    ts.barSpacing = 10;
+    ts.baseIndex = n - 1;
+    ts.rightOffset = 0;
+    const store = flatBars(n);
+    (store.close as Float64Array).set(closes);
+    return {
+      store,
+      timeScale: ts,
+      seriesRevision: 1,
+      theme: DARK_THEME,
+      compareReference: (i) => store.close[Math.max(0, Math.min(i, n - 1))] ?? null,
+    };
+  }
+
+  function rc(h: StudyHost, ps: PriceScale, from: number, to: number, ctx = new RecCtx()) {
+    return {
+      ctx: ctx as unknown as CanvasRenderingContext2D,
+      dpr: 1,
+      width: 400,
+      height: ps.height,
+      timeScale: h.timeScale,
+      priceScale: ps,
+      theme: DARK_THEME,
+      from,
+      to,
+    };
+  }
+
+  function percentScale(base: number): PriceScale {
+    const ps = new PriceScale();
+    ps.height = 200;
+    ps.mode = 'percent';
+    ps.base = base;
+    ps.min = -50;
+    ps.max = 50;
+    return ps;
+  }
+
+  const closes = [10, 12, 15, 18];
+
+  it('rescales a same-% overlay to the main series at the first visible bar', () => {
+    const s = withData([plot('close')], { close: f64([50, 55, 60, 54]) }, {}, { compare: true });
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.excludeFromAutoscale).toBe(false);
+    expect(ser.behind).toBe(false);
+    const f = ser.compareFactor(1, 3);
+    expect(f).toBe(12 / 55);
+    // Auto-scale gets the scaled range of [1, 3].
+    expect(ser.priceRange(1, 3)).toEqual({ min: 54 * f, max: 60 * f });
+    const drawn = ser.valuesAt(3)[0]!;
+    expect(drawn).toBe(54 * (12 / 55)); // golden 11.781818181818182 (same double)
+    const ps = percentScale(12); // main baseValue(from = 1)
+    expect(ps.toInternal(drawn)).toBeCloseTo(-20 / 11, 12); // -1.8181818181818181 (golden)
+    // Drawn and hit-tested on the scaled y.
+    const ctx = new RecCtx();
+    ser.draw(rc(refHost(closes), ps, 1, 3, ctx));
+    const line = ctx.of('stroke')[0]!;
+    const pts = line.path!.filter((p) => p.op === 'moveTo' || p.op === 'lineTo');
+    const h = refHost(closes);
+    const p3 = pts.find((p) => Math.abs(p.args[0]! - h.timeScale.indexToX(3)) < 1e-9)!;
+    expect(p3.args[1]).toBeCloseTo(ps.priceToY(drawn), 9);
+    expect(ser.hitTestPx(h.timeScale.indexToX(3), ps.priceToY(drawn))).toBe('close');
+    expect(ser.hitTestPx(h.timeScale.indexToX(3), ps.priceToY(54))).toBeNull();
+    // Last value: scaled price for the axis, raw value kept.
+    expect(ser.lastValues()).toEqual([
+      { outputId: 'close', price: drawn, raw: 54, color: '#2962ff' },
+    ]);
+    // Legends stay raw.
+    expect(s.legendValues(3, 1, 2)[0]!.value).toBe(54);
+  });
+
+  it('skips leading NaN overlay values for the reference bar', () => {
+    const s = withData([plot('close')], { close: f64([50, NaN, 60, 54]) }, {}, { compare: true });
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.compareFactor(1, 3)).toBe(0.25);
+    const ps = percentScale(12);
+    expect(ps.toInternal(ser.valuesAt(2)[0]!)).toBe(25);
+    expect(ps.toInternal(ser.valuesAt(3)[0]!)).toBe(12.5);
+  });
+
+  it('draws nothing when the first visible overlay value is not positive', () => {
+    const s = withData([plot('close')], { close: f64([-3, 55, 60, 54]) }, {}, { compare: true });
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.compareFactor(0, 3)).toBeNaN();
+    expect(ser.priceRange(0, 3)).toBeNull();
+    const ctx = new RecCtx();
+    ser.draw(rc(refHost(closes), percentScale(10), 0, 3, ctx));
+    expect(ctx.calls).toHaveLength(0);
+    expect(ser.valuesAt(2)).toEqual([]);
+    expect(ser.lastValues()).toEqual([]);
+    expect(ser.hitTestPx(0, 0)).toBeNull();
+  });
+
+  it('recomputes the cached factor when data or the reference changes', () => {
+    const s = withData([plot('close')], { close: f64([50, 55, 60, 54]) }, {}, { compare: true });
+    const h = refHost(closes);
+    const ser = new StudySeries(s, h);
+    expect(ser.compareFactor(1, 3)).toBe(12 / 55);
+    (h.store.close as Float64Array)[1] = 11; // live update of the reference bar
+    expect(ser.compareFactor(1, 3)).toBe(11 / 55);
+    s.values.close![1] = NaN;
+    ser.dataVersion++;
+    expect(ser.compareFactor(1, 3)).toBe(0.25);
+  });
+
+  it('ignores compare off the main pane or on other scales', () => {
+    const s = withData([plot('close')], { close: f64([50, 55, 60, 54]) }, {}, { compare: true });
+    s.paneId = 'p2';
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.isCompare).toBe(false);
+    expect(ser.valuesAt(3)).toEqual([54]);
+  });
+
+  it("draws 'own' studies on a full-height linear scale outside the pane's auto-scale", () => {
+    const s = withData([plot('close')], { close: f64([5, 10]) }, {}, { priceScale: 'own' });
+    const h = refHost([100, 100]);
+    const ser = new StudySeries(s, h);
+    expect(ser.excludeFromAutoscale).toBe(true);
+    expect(ser.behind).toBe(false);
+    expect(ser.priceRange(0, 1)).toBeNull();
+    expect(ser.baseValue(0)).toBeNull();
+    expect(ser.valuesAt(1)).toEqual([]); // no magnet
+    expect(ser.lastValues()).toEqual([]); // not drawn yet
+    const ps = percentScale(100);
+    ps.height = 100;
+    const ctx = new RecCtx();
+    ser.draw(rc(h, ps, 0, 1, ctx));
+    const pts = ctx.of('stroke')[0]!.path!.filter((p) => p.op !== 'arc');
+    const y = (i: number) =>
+      pts.find((p) => Math.abs(p.args[0]! - h.timeScale.indexToX(i)) < 1e-9)!.args[1]!;
+    expect(y(1)).toBeCloseTo(10, 9);
+    expect(y(0)).toBeCloseTo(92, 9);
+    expect(ser.lastValues()).toEqual([
+      { outputId: 'close', price: 10, raw: 10, y: 10, color: '#2962ff' },
+    ]);
+    expect(ser.hitTestPx(h.timeScale.indexToX(0), 92)).toBe('close');
+  });
+
+  it("keeps 'none' studies behind without last values", () => {
+    const s = withData([plot('v')], { v: f64([1, 2]) }, {}, { priceScale: 'none' });
+    const ser = new StudySeries(s, refHost([1, 2]));
+    expect(ser.behind).toBe(true);
+    expect(ser.lastValues()).toEqual([]);
   });
 });
 

@@ -40,8 +40,9 @@ import type { Bar, DataFeed, Interval, SymbolInfo, Unsubscribe } from './types';
 import { formatStudyTick, formatStudyValue } from './studies/format';
 import { commonPrefix, diffTail, snapshotSeries, type SeriesSnapshot } from './studies/series-diff';
 import { Study } from './studies/study';
-import { StudySeries } from './studies/study-series';
+import { StudySeries, type StudyLastValue } from './studies/study-series';
 import type {
+  LegendSlotKind,
   SeriesChange,
   StudyApi,
   StudyData,
@@ -501,12 +502,15 @@ export class Chart implements StudyApi, DrawingApi {
     const s = this.studies.get(id);
     if (!s || data.revision !== this._seriesRevision) return;
     s.study.setData(data);
+    s.dataVersion++;
     this.invalidate(INVALIDATE_MAIN);
   }
 
   updateStudyData(id: string, patch: StudyDataPatch): void {
     const s = this.studies.get(id);
-    if (s?.study.patch(patch, this._seriesRevision)) this.invalidate(INVALIDATE_MAIN);
+    if (!s?.study.patch(patch, this._seriesRevision)) return;
+    s.dataVersion++;
+    this.invalidate(INVALIDATE_MAIN);
   }
 
   setStudyVisible(id: string, visible: boolean): void {
@@ -532,8 +536,16 @@ export class Chart implements StudyApi, DrawingApi {
     return s ? s.study.legendValues(index, this._seriesRevision, this.decimals) : [];
   }
 
-  getLegendSlot(paneId: string): HTMLElement | null {
-    return this.panes.find((p) => p.id === paneId)?.legendSlot ?? null;
+  getLegendSlot(paneId: string, kind: LegendSlotKind = 'studies'): HTMLElement | null {
+    const pane = this.panes.find((p) => p.id === paneId);
+    if (!pane) return null;
+    return kind === 'compare' ? pane.legendCompare : pane.legendSlot;
+  }
+
+  /** Base value of the main pane's price series at displayed bar `i`: the
+   * reference compare overlays ('same % scale') are rescaled to. */
+  compareReference(i: number): number | null {
+    return this.panes.find((p) => p.id === 'main')?.series[0]?.baseValue(i) ?? null;
   }
 
   /** True when `id` is a study on this chart. */
@@ -1341,7 +1353,7 @@ export class Chart implements StudyApi, DrawingApi {
 
   /** Topmost object under (x, y), in this order: drawings (handles, strokes,
    * strong parts), lines/marks/bars of every series, weak drawing parts
-   * (background fills), marks of own-scale ('none') studies, study fill interiors. */
+   * (background fills), marks of background ('none') studies, study fill interiors. */
   private hitSeries(
     pane: Pane,
     x: number,
@@ -1356,7 +1368,7 @@ export class Chart implements StudyApi, DrawingApi {
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
       if (s instanceof StudySeries) {
-        if (s.excludeFromAutoscale) continue; // background overlay: tested below
+        if (s.behind) continue; // background overlay: tested below
         const out = s.hitTestPx(x, y, 'marks');
         if (out !== null) return { id: s.id, outputId: out, fill: false };
       } else if (s.hitTest(i, price, tol)) return { id: s.id, outputId: null, fill: false };
@@ -1366,7 +1378,7 @@ export class Chart implements StudyApi, DrawingApi {
     // behind the price series and drawings, so those win where they overlap.
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
-      if (!(s instanceof StudySeries) || !s.excludeFromAutoscale) continue;
+      if (!(s instanceof StudySeries) || !s.behind) continue;
       const out = s.hitTestPx(x, y, 'marks');
       if (out !== null) return { id: s.id, outputId: out, fill: false };
     }
@@ -1726,6 +1738,16 @@ export class Chart implements StudyApi, DrawingApi {
     return Math.max(MIN_AXIS_WIDTH, this.axisWidth);
   }
 
+  /** Axis label of a study's last value: the study's own value on own-scale
+   * studies and linear/log panes, else in the pane's units (percent/indexed). */
+  private studyLabelText(pane: Pane, s: StudySeries, lv: StudyLastValue): string {
+    const mode = pane.priceScale.mode;
+    if (lv.y === undefined && mode !== 'linear' && mode !== 'log')
+      return this.formatAxisValue(pane, lv.price);
+    const { format, precision } = s.study.spec;
+    return formatStudyValue(lv.raw, format, precision, this.decimals);
+  }
+
   private formatAxisValue(pane: Pane, price: number): string {
     const ps = pane.priceScale;
     if (ps.mode === 'percent') return formatPercent(ps.toDisplay(price)).replace('+', '');
@@ -1802,10 +1824,8 @@ export class Chart implements StudyApi, DrawingApi {
       pane.main.begin();
       const ctx = pane.main.device();
       if (from <= to) {
-        // Overlays (volume) go behind the price series.
-        const ordered = [...pane.series].sort(
-          (a, b) => Number(!!b.excludeFromAutoscale) - Number(!!a.excludeFromAutoscale),
-        );
+        // Background overlays (volume) go behind the price series.
+        const ordered = [...pane.series].sort((a, b) => Number(!!b.behind) - Number(!!a.behind));
         for (const s of ordered) {
           s.draw({
             ctx,
@@ -1897,18 +1917,14 @@ export class Chart implements StudyApi, DrawingApi {
       // Study last values (below the series' own label).
       for (const s of pane.series) {
         if (!(s instanceof StudySeries)) continue;
-        const { format, precision } = s.study.spec;
         for (const lv of s.lastValues()) {
-          const y = ps.priceToY(lv.price);
+          const y = lv.y ?? ps.priceToY(lv.price);
           if (y < 0 || y > pane.height) continue;
           const top = Math.max(
             0,
             Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2),
           );
-          const text =
-            ps.mode === 'linear' || ps.mode === 'log'
-              ? formatStudyValue(lv.price, format, precision, this.decimals)
-              : this.formatAxisValue(pane, lv.price);
+          const text = this.studyLabelText(pane, s, lv);
           labelBox(
             ax,
             text,
