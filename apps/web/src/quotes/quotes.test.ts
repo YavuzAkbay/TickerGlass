@@ -429,4 +429,56 @@ describe('QuoteStream', () => {
     await vi.advanceTimersByTimeAsync(25_000);
     expect(last().sent.filter((m) => m.op === 'ping')).toHaveLength(1);
   });
+
+  describe('subscribeEvents', () => {
+    const topicsSent = () =>
+      (last().sent as { op: string; topics?: string[] }[])
+        .filter((m) => m.op === 'events')
+        .map((m) => m.topics);
+
+    it('sends the topics on open, again on reconnect, and dispatches frames by topic', async () => {
+      const frames: object[] = [];
+      const opens: boolean[] = [];
+      stream.subscribeEvents(['alerts'], {
+        onFrame: (f) => frames.push(f),
+        onOpen: (re) => opens.push(re),
+      });
+      expect(FakeSocket.all).toHaveLength(1);
+      expect(topicsSent()).toEqual([]); // not open yet
+      last().open();
+      expect(topicsSent()).toEqual([['alerts']]);
+      expect(opens).toEqual([false]);
+
+      last().push({ type: 'alerts.changed', topic: 'alerts', ids: ['a'], deleted: [] });
+      last().push({ type: 'drawings.changed', topic: 'drawings', ids: [], deleted: [] });
+      expect(frames).toHaveLength(1);
+
+      last().drop();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeSocket.all).toHaveLength(2);
+      last().open();
+      expect(topicsSent()).toEqual([['alerts']]);
+      expect(opens).toEqual([false, true]);
+    });
+
+    it('keeps the socket open without symbols, and closes after the last release', async () => {
+      const off = stream.subscribeEvents(['alerts'], { onFrame: () => undefined });
+      last().open();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(last().closed).toBe(false);
+      off();
+      expect(topicsSent()).toEqual([['alerts'], []]);
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(FakeSocket.all[0]!.closed).toBe(true);
+    });
+
+    it('a symbol release does not close the socket while events are subscribed', async () => {
+      stream.subscribeEvents(['alerts'], { onFrame: () => undefined });
+      const r = stream.subscribe(['AAPL']);
+      last().open();
+      r();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(last().closed).toBe(false);
+    });
+  });
 });

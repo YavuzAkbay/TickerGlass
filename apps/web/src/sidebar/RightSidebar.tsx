@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRef, type ComponentType, type ReactNode } from 'react';
+import { useAlerts } from '../alerts/store';
 import { commands } from '../commands/registry';
 import { useUiStore, type RightPanel } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
@@ -74,6 +75,7 @@ export function RightSidebar() {
   const width = useUiStore((s) => s.rightWidth);
   const togglePanel = useUiStore((s) => s.togglePanel);
   const def = PANELS.find((p) => p.id === panel);
+  const unreadAlerts = useAlerts((s) => s.unread);
 
   return (
     <div className="right-sidebar">
@@ -89,6 +91,15 @@ export function RightSidebar() {
                 tipSide="bottom"
                 className="rs-head-btn"
                 onClick={() => commands.execute('watchlist.searchAdd')}
+              />
+            ) : null}
+            {def.id === 'alerts' ? (
+              <IconButton
+                icon={Plus}
+                label="Create alert"
+                tipSide="bottom"
+                className="rs-head-btn"
+                onClick={() => commands.execute('alert.create', {})}
               />
             ) : null}
             <IconButton
@@ -116,7 +127,13 @@ export function RightSidebar() {
             data-panel={p.id}
             className="rs-icon-btn"
             onClick={() => togglePanel(p.id)}
-          />
+          >
+            {p.id === 'alerts' && unreadAlerts ? (
+              <span className="rs-badge rs-icon-badge" aria-label={`${unreadAlerts} unread`}>
+                {unreadAlerts > 99 ? '99+' : unreadAlerts}
+              </span>
+            ) : null}
+          </IconButton>
         ))}
         <div className="rs-iconbar-spacer" />
         <IconButton

@@ -7,6 +7,7 @@
 import type { Chart } from '@investopen/engine';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
+import { startAlertsSync } from '../alerts/sync';
 import { useCompareStore } from '../compare/store';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
@@ -132,6 +133,7 @@ export function startPersistence(): () => void {
   drawingTemplates.start();
   notes.start();
   watchlists.start();
+  const stopAlerts = startAlertsSync();
 
   // ---------------------------------------------------------------- layout changes
   let changeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -342,6 +344,7 @@ export function startPersistence(): () => void {
     else if (changeTimer) clearTimeout(changeTimer);
     offs.forEach((off) => off());
     watchChart(null);
+    stopAlerts();
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onBeforeUnload);
     document.removeEventListener('visibilitychange', onVisible);
