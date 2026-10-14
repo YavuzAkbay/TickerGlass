@@ -185,7 +185,7 @@ Phase 8 notes:
 - Watchlist data layer: `apps/web/src/watchlist/` (`store.ts` lists and flags, `prefs.ts` active list / columns / sort, `model.ts` rows, sorting, `.txt` parse and format, `commands.ts`); sync in `apps/web/src/persist/watchlists.ts`. A list is saved whole with a revision check (409 shows a toast with "Keep mine"); flags are global per symbol and last writer wins. The active list, columns and sort are the setting `watchlist.prefs`.
 - Lists can be created offline (client-chosen ids). Flag colors appear as virtual lists under "Flagged" in the list switcher. The `.txt` import maps reference prefixes to Yahoo symbols and reports the ones it can't map.
 - e2e: `e2e/persistence.ts` mocks the new endpoints; `e2e/market.ts` is an opt-in mock for quotes, performance and the `/ws` stream (`mockMarket`); `e2e/watchlist.spec.ts` covers the panel.
-- Deferred: "Open in new chart" (Phase 14: a second tab would clobber the shared last-used layout), "Add alert" from a row (Phase 10 consumes the `alert.create` argument), drag between lists and multi-select (Phase 15). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#watchlists).
+- Deferred: "Open in new chart" (Phase 14: a second tab would clobber the shared last-used layout), drag between lists and multi-select (Phase 15). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#watchlists).
 
 ### Phase 9: Compare & symbol math
 
@@ -206,11 +206,19 @@ Phase 9 notes:
 
 ### Phase 10: Alerts
 
-- [ ] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
-- [ ] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
-- [ ] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
-- [ ] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
-- [ ] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
+- [x] Alert model: condition (crossing, crossing up/down, greater/less, entering/exiting channel, moving up/down %), sources (price, indicator output, drawing line/channel), trigger (once, once per bar, once per bar close, every time), expiry, message templates
+- [x] Create from the toolbar, a drawing's right-click menu, the price-scale "+" button, or a watchlist row
+- [x] Node alerts service: loads alerts, subscribes to live prices / polls bars, evaluates with the shared indicator package, writes the alert log
+- [x] Notifications: in-app toast + sound, browser Notification API (via `/ws`), optional webhook/Telegram/email
+- [x] Alerts panel: list, edit, pause, restart, clone, delete; alert log; markers on the chart
+
+Phase 10 notes:
+
+- Design, wire format, evaluation semantics, service, notifications and tests: `docs/alerts.md`. Code: `packages/alerts/` (spec validation, condition and trigger evaluator, drawing levels, templates), `services/alerts/src/` (Node evaluation service), `api/src/investopen_api/` (`routes/alerts.py`, `userdata/alerts.py`, `notifications/`, `/ws` event topics) and `apps/web/src/alerts/` (store, sync, events, dialog, panel, notifications, chart markers). The engine gained a Node-safe entry (`@investopen/engine/node`), chart markers, price lines and the price-axis "+" button.
+- The service only decides that an alert fires and writes through the REST API; the API owns the database and delivers everything (in-app frames over `/ws`, webhook, Telegram, email through a persisted outbox). Secrets live in the API env only: see `.env.example` and the README.
+- Alerts watch standard time bars of (symbol, interval, extended hours). Indicator settings are snapshotted; drawings are live references by id with a snapshotted scale mode. Expressions (`AAPL/MSFT`) work as symbols.
+- Creating: top bar, price-scale "+", price-axis menu, a drawing's or indicator's menu, or a watchlist row. Alerts are not created offline.
+- e2e: `e2e/persistence.ts` mocks `/api/alerts*` (CRUD with revisions, log, channels, service status); `e2e/market.ts` answers `op: events` and has `pushAlertFired`; `e2e/alerts.spec.ts` covers the entry points, the panel actions, toast/sound/marker/log/badge on a fire, browser notifications and reload. Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#alerts).
 
 ### Phase 11: Remaining drawing tools (bulk, on the framework)
 

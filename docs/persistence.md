@@ -21,6 +21,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 | `notes`               | `id`, `symbol` (null = general), `text` (<= 200k chars), `revision`                                                                           | id                |
 | `watchlists`          | `id` (client-chosen), `name`, `items` JSON list, `revision`                                                                                   | id                |
 | `symbol_flags`        | `symbol` (upper-case), `color` (one of 7)                                                                                                     | symbol            |
+| `alerts`              | `id`, `name`, `symbol`, `spec` JSON, `status`, `revision`, ... (+ `alert_states`, `alert_log`, `alert_deliveries`: alerts.md §1.1)            | id                |
 
 - **Drawings are one row per drawing, global (not per layout).** The server derives `symbol`/`pane_id`/`z` from
   the `Drawing` (`scope: 'all'` -> symbol null; else `symbol` upper-cased). This maps 1:1 onto the web store's
@@ -33,6 +34,9 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
   made offline keeps its identity. List order in the UI is alphabetical (no position column).
 - **Flags** are global like the common: at most one of `red orange yellow green cyan blue purple` per symbol.
   `created_at` is the time the current color was set (it resets on a color change, not on setting the same color).
+- **Alerts** (Phase 10) are one row per alert with revision checks like watchlists; the evaluation service owns
+  `alert_states`, and the API owns the log and the delivery outbox. Tables, endpoints, firing and the `/ws` event
+  topics: [alerts.md](alerts.md) §1.
 - Size limits: layout state 2 MB, drawing 512 KB, template 256 KB, setting value 512 KB, 5000 ops per batch.
 
 ## 2. Endpoints (all under `/api`)
@@ -58,6 +62,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 | `GET /notes?symbol=`, `POST`, `GET/PUT/DELETE /notes/{id}`                  | `listNotes/createNote/getNote/updateNote/deleteNote`                          | PUT with `revision` -> 409 if stale                                                                                                                                       |
 | `GET/POST /watchlists`, `GET/PUT/DELETE /watchlists/{id}`                   | `listWatchlists/createWatchlist/getWatchlist/updateWatchlist/deleteWatchlist` | list includes items, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,items,revision?}` -> 409 if stale; DELETE 404 if missing (treated as done) |
 | `GET /flags`, `PATCH /flags` `{SYMBOL: color\|null}`                        | `getFlags`/`patchFlags`                                                       | PATCH sets or removes flags in one transaction (max 5000) and returns all flags                                                                                           |
+| `/alerts*` (CRUD, status, log, channels, service)                           | `apps/web/src/api/alerts.ts`                                                  | Phase 10: see [alerts.md](alerts.md) §1.4. Mutations are online-only (no localStorage queue)                                                                              |
 | `GET /export`                                                               | `exportAll`                                                                   | full bundle (§4)                                                                                                                                                          |
 | `POST /import?mode=merge\|replace&dryRun=&confirm=`                         | `importAll`                                                                   | returns per-entity `{created,updated,deleted}`; replace needs `confirm=true`                                                                                              |
 
@@ -105,7 +110,8 @@ the batch for the rest, retry. Refetch (`getDrawings`, `getLayout`) on window fo
   "indicatorTemplates": [...], "drawingTemplates": [...], "chartTemplates": [...],
   "settings": { "<key>": <value> }, "notes": [{ "id", "symbol", "text", ... }],
   "watchlists": [{ "id", "name", "items": [...], ... }],   // added in Phase 8
-  "flags": [{ "symbol", "color", ... }] }                  // added in Phase 8
+  "flags": [{ "symbol", "color", ... }],                   // added in Phase 8
+  "alerts": [{ ...AlertIn, "status", "statusReason", "fireCount", "lastFiredAt" }] }   // added in Phase 10
 ```
 
 Export fields `revision`/`createdAt`/`updatedAt` are informational. Import validates everything first (`app:
@@ -122,6 +128,8 @@ replace everything. `dryRun=true` returns the same summary and rolls back.
 - `watchlists` and `flags` are additive: `BUNDLE_VERSION` stays 1, and a Phase 7 bundle without these keys leaves
   them untouched, also in `replace`. Duplicate watchlist ids or flag symbols in a bundle -> 422. A watchlist id that
   is not `[A-Za-z0-9_-]{1,36}` gets a fresh id on import.
+- `alerts` is additive too (no states, no log): `merge` matches by id, `replace` empties alerts and their states only
+  when the key is present. Details: [alerts.md](alerts.md) §1.7.
 - Layout ids that would shadow a fixed route (`last-used`, `import`, `export`) or are not `[A-Za-z0-9_-]{1,36}` get a
   fresh id on import (`isLastUsed` follows the new id); such layouts are always created, never matched.
 - Settings: `null` values are rejected (422), as with `PUT /settings/{key}`; to remove a key use `PATCH` / `DELETE`.

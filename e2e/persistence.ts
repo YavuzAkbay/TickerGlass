@@ -271,6 +271,19 @@ export class MockServer {
     return null;
   }
 
+  /** The first drawing operand of a spec, like the server derives `drawing_id` (alerts.md section 1.1). */
+  private specDrawingId(spec: unknown): string | null {
+    let found: string | null = null;
+    const walk = (v: unknown) => {
+      if (found || !v || typeof v !== 'object') return;
+      const o = v as Json;
+      if (o.kind === 'drawing' && typeof o.drawingId === 'string') found = o.drawingId;
+      else Object.values(o).forEach(walk);
+    };
+    walk(spec);
+    return found;
+  }
+
   private alertConflict(row: AlertRow): Reply {
     return [409, { detail: { message: `alert ${row.id} changed elsewhere`, current: row } }];
   }
@@ -344,8 +357,8 @@ export class MockServer {
       if (existing) return this.alertConflict(existing);
       const t = this.now();
       const row: AlertRow = {
-        drawingId: null,
         ...b,
+        drawingId: this.specDrawingId(b.spec),
         id: aid,
         name: b.name.trim(),
         status: b.status === 'paused' ? 'paused' : 'active',
@@ -369,6 +382,7 @@ export class MockServer {
       const { revision: _r, status, ...fields } = b;
       const keep = row.status === 'active' || row.status === 'paused' ? row.status : 'active';
       Object.assign(row, fields, {
+        drawingId: 'spec' in b ? this.specDrawingId(b.spec) : row.drawingId,
         name: b.name.trim(),
         status: status === 'active' || status === 'paused' ? status : keep,
         statusReason: null,

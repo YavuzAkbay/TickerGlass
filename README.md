@@ -27,6 +27,22 @@ Open http://localhost:8080. The API is at http://localhost:8000/api/health.
 
 Data is stored in SQLite in the `api-data` volume. To use Postgres instead, see `.env.example`.
 
+### Alert notifications
+
+Alerts are evaluated by the `alerts` service, so they fire with the browser closed. In-app toasts, sound and
+browser notifications need no setup. For notifications elsewhere, set these in `.env` (all optional; secrets stay
+on the server, and the Settings dialog's Alerts tab can send a test message):
+
+| Variable                                                                                   | Meaning                                                                                               |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `ALERTS_WEBHOOK_URL`, `ALERTS_WEBHOOK_SECRET`                                              | Default webhook target (a per-alert URL overrides it) and an HMAC-SHA256 signing secret               |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`                                                   | Telegram bot; both are required                                                                       |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`, `SMTP_TLS` | Email; `SMTP_HOST`, `SMTP_FROM` and `SMTP_TO` are required, `SMTP_TLS` is `starttls`, `ssl` or `none` |
+| `ALERTS_LOG_MAX`                                                                           | Newest N fired-alert log entries kept (default 5000)                                                  |
+| `ALERTS_INTERNAL_TOKEN`                                                                    | When set, the alerts service must send it as `X-Alerts-Token` on its write routes                     |
+
+Details: [docs/alerts.md](docs/alerts.md) section 4.
+
 ## Development
 
 Requirements: Node 22+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/).
