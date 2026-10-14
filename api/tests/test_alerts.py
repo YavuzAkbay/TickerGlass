@@ -18,7 +18,7 @@ from investopen_api.app import create_app
 from investopen_api.settings import Settings
 from investopen_api.userdata.alerts import AlertIn
 
-FIXTURES = Path(__file__).parent / "fixtures" / "alerts"
+FIXTURES = Path(__file__).resolve().parents[2] / "packages" / "alerts" / "test" / "fixtures"
 
 
 # ----------------------------------------------------------------- helpers

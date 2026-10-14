@@ -4,6 +4,7 @@ RUN npm install -g pnpm@12
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/web/package.json apps/web/
+COPY packages/alerts/package.json packages/alerts/
 COPY packages/engine/package.json packages/engine/
 COPY packages/indicators/package.json packages/indicators/
 COPY services/alerts/package.json services/alerts/
