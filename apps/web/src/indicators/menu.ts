@@ -5,7 +5,8 @@ import {
   type OutputSourceRef,
   type SourceValue,
 } from '@investopen/indicators';
-import { Copy, Eye, EyeOff, Layers, Settings, SquareFunction, Trash2 } from 'lucide-react';
+import { Bell, Copy, Eye, EyeOff, Layers, Settings, SquareFunction, Trash2 } from 'lucide-react';
+import { openAlertDialog } from '../alerts/dialog/open';
 import { useUiStore } from '../store/ui';
 import type { MenuItem } from '../ui/Menu';
 import {
@@ -56,6 +57,12 @@ export function indicatorMenuItems(id: string): MenuItem[] {
       label: inst.visible ? 'Hide' : 'Show',
       icon: inst.visible ? EyeOff : Eye,
       onSelect: () => toggleIndicatorVisible(id),
+    },
+    {
+      label: 'Add alert…',
+      icon: Bell,
+      disabled: !plot,
+      onSelect: () => openAlertDialog({ indicatorId: id }),
     },
     { type: 'separator' },
     {

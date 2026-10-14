@@ -1,0 +1,48 @@
+.alert-dlg-body {
+  height: 520px;
+  max-height: calc(100vh - 220px);
+  padding: 4px 20px 16px;
+  overflow-y: auto;
+}
+.alert-dlg .dlg-row {
+  flex-wrap: wrap;
+}
+.alert-target {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.alert-number .io-input {
+  width: 110px;
+}
+.alert-triggers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.alert-trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.alert-errors {
+  margin: 12px 0 0;
+  padding: 8px 12px 8px 28px;
+}
+.alert-message {
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  font: inherit;
+}
+.alert-preview {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

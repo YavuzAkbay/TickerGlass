@@ -24,6 +24,7 @@ const DIALOGS: Record<DialogId, DialogComponent | RetryableLazy<DialogComponent>
   shortcuts: retryableLazy(() => import('./ShortcutsDialog')),
   loadLayout: retryableLazy(() => import('./LoadLayoutDialog')),
   dataTransfer: retryableLazy(() => import('./DataTransferDialog')),
+  alert: retryableLazy(() => import('./AlertDialog')),
 };
 
 /** What renders for each dialog now (a lazy one is replaced after a failed load). */

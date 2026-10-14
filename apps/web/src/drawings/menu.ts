@@ -1,6 +1,8 @@
+import { CHANNEL_TOOLS, LINE_TOOLS } from '@investopen/alerts';
 import { getDrawingTool, type DrawingStyle } from '@investopen/engine';
 import {
   ArrowDownToLine,
+  Bell,
   ArrowUpToLine,
   ClipboardCopy,
   Copy,
@@ -14,6 +16,8 @@ import {
   Trash2,
   Unlock,
 } from 'lucide-react';
+import { openAlertDialog } from '../alerts/dialog/open';
+import { isBrickType } from '../alerts/dialog/sources';
 import { useAppStore } from '../store/app';
 import { getChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
@@ -135,6 +139,16 @@ export function drawingMenuItems(ids: readonly string[]): MenuItem[] {
       disabled: !getDrawingTool(first.type),
       onSelect: () => openDrawingSettings(first.id),
     });
+  if (single && (LINE_TOOLS.includes(first.type) || CHANNEL_TOOLS.includes(first.type))) {
+    const brick = isBrickType(useAppStore.getState().chartType);
+    items.push({
+      label: 'Add alert…',
+      icon: Bell,
+      disabled: brick,
+      ...(brick ? { title: 'Drawing alerts are not available on this chart type' } : {}),
+      onSelect: () => openAlertDialog({ drawingId: first.id }),
+    });
+  }
   items.push(
     { label: 'Clone', icon: Copy, shortcut: 'Alt+drag', onSelect: () => void cloneDrawings(sel) },
     {

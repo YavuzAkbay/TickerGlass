@@ -16,7 +16,8 @@ export type DialogId =
   | 'intervalInput'
   | 'shortcuts'
   | 'loadLayout'
-  | 'dataTransfer';
+  | 'dataTransfer'
+  | 'alert';
 
 /** Drawing tool ids are defined by the left toolbar (Phase 6 implements them). */
 export type DrawingToolId = string;

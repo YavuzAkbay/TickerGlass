@@ -11,6 +11,8 @@ export type MenuItem =
       shortcut?: string;
       checked?: boolean;
       disabled?: boolean;
+      /** Tooltip, e.g. why the item is disabled. */
+      title?: string;
       danger?: boolean;
       onSelect?: () => void;
       submenu?: MenuItem[];
@@ -101,6 +103,7 @@ export function Menu({ items, onClose, autoFocus = true }: Props) {
             }}
             role="menuitem"
             aria-disabled={it.disabled}
+            title={it.title}
             className={`io-menu-item${active === i ? ' active' : ''}${it.disabled ? ' disabled' : ''}${it.danger ? ' danger' : ''}`}
             onPointerEnter={(e) => {
               setActive(i);

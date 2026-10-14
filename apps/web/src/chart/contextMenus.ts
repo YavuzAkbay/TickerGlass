@@ -133,7 +133,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       {
         label: `Add alert at ${priceText(chart, p.price)}`,
         icon: Bell,
-        onSelect: () => commands.execute('alert.create', { price: p.price }),
+        onSelect: () => commands.execute('alert.create', { price: p.price, paneId: p.paneId }),
       },
       { type: 'separator' },
       ...scaleItems(chart, p.paneId),
@@ -181,7 +181,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       label: `Add alert on ${symbol} at ${priceText(chart, p.price)}`,
       icon: Bell,
       shortcut: 'Alt+A',
-      onSelect: () => commands.execute('alert.create', { price: p.price }),
+      onSelect: () => commands.execute('alert.create', { price: p.price, paneId: p.paneId }),
     },
     { type: 'separator' },
     {

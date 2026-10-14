@@ -9,6 +9,8 @@ import {
   Settings,
   Undo2,
 } from 'lucide-react';
+import { useAlerts } from '../alerts/store';
+import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
 import { changeScale, toggleScaleMode } from '../chart/scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
 import { getChart } from '../store/chart';
@@ -257,7 +259,27 @@ export function registerCoreCommands(): () => void {
       title: 'Create alert',
       category: 'Alerts',
       shortcut: 'Alt+a',
-      run: () => toast('Alerts arrive in Phase 10'),
+      // `{price?, paneId?, symbol?, drawingId?, indicatorId?}` or `{cloneOf: id}`.
+      run: (arg) => {
+        if (isCloneArgs(arg)) {
+          if (useAlerts.getState().alerts[arg.cloneOf]) openAlertDialog({ cloneOf: arg.cloneOf });
+          else toast('Alert not found', 'error');
+          return;
+        }
+        openAlertDialog(sanitizeCreateArgs(arg));
+      },
+    },
+    {
+      id: 'alert.edit',
+      title: 'Edit alert',
+      category: 'Alerts',
+      hidden: true,
+      run: (arg) => {
+        const id = (arg as { id?: unknown } | undefined)?.id;
+        if (typeof id === 'string' && useAlerts.getState().alerts[id])
+          openAlertDialog({ editId: id });
+        else toast('Alert not found', 'error');
+      },
     },
     {
       id: 'replay.toggle',
