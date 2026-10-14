@@ -23,6 +23,14 @@ const TYPES = [
   'inside-pitchfork',
   'fib-retracement',
   'fib-extension',
+  'fib-channel',
+  'fib-time-zone',
+  'fib-speed-fan',
+  'fib-trend-time',
+  'fib-circles',
+  'fib-spiral',
+  'fib-speed-arcs',
+  'fib-wedge',
   'pitchfan',
   'long-position',
   'short-position',
@@ -76,11 +84,19 @@ describe('built-in tools', () => {
       expect(() => def.handles?.(g, d.style)).not.toThrow();
       def.priceAxisLabels?.(d, d.style, IDLE);
     }
-    // Lines extending right of far-left anchors are legitimately visible.
+    // Lines extending right of far-left anchors are legitimately visible (also
+    // the speed fan's rays).
     const far = makeDrawing(type, [pt(-500, 20), pt(-480, 30), pt(-490, 25)]);
     if (
       def.isVisible &&
-      !['horizontal-line', 'cross-line', 'ray', 'extended-line', 'horizontal-ray'].includes(type)
+      ![
+        'horizontal-line',
+        'cross-line',
+        'ray',
+        'extended-line',
+        'horizontal-ray',
+        'fib-speed-fan',
+      ].includes(type)
     )
       expect(def.isVisible(geometryOf(far), far.style)).toBe(false);
   });

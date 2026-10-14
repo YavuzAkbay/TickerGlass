@@ -49,6 +49,7 @@ const THREE: [number, number][] = [
   [700, 500],
 ];
 const LINES = 'Trend line tools';
+const FIB = 'Gann and Fibonacci tools';
 
 /** Flyout (toolbar group label), tool name, engine type, clicks (viewport px), stored anchors. */
 const LINE_TOOL_CASES: {
@@ -73,12 +74,32 @@ const LINE_TOOL_CASES: {
   },
   { group: LINES, name: 'Inside pitchfork', type: 'inside-pitchfork', clicks: THREE, count: 3 },
   {
-    group: 'Gann and Fibonacci tools',
+    group: FIB,
     name: 'Pitchfan',
     type: 'pitchfan',
     clicks: THREE,
     count: 3,
   },
+  { group: FIB, name: 'Fib channel', type: 'fib-channel', clicks: THREE, count: 3 },
+  { group: FIB, name: 'Fib time zone', type: 'fib-time-zone', clicks: TWO, count: 2 },
+  {
+    group: FIB,
+    name: 'Fib speed resistance fan',
+    type: 'fib-speed-fan',
+    clicks: TWO,
+    count: 2,
+  },
+  { group: FIB, name: 'Trend-based fib time', type: 'fib-trend-time', clicks: THREE, count: 3 },
+  { group: FIB, name: 'Fib circles', type: 'fib-circles', clicks: TWO, count: 2 },
+  { group: FIB, name: 'Fib spiral', type: 'fib-spiral', clicks: TWO, count: 2 },
+  {
+    group: FIB,
+    name: 'Fib speed resistance arcs',
+    type: 'fib-speed-arcs',
+    clicks: TWO,
+    count: 2,
+  },
+  { group: FIB, name: 'Fib wedge', type: 'fib-wedge', clicks: THREE, count: 3 },
 ];
 
 for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {

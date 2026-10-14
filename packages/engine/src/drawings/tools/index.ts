@@ -8,8 +8,16 @@ import { datePriceRange } from './date-price-range';
 import { dateRange } from './date-range';
 import { disjointChannel } from './disjoint-channel';
 import { extendedLine } from './extended-line';
+import { fibChannel } from './fib-channel';
+import { fibCircles } from './fib-circles';
 import { fibExtension } from './fib-extension';
 import { fibRetracement } from './fib-retracement';
+import { fibSpeedArcs } from './fib-speed-arcs';
+import { fibSpeedFan } from './fib-speed-fan';
+import { fibSpiral } from './fib-spiral';
+import { fibTimeZone } from './fib-time-zone';
+import { fibTrendTime } from './fib-trend-time';
+import { fibWedge } from './fib-wedge';
 import { flatTopBottom } from './flat-top-bottom';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
@@ -53,6 +61,14 @@ registerDrawingTool(insidePitchfork);
 // fib
 registerDrawingTool(fibRetracement);
 registerDrawingTool(fibExtension);
+registerDrawingTool(fibChannel);
+registerDrawingTool(fibTimeZone);
+registerDrawingTool(fibSpeedFan);
+registerDrawingTool(fibTrendTime);
+registerDrawingTool(fibCircles);
+registerDrawingTool(fibSpiral);
+registerDrawingTool(fibSpeedArcs);
+registerDrawingTool(fibWedge);
 registerDrawingTool(pitchfan);
 // forecasting
 registerDrawingTool(longPosition);
@@ -76,8 +92,16 @@ export {
   dateRange,
   disjointChannel,
   extendedLine,
+  fibChannel,
+  fibCircles,
   fibExtension,
   fibRetracement,
+  fibSpeedArcs,
+  fibSpeedFan,
+  fibSpiral,
+  fibTimeZone,
+  fibTrendTime,
+  fibWedge,
   flatTopBottom,
   horizontalLine,
   horizontalRay,
