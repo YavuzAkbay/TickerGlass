@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -191,3 +192,92 @@ class SymbolFlag(Base):
     #: Flagged-at; reset when the color changes.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# ------------------------------------------------------------------- alerts
+#
+# Phase 10 (docs/alerts.md §1.1). Only the API writes these tables; the Node
+# service goes through REST. `alert_states` is service-owned runtime state, kept
+# apart so its writes never bump `alerts.revision`.
+
+
+class Alert(Base):
+    """A price/indicator alert. `spec` is the validated `AlertSpec` JSON."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    symbol: Mapped[str] = mapped_column(String(128), index=True)
+    interval: Mapped[str] = mapped_column(String(16))
+    prepost: Mapped[bool] = mapped_column(Boolean)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    message: Mapped[str] = mapped_column(Text)
+    notify: Mapped[dict[str, Any]] = mapped_column(JSON)
+    #: active | paused | triggered | expired | error
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    status_reason: Mapped[str | None] = mapped_column(String(500))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: First drawing operand of `spec` (derived by the server).
+    drawing_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    fire_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AlertState(Base):
+    """Evaluator runtime state, valid only for the alert revision it was written for."""
+
+    __tablename__ = "alert_states"
+
+    alert_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alerts.id", ondelete="CASCADE"), primary_key=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    state: Mapped[dict[str, Any]] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AlertLog(Base):
+    """One fire. Outlives its alert (`alert_id` is deliberately not a foreign key)."""
+
+    __tablename__ = "alert_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: Idempotency key chosen by the service.
+    fire_id: Mapped[str] = mapped_column(String(36), unique=True)
+    alert_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    alert_name: Mapped[str] = mapped_column(String(200))
+    symbol: Mapped[str] = mapped_column(String(128), index=True)
+    interval: Mapped[str] = mapped_column(String(16))
+    kind: Mapped[str] = mapped_column(String(8))
+    fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    bar_time: Mapped[int] = mapped_column(BigInteger)
+    message: Mapped[str] = mapped_column(Text)
+    values: Mapped[dict[str, Any]] = mapped_column(JSON)
+    delayed: Mapped[bool] = mapped_column(Boolean)
+    final: Mapped[bool] = mapped_column(Boolean)
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AlertDelivery(Base):
+    """Persisted outbox row: one external notification of one log entry."""
+
+    __tablename__ = "alert_deliveries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    log_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("alert_log.id", ondelete="CASCADE"), index=True
+    )
+    #: webhook | telegram | email
+    channel: Mapped[str] = mapped_column(String(16))
+    #: Per-alert webhook URL (null = the API's default).
+    target: Mapped[str | None] = mapped_column(String(500))
+    #: pending | sent | failed
+    status: Mapped[str] = mapped_column(String(8))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_error: Mapped[str | None] = mapped_column(String(500))

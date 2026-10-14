@@ -11,6 +11,8 @@ from uuid import uuid4
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 from pydantic.alias_generators import to_camel
 
+from .alerts import BundleAlert
+
 #: Version of the import/export bundle format (`Bundle.version`).
 BUNDLE_VERSION = 1
 
@@ -481,6 +483,8 @@ class Bundle(ApiModel):
     notes: list[BundleNote] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     watchlists: list[BundleWatchlist] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     flags: list[BundleFlag] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    #: Alerts without runtime states or log (docs/alerts.md §1.7).
+    alerts: list[BundleAlert] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
 
 
 class ImportCounts(ApiModel):
@@ -501,3 +505,4 @@ class ImportSummary(ApiModel):
     notes: ImportCounts = Field(default_factory=ImportCounts)
     watchlists: ImportCounts = Field(default_factory=ImportCounts)
     flags: ImportCounts = Field(default_factory=ImportCounts)
+    alerts: ImportCounts = Field(default_factory=ImportCounts)

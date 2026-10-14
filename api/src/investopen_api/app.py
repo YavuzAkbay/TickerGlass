@@ -1,7 +1,12 @@
+import asyncio
+import math
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -10,8 +15,10 @@ from sqlalchemy.orm import sessionmaker
 from . import __version__
 from .db import make_engine, run_migrations
 from .live import LiveHub, LiveSource, Poller, provider_poller
+from .notifications.dispatcher import Dispatcher
 from .providers.base import MarketDataProvider, ProviderError, SymbolNotFound
 from .routes import (
+    alerts,
     bars,
     drawings,
     layouts,
@@ -27,7 +34,18 @@ from .routes import (
 from .services.bars import BarService
 from .services.market import MarketService
 from .services.symbols import SymbolService
-from .settings import get_settings
+from .settings import Settings, get_settings
+
+
+def _finite(value: Any) -> Any:
+    """Replace inf/NaN (e.g. `1e999` echoed back in a 422's `input`) so the response encodes."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_finite(v) for v in value]
+    return value
 
 
 def create_app(
@@ -35,8 +53,9 @@ def create_app(
     database_url: str | None = None,
     live_source: LiveSource | None = None,
     live_poller: Poller | None = None,
+    settings_override: Settings | None = None,
 ) -> FastAPI:
-    settings = get_settings()
+    settings = settings_override or get_settings()
     db_url = database_url or settings.database_url
 
     @asynccontextmanager
@@ -66,7 +85,14 @@ def create_app(
             poll_interval_s=settings.live_poll_interval_s,
             poll_closed_interval_s=settings.live_poll_closed_interval_s,
         )
+        app.state.settings = settings
+        app.state.live_hub.bind_loop(asyncio.get_running_loop())
+        app.state.alerts_service = alerts.ServiceState()
+        dispatcher = Dispatcher(app.state.sessionmaker, settings, app.state.live_hub)
+        app.state.dispatcher = dispatcher
+        dispatcher.start()
         yield
+        await dispatcher.stop()
         await app.state.live_hub.close()
         engine.dispose()
 
@@ -78,6 +104,10 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse({"detail": _finite(jsonable_encoder(exc.errors()))}, status_code=422)
 
     @app.exception_handler(SymbolNotFound)
     async def _not_found(_: Request, exc: SymbolNotFound) -> JSONResponse:
@@ -103,6 +133,7 @@ def create_app(
     api.include_router(notes.router)
     api.include_router(watchlists.router)
     api.include_router(watchlists.flags_router)
+    api.include_router(alerts.router)
     api.include_router(transfer.router)
     app.include_router(api)
     app.include_router(live.router)

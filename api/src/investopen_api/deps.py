@@ -4,9 +4,12 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session, sessionmaker
 
+from .live import LiveHub
+from .notifications.dispatcher import Dispatcher
 from .services.bars import BarService
 from .services.market import MarketService
 from .services.symbols import SymbolService
+from .settings import Settings
 
 
 def get_bar_service(request: Request) -> BarService:
@@ -37,3 +40,23 @@ def get_db(request: Request) -> Iterator[Session]:
 
 
 SessionDep = Annotated[Session, Depends(get_db)]
+
+
+def get_hub(request: Request) -> LiveHub:
+    hub: LiveHub = request.app.state.live_hub
+    return hub
+
+
+def get_dispatcher(request: Request) -> Dispatcher:
+    dispatcher: Dispatcher = request.app.state.dispatcher
+    return dispatcher
+
+
+def get_app_settings(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
+
+
+HubDep = Annotated[LiveHub, Depends(get_hub)]
+DispatcherDep = Annotated[Dispatcher, Depends(get_dispatcher)]
+SettingsDep = Annotated[Settings, Depends(get_app_settings)]

@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import HubDep, SessionDep
 from ..userdata import schemas as s
 from ..userdata import store
 
@@ -106,7 +106,7 @@ def _apply(
 
 
 @router.post("/batch", response_model=s.DrawingBatchResult)
-def batch(session: SessionDep, body: s.DrawingBatch) -> s.DrawingBatchResult:
+def batch(session: SessionDep, hub: HubDep, body: s.DrawingBatch) -> s.DrawingBatchResult:
     """Upsert and delete in one transaction; all-or-nothing.
 
     Each upsert carries the revision it was based on (null = new); each delete
@@ -158,4 +158,8 @@ def batch(session: SessionDep, body: s.DrawingBatch) -> s.DrawingBatchResult:
     by_id = {r.id: r for r in session.scalars(q)}
     out = [by_id[did] for did in written]
     session.commit()
+    if written or deleted:
+        hub.publish_threadsafe(
+            "drawings", {"type": "drawings.changed", "ids": written, "deleted": deleted}
+        )
     return s.DrawingBatchResult(drawings=[store.drawing(r) for r in out], deleted=deleted)

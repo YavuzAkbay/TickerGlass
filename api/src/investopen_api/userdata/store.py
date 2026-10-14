@@ -2,12 +2,14 @@
 
 import math
 import re
+from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar, cast
 
 from sqlalchemy import CursorResult, Result, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import models as m
+from . import alerts as al
 from . import schemas as s
 
 _T = TypeVar("_T")
@@ -216,6 +218,10 @@ def export_bundle(session: Session) -> s.Bundle:
             s.BundleFlag(**flag(r).model_dump())
             for r in rows(m.SymbolFlag, m.SymbolFlag.created_at, m.SymbolFlag.symbol)
         ],
+        alerts=[
+            al.BundleAlert(**al.alert_out(r).model_dump(exclude={"drawing_id"}))
+            for r in rows(m.Alert, m.Alert.created_at, m.Alert.id)
+        ],
     )
 
 
@@ -245,6 +251,7 @@ SECTIONS: dict[str, Any] = {
     "notes": m.Note,
     "watchlists": m.Watchlist,
     "flags": m.SymbolFlag,
+    "alerts": m.Alert,
 }
 
 _SAFE_LAYOUT_ID = re.compile(r"[A-Za-z0-9_-]{1,36}")
@@ -258,8 +265,21 @@ def _import_layout_id(wanted: str) -> str:
     return wanted
 
 
+@dataclass
+class Touched:
+    """Ids an import wrote or removed, for the `/ws` change events (published after commit)."""
+
+    alerts: set[str] = field(default_factory=set)
+    alerts_deleted: set[str] = field(default_factory=set)
+    drawings: set[str] = field(default_factory=set)
+    drawings_deleted: set[str] = field(default_factory=set)
+
+
 def import_bundle(
-    session: Session, bundle: s.Bundle, mode: Literal["merge", "replace"]
+    session: Session,
+    bundle: s.Bundle,
+    mode: Literal["merge", "replace"],
+    touched: Touched | None = None,
 ) -> s.ImportSummary:
     """Apply `bundle` in `session` (the caller commits or rolls back).
 
@@ -292,13 +312,21 @@ def import_bundle(
         if value is None:
             raise BundleError(f"setting {key}: value must not be null (omit the key instead)")
 
+    _dupes([x.id for x in bundle.alerts], "alert id")
+
     summary = s.ImportSummary(mode=mode, dry_run=False)
+    touched = touched if touched is not None else Touched()
     if mode == "replace":
         for section, model in SECTIONS.items():
             if section not in bundle.model_fields_set:
                 continue
             c: s.ImportCounts = getattr(summary, section)
             c.deleted = session.scalar(select(func.count()).select_from(model)) or 0
+            if section == "alerts":
+                touched.alerts_deleted.update(session.scalars(select(m.Alert.id)))
+                session.execute(delete(m.AlertState))
+            elif section == "drawings":
+                touched.drawings_deleted.update(session.scalars(select(m.DrawingRow.id)))
             session.execute(delete(model))
         session.flush()
 
@@ -355,6 +383,7 @@ def import_bundle(
             drow.revision += 1
             drow.updated_at = t
             summary.drawings.updated += 1
+        touched.drawings.add(did)
 
     for it in bundle.indicator_templates:
         irow = session.scalar(
@@ -486,8 +515,60 @@ def import_bundle(
                 frow.color, frow.created_at = f.color, t
             frow.updated_at = t
             summary.flags.updated += 1
+
+    for a in bundle.alerts:
+        _import_alert(session, a, t, summary, touched)
     session.flush()
+    if bundle.alerts and (session.scalar(select(func.count()).select_from(m.Alert)) or 0) > (
+        al.MAX_ALERTS
+    ):
+        raise BundleError(f"import would exceed {al.MAX_ALERTS} alerts")
+    touched.alerts_deleted -= touched.alerts
+    touched.drawings_deleted -= touched.drawings
     return summary
+
+
+def _import_alert(
+    session: Session,
+    a: al.BundleAlert,
+    t: Any,
+    summary: s.ImportSummary,
+    touched: Touched,
+) -> None:
+    """Merge one alert by id. Imported alerts keep their status; the state row is dropped."""
+    aid = a.id
+    if not _SAFE_LAYOUT_ID.fullmatch(aid) or aid in al.RESERVED_ALERT_IDS:
+        aid = s.new_id()
+    fields: dict[str, Any] = {
+        "name": a.name,
+        "symbol": a.symbol,
+        "interval": a.interval,
+        "prepost": a.prepost,
+        "spec": al.dump_spec(a.spec),
+        "schema_version": al.ALERT_SCHEMA_VERSION,
+        "message": a.message,
+        "notify": al.dump_notify(a.notify),
+        "status": a.status,
+        "status_reason": a.status_reason,
+        "expires_at": None if a.expires_at is None else al.utc(a.expires_at),
+        "drawing_id": al.derive_drawing_id(a.spec),
+        "fire_count": a.fire_count,
+        "last_fired_at": None if a.last_fired_at is None else al.utc(a.last_fired_at),
+    }
+    row = session.get(m.Alert, aid)
+    if row is None:
+        session.add(
+            m.Alert(id=aid, revision=1, created_at=a.created_at or t, updated_at=t, **fields)
+        )
+        summary.alerts.created += 1
+    else:
+        for key, value in fields.items():
+            setattr(row, key, value)
+        row.revision += 1
+        row.updated_at = t
+        session.execute(delete(m.AlertState).where(m.AlertState.alert_id == aid))
+        summary.alerts.updated += 1
+    touched.alerts.add(aid)
 
 
 def _free_id(session: Session, model: Any, wanted: str | None) -> str:

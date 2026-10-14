@@ -43,6 +43,12 @@ async def _handle(hub: LiveHub, client: LiveClient, text: str) -> None:
         symbols = _parse_symbols(msg.get("symbols"))
         await hub.unsubscribe(client, symbols)
         client.send({"type": "subscribed", "symbols": sorted(client.symbols)})
+    elif op == "events":
+        topics = msg.get("topics")
+        if not isinstance(topics, list) or not all(isinstance(t, str) for t in topics):
+            raise ValueError("'topics' must be a list of strings")
+        hub.set_topics(client, topics)
+        client.send({"type": "events", "topics": sorted(client.topics)})
     else:
         raise ValueError(f"unknown op: {op!r}")
 

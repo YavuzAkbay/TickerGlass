@@ -24,6 +24,8 @@ UpstreamStatus = Literal["connected", "reconnecting", "polling"]
 # Stream `market_hours` values meaning regular trading (0 pre, 1 regular, 2 post,
 # 3 extended); anything else is treated as "market closed" for poll cadence.
 OPEN_MARKET_HOURS = frozenset({1})
+# Topics a client may subscribe to with `{"op": "events", "topics": [...]}`.
+EVENT_TOPICS = frozenset({"alerts", "drawings"})
 
 
 class LiveSource(Protocol):
@@ -103,6 +105,8 @@ class LiveClient:
 
     def __init__(self, maxsize: int) -> None:
         self.symbols: set[str] = set()
+        #: Event topics (`op: events`); they do not count toward the symbol cap.
+        self.topics: set[str] = set()
         self.queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=maxsize)
         self.dropped = 0
 
@@ -167,10 +171,42 @@ class LiveHub:
         self._status: UpstreamStatus | None = None
         self._tasks: list[asyncio.Task[None]] = []
         self._closed = False
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def status(self) -> UpstreamStatus | None:
         return self._status
+
+    # -- event topics ------------------------------------------------------
+
+    def bind_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """The loop `publish_threadsafe` schedules on (captured in the app lifespan)."""
+        self._loop = loop
+
+    def set_topics(self, client: LiveClient, topics: list[str]) -> None:
+        """Replace the client's topic set. Raises ValueError (set unchanged) on unknown topics."""
+        for topic in topics:
+            if topic not in EVENT_TOPICS:
+                raise ValueError(f"unknown topic {topic!r}")
+        client.topics = set(topics)
+
+    def publish(self, topic: str, frame: dict[str, Any]) -> None:
+        """Fan a frame out to the clients holding `topic`. Event-loop thread only."""
+        out = {**frame, "topic": topic}
+        for client in tuple(self._clients):
+            if topic in client.topics:
+                client.send(out)
+
+    def publish_threadsafe(self, topic: str, frame: dict[str, Any]) -> None:
+        """`publish` from any thread (sync routes run in the threadpool). Call after commit."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            log.debug("dropping %s frame: event loop not available", topic)
+            return
+        try:
+            loop.call_soon_threadsafe(self.publish, topic, frame)
+        except RuntimeError:
+            log.debug("dropping %s frame: event loop closed", topic)
 
     # -- client management -------------------------------------------------
 
@@ -244,6 +280,7 @@ class LiveHub:
 
     async def close(self) -> None:
         self._closed = True
+        self._loop = None
         for task in self._tasks:
             task.cancel()
         for task in self._tasks:
