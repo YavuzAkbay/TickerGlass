@@ -48,6 +48,13 @@ const THREE: [number, number][] = [
   [700, 250],
   [700, 500],
 ];
+/** Zigzag clicks alternating high/low, 60 px apart. */
+const zigzag = (n: number): [number, number][] =>
+  Array.from({ length: n }, (_, i) => [300 + i * 60, i % 2 ? 250 : 450] as [number, number]);
+const FOUR = zigzag(4);
+const FIVE = zigzag(5);
+const SIX = zigzag(6);
+const SEVEN = zigzag(7);
 const LINES = 'Trend line tools';
 const FIB = 'Gann and Fibonacci tools';
 const PATTERNS = 'Patterns';
@@ -105,6 +112,47 @@ const LINE_TOOL_CASES: {
   { group: FIB, name: 'Gann square fixed', type: 'gann-square-fixed', clicks: TWO, count: 2 },
   { group: FIB, name: 'Gann square', type: 'gann-square', clicks: TWO, count: 2 },
   { group: FIB, name: 'Gann fan', type: 'gann-fan', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'XABCD pattern', type: 'xabcd', clicks: FIVE, count: 5 },
+  { group: PATTERNS, name: 'Cypher pattern', type: 'cypher', clicks: FIVE, count: 5 },
+  { group: PATTERNS, name: 'Head and shoulders', type: 'head-shoulders', clicks: SEVEN, count: 7 },
+  { group: PATTERNS, name: 'ABCD pattern', type: 'abcd', clicks: FOUR, count: 4 },
+  { group: PATTERNS, name: 'Triangle pattern', type: 'triangle-pattern', clicks: FOUR, count: 4 },
+  { group: PATTERNS, name: 'Three drives pattern', type: 'three-drives', clicks: SEVEN, count: 7 },
+  {
+    group: PATTERNS,
+    name: 'Elliott impulse wave (12345)',
+    type: 'elliott-impulse',
+    clicks: SIX,
+    count: 6,
+  },
+  {
+    group: PATTERNS,
+    name: 'Elliott correction wave (ABC)',
+    type: 'elliott-correction',
+    clicks: FOUR,
+    count: 4,
+  },
+  {
+    group: PATTERNS,
+    name: 'Elliott triangle wave (ABCDE)',
+    type: 'elliott-triangle',
+    clicks: SIX,
+    count: 6,
+  },
+  {
+    group: PATTERNS,
+    name: 'Elliott double combo wave (WXY)',
+    type: 'elliott-double-combo',
+    clicks: FOUR,
+    count: 4,
+  },
+  {
+    group: PATTERNS,
+    name: 'Elliott triple combo wave (WXYXZ)',
+    type: 'elliott-triple-combo',
+    clicks: SIX,
+    count: 6,
+  },
   { group: PATTERNS, name: 'Cyclic lines', type: 'cyclic-lines', clicks: TWO, count: 2 },
   { group: PATTERNS, name: 'Time cycles', type: 'time-cycles', clicks: TWO, count: 2 },
   { group: PATTERNS, name: 'Sine line', type: 'sine-line', clicks: TWO, count: 2 },

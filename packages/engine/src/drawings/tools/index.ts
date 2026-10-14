@@ -1,13 +1,20 @@
 // Built-in drawing tools. Importing this module registers them (chart.ts does).
 // One file per tool, registered below in toolbar order.
 import { registerDrawingTool } from '../registry';
+import { abcd } from './abcd';
 import { arrowLine } from './arrow-line';
 import { brush } from './brush';
 import { crossLine } from './cross-line';
 import { cyclicLines } from './cyclic-lines';
+import { cypher } from './cypher';
 import { datePriceRange } from './date-price-range';
 import { dateRange } from './date-range';
 import { disjointChannel } from './disjoint-channel';
+import { elliottCorrection } from './elliott-correction';
+import { elliottDoubleCombo } from './elliott-double-combo';
+import { elliottImpulse } from './elliott-impulse';
+import { elliottTriangle } from './elliott-triangle';
+import { elliottTripleCombo } from './elliott-triple-combo';
 import { extendedLine } from './extended-line';
 import { fibChannel } from './fib-channel';
 import { fibCircles } from './fib-circles';
@@ -24,6 +31,7 @@ import { gannBox } from './gann-box';
 import { gannFan } from './gann-fan';
 import { gannSquare } from './gann-square';
 import { gannSquareFixed } from './gann-square-fixed';
+import { headShoulders } from './head-shoulders';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
 import { icon } from './icon';
@@ -42,10 +50,13 @@ import { schiffPitchfork } from './schiff-pitchfork';
 import { shortPosition } from './short-position';
 import { sineLine } from './sine-line';
 import { text } from './text';
+import { threeDrives } from './three-drives';
 import { timeCycles } from './time-cycles';
 import { trendAngle } from './trend-angle';
 import { trendLine } from './trend-line';
+import { trianglePattern } from './triangle-pattern';
 import { verticalLine } from './vertical-line';
+import { xabcd } from './xabcd';
 
 // lines
 registerDrawingTool(trendLine);
@@ -81,6 +92,18 @@ registerDrawingTool(gannBox);
 registerDrawingTool(gannSquareFixed);
 registerDrawingTool(gannSquare);
 registerDrawingTool(gannFan);
+// patterns
+registerDrawingTool(xabcd);
+registerDrawingTool(cypher);
+registerDrawingTool(headShoulders);
+registerDrawingTool(abcd);
+registerDrawingTool(trianglePattern);
+registerDrawingTool(threeDrives);
+registerDrawingTool(elliottImpulse);
+registerDrawingTool(elliottCorrection);
+registerDrawingTool(elliottTriangle);
+registerDrawingTool(elliottDoubleCombo);
+registerDrawingTool(elliottTripleCombo);
 // patterns (cycles)
 registerDrawingTool(cyclicLines);
 registerDrawingTool(timeCycles);
@@ -100,13 +123,20 @@ registerDrawingTool(text);
 registerDrawingTool(icon);
 
 export {
+  abcd,
   arrowLine,
   brush,
   crossLine,
   cyclicLines,
+  cypher,
   datePriceRange,
   dateRange,
   disjointChannel,
+  elliottCorrection,
+  elliottDoubleCombo,
+  elliottImpulse,
+  elliottTriangle,
+  elliottTripleCombo,
   extendedLine,
   fibChannel,
   fibCircles,
@@ -123,6 +153,7 @@ export {
   gannFan,
   gannSquare,
   gannSquareFixed,
+  headShoulders,
   horizontalLine,
   horizontalRay,
   icon,
@@ -141,8 +172,11 @@ export {
   shortPosition,
   sineLine,
   text,
+  threeDrives,
   timeCycles,
   trendAngle,
   trendLine,
+  trianglePattern,
   verticalLine,
+  xabcd,
 };
