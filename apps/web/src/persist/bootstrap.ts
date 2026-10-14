@@ -7,6 +7,7 @@
 import type { Chart } from '@investopen/engine';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
+import { useCompareStore } from '../compare/store';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
@@ -154,6 +155,9 @@ export function startPersistence(): () => void {
   const offs = [
     useIndicatorStore.subscribe((s, p) => {
       if (s.instances !== p.instances) changed();
+    }),
+    useCompareStore.subscribe((s, p) => {
+      if (s.items !== p.items || s.scaleRestore !== p.scaleRestore) changed();
     }),
     useAppStore.subscribe((s, p) => {
       if (LAYOUT_FIELDS.some((k) => s[k] !== p[k])) changed();

@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type {
-  ChartStyle,
-  ChartType,
-  CrosshairMode,
-  DeepPartial,
-  MagnetMode,
+import {
+  tryParseSymbolExpression,
+  type ChartStyle,
+  type ChartType,
+  type CrosshairMode,
+  type DeepPartial,
+  type MagnetMode,
 } from '@investopen/engine';
 
 export type Theme = 'dark' | 'light';
@@ -36,8 +37,15 @@ interface AppState {
   set: (patch: Partial<AppState>) => void;
 }
 
-/** Symbol as the engine stores it (`Chart.getSymbol()`): trimmed, upper case. */
-export const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
+/**
+ * Symbol as the engine stores it (`Chart.getSymbol()`): trimmed, upper case;
+ * symbol expressions in canonical form (e.g. ' (aapl+msft)/2 ' -> '(AAPL+MSFT)/2').
+ */
+export function normalizeSymbol(symbol: string): string {
+  const upper = symbol.trim().toUpperCase();
+  const parsed = tryParseSymbolExpression(upper);
+  return parsed.ok ? parsed.value.canonical : upper;
+}
 
 export const useAppStore = create<AppState>()(
   persist(

@@ -1,18 +1,21 @@
 /**
  * What a layout stores (docs/persistence.md §6): the engine chart state, the
- * indicator instances and the chart settings that live in the app store.
+ * indicator instances, the compare overlays and the chart settings that live
+ * in the app store.
  * The client owns this shape; bump LAYOUT_SCHEMA_VERSION and add an upgrade
  * step when it changes.
  */
 import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@investopen/engine';
 import { useHistory } from '../commands/history';
+import { parseCompareLayout, type CompareLayout } from '../compare/model';
+import { currentCompareLayout, useCompareStore } from '../compare/store';
 import { DEFAULT_VOLUME_ID, withLegacyVolume, type IndicatorState } from '../indicators/model';
 import { useIndicatorPreview, useIndicatorStore } from '../indicators/store';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
 import { isObj } from './net';
 
-export const LAYOUT_SCHEMA_VERSION = 2;
+export const LAYOUT_SCHEMA_VERSION = 3;
 
 export interface ChartSettings {
   chartType: ChartType;
@@ -26,6 +29,7 @@ export interface LayoutState {
   /** null until the chart existed (e.g. a layout created before the chart mounted). */
   chart: ChartState | null;
   indicators: IndicatorState[];
+  compares: CompareLayout;
   chartSettings: ChartSettings;
 }
 
@@ -47,6 +51,7 @@ export function captureLayoutState(
   return {
     chart: chart ? chart.getState() : null,
     indicators: useIndicatorStore.getState().instances,
+    compares: currentCompareLayout(),
     chartSettings: currentChartSettings(),
   };
 }
@@ -103,6 +108,8 @@ export function migrateLegacyVolume(state: Record<string, unknown>): Record<stri
 /** Upgrade steps: `UPGRADES[v]` turns a version-v state into version v + 1. */
 const UPGRADES: Record<number, (old: Record<string, unknown>) => Record<string, unknown>> = {
   1: migrateLegacyVolume,
+  // v2 -> v3: compare overlays (none before). Content based like v1 -> v2.
+  2: (s) => ('compares' in s ? s : { ...s, compares: { items: [], scaleRestore: null } }),
 };
 
 /**
@@ -127,6 +134,7 @@ export function parseLayoutState(raw: unknown, schemaVersion = 1): LayoutState |
           placement: i.placement ?? 'auto',
         }))
       : [],
+    compares: parseCompareLayout(state.compares),
     chartSettings: {
       chartType: pick('chartType', (v) => typeof v === 'string'),
       chartStyle: pick('chartStyle', isObj),
@@ -142,7 +150,9 @@ export const stateKey = (s: LayoutState): string => JSON.stringify(s);
 
 /**
  * Make the app show `state`: chart settings and symbol/interval in the app
- * store, the indicator list, then the engine state (panes, scales, view).
+ * store, the indicator and compare lists, then the engine state (panes,
+ * scales, view). The lists go first: setState drops the engine's studies and
+ * the controllers re-add them from the stores.
  * Clears the undo history (steps of another layout make no sense here).
  */
 export async function applyLayoutState(
@@ -158,6 +168,7 @@ export async function applyLayoutState(
   app.set(patch);
   useIndicatorPreview.setState({ overrides: {} });
   useIndicatorStore.getState().replaceAll(state.indicators);
+  useCompareStore.getState().replaceAll(state.compares);
   useHistory.getState().clear();
   if (!chart || !state.chart) return;
   // Crosshair/magnet are user preferences, not layout state: keep the current ones.

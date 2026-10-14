@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import type { Layout, LayoutSummary, StoredDrawing } from '../api/types';
 import { useHistory } from '../commands/history';
+import type { CompareState } from '../compare/model';
+import { useCompareStore } from '../compare/store';
 import { useDrawingStore, useDrawingTemplates, withRemoteApply } from '../drawings/store';
 import {
   DEFAULT_VOLUME_ID,
@@ -23,7 +25,13 @@ import {
   type DrawingTemplateApi,
 } from './drawingTemplatesSync';
 import { applyIndicatorTemplate, instantiateTemplate } from './indicatorTemplates';
-import { parseLayoutState, type LayoutState } from './layoutState';
+import {
+  applyLayoutState,
+  captureLayoutState,
+  LAYOUT_SCHEMA_VERSION,
+  parseLayoutState,
+  type LayoutState,
+} from './layoutState';
 import {
   LAYOUT_CACHE_KEY,
   LAYOUT_ORPHAN_KEY,
@@ -81,6 +89,7 @@ const settle = async () => {
 const state = (symbol: string, extra: Partial<LayoutState> = {}): LayoutState => ({
   chart: null,
   indicators: [],
+  compares: { items: [], scaleRestore: null },
   chartSettings: {
     chartType: 'candles',
     chartStyle: {},
@@ -559,6 +568,77 @@ describe('layout state parsing', () => {
     expect(parseLayoutState({ indicators: [indicator('x')] })!.indicators).toEqual([
       indicator('x'),
     ]);
+  });
+});
+
+describe('layout state: compare overlays (v3)', () => {
+  const cmp = (id: string, patch: Partial<CompareState> = {}): CompareState => ({
+    id,
+    symbol: 'MSFT',
+    placement: 'same',
+    visible: true,
+    color: '#f7a21b',
+    lineWidth: 2,
+    ...patch,
+  });
+
+  beforeEach(() => useCompareStore.setState({ items: [], scaleRestore: null }));
+
+  it('v2 layouts upgrade to no compares; newer versions are rejected', () => {
+    expect(LAYOUT_SCHEMA_VERSION).toBe(3);
+    const s = parseLayoutState({ indicators: [indicator('a')] }, 2)!;
+    expect(s.compares).toEqual({ items: [], scaleRestore: null });
+    expect(s.indicators).toEqual([indicator('a')]);
+    // Unversioned (cached) states read as v1 keep their compares.
+    const cached = parseLayoutState({ compares: { items: [cmp('cmp-a')], scaleRestore: 'log' } })!;
+    expect(cached.compares).toEqual({ items: [cmp('cmp-a')], scaleRestore: 'log' });
+    expect(parseLayoutState({}, 4)).toBeNull();
+  });
+
+  it('drops invalid compare items and re-canonicalizes symbols', () => {
+    const s = parseLayoutState(
+      {
+        compares: {
+          items: [
+            cmp('cmp-ok', { symbol: ' (aapl+msft)/2 ' }),
+            cmp('bad-id'),
+            cmp('cmp-sym', { symbol: 'AAPL/' }),
+            cmp('cmp-long', { symbol: `A${'+B'.repeat(70)}` }),
+            cmp('cmp-place', { placement: 'left' as CompareState['placement'] }),
+            cmp('cmp-color', { color: 'red' }),
+            cmp('cmp-width', { lineWidth: 5 }),
+            cmp('cmp-width2', { lineWidth: 1.5 }),
+            cmp('cmp-ok'),
+            { ...cmp('cmp-vis'), visible: undefined },
+            'nope',
+          ],
+          scaleRestore: 'sideways',
+        },
+      },
+      3,
+    )!;
+    expect(s.compares).toEqual({
+      items: [cmp('cmp-ok', { symbol: '(AAPL+MSFT)/2' }), cmp('cmp-vis')],
+      scaleRestore: null,
+    });
+    expect(parseLayoutState({ compares: 'x' }, 3)!.compares).toEqual({
+      items: [],
+      scaleRestore: null,
+    });
+  });
+
+  it('capture and apply round-trip the compare store', async () => {
+    const compares = {
+      items: [cmp('cmp-a'), cmp('cmp-b', { symbol: 'AAPL/MSFT', placement: 'pane' })],
+      scaleRestore: 'linear' as const,
+    };
+    useCompareStore.getState().replaceAll(compares);
+    const captured = captureLayoutState(null);
+    expect(captured.compares).toEqual(compares);
+    expect(parseLayoutState(JSON.parse(JSON.stringify(captured)), 3)).toEqual(captured);
+    useCompareStore.getState().replaceAll({ items: [], scaleRestore: null });
+    await applyLayoutState(captured, null);
+    expect(useCompareStore.getState()).toMatchObject(compares);
   });
 });
 
