@@ -451,3 +451,57 @@ test('panel: a triggered alert can be restarted', async ({ page, server }) => {
     'active',
   );
 });
+
+test('edit: a server revision bump while the dialog is open still conflicts', async ({
+  page,
+  server,
+}) => {
+  const market = await mockMarket(page);
+  seed(server, 'a1', 'Apple 200');
+  await open(page);
+  await openPanel(page);
+  await alertRow(page, 'Apple 200')
+    .first()
+    .getByRole('button', { name: /^Actions for/ })
+    .click();
+  await page.getByRole('menu').last().getByRole('menuitem', { name: 'Edit…' }).click();
+  await expect(dialog(page).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  // The service marks the alert triggered while the dialog is open; the page learns of it.
+  const row = server.alerts.get('a1')!;
+  row.revision = 2;
+  row.status = 'triggered';
+  market.push({ type: 'alerts.changed', topic: 'alerts', ids: ['a1'], deleted: [] });
+  await expect(alertRow(page, 'Apple 200').first().locator('.al-dot')).toHaveAttribute(
+    'aria-label',
+    'triggered',
+  );
+  await dialog(page).getByRole('tab', { name: 'Message' }).click(); // re-renders the dialog
+  await dialog(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(
+    page.getByRole('status').filter({ hasText: /changed elsewhere|conflict/i }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Keep mine' })).toBeVisible();
+  expect(server.alerts.get('a1')!.revision).toBe(2); // not overwritten
+});
+
+test('edit: deleting the alert while the dialog is open does not re-create it', async ({
+  page,
+  server,
+}) => {
+  const market = await mockMarket(page);
+  seed(server, 'a1', 'Apple 200');
+  await open(page);
+  await openPanel(page);
+  await alertRow(page, 'Apple 200')
+    .first()
+    .getByRole('button', { name: /^Actions for/ })
+    .click();
+  await page.getByRole('menu').last().getByRole('menuitem', { name: 'Edit…' }).click();
+  await expect(dialog(page).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  server.alerts.delete('a1');
+  market.push({ type: 'alerts.changed', topic: 'alerts', ids: ['a1'], deleted: ['a1'] });
+  await expect(alertRow(page, 'Apple 200')).toHaveCount(0);
+  await dialog(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText(/deleted while you were editing/i)).toBeVisible();
+  expect(server.alerts.size).toBe(0);
+});

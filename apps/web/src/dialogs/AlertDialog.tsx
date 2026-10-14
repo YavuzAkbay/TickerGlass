@@ -268,7 +268,11 @@ const keepTarget = (t: TargetForm, valid: Set<string>): TargetForm =>
 export default function AlertDialog({ onClose, arg }: { onClose: () => void; arg?: unknown }) {
   const args = (arg ?? {}) as AlertDialogArgs;
   const ctx = useMemo(() => currentAlertContext(), []);
-  const editing = isEditArgs(args) ? useAlerts.getState().alerts[args.editId] : undefined;
+  // Snapshot of the alert as it was when the dialog opened: its revision is what a save is
+  // based on, so a server bump while the dialog is open still ends in the 409 path (§1.7).
+  const [edit] = useState<Alert | undefined>(() =>
+    isEditArgs(args) ? useAlerts.getState().alerts[args.editId] : undefined,
+  );
   const [form, setForm] = useState<FormState | null>(() =>
     initialForm(args, ctx, (id) => useAlerts.getState().alerts[id]),
   );
@@ -307,7 +311,6 @@ export default function AlertDialog({ onClose, arg }: { onClose: () => void; arg
   const result = formToAlert(form, { drawing: drawingInfo, names });
   const errors: ValidationError[] = result.ok ? [] : result.errors;
   const symbol = form.symbol.trim();
-  const edit = editing as Alert | undefined;
 
   const setLeft = (left: SeriesOperand) =>
     setForm((f) => {
@@ -352,6 +355,14 @@ export default function AlertDialog({ onClose, arg }: { onClose: () => void; arg
         return;
       }
       const body = { ...res.alert, id: form.id ?? edit?.id ?? newId.current };
+      if (edit && !useAlerts.getState().alerts[edit.id]) {
+        toast(
+          'This alert was deleted while you were editing it. Nothing was saved.',
+          'error',
+          6000,
+        );
+        return;
+      }
       if (edit) {
         const { id: _id, ...patch } = body;
         const saved = await updateAlert(edit.id, patch, edit.revision);

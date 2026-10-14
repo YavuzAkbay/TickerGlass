@@ -246,4 +246,27 @@ describe('AlertsSync load and events', () => {
     off();
     h.sync.stop();
   });
+
+  it('catch-up pages back with `before` until `after`, leaving no gap', async () => {
+    const mk = (hi: number, lo: number) =>
+      Array.from({ length: hi - lo + 1 }, (_, i) => entry(hi - i));
+    const getAlertLog = vi.fn(async (q: { after?: number; before?: number } = {}) => {
+      if (q.after === undefined) return { entries: [entry(8)], hasMore: false, unread: 0 };
+      if (q.before === undefined) return { entries: mk(1208, 709), hasMore: true, unread: 3 };
+      if (q.before === 709) return { entries: mk(708, 209), hasMore: true, unread: 3 };
+      return { entries: mk(208, 9), hasMore: false, unread: 3 };
+    });
+    const h = harness(makeApi({ getAlertLog }));
+    await vi.waitFor(() => expect(useAlerts.getState().status).toBe('ready'));
+    h.open(false);
+    h.open(true);
+    await vi.waitFor(() => expect(useAlerts.getState().log.length).toBe(1201));
+    expect(getAlertLog).toHaveBeenCalledWith({ after: 8, before: 709, limit: 500 });
+    expect(getAlertLog).toHaveBeenCalledWith({ after: 8, before: 209, limit: 500 });
+    const ids = useAlerts.getState().log.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids[0]).toBe(1208);
+    expect(ids.at(-1)).toBe(8);
+    h.sync.stop();
+  });
 });

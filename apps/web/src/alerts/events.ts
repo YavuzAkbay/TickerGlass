@@ -10,6 +10,7 @@ import { mergeLog, useAlerts } from './store';
 
 /** Fires younger than this are announced after a reconnect; older ones only count as unread. */
 export const CATCH_UP_ANNOUNCE_MS = 5 * 60_000;
+const CATCH_UP_PAGE = 500;
 
 export type FiredAlertInfo = Pick<
   Alert,
@@ -96,9 +97,22 @@ export function startAlertEvents(opts: AlertEventsOptions): () => void {
     const st = useAlerts.getState();
     if (st.status !== 'ready') return; // the initial load covers it
     try {
-      const page = await api.getAlertLog({ after: st.log[0]?.id ?? 0, limit: 500 });
+      // The API returns the newest `limit` entries above `after`; walk back with `before`
+      // until the whole range is covered, so a long outage leaves no gap.
+      const after = st.log[0]?.id ?? 0;
+      const entries: AlertLogEntry[] = [];
+      let page = await api.getAlertLog({ after, limit: CATCH_UP_PAGE });
+      entries.push(...page.entries);
+      while (page.hasMore && page.entries.length) {
+        page = await api.getAlertLog({
+          after,
+          before: page.entries[page.entries.length - 1]!.id,
+          limit: CATCH_UP_PAGE,
+        });
+        entries.push(...page.entries);
+      }
       const known = new Set(useAlerts.getState().log.map((e) => e.id));
-      const fresh = page.entries.filter((e) => !known.has(e.id));
+      const fresh = entries.filter((e) => !known.has(e.id));
       useAlerts.setState((s) => ({
         log: mergeLog(s.log, fresh),
         unread: page.unread,
