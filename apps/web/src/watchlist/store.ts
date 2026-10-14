@@ -23,6 +23,11 @@ interface WatchlistState {
   flagsDirty: Record<string, true>;
   /** The default list was seeded once already (never re-seed after the user deleted it). */
   seeded: boolean;
+  /**
+   * The default list seeded while the server was unreachable, with its content
+   * signature then; not yet confirmed (see `WatchlistSync.seedIfEmpty`).
+   */
+  pendingSeed: { id: string; sig: string } | null;
 
   /** New list (client-generated id); items are normalized and de-duplicated. */
   createList: (name: string, items?: WatchlistItem[]) => string;
@@ -89,7 +94,7 @@ function blockEnd(items: WatchlistItem[], from: number): number {
 
 type Persisted = Pick<
   WatchlistState,
-  'lists' | 'pendingDeletes' | 'flags' | 'flagsDirty' | 'seeded'
+  'lists' | 'pendingDeletes' | 'flags' | 'flagsDirty' | 'seeded' | 'pendingSeed'
 >;
 
 /**
@@ -119,6 +124,7 @@ export function mergePersisted(saved: unknown, current: WatchlistState): Watchli
     flagsDirty,
     pendingDeletes: p.pendingDeletes ?? current.pendingDeletes,
     seeded: p.seeded ?? current.seeded,
+    pendingSeed: p.pendingSeed ?? current.pendingSeed,
   };
 }
 
@@ -144,6 +150,7 @@ export const useWatchlistStore = create<WatchlistState>()(
         flags: {},
         flagsDirty: {},
         seeded: false,
+        pendingSeed: null,
 
         createList: (name, items = []) => {
           const id = crypto.randomUUID();
@@ -331,6 +338,7 @@ export const useWatchlistStore = create<WatchlistState>()(
         flags: s.flags,
         flagsDirty: s.flagsDirty,
         seeded: s.seeded,
+        pendingSeed: s.pendingSeed,
       }),
     },
   ),

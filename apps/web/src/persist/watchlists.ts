@@ -51,8 +51,13 @@ export class WatchlistSync {
   /**
    * Serializes `load()` and `flushOnce()`: a load never reads the server while
    * a save is in flight (its snapshot would predate the save), and vice versa.
+   * Waiting flushes start before a waiting load (a hide flush must not queue
+   * behind a refresh), and at most one load waits: `load()` while one is
+   * waiting returns that one, whose GET is sent later and so is fresh enough.
    */
-  private lock: Promise<void> = Promise.resolve();
+  private busy = false;
+  private waiting: { kind: 'load' | 'flush'; start: () => void }[] = [];
+  private queuedLoad: Promise<void> | null = null;
 
   constructor(opts: WatchlistSyncOptions) {
     this.opts = opts;
@@ -72,13 +77,30 @@ export class WatchlistSync {
     );
   }
 
-  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this.lock.then(fn);
-    this.lock = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  private exclusive(kind: 'load' | 'flush', fn: () => Promise<void>): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.waiting.push({
+        kind,
+        start: () => {
+          this.busy = true;
+          void Promise.resolve()
+            .then(fn)
+            .then(resolve, reject)
+            .finally(() => {
+              this.busy = false;
+              this.next();
+            });
+        },
+      });
+      this.next();
+    });
+  }
+
+  private next(): void {
+    if (this.busy) return;
+    const i = this.waiting.findIndex((t) => t.kind === 'flush');
+    const [task] = this.waiting.splice(i === -1 ? 0 : i, 1);
+    task?.start();
   }
 
   start(): void {
@@ -94,15 +116,45 @@ export class WatchlistSync {
     });
   }
 
-  /** First run only: one list with the current symbol and the recent ones. */
-  private seedIfEmpty(): void {
+  /**
+   * First run only: one list with the current symbol and the recent ones.
+   *
+   * Seeding is final only once a load succeeded. With the server unreachable
+   * (`serverCount` null) the list is created locally for the UX and remembered
+   * in `pendingSeed`, but `seeded` stays false and nothing is pushed (pushes
+   * start after a successful load). On the first successful load: if the
+   * server already has lists (e.g. made by another browser), the seed is
+   * dropped unless it was edited here (then it is the user's and is pushed);
+   * if the server has none, it is pushed as the default list. Either way
+   * `seeded` is then set, so a list deleted later is never re-seeded.
+   */
+  private seedIfEmpty(serverCount: number | null): void {
     const st = useWatchlistStore.getState();
     if (st.seeded) return;
-    useWatchlistStore.setState({ seeded: true });
-    if (Object.keys(st.lists).length) return;
+    if (serverCount === null) {
+      if (st.pendingSeed || Object.keys(st.lists).length) return;
+      const id = this.createSeed();
+      const seed = useWatchlistStore.getState().lists[id];
+      if (seed) useWatchlistStore.setState({ pendingSeed: { id, sig: sig(seed) } });
+      return;
+    }
+    const pending = st.pendingSeed;
+    useWatchlistStore.setState({ seeded: true, pendingSeed: null });
+    if (pending) {
+      const seed = st.lists[pending.id];
+      if (serverCount > 0 && seed && seed.revision === null && sig(seed) === pending.sig) {
+        const { [pending.id]: _unused, ...lists } = st.lists;
+        useWatchlistStore.setState({ lists });
+      }
+      return;
+    }
+    if (!Object.keys(st.lists).length) this.createSeed();
+  }
+
+  private createSeed(): string {
     const { symbol, recentSymbols } = useAppStore.getState();
     const syms = [...new Set([symbol, ...recentSymbols])];
-    useWatchlistStore.getState().createList(
+    return useWatchlistStore.getState().createList(
       DEFAULT_LIST_NAME,
       syms.map((s) => ({ type: 'symbol' as const, symbol: s })),
     );
@@ -113,7 +165,13 @@ export class WatchlistSync {
    * Throws if unreachable (after seeding the default list from an empty cache).
    */
   load(): Promise<void> {
-    return this.exclusive(() => this.loadOnce());
+    if (this.queuedLoad) return this.queuedLoad;
+    const run = this.exclusive('load', () => {
+      this.queuedLoad = null; // started: a later load() queues a new one
+      return this.loadOnce();
+    });
+    this.queuedLoad = run;
+    return run;
   }
 
   private async loadOnce(): Promise<void> {
@@ -122,7 +180,7 @@ export class WatchlistSync {
     try {
       [server, flags] = await Promise.all([this.api.listWatchlists(), this.api.getFlags()]);
     } catch (err) {
-      this.seedIfEmpty();
+      this.seedIfEmpty(null);
       throw err;
     }
     const st = useWatchlistStore.getState();
@@ -156,13 +214,13 @@ export class WatchlistSync {
       else delete merged[sym];
     }
     useWatchlistStore.setState({ lists, flags: merged });
-    this.seedIfEmpty();
+    this.seedIfEmpty(server.length);
     this.loaded = true;
     if (this.hasPending()) this.saver.schedule();
   }
 
   private flushOnce(): Promise<void> {
-    return this.exclusive(() => this.flushAll());
+    return this.exclusive('flush', () => this.flushAll());
   }
 
   private async flushAll(): Promise<void> {
@@ -215,7 +273,10 @@ export class WatchlistSync {
           revision = server.revision;
           continue;
         }
+        // Deleted here meanwhile (its delete is queued): don't bring it back.
+        const current = useWatchlistStore.getState().lists[entry.id];
         if (server) {
+          if (!current) return;
           const mine = { name: entry.name, items: entry.items };
           setEntry({
             id: entry.id,
@@ -230,8 +291,9 @@ export class WatchlistSync {
           return;
         }
         if (err instanceof ApiError && err.status === 404 && !creating) {
+          if (!current) return;
           // Deleted elsewhere: re-create it with its edits.
-          setEntry({ ...(useWatchlistStore.getState().lists[entry.id] ?? entry), revision: null });
+          setEntry({ ...current, revision: null });
           creating = true;
           revision = null;
           continue;

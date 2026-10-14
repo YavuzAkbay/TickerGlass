@@ -128,6 +128,7 @@ beforeEach(() => {
     flags: {},
     flagsDirty: {},
     seeded: false,
+    pendingSeed: null,
   });
   useAppStore.setState({ symbol: 'AAPL', recentSymbols: ['MSFT', 'AAPL'] });
 });
@@ -237,6 +238,66 @@ describe('WatchlistSync.load', () => {
     await sync.flush();
     expect(server.lists.get(id)!.items).toContainEqual(S('NVDA'));
     expect(st().lists[id]).toMatchObject({ dirty: false, revision: 1 });
+    await sync.dispose();
+  });
+
+  it('drops an untouched offline seed when the server already has lists', async () => {
+    const { sync, server } = setup();
+    server.down = true;
+    await expect(sync.load()).rejects.toThrow();
+    await expect(sync.load()).rejects.toThrow(); // seeds once
+    expect(Object.keys(st().lists)).toHaveLength(1);
+    expect(st().seeded).toBe(false);
+    server.down = false;
+    server.lists.set('a', wl('a', 'Watchlist', 1, [S('X')])); // made by another browser
+    await sync.load();
+    expect(Object.keys(st().lists)).toEqual(['a']);
+    expect(st().seeded).toBe(true);
+    await sync.flush();
+    expect(server.lists.size).toBe(1);
+    expect(server.api.createWatchlist).not.toHaveBeenCalled();
+    await sync.dispose();
+  });
+
+  it('keeps an offline seed that was edited, even when the server has lists', async () => {
+    const { sync, server } = setup();
+    server.down = true;
+    await expect(sync.load()).rejects.toThrow();
+    const id = Object.keys(st().lists)[0]!;
+    st().addSymbols(id, ['NVDA']);
+    server.down = false;
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    await sync.flush();
+    expect(server.lists.get(id)!.items).toContainEqual(S('NVDA'));
+    expect(st().seeded).toBe(true);
+    await sync.dispose();
+  });
+
+  it('pushes an untouched offline seed when the server has no lists', async () => {
+    const { sync, server } = setup();
+    server.down = true;
+    await expect(sync.load()).rejects.toThrow();
+    const id = Object.keys(st().lists)[0]!;
+    server.down = false;
+    await sync.load();
+    await sync.flush();
+    expect([...server.lists.keys()]).toEqual([id]);
+    expect(st().seeded).toBe(true);
+    await sync.dispose();
+  });
+
+  it('an offline seed the user deleted is not re-seeded once online', async () => {
+    const { sync, server } = setup();
+    server.down = true;
+    await expect(sync.load()).rejects.toThrow();
+    st().deleteList(Object.keys(st().lists)[0]!);
+    server.down = false;
+    await sync.load();
+    await sync.flush();
+    expect(st().lists).toEqual({});
+    expect(server.lists.size).toBe(0);
+    expect(st().seeded).toBe(true);
     await sync.dispose();
   });
 });
@@ -413,6 +474,45 @@ describe('WatchlistSync.flush', () => {
     await sync.dispose();
   });
 
+  it('a list deleted while its PUT gets 404 is not re-created', async () => {
+    const { sync, server } = setup();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    st().addSymbols('a', ['X']);
+    server.api.updateWatchlist.mockImplementationOnce(async () => {
+      st().deleteList('a'); // deleted here while the PUT is in flight...
+      server.lists.delete('a'); // ...and elsewhere
+      throw notFound();
+    });
+    await sync.flush();
+    expect(st().lists.a).toBeUndefined();
+    expect(st().pendingDeletes).toEqual(['a']);
+    await sync.flush();
+    expect(server.lists.has('a')).toBe(false);
+    expect(server.api.createWatchlist).not.toHaveBeenCalled();
+    expect(st().pendingDeletes).toEqual([]);
+    await sync.dispose();
+  });
+
+  it('a list deleted while its PUT gets 409 is not resurrected with the server copy', async () => {
+    const { sync, server, onConflict } = setup();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    st().addSymbols('a', ['X']);
+    server.api.updateWatchlist.mockImplementationOnce(async () => {
+      st().deleteList('a');
+      server.lists.set('a', wl('a', 'Theirs', 5));
+      throw conflict(server.lists.get('a')!);
+    });
+    await sync.flush();
+    expect(st().lists.a).toBeUndefined();
+    expect(onConflict).not.toHaveBeenCalled();
+    await sync.flush();
+    expect(server.lists.has('a')).toBe(false);
+    expect(st().pendingDeletes).toEqual([]);
+    await sync.dispose();
+  });
+
   it('a list whose create response was lost is deleted on the server when deleted here', async () => {
     const { sync, server } = setup();
     server.lists.set('a', wl('a', 'A', 1));
@@ -527,6 +627,54 @@ describe('WatchlistSync load/flush interleavings', () => {
     getGate.resolve();
     await loading;
     expect(st().flags.AAPL?.color).toBe('red');
+    await sync.dispose();
+  });
+
+  it('coalesces loads queued behind one in flight', async () => {
+    const { sync, server } = setup();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    const getGate = deferred();
+    const get = server.api.listWatchlists.getMockImplementation()!;
+    server.api.listWatchlists.mockImplementationOnce(async () => {
+      await getGate.promise;
+      return get();
+    });
+    const first = sync.load();
+    await settle(() => server.api.listWatchlists.mock.calls.length === 2);
+    const second = sync.load(); // the first already fetches: queue one more
+    const third = sync.load();
+    const fourth = sync.load();
+    expect(third).toBe(second);
+    expect(fourth).toBe(second);
+    getGate.resolve();
+    await Promise.all([first, second, third, fourth]);
+    expect(server.api.listWatchlists).toHaveBeenCalledTimes(3);
+    await sync.dispose();
+  });
+
+  it('a flush runs ahead of a queued load, but never during a GET', async () => {
+    const { sync, server } = setup();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    const getGate = deferred();
+    const get = server.api.listWatchlists.getMockImplementation()!;
+    server.api.listWatchlists.mockImplementation(async () => {
+      server.calls.push('GET');
+      if (server.calls.filter((c) => c === 'GET').length === 1) await getGate.promise;
+      return get();
+    });
+    const loading = sync.load(); // in flight
+    await settle(() => server.calls.includes('GET'));
+    const queued = sync.load(); // waits
+    st().addSymbols('a', ['X']);
+    const flushing = sync.flush();
+    await settle();
+    expect(server.calls).toEqual(['GET']); // no PUT while the GET is in flight
+    getGate.resolve();
+    await Promise.all([loading, queued, flushing]);
+    expect(server.calls).toEqual(['GET', 'PUT a@1', 'GET']);
+    expect(st().lists.a).toMatchObject({ revision: 2, dirty: false, items: [S('X')] });
     await sync.dispose();
   });
 

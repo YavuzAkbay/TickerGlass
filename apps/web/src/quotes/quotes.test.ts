@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Quote } from '../api/types';
 import { emptyQuote, mergeExtended, mergeSnapshot, mergeTick } from './merge';
-import { BACKOFF_MS, MAX_WS_SYMBOLS, QuoteStream, type SocketLike } from './stream';
+import { BACKOFF_MS, MAX_WS_SYMBOLS, QuoteStream, STABLE_MS, type SocketLike } from './stream';
 import { useQuoteStore } from './store';
 import type { ExtendedQuote, LiveQuote, TickFrame } from './types';
 
@@ -277,11 +277,34 @@ describe('QuoteStream', () => {
     }
     last().open();
     expect(last().subs().sort()).toEqual(['AAPL', 'MSFT']);
-    last().push({ type: 'status', upstream: 'connected' }); // first frame resets the backoff
+    last().push(tick({ symbol: 'AAPL', price: 1 })); // a tick resets the backoff
     last().drop();
     const n = FakeSocket.all.length;
     await vi.advanceTimersByTimeAsync(1000);
     expect(FakeSocket.all).toHaveLength(n + 1); // back to 1 s
+  });
+
+  it('status and error frames do not reset the backoff; a tick or a stable socket does', async () => {
+    stream.subscribe(['AAPL']);
+    last().open();
+    last().drop(); // attempt 0 -> 1 s
+    await vi.advanceTimersByTimeAsync(1000);
+    last().open();
+    last().push({ type: 'status', upstream: 'connected' }); // server greets on connect
+    last().push({ type: 'error', message: 'x' });
+    last().drop();
+    let n = FakeSocket.all.length;
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(FakeSocket.all).toHaveLength(n); // still backing off (2 s)
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(n + 1);
+    // Staying open for STABLE_MS resets it.
+    last().open();
+    await vi.advanceTimersByTimeAsync(STABLE_MS);
+    last().drop();
+    n = FakeSocket.all.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeSocket.all).toHaveLength(n + 1);
   });
 
   it('keeps backing off when the socket opens but closes before any frame', async () => {

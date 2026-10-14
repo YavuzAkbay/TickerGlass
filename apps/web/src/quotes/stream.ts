@@ -13,6 +13,8 @@ import type { ExtendedQuote, LiveQuote, StreamStatus, TickFrame } from './types'
 export const RELEASE_GRACE_MS = 2000;
 export const IDLE_CLOSE_MS = 10_000;
 export const PING_MS = 25_000;
+/** A socket open this long resets the reconnect backoff even if no tick arrived. */
+export const STABLE_MS = 10_000;
 export const POLL_MS = 15_000;
 export const REFRESH_MS = 60_000;
 export const BATCH_MS = 50;
@@ -66,6 +68,7 @@ export class QuoteStream {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private timers: ReturnType<typeof setInterval>[] = [];
   private pendingSnap = new Set<string>();
   private pendingExt = new Set<string>();
@@ -170,8 +173,9 @@ export class QuoteStream {
     this.running = false;
     this.timers.forEach((t) => clearInterval(t));
     this.timers = [];
-    for (const t of [this.reconnectTimer, this.idleTimer, this.batchTimer]) if (t) clearTimeout(t);
-    this.reconnectTimer = this.idleTimer = this.batchTimer = null;
+    for (const t of [this.reconnectTimer, this.idleTimer, this.batchTimer, this.stableTimer])
+      if (t) clearTimeout(t);
+    this.reconnectTimer = this.idleTimer = this.batchTimer = this.stableTimer = null;
     if (this.onVisibility && typeof document !== 'undefined')
       document.removeEventListener('visibilitychange', this.onVisibility);
     this.onVisibility = null;
@@ -207,6 +211,12 @@ export class QuoteStream {
     ws.onopen = () => {
       if (this.socket !== ws) return;
       this.open = true;
+      // A socket that stays open long enough counts as healthy even without ticks.
+      if (this.stableTimer) clearTimeout(this.stableTimer);
+      this.stableTimer = setTimeout(() => {
+        this.stableTimer = null;
+        if (this.socket === ws) this.attempt = 0;
+      }, STABLE_MS);
       this.sent.clear();
       this.syncSocket();
       if (this.wasDown) this.refresh(); // catch up on what was missed
@@ -219,6 +229,8 @@ export class QuoteStream {
       if (this.socket !== ws) return;
       this.socket = null;
       this.open = false;
+      if (this.stableTimer) clearTimeout(this.stableTimer);
+      this.stableTimer = null;
       this.sent.clear();
       try {
         ws.close(); // onerror does not imply close: avoid an orphan socket
@@ -254,9 +266,9 @@ export class QuoteStream {
       return;
     }
     if (typeof msg !== 'object' || msg === null) return;
-    this.attempt = 0; // a live frame arrived: the connection is genuinely healthy
     const frame = msg as { type?: string } & Record<string, unknown>;
     if (frame.type === 'tick') {
+      this.attempt = 0; // data is flowing: genuinely healthy (status/error frames are not proof)
       const t = frame as unknown as TickFrame;
       if (typeof t.symbol !== 'string' || typeof t.price !== 'number') return;
       const sym = t.symbol.toUpperCase();

@@ -239,3 +239,12 @@ export const formatTxt = (items: WatchlistItem[]): string =>
 /** File name for an export (`/\:*?"<>|` replaced). */
 export const txtFileName = (name: string): string =>
   `${name.replace(/[/\\:*?"<>|]/g, '_').trim() || 'watchlist'}.txt`;
+
+/** Why `symbol` cannot be added to `items`, or null if it can. */
+export function addBlocker(
+  items: readonly WatchlistItem[],
+  symbol: string,
+): 'duplicate' | 'full' | null {
+  if (items.some((i) => i.type === 'symbol' && i.symbol === symbol)) return 'duplicate';
+  return items.length >= MAX_WATCHLIST_ITEMS ? 'full' : null;
+}

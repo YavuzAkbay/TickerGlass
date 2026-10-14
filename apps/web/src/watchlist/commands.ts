@@ -4,7 +4,15 @@ import { useUiStore } from '../store/ui';
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 import { DEFAULT_LIST_NAME, useWatchlistStore, validSymbol } from './store';
-import { flagRows, formatTxt, isFlagRef, parseTxt, resolveActive, txtFileName } from './model';
+import {
+  addBlocker,
+  flagRows,
+  formatTxt,
+  isFlagRef,
+  parseTxt,
+  resolveActive,
+  txtFileName,
+} from './model';
 import { useWatchlistPrefs } from './prefs';
 import { FLAG_COLORS, type FlagColor, type ListRef, type WatchlistItem } from './types';
 
@@ -63,6 +71,8 @@ function addSymbol(arg: unknown): void {
   }
   const name = refName(ref);
   if (store.addSymbols(ref, [sym]).length) toast(`Added ${sym} to ${name}`, 'success');
+  else if (addBlocker(store.lists[ref]?.items ?? [], sym) === 'full')
+    toast('The list is full', 'error');
   else toast(`${sym} is already in ${name}`);
 }
 

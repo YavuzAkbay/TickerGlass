@@ -9,6 +9,8 @@ import {
   resolveActive,
   toYahooSymbol,
   txtFileName,
+  addBlocker,
+  MAX_WATCHLIST_ITEMS,
 } from './model';
 import { parsePrefs, useWatchlistPrefs } from './prefs';
 import { mergePersisted, useWatchlistStore } from './store';
@@ -318,5 +320,19 @@ describe('prefs', () => {
     useWatchlistPrefs.getState().setSort({ key: 'volume', dir: 'asc' });
     useWatchlistPrefs.getState().toggleColumn('volume');
     expect(useWatchlistPrefs.getState().sort).toBeNull();
+  });
+});
+
+describe('addBlocker', () => {
+  const full: WatchlistItem[] = Array.from({ length: MAX_WATCHLIST_ITEMS }, (_, i) => ({
+    type: 'symbol',
+    symbol: `S${i}`,
+  }));
+  it('distinguishes a full list from a duplicate', () => {
+    expect(addBlocker(full, 'NEW')).toBe('full');
+    expect(addBlocker(full, 'S3')).toBe('duplicate');
+    expect(addBlocker(full.slice(1), 'NEW')).toBeNull();
+    const id = useWatchlistStore.getState().createList('big', full);
+    expect(useWatchlistStore.getState().addSymbols(id, ['NEW'])).toEqual([]);
   });
 });

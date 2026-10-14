@@ -146,7 +146,8 @@ Implemented in `apps/web/src/persist/` (Phase 7): `migration.ts` (step 1), `boot
 `WatchlistSync`: lists whole with revision checks, flags as `PATCH` batches). Layout cache key: `investopen-layout`.
 Watchlist cache keys: `investopen-watchlists` (lists, flags, dirty flags, pending deletes) and
 `investopen-watchlist-prefs` (mirror of the setting `watchlist.prefs` = `{activeId, columns, sort}`; `activeId` is a
-list id or `flag:<color>`). The first run seeds one list "Watchlist" with the current and recent symbols.
+list id or `flag:<color>`). The first run seeds one list "Watchlist" with the current and recent symbols; seeded
+offline, it is kept only if the first successful load finds no lists on the server (or it was edited).
 
 Layout `state` (schemaVersion 2): `{ chart: chart.getState(), indicators: IndicatorState[],
 chartSettings: { chartType, chartStyle, showPrevClose, timezone, prepost } }`. v1 also had
