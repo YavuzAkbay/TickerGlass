@@ -27,5 +27,7 @@ export {
   type LiveStatusListener,
   type UpstreamStatus,
 } from './http-feed';
+export { ExpressionFeed } from './expression-feed';
+export * from './expression';
 export { ResamplingFeed } from './resampling-feed';
 export { SyntheticFeed } from './synthetic-feed';
