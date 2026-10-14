@@ -163,3 +163,31 @@ class Note(Base):
     revision: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Watchlist(Base):
+    """A named watchlist.
+
+    `items` = ordered [{type:'symbol',symbol} | {type:'section',id,title,collapsed}].
+    """
+
+    __tablename__ = "watchlists"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    items: Mapped[list[Any]] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SymbolFlag(Base):
+    """Global color flag of a symbol (one color per symbol)."""
+
+    __tablename__ = "symbol_flags"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    color: Mapped[str] = mapped_column(String(16))
+    #: Flagged-at; reset when the color changes.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

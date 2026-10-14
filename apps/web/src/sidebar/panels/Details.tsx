@@ -1,6 +1,8 @@
 import { ChevronDown } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
-import type { Fundamentals, SymbolMeta } from '../../api/types';
+import { useRef, useState, type ReactNode } from 'react';
+import type { Fundamentals, FundamentalsInfo, Performance, SymbolMeta } from '../../api/types';
+import { useLiveQuote, useQuoteMissing } from '../../quotes/hooks';
+import { useQuoteStore } from '../../quotes/store';
 import { useAppStore } from '../../store/app';
 import {
   changeClass,
@@ -11,9 +13,113 @@ import {
   fmtSigned,
   isNum,
 } from '../format';
-import { useApi, useQuotes } from '../hooks';
+import { useApi, useNow } from '../hooks';
+import { useFlash } from '../watchlist/columns';
 
 const TEN_MIN = 10 * 60 * 1000;
+const ONE_MIN = 60 * 1000;
+
+/** Fields added to `/fundamentals` for Phase 8 (Yahoo `info`; times are unix seconds). */
+type DetailsInfo = FundamentalsInfo & {
+  priceToBook?: number | null;
+  averageVolume?: number | null;
+  sharesOutstanding?: number | null;
+  exDividendDate?: number | null;
+  earningsTimestamp?: number | null;
+  earningsTimestampStart?: number | null;
+  earningsTimestampEnd?: number | null;
+  isEarningsDateEstimate?: boolean | null;
+};
+
+interface EventsResponse {
+  earnings?: { t: number; epsActual?: number | null }[];
+}
+
+/** Unix seconds (milliseconds are tolerated) to a short date. */
+function fmtDate(t: number): string {
+  const ms = t > 1e11 ? t : t * 1000;
+  return new Date(ms).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** Earnings row: next from events, else the estimated timestamp, else the last reported. */
+export function earningsStat(
+  events: EventsResponse | undefined,
+  info: DetailsInfo,
+  nowMs: number,
+): { label: string; value: string } {
+  const today = new Date(nowMs);
+  today.setHours(0, 0, 0, 0);
+  const startOfToday = today.getTime() / 1000;
+  const list = events?.earnings ?? [];
+  const upcoming = list.map((e) => e.t).filter((t) => t >= startOfToday);
+  if (upcoming.length) return { label: 'Next earnings', value: fmtDate(Math.min(...upcoming)) };
+  const ts = info.earningsTimestamp;
+  const norm = (t: number) => (t > 1e11 ? t / 1000 : t);
+  if (isNum(ts) && norm(ts) >= startOfToday) {
+    const a = info.earningsTimestampStart;
+    const b = info.earningsTimestampEnd;
+    const range =
+      isNum(a) && isNum(b) && fmtDate(a) !== fmtDate(b)
+        ? `${fmtDate(a)} – ${fmtDate(b)}`
+        : fmtDate(ts);
+    return {
+      label: 'Next earnings',
+      value: info.isEarningsDateEstimate ? `${range} (est.)` : range,
+    };
+  }
+  const reported = list.filter((e) => isNum(e.epsActual)).map((e) => e.t);
+  if (reported.length) return { label: 'Last earnings', value: fmtDate(Math.max(...reported)) };
+  return { label: 'Next earnings', value: '—' };
+}
+
+const PERIOD_LABELS: Record<string, string> = {
+  '1W': '1W',
+  '1M': '1M',
+  '3M': '3M',
+  '6M': '6M',
+  YTD: 'YTD',
+  '1Y': '1Y',
+  '5Y': '5Y',
+};
+
+/** Period change; recomputed from the live price when the base close is usable. */
+export function periodChange(
+  live: number | null,
+  baseClose: number | null,
+  serverPercent: number | null,
+): number | null {
+  if (isNum(live) && isNum(baseClose) && baseClose > 0) return (live / baseClose - 1) * 100;
+  return isNum(serverPercent) ? serverPercent : null;
+}
+
+function PerformanceGrid({ symbol, last }: { symbol: string; last: number | null }) {
+  const perf = useApi<Performance>(`/performance/${encodeURIComponent(symbol)}`, ONE_MIN);
+  if (perf.loading)
+    return (
+      <div className="rs-pad">
+        <Skeleton lines={2} />
+      </div>
+    );
+  if (perf.error || !perf.data)
+    return <div className="rs-pad rs-muted">Performance unavailable</div>;
+  return (
+    <div className="wl-perf" data-testid="details-performance">
+      {perf.data.periods.map((p) => {
+        const v = periodChange(last, p.baseClose, p.changePercent);
+        return (
+          <div key={p.key} className="wl-perf-chip">
+            <span className="wl-perf-label">{PERIOD_LABELS[p.key] ?? p.key}</span>
+            <span className={`wl-perf-value rs-num ${changeClass(v)}`}>{fmtSigned(v, 2, '%')}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function Skeleton({ lines = 3 }: { lines?: number }) {
   return (
@@ -89,16 +195,22 @@ export function Details() {
   const enc = encodeURIComponent(symbol);
   const meta = useApi<SymbolMeta>(`/symbols/${enc}`, TEN_MIN);
   const fund = useApi<Fundamentals>(`/fundamentals/${enc}`, TEN_MIN);
-  const symbols = useMemo(() => [symbol], [symbol]);
-  const { quotes, loading: quoteLoading } = useQuotes(symbols);
+  const events = useApi<EventsResponse>(`/events/${enc}`, TEN_MIN);
+  const q = useLiveQuote(symbol);
+  const now = useNow();
+  const quoteError = useQuoteStore((s) => s.error);
+  const quoteMissing = useQuoteMissing(symbol);
+  const lastRef = useRef<HTMLSpanElement>(null);
+  const extRef = useRef<HTMLSpanElement>(null);
+  useFlash(q, lastRef, extRef);
   const [aboutOpen, setAboutOpen] = useState(false);
 
-  const q = quotes[symbol];
   const d = decimalsForTick(meta.data?.minTick);
-  const info = fund.data?.info;
+  const info: DetailsInfo | undefined = fund.data?.info;
   const currency = meta.data?.currency ?? q?.currency ?? info?.currency ?? null;
   const cls = changeClass(q?.change);
   const last = q?.last ?? null;
+  const earnings = earningsStat(events.data, info ?? {}, now);
 
   return (
     <div className="rs-details">
@@ -124,19 +236,32 @@ export function Details() {
         <div className="rs-det-price">
           {q ? (
             <>
-              <span className="rs-det-last rs-num">{fmtPrice(last, d)}</span>
+              <span ref={lastRef} className="rs-det-last rs-num">
+                {fmtPrice(last, d)}
+              </span>
               {currency ? <span className="rs-det-cur">{currency}</span> : null}
               <span className={`rs-det-chg rs-num ${cls}`}>
                 {fmtSigned(q.change, d)} ({fmtSigned(q.changePercent, 2, '%')})
               </span>
+              {q.ext ? (
+                <span className="wl-ext-line rs-num">
+                  {q.ext.session === 'pre' ? 'Pre-market' : 'After hours'}{' '}
+                  <span ref={extRef} className={changeClass(q.ext.change)}>
+                    {fmtPrice(q.ext.price, d)} {fmtSigned(q.ext.changePercent, 2, '%')}
+                  </span>
+                </span>
+              ) : null}
             </>
-          ) : quoteLoading ? (
-            <i className="rs-skel rs-skel-price" />
-          ) : (
+          ) : quoteError || quoteMissing ? (
             <span className="rs-muted">No quote</span>
+          ) : (
+            <i className="rs-skel rs-skel-price" />
           )}
         </div>
       </div>
+
+      <div className="rs-section-title">Performance</div>
+      <PerformanceGrid symbol={symbol} last={last} />
 
       <div className="rs-section-title">Key stats</div>
       {fund.loading ? (
@@ -168,6 +293,23 @@ export function Details() {
           <Stat label="Dividend yield">
             <span className="rs-num">
               {isNum(info.dividendYield) ? `${fmtPrice(info.dividendYield)}%` : '—'}
+            </span>
+          </Stat>
+          <Stat label="P/B">
+            <span className="rs-num">{fmtPrice(info.priceToBook)}</span>
+          </Stat>
+          <Stat label="Avg volume">
+            <span className="rs-num">{fmtCompact(info.averageVolume)}</span>
+          </Stat>
+          <Stat label="Shares outstanding">
+            <span className="rs-num">{fmtCompact(info.sharesOutstanding)}</span>
+          </Stat>
+          <Stat label={earnings.label}>
+            <span className="rs-num">{events.loading ? '…' : earnings.value}</span>
+          </Stat>
+          <Stat label="Ex-dividend">
+            <span className="rs-num">
+              {isNum(info.exDividendDate) ? fmtDate(info.exDividendDate) : '—'}
             </span>
           </Stat>
           <Stat label="Beta">

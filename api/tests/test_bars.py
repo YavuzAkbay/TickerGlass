@@ -59,6 +59,9 @@ class FakeProvider:
             raise SymbolNotFound(symbol)
         return {"symbol": symbol, "timezone": "America/New_York"}
 
+    def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        return []
+
     def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         return [{"symbol": "AAPL", "name": "Apple Inc."}][:limit]
 

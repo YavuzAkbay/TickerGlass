@@ -834,3 +834,8 @@
   color: var(--text);
   text-align: right;
 }
+.dlg-row-added {
+  flex: none;
+  margin-left: 6px;
+  color: var(--up);
+}

@@ -11,6 +11,16 @@ class ProviderError(Exception):
     """Upstream data source failed (network, rate limit, unexpected payload)."""
 
 
+class PartialQuotes(ProviderError):
+    """Some request chunks failed: `quotes` holds what succeeded, `failed` the symbols
+    whose chunk failed (their absence means "unknown", not "no such symbol")."""
+
+    def __init__(self, message: str, quotes: list[Any], failed: list[str]) -> None:
+        super().__init__(message)
+        self.quotes = quotes
+        self.failed = failed
+
+
 class SymbolNotFound(ProviderError):
     pass
 
@@ -37,6 +47,11 @@ class MarketDataProvider(Protocol):
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
         """Latest quote per known symbol; unknown symbols are omitted."""
+        ...
+
+    def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """Pre/post-market quote per known symbol (see `YahooProvider.extended_quotes`);
+        unknown symbols are omitted."""
         ...
 
     def events(self, symbol: str) -> dict[str, Any]:

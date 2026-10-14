@@ -11,6 +11,7 @@ import type { Settings } from '../api/types';
 import { useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { useUiStore, type RightPanel } from '../store/ui';
+import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
 const PANELS: (RightPanel | null)[] = [
   'watchlist',
@@ -127,6 +128,15 @@ export const SETTING_DEFS: SettingDef[] = [
         });
     },
     subscribe: (fn) => useIndicatorPrefs.subscribe(fn),
+  },
+  {
+    key: 'watchlist.prefs',
+    read: () => {
+      const { activeId, columns, sort } = useWatchlistPrefs.getState();
+      return { activeId, columns, sort };
+    },
+    write: (v) => useWatchlistPrefs.setState(parsePrefs(v)),
+    subscribe: (fn) => useWatchlistPrefs.subscribe(fn),
   },
 ];
 

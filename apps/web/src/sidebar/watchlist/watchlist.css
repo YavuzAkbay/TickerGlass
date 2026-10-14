@@ -1,0 +1,335 @@
+/* Watchlist panel. Flag colors are shared by rows, menus and the switcher. */
+:root {
+  --wl-flag-red: #f23645;
+  --wl-flag-orange: #ff9800;
+  --wl-flag-yellow: #fdd835;
+  --wl-flag-green: #4caf50;
+  --wl-flag-cyan: #00bcd4;
+  --wl-flag-blue: #2962ff;
+  --wl-flag-purple: #9c27b0;
+  --wl-flash-up-bg: color-mix(in srgb, var(--up) 30%, transparent);
+  --wl-flash-down-bg: color-mix(in srgb, var(--down) 30%, transparent);
+}
+
+.wl-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 6px 0 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.wl-toolbar-spacer {
+  flex: 1;
+}
+.wl-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 70%;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wl-switcher:hover,
+.wl-switcher[aria-expanded='true'] {
+  background: var(--hover);
+}
+.wl-switcher:focus-visible {
+  outline: 1px solid var(--accent);
+}
+.wl-switcher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-menu-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--text-muted);
+}
+.wl-menu-search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+}
+.wl-swatch {
+  display: inline-block;
+  border-radius: 50%;
+}
+
+.wl-table {
+  min-width: 0;
+}
+.wl-grid {
+  outline: none;
+}
+.wl-grid:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.wl-head,
+.wl-row {
+  display: grid;
+  grid-template-columns: var(--wl-cols);
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 11px;
+}
+.wl-head {
+  position: sticky;
+  top: 36px;
+  z-index: 2;
+  height: 28px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.wl-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.wl-th.right {
+  justify-content: flex-end;
+}
+.wl-th:hover,
+.wl-th.sorted {
+  color: var(--text-strong);
+}
+.wl-th-gutter {
+  justify-content: center;
+  cursor: default;
+}
+.wl-cols-btn {
+  width: 24px;
+  height: 24px;
+}
+.wl-row {
+  position: relative;
+  height: 32px;
+  border-left: 3px solid transparent;
+  padding-left: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wl-row:hover {
+  background: var(--hover);
+}
+.wl-row.current {
+  background: var(--active-bg);
+}
+.wl-grid:focus-visible .wl-row.selected,
+.wl-row.selected {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.wl-sym {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.wl-cell {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  border-radius: 2px;
+}
+.wl-gutter {
+  display: block;
+}
+.wl-empty {
+  padding: 16px 14px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.wl-section {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px 0 8px;
+  background: var(--panel-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: default;
+}
+.wl-section-cell {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.wl-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.wl-section-toggle:hover {
+  color: var(--text-strong);
+}
+.wl-chevron {
+  transition: transform 0.12s;
+}
+.wl-chevron.open {
+  transform: rotate(90deg);
+}
+.wl-section-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wl-section-count {
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.wl-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.drop-above > .wl-drop-line {
+  top: -1px;
+}
+.drop-below > .wl-drop-line {
+  bottom: -1px;
+}
+
+@keyframes wl-flash-up {
+  from {
+    background: var(--wl-flash-up-bg);
+  }
+  to {
+    background: transparent;
+  }
+}
+@keyframes wl-flash-down {
+  from {
+    background: var(--wl-flash-down-bg);
+  }
+  to {
+    background: transparent;
+  }
+}
+.wl-flash-up {
+  animation: wl-flash-up 700ms ease-out;
+}
+.wl-flash-down {
+  animation: wl-flash-down 700ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wl-flash-up,
+  .wl-flash-down {
+    animation: none;
+  }
+}
+
+/* Details: performance chips and extended-hours line */
+.wl-perf {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 2px 14px 10px;
+}
+.wl-perf-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  text-align: center;
+}
+.wl-perf-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.wl-perf-value {
+  font-size: 12px;
+  font-weight: 600;
+}
+.wl-ext-line {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* News: mode toggle and source badge */
+.wl-seg {
+  display: flex;
+  gap: 2px;
+  margin: 8px 14px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.wl-seg button {
+  flex: 1;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.wl-seg button[aria-pressed='true'] {
+  background: var(--panel);
+  color: var(--text-strong);
+}
+.wl-news-wrap {
+  position: relative;
+}
+.wl-news-badge {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.wl-news-badge:hover {
+  background: var(--hover);
+}

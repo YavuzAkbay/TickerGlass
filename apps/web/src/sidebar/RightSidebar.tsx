@@ -88,7 +88,7 @@ export function RightSidebar() {
                 label="Add symbol"
                 tipSide="bottom"
                 className="rs-head-btn"
-                onClick={() => commands.execute('chart.symbolSearch')}
+                onClick={() => commands.execute('watchlist.searchAdd')}
               />
             ) : null}
             <IconButton

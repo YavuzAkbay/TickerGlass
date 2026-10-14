@@ -101,6 +101,33 @@ def note(row: m.Note) -> s.Note:
     )
 
 
+def dump_items(items: list[s.WatchlistSymbolItem | s.WatchlistSectionItem]) -> list[Any]:
+    """Validated watchlist items as the JSON stored in `watchlists.items`."""
+    return [i.model_dump(mode="json", by_alias=True) for i in items]
+
+
+def watchlist(row: m.Watchlist) -> s.Watchlist:
+    return s.Watchlist.model_validate(
+        {
+            "id": row.id,
+            "name": row.name,
+            "items": row.items,
+            "revision": row.revision,
+            "createdAt": s.aware(row.created_at),
+            "updatedAt": s.aware(row.updated_at),
+        }
+    )
+
+
+def flag(row: m.SymbolFlag) -> s.Flag:
+    return s.Flag(
+        symbol=row.symbol,
+        color=row.color,  # type: ignore[arg-type]
+        created_at=s.aware(row.created_at),
+        updated_at=s.aware(row.updated_at),
+    )
+
+
 def drawing_fields(data: dict[str, Any]) -> tuple[str, str | None, str, int]:
     """(id, symbol, pane_id, z) of an engine `Drawing`. Raises ValueError.
 
@@ -181,6 +208,14 @@ def export_bundle(session: Session) -> s.Bundle:
         notes=[
             s.BundleNote(**note(r).model_dump()) for r in rows(m.Note, m.Note.created_at, m.Note.id)
         ],
+        watchlists=[
+            s.BundleWatchlist(**watchlist(r).model_dump())
+            for r in rows(m.Watchlist, m.Watchlist.created_at, m.Watchlist.id)
+        ],
+        flags=[
+            s.BundleFlag(**flag(r).model_dump())
+            for r in rows(m.SymbolFlag, m.SymbolFlag.created_at, m.SymbolFlag.symbol)
+        ],
     )
 
 
@@ -208,6 +243,8 @@ SECTIONS: dict[str, Any] = {
     "chart_templates": m.ChartTemplate,
     "settings": m.Setting,
     "notes": m.Note,
+    "watchlists": m.Watchlist,
+    "flags": m.SymbolFlag,
 }
 
 _SAFE_LAYOUT_ID = re.compile(r"[A-Za-z0-9_-]{1,36}")
@@ -228,7 +265,8 @@ def import_bundle(
 
     merge: layouts, drawings and notes match by id; templates by name
     (drawing templates by tool type + name); settings by key. Matches are
-    overwritten (revision bumped), the rest is created. replace: the tables of
+    overwritten (revision bumped), the rest is created (watchlists match by id,
+    flags by symbol). replace: the tables of
     the sections present in the bundle are emptied first; absent sections are
     left alone (so `{"version": 1, "app": "investopen"}` changes nothing).
     """
@@ -248,6 +286,8 @@ def import_bundle(
     _dupes([(x.tool_type, x.name) for x in bundle.drawing_templates], "drawing template")
     _dupes([x.name for x in bundle.chart_templates], "chart template name")
     _dupes([x.id for x in bundle.notes], "note id")
+    _dupes([x.id for x in bundle.watchlists], "watchlist id")
+    _dupes([x.symbol for x in bundle.flags], "flag symbol")
     for key, value in bundle.settings.items():
         if value is None:
             raise BundleError(f"setting {key}: value must not be null (omit the key instead)")
@@ -411,6 +451,41 @@ def import_bundle(
             nrow.symbol, nrow.text, nrow.updated_at = n.symbol, n.text, t
             nrow.revision += 1
             summary.notes.updated += 1
+
+    for w in bundle.watchlists:
+        wid = w.id if _SAFE_LAYOUT_ID.fullmatch(w.id) else s.new_id()
+        wrow = session.get(m.Watchlist, wid)
+        if wrow is None:
+            session.add(
+                m.Watchlist(
+                    id=wid,
+                    name=w.name,
+                    items=dump_items(w.items),
+                    revision=1,
+                    created_at=w.created_at or t,
+                    updated_at=t,
+                )
+            )
+            summary.watchlists.created += 1
+        else:
+            wrow.name, wrow.items, wrow.updated_at = w.name, dump_items(w.items), t
+            wrow.revision += 1
+            summary.watchlists.updated += 1
+
+    for f in bundle.flags:
+        frow = session.get(m.SymbolFlag, f.symbol)
+        if frow is None:
+            session.add(
+                m.SymbolFlag(
+                    symbol=f.symbol, color=f.color, created_at=f.created_at or t, updated_at=t
+                )
+            )
+            summary.flags.created += 1
+        else:
+            if frow.color != f.color:
+                frow.color, frow.created_at = f.color, t
+            frow.updated_at = t
+            summary.flags.updated += 1
     session.flush()
     return summary
 

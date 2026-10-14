@@ -27,6 +27,7 @@ import {
 import { isObj, isTransient, readJson, safeStorage } from './net';
 import { GENERAL_NOTE, NotesSync, useNotesStore } from './notes';
 import { SettingsSync } from './settingsSync';
+import { WatchlistSync } from './watchlists';
 
 export interface Persistence {
   layouts: LayoutSession;
@@ -34,6 +35,7 @@ export interface Persistence {
   settings: SettingsSync;
   drawingTemplates: DrawingTemplatesSync;
   notes: NotesSync;
+  watchlists: WatchlistSync;
   /** Try to reach the API now (no-op while connected). */
   reconnect: () => Promise<void>;
   /** Save everything pending now. */
@@ -114,10 +116,21 @@ export function startPersistence(): () => void {
         10_000,
       ),
   });
+  const watchlists = new WatchlistSync({
+    onError,
+    onConflict: (_id, name, restore) =>
+      actionToast(
+        `Watchlist “${name}” was changed elsewhere; the saved version is shown.`,
+        [{ label: 'Keep mine', run: restore }],
+        'error',
+        10_000,
+      ),
+  });
   drawings.start();
   settings.start();
   drawingTemplates.start();
   notes.start();
+  watchlists.start();
 
   // ---------------------------------------------------------------- layout changes
   let changeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -215,6 +228,7 @@ export function startPersistence(): () => void {
       drawings.pull(),
       drawingTemplates.load(),
       notes.load(),
+      watchlists.load(),
     ]);
     if (disposed) return;
     const failed = results.find((r) => r.status === 'rejected');
@@ -289,10 +303,13 @@ export function startPersistence(): () => void {
       return;
     }
     if (!online) void connect();
-    else
+    else {
       drawings
         .pull(useAppStore.getState().symbol)
         .catch((err) => report(err, 'Drawings could not be loaded'));
+      // Cheap; picks up changes made on other devices.
+      watchlists.load().catch((err) => report(err, 'Watchlists could not be loaded'));
+    }
   };
   const onNetworkOnline = () => void connect();
   // Registered before the autosavers' own handlers run (they flush the cache we write here).
@@ -309,6 +326,7 @@ export function startPersistence(): () => void {
       settings.flush(),
       drawingTemplates.flush(),
       notes.flush(),
+      watchlists.flush(),
     ]);
   };
 
@@ -325,7 +343,7 @@ export function startPersistence(): () => void {
     document.removeEventListener('visibilitychange', onVisible);
     window.removeEventListener('online', onNetworkOnline);
     if (active?.layouts === layouts) active = null;
-    const parts = [layouts, drawings, settings, drawingTemplates, notes];
+    const parts = [layouts, drawings, settings, drawingTemplates, notes, watchlists];
     return Promise.all(parts.map((p) => (send ? p.dispose() : p.halt())));
   };
 
@@ -335,6 +353,7 @@ export function startPersistence(): () => void {
     settings,
     drawingTemplates,
     notes,
+    watchlists,
     reconnect: connect,
     flushAll,
     halt: () => stop(false).then(() => undefined),

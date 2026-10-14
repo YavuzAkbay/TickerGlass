@@ -6,13 +6,14 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 from typing import Any, TypeVar
 
 import pandas as pd
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
-from .base import BAR_COLUMNS, ProviderError, SymbolNotFound
+from .base import BAR_COLUMNS, PartialQuotes, ProviderError, SymbolNotFound
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -187,6 +188,46 @@ class YahooProvider:
             )
         return out
 
+    def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """Pre/post-market quotes from Yahoo's v7 quote endpoint, 50 symbols per request.
+
+        A failed chunk is not retried per symbol (that would multiply upstream requests);
+        if any chunk fails, `PartialQuotes` is raised carrying the successes and the
+        failed symbols, so callers never mistake a failure for "unknown symbol".
+        """
+        out: list[dict[str, Any]] = []
+        failed: list[str] = []
+        for i in range(0, len(symbols), _V7_CHUNK):
+            chunk = symbols[i : i + _V7_CHUNK]
+            try:
+                results = self._call(partial(self._v7_quote, chunk))
+            except ProviderError:
+                log.warning("extended quotes unavailable for %d symbols", len(chunk), exc_info=True)
+                failed.extend(chunk)
+                continue
+            out.extend(q for r in results if (q := _extended_quote(r)) is not None)
+        if failed:
+            raise PartialQuotes("Yahoo extended quotes unavailable", out, failed)
+        return out
+
+    def _v7_quote(self, chunk: list[str]) -> list[dict[str, Any]]:
+        """Raw `quoteResponse.result` rows. Private yfinance API (YfData handles cookie/crumb)."""
+        from yfinance.const import _QUERY1_URL_
+        from yfinance.data import YfData
+
+        payload = YfData().get_raw_json(
+            f"{_QUERY1_URL_}/v7/finance/quote",
+            params={"symbols": ",".join(chunk), "formatted": "false"},
+        )
+        # Shape errors are permanent: ProviderError is not retried by `_call`.
+        if not isinstance(payload, dict):
+            raise ProviderError("Yahoo v7 quote: unexpected payload")
+        response = payload.get("quoteResponse")
+        result = response.get("result") if isinstance(response, dict) else None
+        if not isinstance(result, list):
+            raise ProviderError("Yahoo v7 quote: unexpected payload shape")
+        return [r for r in result if isinstance(r, dict)]
+
     def events(self, symbol: str) -> dict[str, Any]:
         def fetch() -> tuple[pd.Series | None, pd.Series | None, pd.DataFrame | None]:
             t = yf.Ticker(symbol)
@@ -340,7 +381,47 @@ _INFO_KEYS = (
     "website",
     "fullTimeEmployees",
     "longBusinessSummary",
+    "earningsTimestamp",
+    "earningsTimestampStart",
+    "earningsTimestampEnd",
+    "isEarningsDateEstimate",
+    "exDividendDate",
+    "floatShares",
 )
+
+
+_V7_CHUNK = 50
+
+
+def _extended_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Map a v7 quote row; change fields are computed against the regular price."""
+    sym = raw.get("symbol")
+    if not isinstance(sym, str) or not sym:
+        return None
+    regular = _num(raw.get("regularMarketPrice"))
+
+    def session(prefix: str) -> dict[str, Any]:
+        price = _num(raw.get(f"{prefix}Price"))
+        when = _num(raw.get(f"{prefix}Time"))
+        change = price - regular if price is not None and regular is not None else None
+        pct = change / regular * 100 if change is not None and regular and regular > 0 else None
+        return {
+            f"{prefix}Price": price,
+            f"{prefix}Time": int(when) if when is not None else None,
+            f"{prefix}Change": change if pct is not None else None,
+            f"{prefix}ChangePercent": pct,
+        }
+
+    rtime = _num(raw.get("regularMarketTime"))
+    state = raw.get("marketState")
+    return {
+        "symbol": sym,
+        "marketState": state if isinstance(state, str) else None,
+        "regularMarketPrice": regular,
+        "regularMarketTime": int(rtime) if rtime is not None else None,
+        **session("preMarket"),
+        **session("postMarket"),
+    }
 
 
 def _num(v: Any) -> float | None:

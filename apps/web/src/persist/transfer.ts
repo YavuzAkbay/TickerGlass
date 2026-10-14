@@ -26,10 +26,23 @@ export const BUNDLE_SECTIONS = [
   'chartTemplates',
   'settings',
   'notes',
+  'watchlists',
+  'flags',
+] as const;
+
+/** Sections every full backup has (Phase 7); older backups lack the later ones. */
+export const REQUIRED_SECTIONS = [
+  'layouts',
+  'drawings',
+  'indicatorTemplates',
+  'drawingTemplates',
+  'chartTemplates',
+  'settings',
+  'notes',
 ] as const;
 
 export const isFullBundle = (b: ImportBundle): boolean =>
-  BUNDLE_SECTIONS.every((k) => b[k] !== undefined);
+  REQUIRED_SECTIONS.every((k) => b[k] !== undefined);
 
 /** Local caches the server data replaces after an import. */
 export const CACHE_KEYS = [
@@ -39,6 +52,8 @@ export const CACHE_KEYS = [
   SETTINGS_SYNC_KEY,
   DRAWING_TEMPLATES_SYNC_KEY,
   'investopen-notes',
+  'investopen-watchlists',
+  'investopen-watchlist-prefs',
   LOCAL_BUNDLE_KEY,
 ];
 

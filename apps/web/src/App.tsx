@@ -5,6 +5,7 @@ import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
 import { registerIndicatorCommands } from './indicators/commands';
 import { installShortcuts } from './commands/shortcuts';
+import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
@@ -31,6 +32,7 @@ export function App() {
     const unregisterIndicators = registerIndicatorCommands();
     const unregisterDrawings = registerDrawingCommands();
     const unregisterLayouts = registerLayoutCommands();
+    const unregisterWatchlist = registerWatchlistCommands();
     // Digits open the interval input, anything else symbol search .
     const uninstall = installShortcuts((initial) =>
       useUiStore
@@ -42,6 +44,7 @@ export function App() {
       unregisterIndicators();
       unregisterDrawings();
       unregisterLayouts();
+      unregisterWatchlist();
       uninstall();
     };
   }, []);

@@ -1,9 +1,14 @@
-import { Clock, Search, X } from 'lucide-react';
+import { Check, Clock, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { SymbolSearchResult } from '@investopen/engine';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
+import { flagRows, isFlagRef, resolveActive } from '../watchlist/model';
+import { useWatchlistPrefs } from '../watchlist/prefs';
+import { useWatchlistStore, validSymbol } from '../watchlist/store';
+import type { FlagColor } from '../watchlist/types';
 import { Modal } from '../ui/Modal';
+import { toast } from '../ui/Toast';
 import { SymbolRow, SymbolTabs, matchesTab, useSymbolSearch, type SymbolTab } from './symbolSearch';
 import './dialogs.css';
 
@@ -13,6 +18,27 @@ function initialText(arg: unknown): string {
     if (typeof v === 'string') return v;
   }
   return '';
+}
+
+/** Opened by `watchlist.searchAdd`: picking a result adds it to the list and keeps the dialog open. */
+function isAddMode(arg: unknown): boolean {
+  return !!arg && typeof arg === 'object' && (arg as { mode?: unknown }).mode === 'watchlist';
+}
+
+/** Symbols in the active watchlist (or flag list). */
+function useActiveSymbols(): Set<string> {
+  const lists = useWatchlistStore((s) => s.lists);
+  const flags = useWatchlistStore((s) => s.flags);
+  const activeId = useWatchlistPrefs((s) => s.activeId);
+  const ref = resolveActive(activeId, lists);
+  if (!ref) return new Set();
+  if (isFlagRef(ref))
+    return new Set(
+      flagRows(flags, ref.slice(5) as FlagColor).flatMap((r) =>
+        r.kind === 'symbol' ? [r.symbol] : [],
+      ),
+    );
+  return new Set((lists[ref]?.items ?? []).flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])));
 }
 
 /** standard symbol search: debounced results, type tabs, recents, keyboard. */
@@ -30,6 +56,8 @@ export default function SymbolSearchDialog({
   const list = useRef<HTMLDivElement>(null);
   const recent = useAppStore((s) => s.recentSymbols);
   const search = useSymbolSearch(query);
+  const addMode = isAddMode(arg);
+  const inList = useActiveSymbols();
 
   const q = query.trim();
   const rows: SymbolSearchResult[] =
@@ -52,6 +80,17 @@ export default function SymbolSearchDialog({
   const select = (ticker: string) => {
     const t = ticker.trim().toUpperCase();
     if (!t) return;
+    if (addMode) {
+      if (!validSymbol(t)) {
+        toast(`“${t}” is not a valid symbol`, 'error');
+        return;
+      }
+      commands.execute('watchlist.addSymbol', t);
+      setQuery('');
+      setActive(0);
+      input.current?.focus();
+      return;
+    }
     commands.execute('chart.setSymbol', t);
     onClose();
   };
@@ -103,12 +142,21 @@ export default function SymbolSearchDialog({
         active={i === idx}
         onHover={() => setActive(i)}
         onSelect={() => select(r.symbol)}
+        {...(addMode && inList.has(r.symbol.toUpperCase())
+          ? { action: <Check size={16} className="dlg-row-added" aria-label="In list" /> }
+          : {})}
       />
     ));
   }
 
   return (
-    <Modal title="Symbol search" onClose={onClose} width={640} top className="dlg-symsearch">
+    <Modal
+      title={addMode ? 'Add symbol to watchlist' : 'Symbol search'}
+      onClose={onClose}
+      width={640}
+      top
+      className="dlg-symsearch"
+    >
       <div className="dlg-search">
         <Search size={18} strokeWidth={1.8} className="dlg-search-icon" />
         <input

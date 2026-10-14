@@ -1,4 +1,5 @@
 /** Response shapes of the REST API (see api/src/investopen_api/routes/). */
+import type { FlagColor, WatchlistItem } from '../watchlist/types';
 
 export interface Quote {
   symbol: string;
@@ -8,6 +9,9 @@ export interface Quote {
   changePercent: number | null;
   volume: number | null;
   currency: string | null;
+  marketState?: string | null;
+  /** Unix seconds of the latest daily bar (not comparable with tick times). */
+  time?: number | null;
 }
 
 export interface SymbolMeta {
@@ -54,6 +58,26 @@ export interface NewsItem {
   /** Unix seconds. */
   time: number | null;
   thumbnail: string | null;
+  /** Set by `/news?symbols=`: the first requested symbol the item came from. */
+  symbol?: string;
+}
+
+export type { ExtendedQuote } from '../quotes/types';
+
+export interface PerformancePeriod {
+  key: '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '5Y';
+  baseTime: number | null;
+  baseClose: number | null;
+  changePercent: number | null;
+}
+
+/** `GET /api/performance/{symbol}`. */
+export interface Performance {
+  symbol: string;
+  timezone: string;
+  asOf: number;
+  last: number;
+  periods: PerformancePeriod[];
 }
 
 // ------------------------------------------------------------ persistence
@@ -157,8 +181,9 @@ export interface DrawingTemplateIn<S = Record<string, unknown>> {
   schemaVersion?: number;
 }
 
-export interface DrawingTemplate<S = Record<string, unknown>>
-  extends Required<DrawingTemplateIn<S>> {
+export interface DrawingTemplate<S = Record<string, unknown>> extends Required<
+  DrawingTemplateIn<S>
+> {
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -175,6 +200,8 @@ export interface ChartTemplate<T = Record<string, unknown>> extends Required<Cha
   createdAt: string;
   updatedAt: string;
 }
+
+export type { Flag, Watchlist } from '../watchlist/types';
 
 export type Settings = Record<string, unknown>;
 
@@ -200,6 +227,8 @@ export interface Bundle {
   chartTemplates: ChartTemplateIn[];
   settings: Settings;
   notes: { id: string; symbol?: string | null; text: string }[];
+  watchlists: { id: string; name: string; items: WatchlistItem[] }[];
+  flags: { symbol: string; color: FlagColor }[];
 }
 
 export type ImportMode = 'merge' | 'replace';
@@ -220,4 +249,6 @@ export interface ImportSummary {
   chartTemplates: ImportCounts;
   settings: ImportCounts;
   notes: ImportCounts;
+  watchlists: ImportCounts;
+  flags: ImportCounts;
 }

@@ -44,10 +44,30 @@ interface Note extends Json {
   revision: number;
 }
 
+interface WatchlistRow extends Json {
+  id: string;
+  name: string;
+  items: Json[];
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+interface FlagRow extends Json {
+  symbol: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Routes that may reach the real backend (read-only market data). */
-const MARKET = /^\/api\/(bars|quotes|health)$|^\/api\/(symbols|events|news|fundamentals)\//;
+const MARKET =
+  /^\/api\/(bars|quotes|quotes\/extended|health|news)$|^\/api\/(symbols|events|news|fundamentals|performance)\//;
 const USER_DATA =
-  /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|export|import)(\/|$)/;
+  /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|export|import)(\/|$)/;
+const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
+const SAFE_ID = /^[A-Za-z0-9_-]{1,36}$/;
+const WL_SYMBOL = /^[A-Z0-9.\-=^/&_]{1,32}$/;
+const MAX_WATCHLIST_ITEMS = 1000;
 const FIXED_LAYOUT_ROUTES = new Set(['last-used', 'import']);
 
 const detail = (status: number, message: string): Reply => [status, { detail: message }];
@@ -58,6 +78,9 @@ export class MockServer {
   drawings = new Map<string, DrawingRow>();
   settings = new Map<string, unknown>();
   notes = new Map<string, Note>();
+  watchlists = new Map<string, WatchlistRow>();
+  /** Global symbol flags, keyed by upper-case symbol. */
+  flags = new Map<string, FlagRow>();
   indicatorTemplates = new Map<string, Template>();
   drawingTemplates = new Map<string, Template>();
   chartTemplates = new Map<string, Template>();
@@ -141,6 +164,60 @@ export class MockServer {
     return row;
   }
 
+  /** schemas.WatchlistItems: normalizes symbols; an error string on the first violation. */
+  private watchlistItems(raw: unknown): Json[] | string {
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw)) return 'items must be an array';
+    if (raw.length > MAX_WATCHLIST_ITEMS) return `at most ${MAX_WATCHLIST_ITEMS} items`;
+    const out: Json[] = [];
+    const symbols = new Set<string>();
+    const sections = new Set<string>();
+    for (const x of raw as Json[]) {
+      if (x?.type === 'symbol') {
+        const symbol = String(x.symbol ?? '')
+          .trim()
+          .toUpperCase();
+        if (!WL_SYMBOL.test(symbol)) return `invalid symbol: ${String(x.symbol)}`;
+        if (symbols.has(symbol)) return `duplicate symbol: ${symbol}`;
+        symbols.add(symbol);
+        out.push({ type: 'symbol', symbol });
+      } else if (x?.type === 'section') {
+        if (typeof x.id !== 'string' || !SAFE_ID.test(x.id)) return 'invalid section id';
+        if (sections.has(x.id)) return `duplicate section id: ${x.id}`;
+        sections.add(x.id);
+        out.push({
+          type: 'section',
+          id: x.id,
+          title: String(x.title ?? '').trim(),
+          collapsed: x.collapsed === true,
+        });
+      } else return 'invalid watchlist item';
+    }
+    return out;
+  }
+
+  private wlName(name: unknown): string | null {
+    return typeof name === 'string' && name.trim() ? name.trim() : null;
+  }
+
+  private flagList(): FlagRow[] {
+    return [...this.flags.values()].sort(
+      (a, b) => a.createdAt.localeCompare(b.createdAt) || a.symbol.localeCompare(b.symbol),
+    );
+  }
+
+  /** Set (color) or clear (null) one flag; created_at resets only on a color change. */
+  private setFlag(symbol: string, color: string | null, createdAt?: string) {
+    const cur = this.flags.get(symbol);
+    if (color === null) {
+      this.flags.delete(symbol);
+      return;
+    }
+    const t = this.now();
+    if (!cur) this.flags.set(symbol, { symbol, color, createdAt: createdAt ?? t, updatedAt: t });
+    else if (cur.color !== color) Object.assign(cur, { color, createdAt: t, updatedAt: t });
+  }
+
   private snapshot(): MockServer {
     const copy = new MockServer();
     copy.layouts = structuredClone(this.layouts);
@@ -148,6 +225,8 @@ export class MockServer {
     copy.drawings = structuredClone(this.drawings);
     copy.settings = structuredClone(this.settings);
     copy.notes = structuredClone(this.notes);
+    copy.watchlists = structuredClone(this.watchlists);
+    copy.flags = structuredClone(this.flags);
     copy.indicatorTemplates = structuredClone(this.indicatorTemplates);
     copy.drawingTemplates = structuredClone(this.drawingTemplates);
     copy.chartTemplates = structuredClone(this.chartTemplates);
@@ -363,6 +442,81 @@ export class MockServer {
       }
     }
 
+    if (head === 'watchlists') {
+      if (!id && method === 'GET')
+        return [
+          200,
+          [...this.watchlists.values()].sort(
+            (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+          ),
+        ];
+      if (!id && method === 'POST') {
+        if (
+          b.id !== undefined &&
+          b.id !== null &&
+          (typeof b.id !== 'string' || !SAFE_ID.test(b.id))
+        )
+          return detail(422, 'invalid watchlist id');
+        const name = this.wlName(b.name);
+        if (!name) return detail(422, 'name required');
+        const items = this.watchlistItems(b.items);
+        if (typeof items === 'string') return detail(422, items);
+        const wid = typeof b.id === 'string' ? b.id : this.id('W');
+        const existing = this.watchlists.get(wid);
+        if (existing)
+          return [
+            409,
+            { detail: { message: `watchlist ${wid} changed elsewhere`, current: existing } },
+          ];
+        const t = this.now();
+        const row: WatchlistRow = {
+          id: wid,
+          name,
+          items,
+          revision: 1,
+          createdAt: t,
+          updatedAt: t,
+        };
+        this.watchlists.set(wid, row);
+        return [201, row];
+      }
+      const row = this.watchlists.get(id!);
+      if (!row) return notFound;
+      if (method === 'GET') return [200, row];
+      if (method === 'PUT') {
+        const name = this.wlName(b.name);
+        if (!name) return detail(422, 'name required');
+        const items = this.watchlistItems(b.items);
+        if (typeof items === 'string') return detail(422, items);
+        if (b.revision !== undefined && b.revision !== null && b.revision !== row.revision)
+          return [
+            409,
+            { detail: { message: `watchlist ${row.id} changed elsewhere`, current: row } },
+          ];
+        Object.assign(row, { name, items, revision: row.revision + 1, updatedAt: this.now() });
+        return [200, row];
+      }
+      if (method === 'DELETE') {
+        this.watchlists.delete(row.id);
+        return [204, undefined];
+      }
+    }
+
+    if (head === 'flags' && !id) {
+      if (method === 'GET') return [200, this.flagList()];
+      if (method === 'PATCH') {
+        const patch: [string, string | null][] = [];
+        for (const [k, v] of Object.entries(b)) {
+          const symbol = k.trim().toUpperCase();
+          if (!WL_SYMBOL.test(symbol)) return detail(422, `invalid symbol: ${k}`);
+          if (v !== null && !FLAG_COLORS.includes(String(v))) return detail(422, 'invalid color');
+          patch.push([symbol, v === null ? null : String(v)]);
+        }
+        for (const [symbol, color] of patch) this.setFlag(symbol, color);
+        return [200, this.flagList()];
+      }
+    }
+
     if (head === 'export' && method === 'GET')
       return [
         200,
@@ -377,6 +531,8 @@ export class MockServer {
           chartTemplates: [...this.chartTemplates.values()],
           settings: Object.fromEntries(this.settings),
           notes: [...this.notes.values()],
+          watchlists: [...this.watchlists.values()],
+          flags: this.flagList(),
         },
       ];
 
@@ -454,6 +610,8 @@ export class MockServer {
       chartTemplates: zero(),
       settings: zero(),
       notes: zero(),
+      watchlists: zero(),
+      flags: zero(),
     } as never;
     const drawings = (b.drawings ?? []) as { data: Json }[];
     const fields: Fields[] = [];
@@ -461,6 +619,22 @@ export class MockServer {
       const f = this.drawingFields(d.data);
       if (typeof f === 'string') return detail(422, f);
       fields.push(f);
+    }
+    const bundleWl = (b.watchlists ?? []) as Json[];
+    const bundleFlags = (b.flags ?? []) as Json[];
+    const dupe = (xs: unknown[]) => xs.length !== new Set(xs).size;
+    if (dupe(bundleWl.map((w) => w.id))) return detail(422, 'duplicate watchlist id in bundle');
+    if (dupe(bundleFlags.map((f) => String(f.symbol).trim().toUpperCase())))
+      return detail(422, 'duplicate flag symbol in bundle');
+    for (const w of bundleWl) {
+      if (!this.wlName(w.name)) return detail(422, 'watchlist name required');
+      const items = this.watchlistItems(w.items);
+      if (typeof items === 'string') return detail(422, items);
+    }
+    for (const f of bundleFlags) {
+      if (!WL_SYMBOL.test(String(f.symbol).trim().toUpperCase()))
+        return detail(422, `invalid symbol: ${String(f.symbol)}`);
+      if (!FLAG_COLORS.includes(String(f.color))) return detail(422, 'invalid color');
     }
     if (mode === 'replace') {
       const sections: [string, Map<string, unknown>][] = [
@@ -471,6 +645,8 @@ export class MockServer {
         ['chartTemplates', this.chartTemplates],
         ['settings', this.settings],
         ['notes', this.notes],
+        ['watchlists', this.watchlists],
+        ['flags', this.flags],
       ];
       for (const [k, map] of sections) {
         if (b[k] === undefined) continue; // absent sections are kept
@@ -550,6 +726,40 @@ export class MockServer {
         });
         summary.notes!.created++;
       }
+    }
+    for (const w of bundleWl) {
+      const wid = typeof w.id === 'string' && SAFE_ID.test(w.id) ? w.id : this.id('W');
+      const items = this.watchlistItems(w.items) as Json[];
+      const cur = this.watchlists.get(wid);
+      if (cur) {
+        Object.assign(cur, {
+          name: this.wlName(w.name),
+          items,
+          revision: cur.revision + 1,
+          updatedAt: this.now(),
+        });
+        summary.watchlists!.updated++;
+      } else {
+        const t = this.now();
+        this.watchlists.set(wid, {
+          id: wid,
+          name: this.wlName(w.name)!,
+          items,
+          revision: 1,
+          createdAt: typeof w.createdAt === 'string' ? w.createdAt : t,
+          updatedAt: t,
+        });
+        summary.watchlists!.created++;
+      }
+    }
+    for (const f of bundleFlags) {
+      const symbol = String(f.symbol).trim().toUpperCase();
+      summary.flags![this.flags.has(symbol) ? 'updated' : 'created']++;
+      this.setFlag(
+        symbol,
+        String(f.color),
+        typeof f.createdAt === 'string' ? f.createdAt : undefined,
+      );
     }
     return summary;
   }

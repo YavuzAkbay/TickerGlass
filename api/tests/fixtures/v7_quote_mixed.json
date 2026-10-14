@@ -1,0 +1,76 @@
+{
+  "quoteResponse": {
+    "result": [
+      {
+        "language": "en-US",
+        "region": "US",
+        "quoteType": "EQUITY",
+        "typeDisp": "Equity",
+        "quoteSourceName": "Nasdaq Real Time Price",
+        "triggerable": true,
+        "customPriceAlertConfidence": "HIGH",
+        "currency": "USD",
+        "exchange": "NMS",
+        "shortName": "Apple Inc.",
+        "longName": "Apple Inc.",
+        "messageBoardId": "finmb_24937",
+        "exchangeTimezoneName": "America/New_York",
+        "exchangeTimezoneShortName": "EDT",
+        "gmtOffSetMilliseconds": -14400000,
+        "market": "us_market",
+        "esgPopulated": false,
+        "marketState": "PRE",
+        "regularMarketChangePercent": 0.8312,
+        "regularMarketPrice": 231.5,
+        "regularMarketTime": 1760385600,
+        "regularMarketChange": 1.91,
+        "regularMarketPreviousClose": 229.59,
+        "preMarketPrice": 232.1,
+        "preMarketTime": 1760430000,
+        "preMarketChange": 0.6,
+        "preMarketChangePercent": 0.2592,
+        "postMarketPrice": 231.2,
+        "postMarketTime": 1760385000,
+        "fullExchangeName": "NasdaqGS",
+        "symbol": "AAPL"
+      },
+      {
+        "quoteType": "EQUITY",
+        "currency": "USD",
+        "exchange": "NMS",
+        "shortName": "Microsoft Corporation",
+        "marketState": "POST",
+        "regularMarketPrice": 420.0,
+        "regularMarketTime": 1760385600,
+        "postMarketPrice": 415.8,
+        "postMarketTime": 1760389200,
+        "postMarketChange": -4.2,
+        "postMarketChangePercent": -1.0,
+        "symbol": "MSFT"
+      },
+      {
+        "quoteType": "EQUITY",
+        "currency": "USD",
+        "exchange": "NYQ",
+        "shortName": "Illiquid Corp",
+        "marketState": "REGULAR",
+        "regularMarketPrice": 12.0,
+        "regularMarketTime": 1760376000,
+        "symbol": "ILQ"
+      },
+      {
+        "quoteType": "EQUITY",
+        "currency": "USD",
+        "exchange": "NMS",
+        "shortName": "Broken Inc.",
+        "marketState": "CLOSED",
+        "regularMarketPrice": 0,
+        "regularMarketTime": 1760376000,
+        "preMarketPrice": 1.0,
+        "preMarketTime": 1760370000,
+        "symbol": "BRK"
+      }
+    ],
+    "error": null
+  }
+}

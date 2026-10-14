@@ -104,7 +104,7 @@ Phase 2 notes:
 Phase 3 notes:
 
 - Shell entries for later phases are present but inert, with a phase hint: chart types (4), indicators (5), drawing tools are selectable state only (6), layouts (7), compare (9), alerts (10), replay (13).
-- Watchlist panel is a basic recent-symbols list with live quotes; the full version is Phase 8.
+- Watchlist panel was a basic recent-symbols list in this phase; the full version landed in Phase 8.
 - Settings dialog: Symbol, Canvas, and Scales tabs work; others are placeholders until Phase 15.
 
 ### Phase 4: Chart types
@@ -171,12 +171,21 @@ Phase 7 notes:
 
 ### Phase 8: Watchlists
 
-- [ ] Multiple named watchlists; create/rename/delete/duplicate; sections/separators; drag reorder
-- [ ] Columns: last, change, change %, volume, ext-hours; sort; customizable columns
-- [ ] Live updates via `/ws`; price tick flash
-- [ ] Color flags (standard flag lists); right-click row menu (add alert, flag, remove, move to list, open in new chart)
-- [ ] Import/export `.txt`; add the current chart symbol; keyboard navigation (↑/↓ changes the chart symbol)
-- [ ] Details panel (key stats, performance, earnings date), news panel
+- [x] Multiple named watchlists; create/rename/delete/duplicate; sections/separators; drag reorder
+- [x] Columns: last, change, change %, volume, ext-hours; sort; customizable columns
+- [x] Live updates via `/ws`; price tick flash
+- [x] Color flags (standard flag lists); right-click row menu (add alert, flag, remove, move to list, open in new chart)
+- [x] Import/export `.txt`; add the current chart symbol; keyboard navigation (↑/↓ changes the chart symbol)
+- [x] Details panel (key stats, performance, earnings date), news panel
+
+Phase 8 notes:
+
+- Server and wire format: `docs/persistence.md` (tables `watchlists` and `symbol_flags` in §1, endpoints in §2, conflicts in §3, bundle sections in §4, cache keys and the `watchlist.prefs` setting in §6). Market-data additions: `GET /api/quotes/extended`, `GET /api/performance/{symbol}`, `GET /api/news?symbols=`.
+- Live quotes: `apps/web/src/quotes/` is one shared `/ws` client per tab (reference-counted subscriptions, 200-symbol cap, backoff, fallback polling of `/api/quotes` every 15 s while the socket is down, extended quotes every 60 s). Watchlist and Details read the same `useLiveQuotes` / `useLiveQuote` store.
+- Watchlist data layer: `apps/web/src/watchlist/` (`store.ts` lists and flags, `prefs.ts` active list / columns / sort, `model.ts` rows, sorting, `.txt` parse and format, `commands.ts`); sync in `apps/web/src/persist/watchlists.ts`. A list is saved whole with a revision check (409 shows a toast with "Keep mine"); flags are global per symbol and last writer wins. The active list, columns and sort are the setting `watchlist.prefs`.
+- Lists can be created offline (client-chosen ids). Flag colors appear as virtual lists under "Flagged" in the list switcher. The `.txt` import maps reference prefixes to Yahoo symbols and reports the ones it can't map.
+- e2e: `e2e/persistence.ts` mocks the new endpoints; `e2e/market.ts` is an opt-in mock for quotes, performance and the `/ws` stream (`mockMarket`); `e2e/watchlist.spec.ts` covers the panel.
+- Deferred: "Open in new chart" (Phase 14: a second tab would clobber the shared last-used layout), "Add alert" from a row (Phase 10 consumes the `alert.create` argument), drag between lists and multi-select (Phase 15). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#watchlists).
 
 ### Phase 9: Compare & symbol math
 

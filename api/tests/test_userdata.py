@@ -410,7 +410,7 @@ def strip_volatile(bundle: dict[str, Any]) -> dict[str, Any]:
     out = dict(bundle)
     out.pop("exportedAt")
     for key in ("layouts", "drawings", "indicatorTemplates", "drawingTemplates",
-                "chartTemplates", "notes"):  # fmt: skip
+                "chartTemplates", "notes", "watchlists", "flags"):  # fmt: skip
         out[key] = [
             {k: v for k, v in x.items() if k not in ("updatedAt", "revision")} for x in out[key]
         ]
@@ -720,6 +720,8 @@ USER_TABLES = {
     "chart_templates",
     "settings",
     "notes",
+    "watchlists",
+    "symbol_flags",
 }
 
 

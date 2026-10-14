@@ -22,6 +22,8 @@ MAX_NOTE_CHARS = 200_000
 MAX_BATCH_OPS = 5_000
 MAX_BUNDLE_ITEMS = 100_000
 MAX_BUNDLE_SETTINGS = 10_000
+MAX_WATCHLIST_ITEMS = 1000
+MAX_FLAGS_PATCH = 5000
 
 #: Layout ids that would shadow fixed `/api/layouts/...` routes; regenerated on import.
 RESERVED_LAYOUT_IDS = frozenset({"last-used", "import", "export"})
@@ -286,6 +288,103 @@ class Note(ApiModel):
     updated_at: datetime
 
 
+# --------------------------------------------------------------- watchlists
+
+FLAG_COLORS = ("red", "orange", "yellow", "green", "cyan", "blue", "purple")
+FlagColor = Literal["red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+
+_WL_SYMBOL = re.compile(r"^[A-Z0-9.\-=^/&_]{1,32}$")
+_WL_ID = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
+
+
+def _check_wl_symbol(value: str) -> str:
+    value = value.strip().upper()
+    if not _WL_SYMBOL.match(value):
+        raise ValueError(f"invalid symbol: {value!r}")
+    return value
+
+
+def _check_wl_id(value: str) -> str:
+    if not _WL_ID.match(value):
+        raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
+    return value
+
+
+WatchlistSymbol = Annotated[str, AfterValidator(_check_wl_symbol)]
+WatchlistId = Annotated[str, AfterValidator(_check_wl_id)]
+
+
+class WatchlistSymbolItem(ApiModel):
+    type: Literal["symbol"]
+    symbol: WatchlistSymbol
+
+
+class WatchlistSectionItem(ApiModel):
+    type: Literal["section"]
+    id: Id
+    title: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+    collapsed: bool = False
+
+
+WatchlistItem = Annotated[WatchlistSymbolItem | WatchlistSectionItem, Field(discriminator="type")]
+
+
+def _unique_items(items: list[WatchlistSymbolItem | WatchlistSectionItem]) -> Any:
+    symbols: set[str] = set()
+    sections: set[str] = set()
+    for it in items:
+        if isinstance(it, WatchlistSymbolItem):
+            if it.symbol in symbols:
+                raise ValueError(f"duplicate symbol: {it.symbol}")
+            symbols.add(it.symbol)
+        else:
+            if it.id in sections:
+                raise ValueError(f"duplicate section id: {it.id}")
+            sections.add(it.id)
+    return items
+
+
+WatchlistItems = Annotated[
+    list[WatchlistItem],
+    Field(max_length=MAX_WATCHLIST_ITEMS),
+    AfterValidator(_unique_items),
+]
+
+
+class WatchlistIn(ApiModel):
+    #: Client-chosen id (offline creation keeps its identity); null = server assigns.
+    id: WatchlistId | None = None
+    name: Name
+    items: WatchlistItems = Field(default_factory=list)
+
+
+class WatchlistUpdate(ApiModel):
+    name: Name
+    items: WatchlistItems
+    #: When given, 409 unless it matches the stored revision.
+    revision: Revision | None = None
+
+
+class Watchlist(ApiModel):
+    id: str
+    name: str
+    items: list[WatchlistItem]
+    revision: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class Flag(ApiModel):
+    symbol: str
+    color: FlagColor
+    created_at: datetime
+    updated_at: datetime
+
+
+#: symbol -> color, or null to unflag.
+FlagsPatch = Annotated[dict[WatchlistSymbol, FlagColor | None], Field(max_length=MAX_FLAGS_PATCH)]
+
+
 # ------------------------------------------------------------ import/export
 
 
@@ -339,6 +438,22 @@ class BundleNote(ApiModel):
     updated_at: datetime | None = None
 
 
+class BundleWatchlist(ApiModel):
+    id: Id
+    name: Name
+    items: WatchlistItems = Field(default_factory=list)
+    revision: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BundleFlag(ApiModel):
+    symbol: WatchlistSymbol
+    color: FlagColor
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class Bundle(ApiModel):
     """All user data (`GET /api/export`, `POST /api/import`)."""
 
@@ -364,6 +479,8 @@ class Bundle(ApiModel):
         default_factory=dict, max_length=MAX_BUNDLE_SETTINGS
     )
     notes: list[BundleNote] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    watchlists: list[BundleWatchlist] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    flags: list[BundleFlag] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
 
 
 class ImportCounts(ApiModel):
@@ -382,3 +499,5 @@ class ImportSummary(ApiModel):
     chart_templates: ImportCounts = Field(default_factory=ImportCounts)
     settings: ImportCounts = Field(default_factory=ImportCounts)
     notes: ImportCounts = Field(default_factory=ImportCounts)
+    watchlists: ImportCounts = Field(default_factory=ImportCounts)
+    flags: ImportCounts = Field(default_factory=ImportCounts)

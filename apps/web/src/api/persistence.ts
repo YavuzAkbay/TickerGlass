@@ -20,17 +20,21 @@ import type {
   Layout,
   LayoutFile,
   LayoutSummary,
+  Flag,
   Note,
   Settings,
   StoredDrawing,
+  Watchlist,
 } from './types';
+import type { FlagColor, WatchlistItem } from '../watchlist/types';
 
 type Opts = Pick<RequestOptions, 'signal' | 'keepalive'>;
 const seg = encodeURIComponent;
 
 // ------------------------------------------------------------ layouts
 
-export const listLayouts = (o?: Opts) => requestJson<LayoutSummary[]>('GET', '/layouts', undefined, o);
+export const listLayouts = (o?: Opts) =>
+  requestJson<LayoutSummary[]>('GET', '/layouts', undefined, o);
 
 export const getLayout = <S = Record<string, unknown>>(id: string, o?: Opts) =>
   requestJson<Layout<S>>('GET', `/layouts/${seg(id)}`, undefined, o);
@@ -163,6 +167,30 @@ export const updateNote = (
 export const deleteNote = (id: string, o?: Opts) =>
   requestJson<void>('DELETE', `/notes/${seg(id)}`, undefined, o);
 
+// ------------------------------------------------------------ watchlists and flags
+
+export const listWatchlists = (o?: Opts) =>
+  requestJson<Watchlist[]>('GET', '/watchlists', undefined, o);
+export const getWatchlist = (id: string, o?: Opts) =>
+  requestJson<Watchlist>('GET', `/watchlists/${seg(id)}`, undefined, o);
+/** With a client `id`, rejects with 409 (see `watchlistConflict`) if it exists. */
+export const createWatchlist = (
+  body: { id?: string; name: string; items: WatchlistItem[] },
+  o?: Opts,
+) => requestJson<Watchlist>('POST', '/watchlists', body, o);
+/** With `revision`, rejects with 409 (see `watchlistConflict`) if the list changed elsewhere. */
+export const updateWatchlist = (
+  id: string,
+  body: { name: string; items: WatchlistItem[]; revision?: number },
+  o?: Opts,
+) => requestJson<Watchlist>('PUT', `/watchlists/${seg(id)}`, body, o);
+export const deleteWatchlist = (id: string, o?: Opts) =>
+  requestJson<void>('DELETE', `/watchlists/${seg(id)}`, undefined, o);
+export const getFlags = (o?: Opts) => requestJson<Flag[]>('GET', '/flags', undefined, o);
+/** Set (color) or remove (null) flags; resolves to all flags. */
+export const patchFlags = (patch: Record<string, FlagColor | null>, o?: Opts) =>
+  requestJson<Flag[]>('PATCH', '/flags', patch, o);
+
 // ------------------------------------------------------------ import/export
 
 export const exportAll = (o?: Opts) => requestJson<Bundle>('GET', '/export', undefined, o);
@@ -215,4 +243,10 @@ export function drawingConflicts<D = Record<string, unknown>>(
 export function noteConflict(e: unknown): Note | null {
   const cur = detailOf(e)?.current;
   return cur && typeof cur === 'object' ? (cur as Note) : null;
+}
+
+/** The stored watchlist from a create/update 409, else null. */
+export function watchlistConflict(e: unknown): Watchlist | null {
+  const cur = detailOf(e)?.current;
+  return cur && typeof cur === 'object' ? (cur as Watchlist) : null;
 }

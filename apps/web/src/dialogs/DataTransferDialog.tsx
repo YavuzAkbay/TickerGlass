@@ -21,6 +21,8 @@ const ENTITIES: [keyof Omit<ImportSummary, 'mode' | 'dryRun'>, string][] = [
   ['chartTemplates', 'Chart templates'],
   ['settings', 'Settings'],
   ['notes', 'Notes'],
+  ['watchlists', 'Watchlists'],
+  ['flags', 'Flags'],
 ];
 
 export const isBundle = (v: unknown): v is ImportBundle =>

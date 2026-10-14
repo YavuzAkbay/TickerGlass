@@ -3,9 +3,10 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from ..providers.base import MarketDataProvider
+from ..providers.base import MarketDataProvider, PartialQuotes
 
 QUOTE_TTL = 15.0
+EXTENDED_TTL = 60.0
 EVENTS_TTL = 6 * 3600.0
 NEWS_TTL = 5 * 60.0
 FUNDAMENTALS_TTL = 6 * 3600.0
@@ -50,6 +51,7 @@ class MarketService:
     def __init__(self, provider: MarketDataProvider) -> None:
         self._provider = provider
         self._quotes = TTLCache(QUOTE_TTL, max_entries=4096)
+        self._extended = TTLCache(EXTENDED_TTL, max_entries=4096)
         self._events = TTLCache(EVENTS_TTL)
         self._news = TTLCache(NEWS_TTL)
         self._fundamentals = TTLCache(FUNDAMENTALS_TTL)
@@ -69,6 +71,33 @@ class MarketService:
             for sym in missing:
                 value = fetched.get(sym)  # unknown symbols are cached as None
                 self._quotes.put(sym, value)
+                found[sym] = value
+        return [q for sym in wanted if (q := found.get(sym)) is not None]
+
+    def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        wanted = list(dict.fromkeys(s.upper() for s in symbols))
+        found: dict[str, dict[str, Any] | None] = {}
+        missing: list[str] = []
+        for sym in wanted:
+            hit, value = self._extended.get(sym)
+            if hit:
+                found[sym] = value
+            else:
+                missing.append(sym)
+        if missing:
+            failed: set[str] = set()
+            try:
+                rows = self._provider.extended_quotes(missing)
+            except PartialQuotes as exc:
+                rows, failed = exc.quotes, {s.upper() for s in exc.failed}
+                if not rows and failed.issuperset(missing) and not any(found.values()):
+                    raise  # nothing at all to return: surface as a provider error
+            fetched = {q["symbol"].upper(): q for q in rows}
+            for sym in missing:
+                if sym in failed and sym not in fetched:
+                    continue  # failed chunk: unknown, so never cache it as absent
+                value = fetched.get(sym)  # symbols Yahoo returned no row for: cached None
+                self._extended.put(sym, value)
                 found[sym] = value
         return [q for sym in wanted if (q := found.get(sym)) is not None]
 

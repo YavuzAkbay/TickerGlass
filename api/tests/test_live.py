@@ -26,6 +26,9 @@ class FakeProvider:
     def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         return []
 
+    def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        return []
+
 
 class FakeSource:
     """In-memory LiveSource; `emit` may be called from the test thread."""

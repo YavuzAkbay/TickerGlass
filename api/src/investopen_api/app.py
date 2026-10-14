@@ -22,6 +22,7 @@ from .routes import (
     templates,
     transfer,
     user_settings,
+    watchlists,
 )
 from .services.bars import BarService
 from .services.market import MarketService
@@ -100,6 +101,8 @@ def create_app(
     api.include_router(templates.router)
     api.include_router(user_settings.router)
     api.include_router(notes.router)
+    api.include_router(watchlists.router)
+    api.include_router(watchlists.flags_router)
     api.include_router(transfer.router)
     app.include_router(api)
     app.include_router(live.router)
