@@ -21,6 +21,7 @@ import {
   type MagnetMode,
   type PriceScaleMode,
 } from '@investopen/engine';
+import { AlertsSettingsTab } from '../alerts/SettingsTab';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { ChartTemplate } from '../api/types';
@@ -71,12 +72,6 @@ const PLANNED: Partial<Record<TabId, string[]>> = {
     'Positions, orders and executions on chart',
     'Profit & loss display',
     'Order and position line styles',
-  ],
-  alerts: [
-    'Alert lines and colour',
-    'Show only active alerts',
-    'Alert volume and sound',
-    'Hide toasts automatically',
   ],
   events: [
     'Ideas, dividends, splits and earnings',
@@ -511,6 +506,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         />
       </>
     );
+  } else if (tab === 'alerts') {
+    content = <AlertsSettingsTab />;
   } else {
     content = (
       <Placeholder title={TABS.find((t) => t.id === tab)?.label ?? ''} items={PLANNED[tab] ?? []} />

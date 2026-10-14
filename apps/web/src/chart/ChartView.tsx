@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@investopen/engine';
 import { feed } from './feed';
+import { attachAlerts } from '../alerts/attach';
 import { attachCompares } from '../compare/attach';
 import { CompareLegends } from '../compare/Legend';
 import { attachDrawings } from '../drawings/attach';
@@ -45,6 +46,7 @@ export function ChartView() {
       attachDrawings(chart, hostRef.current!),
       attachIndicators(chart, feed),
       attachCompares(chart, feed),
+      attachAlerts(chart),
     ];
     return () => {
       offs.forEach((off) => off());

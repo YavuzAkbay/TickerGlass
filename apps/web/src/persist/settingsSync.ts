@@ -8,6 +8,7 @@ import { createAutosaver, type Autosaver } from '../api/autosave';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { Settings } from '../api/types';
+import { parseAlertPrefs, readAlertPrefs, useAlertPrefs } from '../alerts/prefs';
 import { useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { useUiStore, type RightPanel } from '../store/ui';
@@ -137,6 +138,12 @@ export const SETTING_DEFS: SettingDef[] = [
     },
     write: (v) => useWatchlistPrefs.setState(parsePrefs(v)),
     subscribe: (fn) => useWatchlistPrefs.subscribe(fn),
+  },
+  {
+    key: 'alerts.prefs',
+    read: readAlertPrefs,
+    write: (v) => useAlertPrefs.setState(parseAlertPrefs(v)),
+    subscribe: (fn) => useAlertPrefs.subscribe(fn),
   },
 ];
 
