@@ -1,3 +1,4 @@
+import { isExpressionSymbol } from '@investopen/engine';
 import { commands, type Command } from '../commands/registry';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
@@ -50,6 +51,10 @@ export function listSymbols(ref: ListRef | null): string[] {
 function addSymbol(arg: unknown): void {
   const sym = normalizeSymbol(typeof arg === 'string' ? arg : useAppStore.getState().symbol);
   if (!sym) return;
+  if (isExpressionSymbol(sym)) {
+    toast("Symbol expressions can't be added to watchlists", 'error');
+    return;
+  }
   if (!validSymbol(sym)) {
     toast(`Invalid symbol: ${sym}`, 'error');
     return;

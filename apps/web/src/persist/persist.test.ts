@@ -1,4 +1,4 @@
-import type { Drawing } from '@investopen/engine';
+import type { Chart, Drawing } from '@investopen/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import type { Layout, LayoutSummary, StoredDrawing } from '../api/types';
@@ -639,6 +639,23 @@ describe('layout state: compare overlays (v3)', () => {
     useCompareStore.getState().replaceAll({ items: [], scaleRestore: null });
     await applyLayoutState(captured, null);
     expect(useCompareStore.getState()).toMatchObject(compares);
+  });
+
+  it('applyLayoutState removes pane-cmp-* panes without a compare item', async () => {
+    const removed: string[] = [];
+    const panes = ['main', 'pane-cmp-a', 'pane-cmp-gone', 'pane-rsi'];
+    const chart = {
+      setState: async () => {},
+      getState: () => ({ panes: panes.map((id) => ({ id })) }),
+      removePane: (id: string) => removed.push(id),
+    } as unknown as Chart;
+    const state = {
+      ...captureLayoutState(null),
+      chart: { version: 1, symbol: 'AAPL', interval: '1D', timeScale: {}, panes: [] } as never,
+      compares: { items: [cmp('cmp-a', { placement: 'pane' })], scaleRestore: null },
+    };
+    await applyLayoutState(state, chart);
+    expect(removed).toEqual(['pane-cmp-gone']);
   });
 });
 

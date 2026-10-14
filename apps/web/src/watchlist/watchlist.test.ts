@@ -178,6 +178,14 @@ describe('watchlist store', () => {
     expect(st().flagsDirty).toEqual({});
   });
 
+  it('rejects symbol expressions', () => {
+    const id = st().createList('l', [S('AAPL/MSFT'), S('AAPL'), S('(A+B)')]);
+    expect(items(id)).toEqual(['AAPL']);
+    expect(st().addSymbols(id, ['AAPL/MSFT', 'BRK-B'])).toEqual(['BRK-B']);
+    st().setFlag('AAPL/MSFT', 'red');
+    expect(st().flags).toEqual({});
+  });
+
   it('creates normalized, de-duplicated, dirty lists and rejects duplicates on add', () => {
     const id = st().createList(' Tech ', [S(' aapl '), S('AAPL'), S('msft')]);
     expect(st().lists[id]).toMatchObject({ name: 'Tech', revision: null, dirty: true });

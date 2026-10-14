@@ -62,21 +62,30 @@ function write(s: Snapshot): void {
  * first visible 'same' overlay and back when no 'same' overlay is left.
  */
 function commit(items: CompareState[], label: string): void {
-  const before: Snapshot = { layout: currentCompareLayout(), scale: mainScale(getChart()) };
-  let scaleRestore = before.layout.scaleRestore;
-  let scale = before.scale;
-  if (scale) {
+  const cur = mainScale(getChart());
+  const layout = currentCompareLayout();
+  let scaleRestore = layout.scaleRestore;
+  // Only a step that changes the main scale snapshots it: undoing an unrelated
+  // step (colour, width, hide) must not clobber the user's manual scale changes.
+  let from: MainScale | null = null;
+  let to: MainScale | null = null;
+  if (cur) {
     const sameVisible = items.some((i) => i.placement === 'same' && i.visible);
     const same = items.some((i) => i.placement === 'same');
-    if (sameVisible && (scale.mode === 'linear' || scale.mode === 'log')) {
-      scaleRestore ??= scale.mode;
-      scale = { mode: 'percent', autoScale: true };
+    if (sameVisible && (cur.mode === 'linear' || cur.mode === 'log')) {
+      scaleRestore ??= cur.mode;
+      from = cur;
+      to = { mode: 'percent', autoScale: true };
     } else if (!same && scaleRestore !== null) {
-      if (scale.mode === 'percent') scale = { mode: scaleRestore, autoScale: true };
+      if (cur.mode === 'percent') {
+        from = cur;
+        to = { mode: scaleRestore, autoScale: true };
+      }
       scaleRestore = null;
     }
   }
-  const after: Snapshot = { layout: { items, scaleRestore }, scale };
+  const before: Snapshot = { layout, scale: from };
+  const after: Snapshot = { layout: { items, scaleRestore }, scale: to };
   write(after);
   useHistory.getState().push({ label, undo: () => write(before), redo: () => write(after) });
 }

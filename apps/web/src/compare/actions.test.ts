@@ -79,6 +79,19 @@ describe('compare actions', () => {
     expect(toasts.at(-1)).toBe(`At most ${MAX_COMPARES} symbols can be compared`);
   });
 
+  it('undoing an unrelated step keeps the user-chosen main scale', () => {
+    const chart = fakeChart('linear');
+    const id = addCompare('MSFT', 'same')!;
+    updateCompare(id, { color: '#ff0000' }, 'Colour');
+    chart.set('log');
+    history().undo();
+    expect(items()[0]!.color).not.toBe('#ff0000');
+    expect(chart.mode()).toBe('log');
+    history().redo();
+    expect(items()[0]!.color).toBe('#ff0000');
+    expect(chart.mode()).toBe('log');
+  });
+
   it('the first same-scale overlay switches to percent in one undo step', () => {
     const chart = fakeChart('log');
     const id = addCompare('MSFT', 'same')!;

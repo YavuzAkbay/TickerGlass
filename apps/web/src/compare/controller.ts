@@ -205,6 +205,12 @@ export class CompareController {
         this.engine(() => this.chart.removeStudy(item.id));
       }
       if (!this.applied.has(item.id)) {
+        // Re-added (or new) items retry a failed fetch.
+        const failed = this.overlayOf(item);
+        if (failed?.state === 'error') {
+          this.drop(failed);
+          this.overlays.delete(failed.key);
+        }
         this.add(item);
         continue;
       }
@@ -365,11 +371,8 @@ export class CompareController {
     this.mainKeys = n ? Array.from(alignKeys(store.time, n, this.mode, this.mainCtx)) : [];
     for (const ov of this.overlays.values()) {
       ov.pages = 0;
-      // Retry failed overlays on the next reset.
-      if (ov.state === 'error') {
-        this.drop(ov);
-        this.overlays.delete(ov.key);
-      }
+      // Failed overlays stay cached (no refetch, no repeated toast) until their
+      // key changes or the item is re-synced as new (see sync).
     }
     this.ensureOverlays();
     for (const item of this.list) {

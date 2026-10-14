@@ -7,7 +7,7 @@
  */
 import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@investopen/engine';
 import { useHistory } from '../commands/history';
-import { parseCompareLayout, type CompareLayout } from '../compare/model';
+import { comparePaneId, parseCompareLayout, type CompareLayout } from '../compare/model';
 import { currentCompareLayout, useCompareStore } from '../compare/store';
 import { DEFAULT_VOLUME_ID, withLegacyVolume, type IndicatorState } from '../indicators/model';
 import { useIndicatorPreview, useIndicatorStore } from '../indicators/store';
@@ -168,6 +168,8 @@ export async function applyLayoutState(
   app.set(patch);
   useIndicatorPreview.setState({ overrides: {} });
   useIndicatorStore.getState().replaceAll(state.indicators);
+  // Fires the compare controller's sync before chart.setState: harmless, as
+  // setState emits studiesCleared and the controller re-adds every study then.
   useCompareStore.getState().replaceAll(state.compares);
   useHistory.getState().clear();
   if (!chart || !state.chart) return;
@@ -186,4 +188,12 @@ export async function applyLayoutState(
     // A failed bar load is reported by the chart itself; the layout is applied.
     console.error(err);
   }
+  removeOrphanComparePanes(chart, state.compares);
+}
+
+/** Drops `pane-cmp-*` panes whose compare item parseCompareLayout dropped. */
+function removeOrphanComparePanes(chart: Chart, compares: CompareLayout): void {
+  const keep = new Set(compares.items.map((i) => comparePaneId(i.id)));
+  for (const p of chart.getState().panes)
+    if (p.id.startsWith('pane-cmp-') && !keep.has(p.id)) chart.removePane(p.id);
 }

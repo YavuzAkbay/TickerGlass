@@ -3,6 +3,7 @@
  * `persist/watchlists.ts` syncs with `/watchlists` and `/flags`. Every edit
  * marks the list dirty (or the flag in `flagsDirty`) until the server has it.
  */
+import { isExpressionSymbol } from '@investopen/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { normalizeSymbol } from '../store/app';
@@ -57,10 +58,10 @@ interface WatchlistState {
 const cleanName = (name: string): string => name.trim().slice(0, 200) || DEFAULT_LIST_NAME;
 const cleanTitle = (t: string): string => t.trim().slice(0, MAX_SECTION_TITLE);
 
-/** Normalized symbol, or null if the server would reject it (`SYMBOL_RE`). */
+/** Normalized symbol, or null if the server would reject it (`SYMBOL_RE`) or it is an expression. */
 export function validSymbol(raw: string): string | null {
   const symbol = normalizeSymbol(raw);
-  return SYMBOL_RE.test(symbol) ? symbol : null;
+  return SYMBOL_RE.test(symbol) && !isExpressionSymbol(symbol) ? symbol : null;
 }
 
 /** Normalize symbols, drop invalid ones and duplicates (first wins), respect the item cap. */

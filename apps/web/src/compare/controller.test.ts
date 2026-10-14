@@ -592,7 +592,7 @@ describe('CompareController', () => {
     expect(useCompareRuntime.getState().status['cmp-a']).toEqual({ state: 'ready' });
   });
 
-  it('reports fetch errors and retries on the next reset', async () => {
+  it('reports fetch errors', async () => {
     const { chart, ctl, onError } = setup();
     chart.load(cols(AAPL_T, AAPL_C));
     ctl.sync([cmp('cmp-x', 'NOPE')]);
@@ -602,8 +602,27 @@ describe('CompareController', () => {
       message: 'Unknown symbol: NOPE',
     });
     expect(onError).toHaveBeenCalledWith('Compare NOPE: Unknown symbol: NOPE');
+  });
+
+  it('keeps a failed overlay cached: no refetch or repeat toast on resets, retry on re-add', async () => {
+    const { chart, ctl, onError, requests } = setup();
     chart.load(cols(AAPL_T, AAPL_C));
-    expect(useCompareRuntime.getState().status['cmp-x']).toEqual({ state: 'loading' });
+    const bad = cmp('cmp-x', 'NOPE');
+    ctl.sync([bad]);
+    await settle();
+    expect(onError).toHaveBeenCalledTimes(1);
+    const n = requests.length;
+    chart.load(cols(AAPL_T, AAPL_C));
+    chart.prependBars(cols([AAPL_T[0]! - DAY], [1]));
+    ctl.sync([{ ...bad, color: '#112233' }]);
+    await settle();
+    expect(requests.length).toBe(n);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(useCompareRuntime.getState().status['cmp-x']).toMatchObject({ state: 'error' });
+    ctl.sync([]);
+    ctl.sync([cmp('cmp-y', 'NOPE')]);
+    await settle();
+    expect(onError).toHaveBeenCalledTimes(2);
   });
 
   it('a removed pane drops its overlay through onLost, in the same dispatch', async () => {

@@ -12,6 +12,9 @@ export type QueryKind =
 /** Operators typed: this is an expression attempt, not a ticker/company search. */
 const OPERATORS = /[+*/()]| - /;
 
+/** Two or more alphabetic words in a row ("Class A"): reads like a company name. */
+const COMPANY_NAME = /[A-Za-z]+(?: +[A-Za-z]+)+/;
+
 /** How a (trimmed) search query reads: plain search text, a symbol expression, or a broken one. */
 export function classifyQuery(q: string): QueryKind {
   if (q === '') return { kind: 'plain' };
@@ -21,7 +24,9 @@ export function classifyQuery(q: string): QueryKind {
       ? { kind: 'plain' }
       : { kind: 'expression', canonical: parsed.value.canonical };
   }
-  return OPERATORS.test(q) ? { kind: 'error', error: parsed.error } : { kind: 'plain' };
+  return OPERATORS.test(q) && !COMPANY_NAME.test(q)
+    ? { kind: 'error', error: parsed.error }
+    : { kind: 'plain' };
 }
 
 /** Parse error with a caret under the offending character. */
