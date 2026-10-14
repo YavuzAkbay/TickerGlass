@@ -456,6 +456,25 @@ def test_fire_conditional_update_conflicts(client: TestClient, why: str) -> None
     assert count(client, m.AlertLog) == 0
 
 
+def test_fire_after_expiry_with_earlier_fired_at_is_accepted(client: TestClient) -> None:
+    """A retried fire (firedAt < expiresAt) arriving after expiry is decided by the UPDATE."""
+    a = create(client, id="a1", expiresAt=(datetime.now(UTC) + timedelta(hours=1)).isoformat())
+    with engine_of(client).begin() as conn:
+        conn.execute(
+            update(m.Alert)
+            .where(m.Alert.id == "a1")
+            .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+        )
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    res = fire(client, a, firedAt=long_ago)
+    assert res.status_code == 200, res.text
+    assert count(client, m.AlertLog) == 1
+    # A fire at or after expiry still conflicts, and that conflict sweeps the alert to expired.
+    late = fire(client, client.get("/api/alerts/a1").json(), "f2")
+    assert late.status_code == 409
+    assert late.json()["detail"]["current"]["status"] == "expired"
+
+
 def test_fire_creates_deliveries_for_enabled_channels(
     make_client: Callable[..., TestClient],
 ) -> None:
@@ -470,7 +489,7 @@ def test_fire_creates_deliveries_for_enabled_channels(
     assert by["webhook"]["status"] in ("pending", "failed", "sent")
     # Per-alert URL counts as configured even without a default.
     bare = make_client()
-    b = create(bare, id="b1", notify={"webhook": True, "webhookUrl": "http://127.0.0.1:9/x"})
+    b = create(bare, id="b1", notify={"webhook": True, "webhookUrl": "http://hook.example:9/x"})
     assert fire(bare, b).json()["deliveries"][0]["status"] in ("pending", "failed")
     c = create(bare, id="c1", notify={"webhook": True})
     got = fire(bare, c, "f9").json()["deliveries"][0]

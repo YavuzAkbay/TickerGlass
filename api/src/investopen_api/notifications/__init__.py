@@ -21,6 +21,17 @@ def effective_webhook_url(settings: Settings, per_alert: str | None) -> str | No
     return per_alert or settings.alerts_webhook_url or None
 
 
+def webhook_allow_private(settings: Settings, per_alert: str | None) -> bool:
+    """May this webhook target a private/loopback address?
+
+    Decision: the global `ALERTS_WEBHOOK_URL` is written by the operator (env/compose), who is
+    trusted to point it at e.g. a LAN service or n8n container, so it bypasses the SSRF check.
+    A per-alert URL arrives over the unauthenticated API and is only allowed private
+    destinations when the operator opted in with `ALERTS_WEBHOOK_ALLOW_PRIVATE`.
+    """
+    return settings.alerts_webhook_allow_private or not per_alert
+
+
 def webhook_configured(settings: Settings, per_alert: str | None = None) -> bool:
     return effective_webhook_url(settings, per_alert) is not None
 

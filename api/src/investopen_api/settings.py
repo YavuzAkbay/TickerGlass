@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # Alerts (docs/alerts.md §4.1). Secrets live only here, never in the browser.
     alerts_webhook_url: str | None = None
     alerts_webhook_secret: str | None = None
+    #: Allow per-alert webhook URLs to target loopback/private/link-local addresses (SSRF guard).
+    alerts_webhook_allow_private: bool = False
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     smtp_host: str | None = None

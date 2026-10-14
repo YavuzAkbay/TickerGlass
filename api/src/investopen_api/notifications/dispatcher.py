@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .. import models as m
 from ..live import LiveHub
 from ..settings import Settings
-from . import DeliveryError, effective_webhook_url, email, telegram, webhook
+from . import DeliveryError, effective_webhook_url, email, telegram, webhook, webhook_allow_private
 
 log = logging.getLogger(__name__)
 
@@ -156,7 +156,13 @@ class Dispatcher:
             if url is None:
                 raise DeliveryError("not configured", retryable=False)
             body, content_type = webhook_body(entry, raw)
-            webhook.send(url, body, content_type, secret=s.alerts_webhook_secret)
+            webhook.send(
+                url,
+                body,
+                content_type,
+                secret=s.alerts_webhook_secret,
+                allow_private=webhook_allow_private(s, target),
+            )
         elif channel == "telegram":
             if not (s.telegram_bot_token and s.telegram_chat_id):
                 raise DeliveryError("not configured", retryable=False)

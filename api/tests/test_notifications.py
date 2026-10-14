@@ -13,16 +13,18 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from test_alerts import create, fire
+from test_alerts import body, create, fire
 
 from investopen_api import models as m
 from investopen_api.db import make_engine, run_migrations
+from investopen_api.notifications import DeliveryError, webhook
 from investopen_api.notifications.dispatcher import MAX_ATTEMPTS, Dispatcher
 from investopen_api.settings import Settings
 from investopen_api.userdata.alerts import utc
@@ -107,7 +109,8 @@ class FakeSMTP:
 @pytest.fixture
 def net(monkeypatch: pytest.MonkeyPatch) -> FakeNet:
     fake = FakeNet()
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(urllib.request, "urlopen", fake)  # telegram
+    monkeypatch.setattr(webhook, "_build_opener", lambda allow_private: SimpleNamespace(open=fake))
     return fake
 
 
@@ -387,7 +390,7 @@ def test_network_error_is_retried_and_success_clears_error(
     d = Dispatcher(maker, settings(alerts_webhook_url="https://hook.example/"))
     run(d, T0)
     [row] = deliveries(maker)
-    assert row.status == "pending" and "connection refused" in (row.last_error or "")
+    assert row.status == "pending" and row.last_error == "delivery failed"
     run(d, T0 + timedelta(seconds=10))
     [row] = deliveries(maker)
     assert row.status == "sent" and row.attempts == 2 and row.last_error is None
@@ -482,13 +485,94 @@ def test_channel_test_endpoint(
     assert post("/api/alerts/channels/email/test", json={}).status_code == 200
     assert smtp.instances[-1].calls[-1] == "send"
 
-    # Transport errors surface as 502 with the reason; no log entry is created.
+    # Transport errors surface as a generic 502 (details only in the log); no log entry is created.
     net.script = [http_error(500)]
     bad = post("/api/alerts/channels/webhook/test", json={"webhookUrl": "https://one.example/x"})
-    assert bad.status_code == 502 and bad.json()["detail"] == "HTTP 500"
+    assert bad.status_code == 502 and "HTTP 500" not in bad.json()["detail"]
     net.script = [http_error(400, {"description": "chat not found"})]
-    assert post("/api/alerts/channels/telegram/test").json()["detail"].endswith("chat not found")
+    assert "chat not found" not in post("/api/alerts/channels/telegram/test").json()["detail"]
     smtp.error = smtplib.SMTPAuthenticationError(535, b"bad credentials")
     mail = post("/api/alerts/channels/email/test", json={})
-    assert mail.status_code == 502 and "535" in mail.json()["detail"]
+    assert mail.status_code == 502 and "535" not in mail.json()["detail"]
     assert client.get("/api/alerts/log").json()["entries"] == []
+
+
+# ------------------------------------------------------------------- SSRF guard
+
+BLOCKED_URLS = [
+    "http://127.0.0.1/x",
+    "http://localhost.example/x",  # mapped to 127.0.0.1 below
+    "http://169.254.169.254/latest/meta-data",
+    "http://10.1.2.3/x",
+    "http://192.168.0.1/x",
+    "http://172.16.0.1/x",
+    "http://0.0.0.0/x",
+    "http://224.0.0.1/x",
+    "http://240.0.0.1/x",
+    "http://100.64.0.1/x",
+    "http://[::1]/x",
+    "http://[fe80::1]/x",
+    "http://[fc00::1]/x",
+    "http://[::ffff:127.0.0.1]/x",
+    "http://[::ffff:10.0.0.1]/x",
+    "http://[::]/x",
+    "http://[ff02::1]/x",
+]
+
+
+@pytest.mark.parametrize("url", BLOCKED_URLS)
+def test_webhook_refuses_non_public_destinations(
+    url: str, net: FakeNet, fake_dns: dict[str, list[str]]
+) -> None:
+    fake_dns["localhost.example"] = ["127.0.0.1"]
+    with pytest.raises(DeliveryError) as exc:
+        webhook.send(url, b"{}", "application/json")
+    assert exc.value.retryable is False and net.requests == []
+    webhook.check_url(url, allow_private=True)  # the opt-in lifts it
+
+
+def test_webhook_refuses_mixed_dns_answers(fake_dns: dict[str, list[str]]) -> None:
+    fake_dns["rebind.example"] = ["93.184.216.34", "10.0.0.5"]
+    with pytest.raises(DeliveryError):
+        webhook.check_url("https://rebind.example/", allow_private=False)
+    webhook.check_url("https://93.184.216.34/", allow_private=False)
+
+
+def test_webhook_does_not_follow_redirects() -> None:
+    handler = webhook._NoRedirect()
+    req = urllib.request.Request("https://hook.example/")
+    assert (
+        handler.redirect_request(req, io.BytesIO(), 302, "Found", {}, "http://127.0.0.1/") is None
+    )
+
+
+def test_ssrf_guard_on_routes_and_dispatch(
+    make_client: Callable[..., TestClient], net: FakeNet, maker: sessionmaker[Session]
+) -> None:
+    client = make_client(alerts_webhook_url="http://127.0.0.1:9/operator")
+    bad = {"webhook": True, "webhookUrl": "http://169.254.169.254/latest"}
+    assert client.post("/api/alerts", json=body(notify=bad)).status_code == 422
+    test = client.post("/api/alerts/channels/webhook/test", json={"webhookUrl": "http://10.0.0.1/"})
+    assert test.status_code == 422 and net.requests == []
+    # The operator-set global URL may be private.
+    assert client.post("/api/alerts/channels/webhook/test", json={}).status_code == 200
+    # Opt-in allows per-alert private targets.
+    open_ = make_client(alerts_webhook_allow_private=True)
+    assert open_.post("/api/alerts", json=body(notify=bad)).status_code == 201
+    # A stored private per-alert URL (e.g. setting later turned off) is refused at send time.
+    sent = len(net.requests)
+    seed(maker, [("webhook", "http://10.0.0.1/x")])
+    run(Dispatcher(maker, settings()), T0)
+    [row] = deliveries(maker)
+    assert row.status == "failed" and row.last_error == "destination not allowed"
+    assert len(net.requests) == sent
+
+
+def test_502_detail_is_generic(make_client: Callable[..., TestClient], net: FakeNet) -> None:
+    client = make_client()
+    net.script = [urllib.error.URLError("[Errno 111] Connection refused")]
+    res = client.post(
+        "/api/alerts/channels/webhook/test", json={"webhookUrl": "https://a.example/"}
+    )
+    assert res.status_code == 502
+    assert "refused" not in res.text and "Errno" not in res.text

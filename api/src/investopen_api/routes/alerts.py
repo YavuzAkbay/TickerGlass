@@ -3,6 +3,7 @@ channels and the service heartbeat. Only the API writes the database; the Node s
 goes through these routes."""
 
 import hmac
+import logging
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
@@ -21,13 +22,16 @@ from ..notifications import (
     smtp_recipients,
     telegram,
     webhook,
+    webhook_allow_private,
 )
 from ..notifications import effective_webhook_url as effective_url
 from ..notifications.dispatcher import email_content, iso, webhook_body
+from ..settings import Settings
 from ..userdata import alerts as al
 from ..userdata import schemas as s
 from ..userdata import store
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 ONLINE_WITHIN = timedelta(seconds=90)
@@ -88,10 +92,18 @@ def _changed(hub: HubDep, ids: list[str], deleted: list[str] | None = None) -> N
     )
 
 
-def _sweep_expired(session: SessionDep, hub: HubDep) -> None:
-    """Lazy expiry: active alerts past `expires_at` become `expired` (revision bumped)."""
+def _sweep_expired(session: SessionDep, hub: HubDep, skip: str | None = None) -> None:
+    """Lazy expiry: active alerts past `expires_at` become `expired` (revision bumped).
+
+    `skip` leaves one alert alone (a fire decides its own expiry against `firedAt`)."""
     t = s.now()
-    due = (m.Alert.status == "active", m.Alert.expires_at.is_not(None), m.Alert.expires_at <= t)
+    due: tuple[Any, ...] = (
+        m.Alert.status == "active",
+        m.Alert.expires_at.is_not(None),
+        m.Alert.expires_at <= t,
+    )
+    if skip is not None:
+        due = (*due, m.Alert.id != skip)
     ids = list(session.scalars(select(m.Alert.id).where(*due)))
     if not ids:
         return
@@ -103,6 +115,17 @@ def _sweep_expired(session: SessionDep, hub: HubDep) -> None:
     )
     session.commit()
     _changed(hub, ids)
+
+
+def _check_webhook(settings: Settings, notify: al.AlertNotify) -> None:
+    """422 for a per-alert webhook URL the SSRF guard would refuse at send time."""
+    url = notify.webhook_url
+    if not url:
+        return
+    try:
+        webhook.check_url(url, webhook_allow_private(settings, url))
+    except DeliveryError as exc:
+        raise HTTPException(422, f"webhookUrl: {exc}") from None
 
 
 def _check_drawings(session: SessionDep, symbol: str, spec: al.AlertSpec) -> None:
@@ -316,6 +339,11 @@ def test_channel(
 ) -> dict[str, bool]:
     """Send one test message synchronously (no log entry). 400 if not configured, 502 on failure."""
     override = body.webhook_url if body is not None else None
+    if channel == "webhook" and override:
+        try:
+            webhook.check_url(override, webhook_allow_private(settings, override))
+        except DeliveryError as exc:
+            raise HTTPException(422, f"webhookUrl: {exc}") from None
     if not channel_configured(settings, channel, override):
         raise HTTPException(400, f"{channel} is not configured")
     now = s.now()
@@ -340,7 +368,13 @@ def test_channel(
             url = effective_url(settings, override)
             assert url is not None
             body_bytes, content_type = webhook_body(probe, raw=False)
-            webhook.send(url, body_bytes, content_type, secret=settings.alerts_webhook_secret)
+            webhook.send(
+                url,
+                body_bytes,
+                content_type,
+                secret=settings.alerts_webhook_secret,
+                allow_private=webhook_allow_private(settings, override),
+            )
         elif channel == "telegram":
             assert settings.telegram_bot_token and settings.telegram_chat_id
             telegram.send(settings.telegram_bot_token, settings.telegram_chat_id, probe.message)
@@ -348,7 +382,9 @@ def test_channel(
             subject, text = email_content(probe)
             email.send(settings, subject, text)
     except DeliveryError as exc:
-        raise HTTPException(502, str(exc)) from None
+        # Generic on purpose: the cause (refused, timeout, blocked...) would be a port-scan oracle.
+        log.warning("%s test failed: %s", channel, exc)
+        raise HTTPException(502, f"{channel} test failed; see the server log") from None
     return {"ok": True}
 
 
@@ -391,8 +427,11 @@ def list_alerts(
 
 
 @router.post("", response_model=al.Alert, status_code=201)
-def create_alert(session: SessionDep, hub: HubDep, body: al.AlertIn) -> al.Alert:
+def create_alert(
+    session: SessionDep, hub: HubDep, settings: SettingsDep, body: al.AlertIn
+) -> al.Alert:
     """409 (with the stored alert) if a client-chosen `id` already exists."""
+    _check_webhook(settings, body.notify)
     aid = body.id or s.new_id()
     existing = session.get(m.Alert, aid)
     if existing is not None:
@@ -444,7 +483,9 @@ def get_alert(session: SessionDep, hub: HubDep, alert_id: str) -> al.Alert:
 
 
 @router.put("/{alert_id}", response_model=al.Alert)
-def update_alert(session: SessionDep, hub: HubDep, alert_id: str, body: al.AlertUpdate) -> al.Alert:
+def update_alert(
+    session: SessionDep, hub: HubDep, settings: SettingsDep, alert_id: str, body: al.AlertUpdate
+) -> al.Alert:
     """Replace all editable fields. 409 (with the stored alert) if `revision` is given and stale.
 
     Bumps the revision, drops the runtime state and clears the status reason. `triggered`,
@@ -452,6 +493,7 @@ def update_alert(session: SessionDep, hub: HubDep, alert_id: str, body: al.Alert
     """
     if body.id is not None and body.id != alert_id:
         raise HTTPException(422, "id in the body does not match the URL")
+    _check_webhook(settings, body.notify)
     row = _get(session, alert_id)
     expires_at = _expiry(body.expires_at)
     kept = "paused" if row.status == "paused" else "active"
@@ -573,7 +615,9 @@ def fire_alert(
     Idempotent per `fireId`. 409 (with the stored alert) if the alert was paused, edited,
     expired or finished since the evaluator read it; the service then reloads.
     """
-    _sweep_expired(session, hub)
+    # Not this alert: a retried fire with firedAt < expiresAt must be judged by the UPDATE's own
+    # `expires_at > firedAt`, not lost to a sweep that ran first.
+    _sweep_expired(session, hub, skip=alert_id)
     prior = session.scalar(select(m.AlertLog).where(m.AlertLog.fire_id == body.fire_id))
     if prior is not None:
         return _entry(session, prior)
@@ -598,6 +642,7 @@ def fire_alert(
     )
     if store.rowcount(session.execute(stmt)) != 1:
         session.rollback()
+        _sweep_expired(session, hub)  # now it may expire, so the 409 carries the stored state
         raise _conflict(_get(session, alert_id))
     alert = store.reload(session, m.Alert, alert_id)
 
