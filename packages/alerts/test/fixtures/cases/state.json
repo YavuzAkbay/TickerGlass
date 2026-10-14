@@ -1,0 +1,257 @@
+{
+  "area": "greater / less",
+  "cases": [
+    {
+      "name": "greater 10 is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "greater 10.000001 is true",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10.000001,
+            "y": 10,
+            "open": 10.000001,
+            "high": 10.000001,
+            "low": 10.000001,
+            "close": 10.000001,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "greater NaN is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": null,
+            "y": 10,
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "less 10 is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "less",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "less 9.999999 is true",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "less",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9.999999,
+            "y": 10,
+            "open": 9.999999,
+            "high": 9.999999,
+            "low": 9.999999,
+            "close": 9.999999,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "less NaN is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "less",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": null,
+            "y": 10,
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "greater with y NaN is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": null,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    }
+  ]
+}

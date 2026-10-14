@@ -41,6 +41,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@investopen/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
       '@investopen/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -73,6 +76,19 @@ importers:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(tsx@4.23.15)
 
+  packages/alerts:
+    dependencies:
+      '@investopen/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@investopen/indicators':
+        specifier: workspace:*
+        version: link:../indicators
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+
   packages/engine: {}
 
   packages/indicators:
@@ -83,6 +99,12 @@ importers:
 
   services/alerts:
     dependencies:
+      '@investopen/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
+      '@investopen/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@investopen/indicators':
         specifier: workspace:*
         version: link:../../packages/indicators

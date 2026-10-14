@@ -18,6 +18,7 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
+    "@investopen/alerts": "workspace:*",
     "@investopen/engine": "workspace:*",
     "@investopen/indicators": "workspace:*",
     "lucide-react": "^1.55.0",

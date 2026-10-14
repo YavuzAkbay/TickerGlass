@@ -1,0 +1,813 @@
+{
+  "area": "channels [9, 11]",
+  "cases": [
+    {
+      "name": "entering 8, 9 fires at 1 (inclusive)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "enteringChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 8,
+            "upper": 11,
+            "lower": 9,
+            "open": 8,
+            "high": 8,
+            "low": 8,
+            "close": 8,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 9,
+            "upper": 11,
+            "lower": 9,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "entering 12, 11 fires at 1 (inclusive)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "enteringChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 12,
+            "upper": 11,
+            "lower": 9,
+            "open": 12,
+            "high": 12,
+            "low": 12,
+            "close": 12,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 11,
+            "upper": 11,
+            "lower": 9,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "entering 9, 10 does not fire (already inside)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "enteringChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "upper": 11,
+            "lower": 9,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "upper": 11,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "entering first sample 10 without prev",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "enteringChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "upper": 11,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "exiting 11, 12 fires at 1",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "exitingChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "upper": 11,
+            "lower": 9,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 12,
+            "upper": 11,
+            "lower": 9,
+            "open": 12,
+            "high": 12,
+            "low": 12,
+            "close": 12,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "exiting 10, 8 fires at 1",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "exitingChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "upper": 11,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 8,
+            "upper": 11,
+            "lower": 9,
+            "open": 8,
+            "high": 8,
+            "low": 8,
+            "close": 8,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "exiting 12, 13 does not fire",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "exitingChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 12,
+            "upper": 11,
+            "lower": 9,
+            "open": 12,
+            "high": 12,
+            "low": 12,
+            "close": 12,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 13,
+            "upper": 11,
+            "lower": 9,
+            "open": 13,
+            "high": 13,
+            "low": 13,
+            "close": 13,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "inside 9, 11, 8.99 fires at 0 and 1",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "insideChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "upper": 11,
+            "lower": 9,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 11,
+            "upper": 11,
+            "lower": 9,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 8.99,
+            "upper": 11,
+            "lower": 9,
+            "open": 8.99,
+            "high": 8.99,
+            "low": 8.99,
+            "close": 8.99,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0, 1]
+    },
+    {
+      "name": "outside 12, 10, 8 fires at 0 and 2",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "outsideChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 12,
+            "upper": 11,
+            "lower": 9,
+            "open": 12,
+            "high": 12,
+            "low": 12,
+            "close": 12,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "upper": 11,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 8,
+            "upper": 11,
+            "lower": 9,
+            "open": 8,
+            "high": 8,
+            "low": 8,
+            "close": 8,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0, 2]
+    },
+    {
+      "name": "outside NaN x is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "outsideChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": null,
+            "upper": 11,
+            "lower": 9,
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "upper NaN: entering never fires",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "enteringChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 8,
+            "upper": null,
+            "lower": 9,
+            "open": 8,
+            "high": 8,
+            "low": 8,
+            "close": 8,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "upper": null,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "upper NaN on the previous sample breaks entering",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "enteringChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 8,
+            "upper": null,
+            "lower": 9,
+            "open": 8,
+            "high": 8,
+            "low": 8,
+            "close": 8,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "upper": 11,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "upper NaN: outside is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "outsideChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 20,
+            "upper": null,
+            "lower": 9,
+            "open": 20,
+            "high": 20,
+            "low": 20,
+            "close": 20,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "upper NaN: inside is false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "insideChannel",
+          "channel": {
+            "kind": "bounds",
+            "upper": {
+              "kind": "value",
+              "value": 11
+            },
+            "lower": {
+              "kind": "value",
+              "value": 9
+            }
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "upper": null,
+            "lower": 9,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "name": "AAPL crossing 190",
+  "symbol": "AAPL",
+  "interval": "1D",
+  "prepost": false,
+  "spec": {
+    "schemaVersion": 1,
+    "left": {
+      "kind": "price",
+      "field": "close"
+    },
+    "condition": {
+      "op": "greater",
+      "right": {
+        "kind": "value",
+        "value": 189.5
+      }
+    },
+    "trigger": "once"
+  },
+  "message": "",
+  "notify": {
+    "toast": true,
+    "sound": true,
+    "browser": false,
+    "webhook": false,
+    "webhookUrl": null,
+    "webhookRaw": false,
+    "telegram": false,
+    "email": false
+  },
+  "expiresAt": null
+}

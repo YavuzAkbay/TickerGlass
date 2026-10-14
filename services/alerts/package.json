@@ -1,5 +1,5 @@
 {
-  "name": "@investopen/alerts",
+  "name": "@investopen/alerts-service",
   "version": "0.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -12,6 +12,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@investopen/alerts": "workspace:*",
+    "@investopen/engine": "workspace:*",
     "@investopen/indicators": "workspace:*"
   },
   "devDependencies": {
