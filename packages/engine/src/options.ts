@@ -69,6 +69,8 @@ export interface ChartOptions {
   /** Dashed line at the previous session's close (intraday). */
   showPrevClose: boolean;
   locale: string;
+  /** "+" box on the price axis crosshair label (emits `priceAxisPlus`). */
+  priceAxisPlusButton: boolean;
 }
 
 export const DEFAULT_OPTIONS: ChartOptions = {
@@ -81,4 +83,5 @@ export const DEFAULT_OPTIONS: ChartOptions = {
   adjusted: false,
   showPrevClose: false,
   locale: 'en-US',
+  priceAxisPlusButton: true,
 };

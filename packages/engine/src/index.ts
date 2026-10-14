@@ -18,6 +18,8 @@ export * from './chart-types';
 export type { DeepPartial } from './chart';
 export type { PaneSeries, SeriesRenderContext } from './render/series';
 export type { PriceScaleMode } from './scale/price-scale';
+export type { ChartMarker, ChartMarkerPosition, ChartMarkerShape } from './render/markers';
+export type { ChartPriceLine, ChartPriceLineStyle } from './render/price-lines';
 export { SeriesStore } from './model/series-store';
 export * from './feed';
 export type * from './studies/types';

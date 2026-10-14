@@ -21,7 +21,9 @@ type Drag =
       verticalPan: boolean;
       samples: { t: number; x: number }[];
     }
-  | { kind: 'priceAxis'; pane: Pane; lastY: number }
+  | { kind: 'priceAxis'; pane: Pane; lastY: number; startY: number; line: boolean }
+  /** Press on the price label's "+" (a click fires `priceAxisPlus`; no scaling). */
+  | { kind: 'plus'; pane: Pane }
   | { kind: 'timeAxis'; lastX: number }
   | { kind: 'separator'; index: number; lastY: number }
   | { kind: 'pinch'; pane: Pane; lastDist: number }
@@ -121,7 +123,9 @@ export class InteractionController {
         if (e.pointerType !== 'mouse') this.chart.setCrosshair(null, 0, 0);
         break;
       case 'priceAxis':
-        this.drag = { kind: 'priceAxis', pane: hit.pane, lastY: p.y };
+        this.drag = hit.plus
+          ? { kind: 'plus', pane: hit.pane }
+          : { kind: 'priceAxis', pane: hit.pane, lastY: p.y, startY: p.y, line: !!hit.priceLine };
         break;
       case 'timeAxis':
         this.drag = { kind: 'timeAxis', lastX: p.x };
@@ -150,6 +154,8 @@ export class InteractionController {
       chart.hoverStudy(hit);
       if (hit.kind === 'pane') chart.setCrosshair(hit.pane, hit.x, hit.y);
       else chart.setCrosshair(null, 0, 0);
+      if (hit.kind === 'priceAxis') chart.setAxisHover(hit.pane, hit.y);
+      else chart.setAxisHover(null, 0);
       return;
     }
 
@@ -177,6 +183,8 @@ export class InteractionController {
         chart.viewChanged();
         break;
       }
+      case 'plus':
+        break;
       case 'timeAxis': {
         const dx = p.x - d.lastX;
         d.lastX = p.x;
@@ -222,7 +230,12 @@ export class InteractionController {
     const hit = this.chart.hitTest(p.x, p.y);
     if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= CLICK_SLOP) {
       this.chart.drawingInput.clickEmpty();
-      this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
+      if (!this.chart.emitOverlayClick(hit))
+        this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
+    } else if (d?.kind === 'plus') {
+      if (hit.kind === 'priceAxis' && hit.plus) this.chart.firePriceAxisPlus(d.pane);
+    } else if (d?.kind === 'priceAxis') {
+      if (d.line && Math.abs(p.y - d.startY) <= CLICK_SLOP) this.chart.emitOverlayClick(hit);
     } else if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
     if (d) this.chart.viewSettled();
     this.updateCursor(hit);
@@ -248,6 +261,7 @@ export class InteractionController {
     this.chart.hoverStudy(null);
     if (!this.drag) this.chart.drawingInput.hover(null, 0, 0, NO_MODS);
     if (!this.drag) this.chart.setCrosshair(null, 0, 0);
+    if (!this.drag) this.chart.setAxisHover(null, 0);
   }
 
   private onDoubleClick(e: MouseEvent): void {
@@ -364,7 +378,7 @@ export class InteractionController {
     switch (hit.kind) {
       case 'pane':
         cursor =
-          this.chart.isStudy(hit.seriesId) && !hit.fill
+          (this.chart.isStudy(hit.seriesId) && !hit.fill) || hit.marker || hit.priceLine
             ? 'pointer'
             : this.chart.options.crosshair === 'cross'
               ? 'crosshair'
@@ -373,7 +387,7 @@ export class InteractionController {
                 : 'default';
         break;
       case 'priceAxis':
-        cursor = 'ns-resize';
+        cursor = hit.plus || hit.priceLine ? 'pointer' : 'ns-resize';
         break;
       case 'timeAxis':
         cursor = 'ew-resize';

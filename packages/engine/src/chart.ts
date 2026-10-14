@@ -5,6 +5,22 @@ import { DEFAULT_OPTIONS, type ChartOptions, type ChartTheme } from './options';
 import { Pane, div, place } from './pane';
 import { CanvasLayer } from './render/canvas';
 import { dashedLine, font, hLine, labelBox, vLine } from './render/draw';
+import {
+  drawMarkers,
+  drawMarkerTooltip,
+  hitMarker,
+  layoutMarkers,
+  type ChartMarker,
+  type PlacedMarker,
+} from './render/markers';
+import {
+  drawPriceLineAxisLabels,
+  drawPriceLines,
+  hitPriceLine,
+  layoutPriceLines,
+  type ChartPriceLine,
+  type PlacedPriceLine,
+} from './render/price-lines';
 import { type PaneSeries } from './render/series';
 import { MainSeries, VolumeSeries, type VolumeMode } from './render/main-series';
 import {
@@ -82,6 +98,8 @@ const COLLAPSED_PANE_HEIGHT = 24;
 const MIN_PANE_HEIGHT = 30;
 const LAZY_LOAD_THRESHOLD = 150;
 const AXIS_LABEL_HEIGHT = 20;
+/** Width of the "+" box at the left edge of the price label (axis-relative from x = 1). */
+const PLUS_WIDTH = 18;
 
 const INVALIDATE_OVERLAY = 1;
 const INVALIDATE_MAIN = 2;
@@ -123,6 +141,10 @@ export interface ChartEvents extends StudyEvents, DrawingEvents {
   loading: boolean;
   error: { message: string };
   stateChange: ChartState;
+  /** The "+" on the price axis label was clicked. */
+  priceAxisPlus: { paneId: string; price: number };
+  markerClick: { group: string; id: string };
+  priceLineClick: { group: string; id: string };
 }
 
 export interface PaneState {
@@ -166,8 +188,19 @@ export type HitTarget =
       /** Drawing part under the pointer (drawings sit above all series). With a
        * drawing hit, `seriesId` is null unless the drawing hit is weak. */
       drawing?: DrawingHit;
+      /** Marker or price line under the pointer (checked before drawings on click). */
+      marker?: { group: string; id: string };
+      priceLine?: { group: string; id: string };
     }
-  | { kind: 'priceAxis'; pane: Pane; y: number }
+  | {
+      kind: 'priceAxis';
+      pane: Pane;
+      y: number;
+      /** The "+" box of the price label is under the pointer. */
+      plus?: boolean;
+      /** A price line's axis label is under the pointer. */
+      priceLine?: { group: string; id: string };
+    }
   | { kind: 'timeAxis'; x: number }
   | { kind: 'separator'; index: number }
   | { kind: 'none' };
@@ -177,6 +210,7 @@ interface CrosshairPos {
   x: number; // snapped to bar centre
   y: number; // snapped by magnet
   index: number;
+  rawX: number;
   rawY: number;
 }
 
@@ -254,6 +288,10 @@ export class Chart implements StudyApi, DrawingApi {
   private readonly drawingFormats = new Map<string, DrawingFormat>();
   private readonly intervalCache: { iv: Interval | null; str: string } = { iv: null, str: '' };
   private readonly axisLabelBuf: DrawingAxisLabel[] = [];
+  private readonly markerGroups = new Map<string, readonly ChartMarker[]>();
+  private readonly lineGroups = new Map<string, readonly ChartPriceLine[]>();
+  /** Pointer over a price axis (drives the price label + "+" without the crosshair). */
+  private axisHover: { pane: Pane; y: number } | null = null;
 
   constructor(container: HTMLElement, feed: DataFeed, options: Partial<ChartOptions> = {}) {
     injectStyle();
@@ -1337,8 +1375,29 @@ export class Chart implements StudyApi, DrawingApi {
     const pane = visible.find((p) => y >= p.top && y < p.top + p.height);
     if (!pane) return { kind: 'none' };
     const py = y - pane.top;
-    if (x >= this.paneWidth) return { kind: 'priceAxis', pane, y: py };
+    if (x >= this.paneWidth) {
+      const axisX = x - this.paneWidth;
+      const plus = this.plusRect(pane);
+      const inPlus =
+        plus !== null &&
+        axisX >= 1 &&
+        axisX < 1 + PLUS_WIDTH &&
+        py >= plus.top &&
+        py < plus.top + AXIS_LABEL_HEIGHT;
+      if (inPlus) return { kind: 'priceAxis', pane, y: py, plus: true };
+      const line = hitPriceLine(this.placedLines(pane), x, py, this.paneWidth, pane.height);
+      return {
+        kind: 'priceAxis',
+        pane,
+        y: py,
+        ...(line ? { priceLine: { group: line.group, id: line.line.id } } : {}),
+      };
+    }
     const s = this.hitSeries(pane, x, py);
+    const marker = pane.id === 'main' ? hitMarker(this.placedMarkers(), x, py) : null;
+    const line = marker
+      ? null
+      : hitPriceLine(this.placedLines(pane), x, py, this.paneWidth, pane.height);
     return {
       kind: 'pane',
       pane,
@@ -1348,7 +1407,107 @@ export class Chart implements StudyApi, DrawingApi {
       outputId: s.outputId,
       ...(s.fill ? { fill: true } : {}),
       ...(s.drawing ? { drawing: s.drawing } : {}),
+      ...(marker ? { marker: { group: marker.group, id: marker.marker.id } } : {}),
+      ...(line ? { priceLine: { group: line.group, id: line.line.id } } : {}),
     };
+  }
+
+  // ------------------------------------------------- markers, lines, "+" button
+
+  /**
+   * Replaces the markers of `group` (`[]` clears it). Markers are time-based
+   * (mapped through the time scale, so they follow interval changes), culled to
+   * the visible range, drawn on the main pane, and not part of `getState()`.
+   */
+  setMarkers(group: string, markers: readonly ChartMarker[]): void {
+    if (markers.length)
+      this.markerGroups.set(
+        group,
+        markers.map((m) => ({ ...m })),
+      );
+    else this.markerGroups.delete(group);
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Replaces the price lines of `group` (`[]` clears it). Not part of `getState()`. */
+  setPriceLines(group: string, lines: readonly ChartPriceLine[]): void {
+    if (lines.length)
+      this.lineGroups.set(
+        group,
+        lines.map((l) => ({ ...l })),
+      );
+    else this.lineGroups.delete(group);
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Pointer position over a price axis (null: left it). Called by the controller. */
+  setAxisHover(pane: Pane | null, y: number): void {
+    const prev = this.axisHover;
+    if (!pane || !this.store.length || !this.options.priceAxisPlusButton) {
+      if (prev) {
+        this.axisHover = null;
+        this.invalidate(INVALIDATE_OVERLAY);
+      }
+      return;
+    }
+    if (prev && prev.pane === pane && prev.y === y) return;
+    this.axisHover = { pane, y };
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Emits `priceAxisPlus` for the price under the current label of `pane`. */
+  firePriceAxisPlus(pane: Pane): void {
+    const r = this.plusRect(pane);
+    if (!r) return;
+    this.events.emit('priceAxisPlus', { paneId: pane.id, price: pane.priceScale.yToPrice(r.y) });
+  }
+
+  /** Emits `markerClick` / `priceLineClick` for a click on `hit`. Returns whether one fired. */
+  emitOverlayClick(hit: HitTarget): boolean {
+    if (hit.kind === 'pane' && hit.marker) {
+      this.events.emit('markerClick', hit.marker);
+      return true;
+    }
+    if ((hit.kind === 'pane' || hit.kind === 'priceAxis') && hit.priceLine) {
+      this.events.emit('priceLineClick', hit.priceLine);
+      return true;
+    }
+    return false;
+  }
+
+  /** Where the price label sits on `pane` (crosshair, else axis hover): raw y and clamped box top. */
+  private plusRect(pane: Pane): { y: number; top: number } | null {
+    if (!this.options.priceAxisPlusButton || !this.store.length) return null;
+    const c = this.crosshair;
+    const y = c && c.pane === pane ? c.y : this.axisHover?.pane === pane ? this.axisHover.y : null;
+    if (y === null) return null;
+    return {
+      y,
+      top: Math.max(0, Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2)),
+    };
+  }
+
+  private placedMarkers(): PlacedMarker[] {
+    if (!this.markerGroups.size) return [];
+    const main = this.panes[0];
+    if (!main || main.height <= 0) return [];
+    const s = this.store;
+    return layoutMarkers(this.markerGroups, {
+      timeline: this.refreshTimeline(),
+      high: s.high,
+      low: s.low,
+      indexToX: (i) => this.timeScale.indexToX(i),
+      priceToY: (p) => main.priceScale.priceToY(p),
+      paneWidth: this.paneWidth,
+      paneHeight: main.height,
+    });
+  }
+
+  private placedLines(pane: Pane): PlacedPriceLine[] {
+    if (!this.lineGroups.size) return [];
+    return layoutPriceLines(this.lineGroups, pane.id, pane.height, (p) =>
+      pane.priceScale.priceToY(p),
+    );
   }
 
   /** Topmost object under (x, y), in this order: drawings (handles, strokes,
@@ -1419,7 +1578,14 @@ export class Chart implements StudyApi, DrawingApi {
     }
     const index = Math.max(0, Math.min(this.store.length - 1, this.timeScale.xToIndex(x)));
     const snappedX = this.timeScale.indexToX(this.timeScale.xToIndex(x));
-    this.crosshair = { pane, x: snappedX, y: this.magnetY(pane, index, y), index, rawY: y };
+    this.crosshair = {
+      pane,
+      x: snappedX,
+      y: this.magnetY(pane, index, y),
+      index,
+      rawX: x,
+      rawY: y,
+    };
     this.invalidate(INVALIDATE_OVERLAY);
     this.emitCrosshair();
   }
@@ -1901,6 +2067,40 @@ export class Chart implements StudyApi, DrawingApi {
       : formatAxisNumber(value, pane.labelDecimals);
   }
 
+  /** Crosshair-style price label at pane-relative `y`, with the "+" box when enabled. */
+  private drawPriceLabel(
+    ax: CanvasRenderingContext2D,
+    pane: Pane,
+    y: number,
+    fontStr: string,
+  ): void {
+    const t = this.theme;
+    const plus = this.options.priceAxisPlusButton;
+    const top = Math.max(0, Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2));
+    labelBox(
+      ax,
+      this.formatAxisValue(pane, pane.priceScale.yToPrice(y)),
+      1,
+      top,
+      this.axisWidth - 2,
+      AXIS_LABEL_HEIGHT,
+      t.crosshairLabelBg,
+      t.crosshairLabelText,
+      fontStr,
+      'left',
+      plus ? PLUS_WIDTH + 4 : 6,
+    );
+    if (!plus) return;
+    const cx = 1 + PLUS_WIDTH / 2;
+    const cy = top + AXIS_LABEL_HEIGHT / 2;
+    ax.fillStyle = t.crosshairLabelText;
+    ax.globalAlpha = 0.18;
+    ax.fillRect(1, top, PLUS_WIDTH, AXIS_LABEL_HEIGHT);
+    ax.globalAlpha = 1;
+    ax.fillRect(cx - 4, cy - 0.5, 8, 1);
+    ax.fillRect(cx - 0.5, cy - 4, 1, 8);
+  }
+
   private renderOverlay(): void {
     const t = this.theme;
     const c = this.crosshair;
@@ -1913,6 +2113,16 @@ export class Chart implements StudyApi, DrawingApi {
       const ax = pane.axisOverlay.begin();
       const ps = pane.priceScale;
       this.drawingLayer.render(pane, ctx, this.dpr);
+      const lines = this.placedLines(pane);
+      if (lines.length) drawPriceLines(ctx, lines, paneW, this.dpr, fontStr);
+      if (pane.id === 'main') {
+        const placed = this.placedMarkers();
+        if (placed.length) {
+          drawMarkers(ctx, placed);
+          const hov = c && c.pane === pane ? hitMarker(placed, c.rawX, c.rawY) : null;
+          if (hov) drawMarkerTooltip(ctx, hov, t, paneW);
+        }
+      }
 
       // Study last values (below the series' own label).
       for (const s of pane.series) {
@@ -2000,6 +2210,22 @@ export class Chart implements StudyApi, DrawingApi {
         );
       }
 
+      if (lines.length) {
+        drawPriceLineAxisLabels(
+          ax,
+          lines,
+          this.axisWidth,
+          pane.height,
+          (p) => this.formatAxisValue(pane, p),
+          fontStr,
+        );
+      }
+
+      const hover = this.axisHover;
+      if (!c && hover && hover.pane === pane) {
+        this.drawPriceLabel(ax, pane, hover.y, fontStr);
+      }
+
       if (!c) continue;
       ctx.strokeStyle = t.crosshair;
       dashedLine(ctx, c.x, 0, c.x, pane.height, this.dpr, [4, 4]);
@@ -2011,22 +2237,7 @@ export class Chart implements StudyApi, DrawingApi {
           ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
           ctx.fill();
         }
-        const price = ps.yToPrice(c.y);
-        const top = Math.max(
-          0,
-          Math.min(pane.height - AXIS_LABEL_HEIGHT, c.y - AXIS_LABEL_HEIGHT / 2),
-        );
-        labelBox(
-          ax,
-          this.formatAxisValue(pane, price),
-          1,
-          top,
-          this.axisWidth - 2,
-          AXIS_LABEL_HEIGHT,
-          t.crosshairLabelBg,
-          t.crosshairLabelText,
-          fontStr,
-        );
+        this.drawPriceLabel(ax, pane, c.y, fontStr);
       }
     }
 
