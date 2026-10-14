@@ -1,21 +1,55 @@
-import { useUiStore } from '../../store/ui';
+import { useState } from 'react';
+import { GENERAL_NOTE, noteKey, useNotesStore } from '../../persist/notes';
+import { useLayoutStatus } from '../../persist/layouts';
+import { useAppStore } from '../../store/app';
 
+/** Notes for the current symbol and a general note, saved to the server (offline: this browser). */
 export function Notes() {
-  const notes = useUiStore((s) => s.notes);
+  const symbol = useAppStore((s) => s.symbol);
+  const [scope, setScope] = useState<'symbol' | 'general'>('symbol');
+  const key = scope === 'general' ? GENERAL_NOTE : noteKey(symbol);
+  const note = useNotesStore((s) => s.notes[key]);
+  const online = useLayoutStatus((s) => s.online);
+  const text = note?.text ?? '';
+  const status = note?.dirty
+    ? online
+      ? 'Saving…'
+      : 'Offline: kept in this browser'
+    : 'Saved automatically';
   return (
     <div className="rs-notes">
+      <div className="rs-notes-tabs" role="tablist" aria-label="Note">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={scope === 'symbol'}
+          className={`rs-notes-tab${scope === 'symbol' ? ' active' : ''}`}
+          onClick={() => setScope('symbol')}
+        >
+          {symbol}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={scope === 'general'}
+          className={`rs-notes-tab${scope === 'general' ? ' active' : ''}`}
+          onClick={() => setScope('general')}
+        >
+          General
+        </button>
+      </div>
       <textarea
         className="rs-notes-input"
-        aria-label="Notes"
-        placeholder="Write your trading notes here..."
-        value={notes}
+        aria-label={scope === 'general' ? 'General notes' : `Notes for ${symbol}`}
+        placeholder={
+          scope === 'general' ? 'Write your trading notes here...' : `Notes about ${symbol}...`
+        }
+        value={text}
         spellCheck
-        onChange={(e) => useUiStore.getState().set({ notes: e.target.value })}
+        onChange={(e) => useNotesStore.getState().edit(key, e.target.value)}
       />
       <div className="rs-notes-foot">
-        {notes.length
-          ? `${notes.length.toLocaleString()} characters · saved automatically`
-          : 'Saved automatically'}
+        {text.length ? `${text.length.toLocaleString()} characters · ${status}` : status}
       </div>
     </div>
   );

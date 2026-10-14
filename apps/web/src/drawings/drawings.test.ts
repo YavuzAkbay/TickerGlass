@@ -658,10 +658,20 @@ describe('attach (engine events and sync)', () => {
     useUiStore.setState({ syncNewDrawings: true });
     const f = attach();
     const d = drw();
+    // Persistence follows the store: it must only ever see the final scope.
+    const seen: string[] = [];
+    const off = useDrawingStore.subscribe((st) => {
+      const x = [...st.synced, ...Object.values(st.bySymbol).flat()].find((y) => y.id === d.id);
+      if (x) seen.push(x.scope);
+    });
     f.chart.addDrawing(d);
     f.emit('drawingCreated', { drawing: d });
+    off();
     await Promise.resolve();
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set(['all']));
     expect(findDrawing(d.id)!.scope).toBe('all');
+    // The engine copy follows through the store -> engine sync.
     expect(f.chart.getDrawing(d.id)!.scope).toBe('all');
     const c = drw();
     f.emit('drawingDrag', { ids: [c.id], phase: 'start' });

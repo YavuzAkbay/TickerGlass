@@ -576,3 +576,19 @@
   font-size: 11px;
   text-align: right;
 }
+.rs-notes-tabs {
+  display: flex;
+  gap: 4px;
+}
+.rs-notes-tab {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rs-notes-tab.active {
+  border-color: var(--border);
+  color: var(--text);
+}

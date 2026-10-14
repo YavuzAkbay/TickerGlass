@@ -61,6 +61,19 @@ export class WorkerCore {
       case 'bars':
         this.barsSeen++;
         this.revision = msg.revision;
+        if (msg.context) {
+          // Apply the context over no bars (nothing to recompute), then compute once.
+          const b = msg.bars;
+          this.runtime.setBars({
+            time: b.time.subarray(0, 0),
+            open: b.open.subarray(0, 0),
+            high: b.high.subarray(0, 0),
+            low: b.low.subarray(0, 0),
+            close: b.close.subarray(0, 0),
+            volume: b.volume.subarray(0, 0),
+          });
+          this.runtime.setContext(msg.context);
+        }
         this.emit(this.runtime.setBars(msg.bars));
         return;
       case 'bar': {

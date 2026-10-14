@@ -2,7 +2,6 @@ import {
   AlarmClock,
   Camera,
   ChevronDown,
-  Cloud,
   Maximize,
   Minimize,
   Moon,
@@ -24,7 +23,9 @@ import { IconButton } from '../ui/IconButton';
 import { DropdownMenu, Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
 import { CHART_TYPE_MENU, chartTypeDef } from './chartTypes';
+import { IndicatorTemplatesButton } from './IndicatorTemplatesButton';
 import { IntervalControl } from './IntervalControl';
+import { LayoutMenu } from './LayoutMenu';
 import { firstShortcut, useCommand } from './useCommand';
 import './topbar.css';
 
@@ -47,13 +48,14 @@ export function TopBar() {
       <ChartTypeButton />
       <div className="tb-sep" />
       <CommandButton id="chart.indicators" icon={SquareFunction} label="Indicators" showLabel />
+      <IndicatorTemplatesButton />
       <div className="tb-sep" />
       <CommandButton id="alert.create" icon={AlarmClock} label="Create alert" text="Alert" />
       <CommandButton id="replay.toggle" icon={Rewind} label="Bar replay" text="Replay" />
       <div className="tb-sep" />
       <UndoRedo />
       <div className="tb-spacer" />
-      <LayoutButton />
+      <LayoutMenu />
       <div className="tb-sep" />
       <CommandButton id="chart.settings" icon={Settings} label="Settings" />
       <FullscreenButton />
@@ -173,53 +175,6 @@ function ChartTypeButton() {
       <Popover anchor={anchor} open={open} onClose={() => setOpen(false)} ignore={[anchor]}>
         <Menu items={items} onClose={() => setOpen(false)} />
       </Popover>
-    </>
-  );
-}
-
-const LAYOUT_ITEMS: MenuItem[] = [
-  { label: 'Save layout', shortcut: 'Mod+s', disabled: true },
-  { label: 'Load layout…', disabled: true },
-  { type: 'separator' },
-  { label: 'Make a copy…', disabled: true },
-  { label: 'Rename…', disabled: true },
-  { type: 'separator' },
-  { label: 'Export layout…', disabled: true },
-  { label: 'Import layout…', disabled: true },
-  { type: 'separator' },
-  {
-    type: 'custom',
-    render: () => <div className="tb-menu-note">Saved layouts arrive in Phase 7</div>,
-  },
-];
-
-function LayoutButton() {
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        ref={setAnchor}
-        type="button"
-        className={`tb-btn tb-layout${open ? ' open' : ''}`}
-        aria-label="Layout: Unnamed"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        data-tip={open ? undefined : 'Manage layouts'}
-        data-tip-side="bottom"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <Cloud size={16} strokeWidth={1.6} className="tb-muted" />
-        <span className="tb-layout-name">Unnamed</span>
-        <ChevronDown size={14} strokeWidth={1.6} className="tb-muted" />
-      </button>
-      <DropdownMenu
-        anchor={anchor}
-        open={open}
-        onClose={() => setOpen(false)}
-        items={LAYOUT_ITEMS}
-        placement="bottom-end"
-      />
     </>
   );
 }

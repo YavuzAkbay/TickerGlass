@@ -157,17 +157,17 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
           ? `Clone ${name}`
           : 'Clone drawings';
       // "Sync new drawings": drawings made with a tool start synced to all symbols
-      // (clones and pastes keep the scope of their source).
-      let after = drawing;
-      if (
+      // (clones and pastes keep the scope of their source). The store records
+      // the create with its final scope; the store -> engine sync then updates
+      // the engine copy, so persistence (which follows the store) never sees
+      // a symbol-scoped intermediate.
+      const after =
         !clone &&
         !inLabelledGesture() &&
         drawing.scope === 'symbol' &&
         useUiStore.getState().syncNewDrawings
-      ) {
-        after = { ...drawing, scope: 'all' };
-        chart.replaceDrawing(after);
-      }
+          ? { ...drawing, scope: 'all' as const }
+          : drawing;
       recordGesture(label, [{ before: null, after }]);
     }),
     chart.on('drawingChanged', ({ changes }) =>

@@ -155,6 +155,8 @@ export class IndicatorController {
   private tfMapKey = '';
   private tfMap: Record<string, string> = {};
   private contextKey = '';
+  /** In a reset: the context goes with the bars, not on its own. */
+  private deferContext = false;
   private required: string[] = [];
   private readonly tfSeries = new Map<string, TfSeries>();
   private pending = new Map<number, Bar>();
@@ -390,24 +392,32 @@ export class IndicatorController {
     if (interval !== this.interval) {
       this.interval = interval;
       this.dropTimeframes();
-      this.sendTimeframeMap(true);
+      this.deferContext = true;
+      try {
+        this.sendTimeframeMap(true);
+      } finally {
+        this.deferContext = false;
+      }
       // Per-interval visibility.
       this.sync(this.list);
     }
-    // Before the bars, so period-anchored indicators compute once with the right timezone.
-    this.sendContext();
-    this.sendBars(revision);
+    // With the bars (not before them), so period-anchored indicators compute once,
+    // with the right timezone, instead of first on the old bars.
+    this.sendBars(revision, this.takeContext());
     for (const tf of this.required) this.ensureTimeframe(tf);
   }
 
-  private sendBars(revision: number): void {
+  private sendBars(revision: number, context: RuntimeContext | null = null): void {
     this.pending.clear();
     if (revision !== this.sentRevision) this.resyncs = 0;
     this.sentRevision = revision;
     this.barsSent++;
     this.symbol ??= this.chart.getSymbol();
     const bars = copyColumns(this.chart.store, this.chart.store.length);
-    this.worker.post({ type: 'bars', revision, bars }, buffers(bars));
+    this.worker.post(
+      { type: 'bars', revision, bars, ...(context ? { context } : {}) },
+      buffers(bars),
+    );
   }
 
   // ------------------------------------------------------------ timeframes
@@ -424,6 +434,13 @@ export class IndicatorController {
 
   /** Exchange timezone/session (calendar periods, e.g. VWAP anchors) and intervals, when changed. */
   private sendContext(): void {
+    if (this.deferContext) return;
+    const context = this.takeContext();
+    if (context) this.worker.post({ type: 'context', context });
+  }
+
+  /** The context if it changed since last sent (and mark it sent), else null. */
+  private takeContext(): RuntimeContext | null {
     const info = this.chart.symbolInfo;
     const timeframeSeconds: Record<string, number> = {};
     for (const tf of Object.values(this.tfMap)) if (tf) timeframeSeconds[tf] = secondsOf(tf);
@@ -434,9 +451,9 @@ export class IndicatorController {
       timeframeSeconds,
     };
     const key = JSON.stringify(context);
-    if (key === this.contextKey) return;
+    if (key === this.contextKey) return null;
     this.contextKey = key;
-    this.worker.post({ type: 'context', context });
+    return context;
   }
 
   private dropTimeframes(): void {

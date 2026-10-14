@@ -15,8 +15,12 @@ export type ToWorker =
   | { type: 'add'; spec: InstanceSpec }
   | { type: 'setInputs'; id: string; inputs: InputValueMap }
   | { type: 'remove'; id: string }
-  /** SeriesChange 'reset'/'prepend' and resyncs: all displayed bars (copies, transferred). */
-  | { type: 'bars'; revision: number; bars: BarColumns }
+  /**
+   * SeriesChange 'reset'/'prepend' and resyncs: all displayed bars (copies,
+   * transferred). `context`: the new symbol/interval's context, applied
+   * together with the bars so the worker computes once (not on the old bars first).
+   */
+  | { type: 'bars'; revision: number; bars: BarColumns; context?: RuntimeContext }
   /** SeriesChange 'update' / 'append'. */
   | { type: 'bar'; revision: number; index: number; bar: Bar }
   | { type: 'tfBars'; tf: string; bars: BarColumns }

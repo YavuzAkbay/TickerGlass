@@ -167,15 +167,23 @@ export const deleteNote = (id: string, o?: Opts) =>
 
 export const exportAll = (o?: Opts) => requestJson<Bundle>('GET', '/export', undefined, o);
 
-/** Validate and apply a bundle; `dryRun` only reports what would change. */
+/**
+ * Validate and apply a bundle; `dryRun` only reports what would change.
+ * `replace` deletes all user data first and needs `confirm: true` (the server
+ * rejects it otherwise): dry-run first and show the summary before confirming.
+ */
 export const importAll = (
-  bundle: Partial<Bundle> & { version: number },
-  opts: { mode?: ImportMode; dryRun?: boolean } = {},
+  bundle: Partial<Bundle> & Pick<Bundle, 'version' | 'app'>,
+  opts: { mode?: ImportMode; dryRun?: boolean; confirm?: boolean } = {},
   o?: Opts,
 ) =>
   requestJson<ImportSummary>('POST', '/import', bundle, {
     ...o,
-    query: { mode: opts.mode, dryRun: opts.dryRun },
+    query: {
+      mode: opts.mode,
+      dryRun: opts.dryRun,
+      confirm: opts.mode === 'replace' && opts.confirm ? true : undefined,
+    },
   });
 
 // ------------------------------------------------------------ conflicts

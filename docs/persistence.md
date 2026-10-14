@@ -117,6 +117,10 @@ replace everything. `dryRun=true` returns the same summary and rolls back.
 
 ## 6. Web migration plan (localStorage -> API)
 
+Implemented in `apps/web/src/persist/` (Phase 7): `migration.ts` (step 1), `bootstrap.ts` + `layouts.ts` (steps
+2–4), `drawingSync.ts`, `settingsSync.ts` (keys `app.prefs`, `ui.prefs`, `indicators.favorites`,
+`indicators.defaults`), `drawingTemplatesSync.ts`, `notes.ts`. Layout cache key: `investopen-layout`.
+
 Suggested layout `state` (schemaVersion 1): `{ chart: chart.getState(), indicators: IndicatorState[],
 chartSettings: { chartType, chartStyle, volume, showPrevClose, timezone, prepost } }`.
 

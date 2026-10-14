@@ -106,16 +106,22 @@ describe('persistence endpoints', () => {
     expect(calls[3]!.init.method).toBe('POST');
 
     respond = () => json({ mode: 'replace', dryRun: true });
-    await importAll({ version: 1 }, { mode: 'replace', dryRun: true });
+    await importAll({ version: 1, app: 'investopen' }, { mode: 'replace', dryRun: true });
     expect(calls[4]!.url).toBe('/api/import?mode=replace&dryRun=true');
 
     await importLayout({ version: 1, kind: 'layout', layout: { name: 'n', state: {}, schemaVersion: 1 } });
     expect(calls[5]!.url).toBe('/api/layouts/import');
 
+    // A real replace carries the explicit confirmation; merge never does.
+    await importAll({ version: 1, app: 'investopen' }, { mode: 'replace', confirm: true });
+    expect(calls[6]!.url).toBe('/api/import?mode=replace&confirm=true');
+    await importAll({ version: 1, app: 'investopen' }, { mode: 'merge', confirm: true });
+    expect(calls[7]!.url).toBe('/api/import?mode=merge');
+
     respond = () => json({ a: 1 });
     await patchSettings({ a: 1, b: null });
-    expect(calls[6]!.init.method).toBe('PATCH');
-    expect(bodyOf(calls[6]!)).toEqual({ a: 1, b: null });
+    expect(calls[8]!.init.method).toBe('PATCH');
+    expect(bodyOf(calls[8]!)).toEqual({ a: 1, b: null });
 
     respond = () => json(null);
     expect(await getLastUsedLayout()).toBeNull();
@@ -207,14 +213,16 @@ describe('createAutosaver', () => {
     expect(saved).toEqual(['a', 'b']);
   });
 
-  it('flushes with keepalive on pagehide and when the document is hidden', async () => {
+  it('flushes with keepalive on pagehide, normally when the document is hidden', async () => {
     const ctxs: boolean[] = [];
+    const recovered: number[] = [];
     const win = new EventTarget();
     const doc = fakeDoc();
     const s = createAutosaver<number>(async (_v, ctx) => void ctxs.push(ctx.keepalive), {
       delay: 10_000,
       window: win,
       document: doc,
+      onHide: (v) => recovered.push(v),
     });
     s.schedule(1);
     win.dispatchEvent(new Event('pagehide'));
@@ -228,13 +236,15 @@ describe('createAutosaver', () => {
     doc.visibilityState = 'hidden';
     doc.dispatchEvent(new Event('visibilitychange'));
     await vi.advanceTimersByTimeAsync(0);
-    expect(ctxs).toEqual([true, true]);
+    expect(ctxs).toEqual([true, false]);
+    // A recovery copy of the pending value is offered before each hide flush.
+    expect(recovered).toEqual([1, 2]);
 
     // Nothing pending: no save. After dispose, events are ignored.
     await s.flush();
     s.schedule(3);
     await s.dispose();
-    expect(ctxs).toEqual([true, true, false]);
+    expect(ctxs).toEqual([true, false, false]);
     s.schedule(4);
     s.cancel();
     win.dispatchEvent(new Event('pagehide'));
@@ -278,6 +288,47 @@ describe('createAutosaver', () => {
     expect(s.pending).toBe(false);
   });
 
+  it('drops the value after a permanent error (4xx) without retrying', async () => {
+    const attempts: number[] = [];
+    const onError = vi.fn();
+    const s = createAutosaver<number>(
+      async (v) => {
+        attempts.push(v);
+        throw new ApiError('too large', 422);
+      },
+      { delay: 10, retryDelay: 100, onError, window: new EventTarget(), document: fakeDoc() },
+    );
+    s.schedule(1);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onError).toHaveBeenCalledOnce();
+    expect(s.pending).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toEqual([1]);
+  });
+
+  it('backs off on retryable errors (5xx, 408, 429) and stops after dispose', async () => {
+    const at: number[] = [];
+    const statuses = [503, 429, 408];
+    const s = createAutosaver<number>(
+      async () => {
+        at.push(Date.now());
+        throw new ApiError('busy', statuses[at.length - 1] ?? 500);
+      },
+      { delay: 0, retryDelay: 100, window: new EventTarget(), document: fakeDoc() },
+    );
+    const t0 = Date.now();
+    s.schedule(1);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(100); // 1st retry after 100
+    await vi.advanceTimersByTimeAsync(200); // 2nd after 200
+    expect(at.map((t) => t - t0)).toEqual([0, 100, 300]);
+    expect(s.pending).toBe(true);
+    await s.dispose(); // final attempt, then no more retries
+    const n = at.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(at).toHaveLength(n);
+  });
+
   it('a newer value wins over a failed one', async () => {
     const gate = deferred();
     const saved: number[] = [];
@@ -298,6 +349,17 @@ describe('createAutosaver', () => {
     gate.reject(new Error('boom'));
     await vi.advanceTimersByTimeAsync(10);
     expect(saved).toEqual([2]);
+  });
+});
+
+describe('requestJson keepalive', () => {
+  it('uses keepalive only for bodies under 60 KB', async () => {
+    respond = () => json({});
+    await requestJson('PUT', '/x', { s: 'a'.repeat(100) }, { keepalive: true });
+    await requestJson('PUT', '/x', { s: 'a'.repeat(70_000) }, { keepalive: true });
+    expect(calls[0]!.init.keepalive).toBe(true);
+    expect(calls[1]!.init.keepalive).toBeUndefined();
+    expect(String(calls[1]!.init.body)).toHaveLength(70_000 + 8);
   });
 });
 

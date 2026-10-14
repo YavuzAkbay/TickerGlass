@@ -14,7 +14,9 @@ export type DialogId =
   | 'commandPalette'
   | 'goToDate'
   | 'intervalInput'
-  | 'shortcuts';
+  | 'shortcuts'
+  | 'loadLayout'
+  | 'dataTransfer';
 
 /** Drawing tool ids are defined by the left toolbar (Phase 6 implements them). */
 export type DrawingToolId = string;
@@ -35,6 +37,7 @@ interface UiState {
   syncNewDrawings: boolean;
   lockAll: boolean;
   hideAll: boolean;
+  /** Legacy (before Phase 7): the general note, now in persist/notes. Read once to seed it. */
   notes: string;
   togglePanel: (panel: RightPanel) => void;
   setRightWidth: (w: number) => void;

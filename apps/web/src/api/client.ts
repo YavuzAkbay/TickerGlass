@@ -17,9 +17,25 @@ const BASE = '/api';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/** Browsers reject keepalive requests whose body exceeds 64 KB; stay below with a margin. */
+export const KEEPALIVE_MAX_BYTES = 60_000;
+
+/**
+ * Worth retrying later: unreachable (status 0), server errors (5xx), request
+ * timeout (408) and rate limiting (429). Other errors fail the same way again.
+ */
+export function isRetryable(err: unknown): boolean {
+  if (err instanceof ApiError)
+    return err.status === 0 || err.status >= 500 || err.status === 408 || err.status === 429;
+  return err instanceof TypeError;
+}
+
 export interface RequestOptions {
   signal?: AbortSignal;
-  /** Let the request outlive the page (saves on `pagehide`; body must be < 64 KB). */
+  /**
+   * Let the request outlive the page (saves on `pagehide`). Only honoured for
+   * bodies under KEEPALIVE_MAX_BYTES: larger keepalive requests throw in browsers.
+   */
   keepalive?: boolean;
   /** Query parameters; undefined values are left out. */
   query?: Record<string, string | number | boolean | undefined>;
@@ -47,13 +63,17 @@ export async function requestJson<T>(
   let res: Response;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  // Stringify once; the size decides whether keepalive is allowed.
+  const text = body !== undefined ? JSON.stringify(body) : undefined;
+  const keepalive =
+    !!opts.keepalive && new TextEncoder().encode(text ?? '').length < KEEPALIVE_MAX_BYTES;
   try {
     res = await fetch(`${BASE}${withQuery(path, opts.query)}`, {
       method,
       headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(text !== undefined ? { body: text } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
-      ...(opts.keepalive ? { keepalive: true } : {}),
+      ...(keepalive ? { keepalive: true } : {}),
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;

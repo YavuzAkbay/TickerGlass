@@ -259,3 +259,30 @@
 .io-toast-error {
   border-left-color: var(--down);
 }
+.io-toast-action {
+  height: 26px;
+  padding: 0 10px;
+}
+
+/* ---- prompt / confirm ---- */
+.io-prompt-input {
+  width: 100%;
+}
+.io-prompt-message {
+  margin: 0;
+  line-height: 1.5;
+}
+.io-btn-danger {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+.io-spacer {
+  flex: 1;
+}
+.app-crash {
+  max-width: 520px;
+  margin: 15vh auto;
+  padding: 24px;
+  line-height: 1.5;
+}

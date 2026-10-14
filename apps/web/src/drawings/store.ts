@@ -55,6 +55,28 @@ function normalize(d: Drawing): Drawing {
   };
 }
 
+/** A drawing from untrusted JSON (API, import), normalized; null if invalid. */
+export function sanitizeDrawing(v: unknown): Drawing | null {
+  return isDrawing(v) ? normalize(v) : null;
+}
+
+let remoteDepth = 0;
+
+/**
+ * Run `fn`, marking the store changes it makes as coming from elsewhere
+ * (another tab, the server): the API sync does not push them back.
+ */
+export function withRemoteApply<T>(fn: () => T): T {
+  remoteDepth++;
+  try {
+    return fn();
+  } finally {
+    remoteDepth--;
+  }
+}
+
+export const isRemoteApply = (): boolean => remoteDepth > 0;
+
 /** `parseStoredDrawings` result. */
 export interface ParsedDrawings {
   data: DrawingBuckets;
@@ -233,7 +255,7 @@ type EventSource = Pick<Window, 'addEventListener' | 'removeEventListener'>;
 
 const pick = (s: DrawingBuckets): DrawingBuckets => ({ bySymbol: s.bySymbol, synced: s.synced });
 
-const allDrawings = (s: DrawingBuckets): Drawing[] => [
+export const allDrawings = (s: DrawingBuckets): Drawing[] => [
   ...s.synced,
   ...Object.values(s.bySymbol).flat(),
 ];
@@ -308,7 +330,8 @@ export function startDrawingPersistence(
     const local = pick(useDrawingStore.getState());
     const merged = mergeBuckets(saved, local, parsed.data);
     saved = parsed.data;
-    useDrawingStore.getState().replaceAll(merged);
+    // The other tab syncs its own edits to the API.
+    withRemoteApply(() => useDrawingStore.getState().replaceAll(merged));
   };
   events?.addEventListener('storage', onStorage);
   const flush = () => {

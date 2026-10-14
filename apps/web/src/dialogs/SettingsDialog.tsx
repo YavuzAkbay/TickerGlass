@@ -22,11 +22,21 @@ import {
   type PriceScaleMode,
   type VolumeMode,
 } from '@investopen/engine';
+import { errorMessage } from '../api/client';
+import * as persistence from '../api/persistence';
+import type { ChartTemplate } from '../api/types';
 import { changeScale } from '../chart/scaleActions';
+import {
+  CHART_TEMPLATE_SCHEMA_VERSION,
+  readChartTemplate,
+  templateData,
+} from '../persist/chartTemplates';
+import { confirmDialog, promptName } from '../ui/Prompt';
+import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
 import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
-import { DropdownMenu } from '../ui/Menu';
+import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
 import { ChartStyleEditor } from './ChartStyleEditor';
 import { Check, Row, Section, Segmented } from './controls';
@@ -173,7 +183,57 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   const chartType = useAppStore((st) => st.chartType);
   const [templateBtn, setTemplateBtn] = useState<HTMLButtonElement | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [templates, setTemplates] = useState<ChartTemplate[] | null>(null);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
   const settled = useRef(false);
+
+  const loadTemplates = () =>
+    persistence
+      .listChartTemplates()
+      .then((list) => {
+        setTemplates([...list].sort((a, b) => a.name.localeCompare(b.name)));
+        setTemplatesError(null);
+      })
+      .catch((err) => setTemplatesError(errorMessage(err)));
+
+  const saveTemplate = async () => {
+    const name = await promptName({ title: 'Save chart template' });
+    if (!name) return;
+    if (
+      templates?.some((t) => t.name === name) &&
+      !(await confirmDialog({
+        title: 'Replace template',
+        message: `A chart template named "${name}" exists. Replace it?`,
+        okLabel: 'Replace',
+      }))
+    )
+      return;
+    try {
+      await persistence.saveChartTemplate({
+        name,
+        data: templateData(draft) as unknown as Record<string, unknown>,
+        schemaVersion: CHART_TEMPLATE_SCHEMA_VERSION,
+      });
+      toast(`Chart template "${name}" saved`, 'success');
+    } catch (err) {
+      toast(`Template could not be saved: ${errorMessage(err)}`, 'error', 6000);
+    }
+  };
+
+  const removeTemplate = async (t: ChartTemplate) => {
+    const yes = await confirmDialog({
+      title: 'Delete template',
+      message: `Delete the chart template "${t.name}"?`,
+      okLabel: 'Delete',
+      danger: true,
+    });
+    if (!yes) return;
+    try {
+      await persistence.deleteChartTemplate(t.id);
+    } catch (err) {
+      toast(`Template could not be deleted: ${errorMessage(err)}`, 'error', 6000);
+    }
+  };
 
   // Leaving without Ok (Escape, overlay, another dialog replacing this one) reverts.
   useEffect(() => {
@@ -231,7 +291,10 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         className="io-btn dlg-template"
         aria-haspopup="menu"
         aria-expanded={templateOpen}
-        onClick={() => setTemplateOpen((o) => !o)}
+        onClick={() => {
+          if (!templateOpen) void loadTemplates();
+          setTemplateOpen((o) => !o);
+        }}
       >
         Template <ChevronDown size={14} />
       </button>
@@ -240,18 +303,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         placement="bottom-start"
-        items={[
-          {
-            label: 'Apply defaults',
-            onSelect: () => update({ ...DEFAULTS, scale: draft.scale ? DEFAULTS.scale : null }),
-          },
-          { type: 'separator' },
-          { label: 'Save as…', disabled: true },
-          {
-            type: 'custom',
-            render: () => <div className="dlg-menu-note">Templates arrive in Phase 15</div>,
-          },
-        ]}
+        items={templateItems()}
       />
       <div className="dlg-footer-spacer" />
       <button type="button" className="io-btn" onClick={cancel}>
@@ -262,6 +314,32 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
       </button>
     </>
   );
+
+  function templateItems(): MenuItem[] {
+    const items: MenuItem[] = [
+      {
+        label: 'Apply defaults',
+        onSelect: () => update({ ...DEFAULTS, scale: draft.scale ? DEFAULTS.scale : null }),
+      },
+      { type: 'separator' },
+      { label: 'Save as…', onSelect: () => void saveTemplate() },
+    ];
+    if (templatesError)
+      items.push({
+        type: 'custom',
+        render: () => <div className="dlg-menu-note">Templates unavailable: {templatesError}</div>,
+      });
+    else if (templates?.length) {
+      items.push({ type: 'separator' }, { type: 'header', label: 'Templates' });
+      for (const t of templates)
+        items.push({ label: t.name, onSelect: () => update(readChartTemplate(draft, t.data)) });
+      items.push({
+        label: 'Remove template',
+        submenu: templates.map((t) => ({ label: t.name, onSelect: () => void removeTemplate(t) })),
+      });
+    }
+    return items;
+  }
 
   const typeDef = chartTypeDef(chartType);
   const TypeIcon = typeDef?.icon;

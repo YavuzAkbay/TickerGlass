@@ -151,14 +151,23 @@ Phase 6 notes:
 - Design, tool definition API, and undo/persistence contract: `docs/drawings.md`.
 - 20 core tools registered; toolbar entries without a definition are dimmed until Phase 11.
 - Drawing limitations and their status (session-aware extrapolation, measure volume, box select, ...): see [LIMITATIONS.md](LIMITATIONS.md#drawings).
-- Drawings persist to localStorage (`investopen-drawings`, per-symbol + synced buckets, backup on unreadable data, cross-tab merge); Phase 7 adds the API (one row per drawing, see `docs/drawings.md` §6).
+- Drawings persist to localStorage (`investopen-drawings`, per-symbol + synced buckets, backup on unreadable data, cross-tab merge); since Phase 7 that is the offline cache of the API (one row per drawing, see `docs/drawings.md` §6).
 
 ### Phase 7: Persistence, layouts, templates
 
-- [ ] API + DB: layouts, drawings, indicator templates, drawing templates, chart templates/themes, settings, notes
-- [ ] Autosave the chart layout (debounced); named layouts: save/save-as/rename/load/delete; restore on startup
-- [ ] Indicator templates (sets of indicators + settings); chart color/style templates
-- [ ] Import/export of layouts and templates as JSON
+- [x] API + DB: layouts, drawings, indicator templates, drawing templates, chart templates/themes, settings, notes
+- [x] Autosave the chart layout (debounced); named layouts: save/save-as/rename/load/delete; restore on startup
+- [x] Indicator templates (sets of indicators + settings); chart color/style templates
+- [x] Import/export of layouts and templates as JSON
+
+Phase 7 notes:
+
+- Server and wire format: `docs/persistence.md`. Web side: `apps/web/src/persist/` (`bootstrap.ts` wires it up).
+- Startup: one-time localStorage import (setting `migration.localStorage`, idempotent, originals kept plus `<key>.premigration` copies), then the last-used layout (or a new "Untitled"), drawings, settings, drawing templates and notes. API down: the browser copy is used, a toast says so, edits are kept (dirty flags in localStorage) and pushed on reconnect (every 15 s, `online` event, tab focus).
+- Layout state = `chart.getState()` + indicator instances + chart settings; autosaved (1 s debounce) with revision checks. A 409 shows "Reload" / "Overwrite". The top-bar layout menu has save (Ctrl/Cmd+S), save as, rename, make a copy, load (searchable list with last-modified), delete, per-layout export/import, export all data / import data (dry-run preview, merge or replace with confirmation). The button shows unsaved / offline state.
+- Drawings: store changes are batched to `POST /drawings/batch` with base revisions; conflicts load the saved version (toast). Refetch on symbol switch and tab focus.
+- Indicator templates: top-bar button (save, apply = replace or add, rename, delete). Chart templates: Settings dialog "Template" menu. Drawing templates/defaults, favorites (intervals, indicators, drawing tools), indicator defaults and UI prefs sync through `/settings` and `/drawing-templates`. Notes: per symbol and general, revision-checked.
+- e2e uses an in-test mock of the user-data API (`e2e/persistence.ts`), never a real database. Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#persistence).
 
 ### Phase 8: Watchlists
 

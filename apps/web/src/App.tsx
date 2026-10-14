@@ -5,6 +5,8 @@ import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
 import { registerIndicatorCommands } from './indicators/commands';
 import { installShortcuts } from './commands/shortcuts';
+import { startPersistence } from './persist/bootstrap';
+import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
 import { RightSidebar } from './sidebar/RightSidebar';
 import { useAppStore } from './store/app';
@@ -12,6 +14,7 @@ import { useUiStore } from './store/ui';
 import { LeftToolbar } from './toolbar/LeftToolbar';
 import { TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
+import { PromptHost } from './ui/Prompt';
 import { ToastHost } from './ui/Toast';
 import './ui/ui.css';
 import './App.css';
@@ -27,6 +30,7 @@ export function App() {
     const unregister = registerCoreCommands();
     const unregisterIndicators = registerIndicatorCommands();
     const unregisterDrawings = registerDrawingCommands();
+    const unregisterLayouts = registerLayoutCommands();
     // Digits open the interval input, anything else symbol search .
     const uninstall = installShortcuts((initial) =>
       useUiStore
@@ -37,9 +41,13 @@ export function App() {
       unregister();
       unregisterIndicators();
       unregisterDrawings();
+      unregisterLayouts();
       uninstall();
     };
   }, []);
+
+  // After the chart mounted (child effects run first): restore the last layout.
+  useEffect(() => startPersistence(), []);
 
   return (
     <div className="app">
@@ -60,6 +68,7 @@ export function App() {
       </aside>
       <DialogHost />
       <ContextMenuHost />
+      <PromptHost />
       <ToastHost />
     </div>
   );

@@ -15,6 +15,9 @@ interface Props {
   top?: boolean;
 }
 
+/** Open modals, innermost last: only the top one handles Escape. */
+const stack: object[] = [];
+
 /** Dialog with overlay. Escape or overlay click closes. Draggable by header. */
 export function Modal({
   title,
@@ -31,14 +34,20 @@ export function Modal({
   const offset = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
+    const token = {};
+    stack.push(token);
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && stack.at(-1) === token) {
         e.stopPropagation();
         onClose();
       }
     };
     window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('keydown', key);
+      const i = stack.indexOf(token);
+      if (i >= 0) stack.splice(i, 1);
+    };
   }, [onClose]);
 
   return createPortal(

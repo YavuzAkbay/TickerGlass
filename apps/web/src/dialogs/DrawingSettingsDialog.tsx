@@ -17,6 +17,7 @@ import { scopePatch, updateDrawings } from '../drawings/actions';
 import { defaultStyleOf, type DrawingSettingsTab } from '../drawings/menu';
 import { deepEqual } from '../drawings/model';
 import { useDrawingStore, useDrawingTemplates, type DrawingBuckets } from '../drawings/store';
+import { DEFAULT_TEMPLATE_NAME } from '../persist/drawingTemplatesSync';
 import { getChart, useChartStore } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
@@ -225,6 +226,10 @@ function TemplateMenu({
     const save = () => {
       const n = name.trim();
       if (!n) return;
+      if (n === DEFAULT_TEMPLATE_NAME) {
+        toast(`"${n}" is reserved for the saved default; use "Save as default"`, 'error');
+        return;
+      }
       templates.saveTemplate(def.type, n, structuredClone(style));
       toast(`Template "${n}" saved`, 'success');
       setNaming(false);

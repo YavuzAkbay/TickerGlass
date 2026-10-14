@@ -449,7 +449,7 @@ describe('IndicatorController', () => {
     }
   });
 
-  it('sends the exchange timezone before the bars of a new symbol, once per change', async () => {
+  it('sends the exchange timezone with the bars of a new symbol, once per change', async () => {
     const { chart, log, ctl } = setup();
     ctl.sync([inst('vwap')]);
     chart.symbolInfo = {
@@ -464,17 +464,48 @@ describe('IndicatorController', () => {
       priceHint: 2,
       minTick: 0.01,
     };
+    const before = log.length;
     chart.load(makeBars(10));
     await settle();
-    const types = log.map((m) => m.type);
-    const ctx = types.lastIndexOf('context');
-    expect(ctx).toBeLessThan(types.lastIndexOf('bars'));
-    expect(log[ctx]).toMatchObject({
+    // No standalone context in the reset (it would recompute on the old bars first).
+    const reset = log.slice(before);
+    expect(reset.filter((m) => m.type === 'context')).toEqual([]);
+    const bars = reset.find((m) => m.type === 'bars')!;
+    expect(bars).toMatchObject({
       context: { timezone: 'America/New_York', session: '0930-1600' },
     });
+    const withContext = () =>
+      log.filter((m) => m.type === 'context' || (m.type === 'bars' && m.context));
+    const n = withContext().length;
     chart.load(makeBars(12));
     await settle();
-    expect(log.filter((m) => m.type === 'context')).toHaveLength(2);
+    expect(withContext()).toHaveLength(n);
+  });
+
+  it('WorkerCore applies a context sent with bars in one computation', () => {
+    const out: FromWorker[] = [];
+    const core = new WorkerCore((m) => out.push(m));
+    core.handle({ type: 'add', spec: { id: 'v', type: 'vwap' } });
+    core.handle({ type: 'bars', revision: 1, bars: makeBars(30, 3600) });
+    out.length = 0;
+    core.handle({
+      type: 'bars',
+      revision: 2,
+      bars: makeBars(30, 3600),
+      context: { timezone: 'America/New_York', intervalSeconds: 3600 },
+    });
+    const results = out.filter((m) => m.type === 'results');
+    expect(results).toHaveLength(1);
+    // Same as computing with the context known from the start.
+    const ref: FromWorker[] = [];
+    const fresh = new WorkerCore((m) => ref.push(m));
+    fresh.handle({
+      type: 'context',
+      context: { timezone: 'America/New_York', intervalSeconds: 3600 },
+    });
+    fresh.handle({ type: 'add', spec: { id: 'v', type: 'vwap' } });
+    fresh.handle({ type: 'bars', revision: 1, bars: makeBars(30, 3600) });
+    expect(results[0]).toEqual({ ...ref.filter((m) => m.type === 'results').at(-1)!, revision: 2 });
   });
 
   it('reports worker errors for an instance and resyncs bars after a bad tick', async () => {

@@ -1,0 +1,93 @@
+/* ---- load layout ---- */
+.lay-list {
+  max-height: 420px;
+  min-height: 120px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.lay-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 6px 0 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.lay-row.active {
+  background: var(--hover);
+}
+.lay-row.current .lay-name {
+  color: var(--accent);
+}
+.lay-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lay-when {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.lay-delete {
+  opacity: 0.6;
+}
+.lay-row:hover .lay-delete {
+  opacity: 1;
+}
+.lay-empty {
+  padding: 24px 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---- data import/export ---- */
+.xfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.xfer-actions .io-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.xfer-file {
+  margin-top: 14px;
+}
+.xfer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.xfer-note {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.xfer-summary {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+.xfer-summary th,
+.xfer-summary td {
+  padding: 4px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+.xfer-summary th:first-child,
+.xfer-summary td:first-child {
+  text-align: left;
+}
+.xfer-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.xfer-error {
+  margin-top: 12px;
+  color: var(--down);
+}
