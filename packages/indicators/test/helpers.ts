@@ -71,14 +71,26 @@ export function ticks(b: BarInput): BarInput[] {
 /**
  * Feed `cols` to `rt` as history up to `from`, then bar by bar as live ticks
  * (append + updates). With `tf`, the timeframe series is fed the same way,
- * aggregated into UTC days.
+ * aggregated into UTC days. `external` holds chart-aligned bars of external
+ * symbols, fed the same way.
  */
-export function feedLive(rt: IndicatorRuntime, cols: BarArrays, from: number, tf = ''): void {
+export function feedLive(
+  rt: IndicatorRuntime,
+  cols: BarArrays,
+  from: number,
+  tf = '',
+  external: Readonly<Record<string, BarArrays>> = {},
+): void {
   rt.setBars(sliceBars(cols, 0, from));
+  for (const [symbol, ext] of Object.entries(external))
+    rt.setExternal(symbol, sliceBars(ext, 0, from));
   if (tf) rt.setTimeframeBars(tf, toColumns(dailyBars(cols, from)));
   const n = cols.time.length;
   for (let i = from; i < n; i++) {
     const partial = sliceBars(cols, 0, i + 1);
+    // External bars first: the series may be ahead of the chart, never behind.
+    for (const [symbol, ext] of Object.entries(external))
+      rt.updateExternal(symbol, i, sliceBars(ext, i, i + 1));
     for (const t of ticks(barAt(cols, i))) {
       rt.updateBar(i, t);
       if (tf) {

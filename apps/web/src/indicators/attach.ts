@@ -24,6 +24,7 @@ export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
     onError: (message) => toast(message, 'error'),
     onStudiesLost: removeIndicators,
     prepost: () => useAppStore.getState().prepost,
+    chartType: () => useAppStore.getState().chartType,
   });
   ctl.setHidden(indicatorsHidden(useUiStore.getState()));
   // The chart shows settings-dialog previews too (they are not persisted).

@@ -21,6 +21,8 @@ export interface IncrementalFixture {
    * marks): assert some non-NaN value anywhere instead.
    */
   sparse?: boolean;
+  /** Chart-aligned bars of external symbols, by symbol (same length as `bars`). */
+  external?: Readonly<Record<string, BarArrays>>;
   /** Nothing is expected to be non-NaN at all (e.g. Visible Range profile: engine-side only). */
   noValues?: boolean;
 }

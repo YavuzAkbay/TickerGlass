@@ -112,14 +112,33 @@ export function waitsForTimeframeClose(
   return false;
 }
 
-/** Output references among the `source` inputs. */
+/** Output references to other instances among the `source` inputs (not external symbols). */
 export function sourceRefs(def: AnyIndicatorDefinition, inputs: InputValueMap): OutputSourceRef[] {
   const refs: OutputSourceRef[] = [];
   for (const [key, d] of Object.entries(def.inputs)) {
     const v = inputs[key] as SourceValue | undefined;
-    if (d.kind === 'source' && isOutputRef(v)) refs.push(v);
+    if (d.kind === 'source' && isOutputRef(v) && !isExternalRef(v)) refs.push(v);
   }
   return refs;
+}
+
+/** Symbol of an external source ref (`sym:GOOG` -> 'GOOG'). */
+export function externalRefSymbol(ref: OutputSourceRef): string {
+  return ref.instanceId.slice(EXTERNAL_SOURCE_PREFIX.length);
+}
+
+/**
+ * External symbols an instance needs: `symbol` inputs (non-empty) and `sym:`
+ * source refs. Unique, in input order.
+ */
+export function externalSymbols(def: AnyIndicatorDefinition, inputs: InputValueMap): string[] {
+  const out = new Set<string>();
+  for (const [key, d] of Object.entries(def.inputs)) {
+    const v = inputs[key];
+    if (d.kind === 'symbol' && typeof v === 'string' && v !== '') out.add(v);
+    else if (d.kind === 'source' && isExternalRef(v)) out.add(externalRefSymbol(v));
+  }
+  return [...out];
 }
 
 /** Outputs with a per-bar values array: plots, shapes, background, volume profile period marks. */

@@ -2,19 +2,26 @@ import type { BarStore } from './bars';
 import type { AnyIndicatorDefinition } from './registry';
 import { isOutputRef, isValueOutput, resolveInputs } from './resolve';
 import { TaScope } from './ta';
-import type {
-  BarsEnv,
-  IndicatorResult,
-  InputValueMap,
-  InputValues,
-  InputsSchema,
-  InstanceStatus,
-  OutputSourceRef,
-  StepContext,
-  StepFn,
+import {
+  EXTERNAL_SOURCE_PREFIX,
+  PRICE_SOURCES,
+  type BarsEnv,
+  type ExternalColumns,
+  type IndicatorResult,
+  type InputValueMap,
+  type InputValues,
+  type InputsSchema,
+  type InstanceStatus,
+  type OutputSourceRef,
+  type PriceSource,
+  type StepContext,
+  type StepFn,
 } from './types';
 
-/** Resolves an indicator-on-indicator source to chart-aligned values. */
+/**
+ * Resolves an indicator-on-indicator source (or a `sym:<SYMBOL>` external
+ * price column) to chart-aligned values.
+ */
 export type RefResolver = (ref: OutputSourceRef) => Float64Array | undefined;
 
 const NO_REFS: RefResolver = () => undefined;
@@ -36,6 +43,7 @@ class StepCtx implements StepContext {
   close = new Float64Array(0);
   volume = new Float64Array(0);
   src: Record<string, Float64Array> = {};
+  ext: Record<string, ExternalColumns> = {};
   env: Readonly<BarsEnv> = DEFAULT_ENV;
   isLast = false;
 
@@ -294,7 +302,19 @@ export class IndicatorInstance {
     c.close = bars.close;
     c.volume = bars.volume;
     const src: Record<string, Float64Array> = {};
+    const ext: Record<string, ExternalColumns> = {};
     for (const [key, d] of Object.entries(this.def.inputs)) {
+      if (d.kind === 'symbol') {
+        const symbol = this.inputs[key] as string;
+        const cols: Partial<Record<PriceSource, Float64Array>> = {};
+        for (const p of PRICE_SOURCES) {
+          const arr = refs({ instanceId: EXTERNAL_SOURCE_PREFIX + symbol, outputId: p });
+          if (!arr) throw new Error(`Symbol "${symbol}" is not available`);
+          cols[p] = arr;
+        }
+        ext[key] = cols as ExternalColumns;
+        continue;
+      }
       if (d.kind !== 'source') continue;
       const v = this.inputs[key];
       if (isOutputRef(v)) {
@@ -304,6 +324,7 @@ export class IndicatorInstance {
       } else src[key] = bars.source(v as Parameters<BarStore['source']>[0]);
     }
     c.src = src;
+    c.ext = ext;
   }
 
   private ensureCapacity(n: number): void {

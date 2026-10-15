@@ -10,6 +10,8 @@ export {
 } from './registry';
 export type { AnyIndicatorDefinition } from './registry';
 export {
+  externalRefSymbol,
+  externalSymbols,
   isExternalRef,
   isOutputRef,
   isPriceSource,

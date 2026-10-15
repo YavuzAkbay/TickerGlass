@@ -25,6 +25,13 @@ export type ToWorker =
   | { type: 'bar'; revision: number; index: number; bar: Bar }
   | { type: 'tfBars'; tf: string; bars: BarColumns }
   | { type: 'tfBar'; tf: string; bar: Bar }
+  /**
+   * An external symbol's bars aligned to the displayed bars of series
+   * `revision` (time = the displayed times; prices NaN where it has no bar).
+   */
+  | { type: 'extBars'; revision: number; symbol: string; bars: BarColumns }
+  /** Aligned rows [from, from + bars length) of an external symbol (live). */
+  | { type: 'extUpdate'; revision: number; symbol: string; from: number; bars: BarColumns }
   /** Symbol change: drop all bar data, keep instances. */
   | { type: 'clear' };
 
@@ -41,6 +48,8 @@ export type FromWorker =
   | { type: 'results'; revision: number; length: number; changes: ResultChange[] }
   /** Timeframe series the runtime needs (after add/setInputs/timeframeMap). */
   | { type: 'timeframes'; timeframes: string[] }
+  /** External symbols the runtime needs (after add/setInputs/remove). */
+  | { type: 'symbols'; symbols: string[] }
   /**
    * A `bar` index did not fit the worker's series (RangeError from
    * `updateBar`): the host resends all bars. `bars` = number of `bars`

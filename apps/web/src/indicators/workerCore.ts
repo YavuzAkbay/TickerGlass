@@ -97,6 +97,15 @@ export class WorkerCore {
       case 'tfBar':
         this.emit(this.runtime.updateTimeframeBar(msg.tf, msg.bar));
         return;
+      case 'extBars':
+        // Aligned to another series of displayed bars (a reset follows with new ones).
+        if (msg.revision !== this.revision) return;
+        this.emit(this.runtime.setExternal(msg.symbol, msg.bars));
+        return;
+      case 'extUpdate':
+        if (msg.revision !== this.revision) return;
+        this.emit(this.runtime.updateExternal(msg.symbol, msg.from, msg.bars));
+        return;
       case 'clear':
         this.emit(this.runtime.clearData());
         return;
@@ -117,6 +126,7 @@ export class WorkerCore {
 
   private emitTimeframes(): void {
     this.post({ type: 'timeframes', timeframes: this.runtime.requiredTimeframes() }, []);
+    this.post({ type: 'symbols', symbols: this.runtime.requiredSymbols() }, []);
   }
 
   /** Copy the changed tails out of the runtime (its arrays are reused) and transfer them. */

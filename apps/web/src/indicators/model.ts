@@ -8,7 +8,11 @@ import {
   type Interval,
 } from '@investopen/engine';
 import {
+  EXTERNAL_SOURCE_PREFIX,
+  externalRefSymbol,
+  externalSymbols,
   getIndicator,
+  isExternalRef,
   isOutputRef,
   resolveInputs,
   sourceRefs,
@@ -199,7 +203,7 @@ export function sourceRefOf(inst: IndicatorState): OutputSourceRef | null {
   const def = getIndicator(inst.type);
   const key = def ? sourceInputKey(def) : null;
   const v = key ? inst.inputs[key] : undefined;
-  return isOutputRef(v) ? v : null;
+  return isOutputRef(v) && !isExternalRef(v) ? v : null;
 }
 
 /**
@@ -218,7 +222,10 @@ export function validateInstances(list: readonly IndicatorState[]): string | nul
       return err instanceof Error ? err.message : String(err);
     }
     const refs = sourceRefs(def, inst.inputs);
-    if (refs.length && timeframeInputValue(def, inst.inputs))
+    if (
+      (refs.length || externalSymbols(def, inst.inputs).length) &&
+      timeframeInputValue(def, inst.inputs)
+    )
       return 'Indicators on another timeframe can only use price sources';
     deps.set(
       inst.id,
@@ -276,6 +283,8 @@ export const SOURCE_LABELS: Record<PriceSource, string> = {
 export type InstanceLookup = (id: string) => IndicatorState | undefined;
 
 export function outputRefLabel(ref: OutputSourceRef, lookup: InstanceLookup): string {
+  if (ref.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX))
+    return `${externalRefSymbol(ref)}: ${SOURCE_LABELS[ref.outputId as PriceSource] ?? ref.outputId}`;
   const inst = lookup(ref.instanceId);
   const def = inst ? getIndicator(inst.type) : undefined;
   if (!def) return 'removed source';
@@ -304,6 +313,9 @@ export function inputsTitle(
         break;
       case 'enum':
         parts.push(d.optionLabels?.[v as string] ?? String(v));
+        break;
+      case 'symbol':
+        if (v) parts.push(String(v));
         break;
       case 'timeframe':
         if (v) parts.push(v === 'auto' ? 'Auto' : String(v));

@@ -37,9 +37,10 @@ describe.each(listIndicators().map((d) => d.id))('%s', (id) => {
     const full = runtime(fx);
     full.add({ id: 'x', type: id, inputs });
     full.setBars(series);
+    for (const [sym, ext] of Object.entries(fx.external ?? {})) full.setExternal(sym, ext);
     const live = runtime(fx);
     live.add({ id: 'x', type: id, inputs });
-    feedLive(live, series, fx.liveFrom ?? 150);
+    feedLive(live, series, fx.liveFrom ?? 150, '', fx.external);
     const r = full.result('x')!;
     expect(r.status).toEqual({ state: 'ok' });
     // Something is computed past the warm-up (at the last bar unless sparse).
@@ -61,7 +62,7 @@ describe.each(listIndicators().map((d) => d.id))('%s', (id) => {
     const rt = runtime(fx);
     rt.add({ id: 'x', type: id, inputs: chartInputs(id) });
     rt.add({ id: 'ma', type: 'sma', inputs: { source: { instanceId: 'x', outputId: plot.id } } });
-    feedLive(rt, series, fx.bars ? (fx.liveFrom ?? 150) : 300);
+    feedLive(rt, series, fx.bars ? (fx.liveFrom ?? 150) : 300, '', fx.external);
     expect(rt.status('ma')).toEqual({ state: 'ok' });
   });
 });

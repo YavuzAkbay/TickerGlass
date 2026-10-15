@@ -7,6 +7,7 @@ import {
   type Bar,
   type BarColumns,
   type ChartEvents,
+  type ChartType,
   type DataFeed,
   type SeriesChange,
   type SeriesStore,
@@ -17,6 +18,7 @@ import {
   type Unsubscribe,
 } from '@investopen/engine';
 import {
+  externalSymbols,
   getIndicator,
   resolveOutputs,
   type AnyIndicatorDefinition,
@@ -30,6 +32,7 @@ import {
   visibleOnInterval,
   type IndicatorState,
 } from './model';
+import { BRICK_MESSAGE, ExternalSymbols } from './external';
 import type { FromWorker, ToWorker } from './protocol';
 import { useIndicatorRuntime } from './store';
 
@@ -82,6 +85,8 @@ export interface ControllerOptions {
   onStudiesLost?: (ids: string[]) => void;
   /** Extended hours for timeframe requests. */
   prepost?: () => boolean;
+  /** Chart type the app shows (external symbols are unavailable on brick types). Default: candles. */
+  chartType?: () => ChartType;
 }
 
 interface Applied {
@@ -160,6 +165,9 @@ export class IndicatorController {
   private deferContext = false;
   private required: string[] = [];
   private readonly tfSeries = new Map<string, TfSeries>();
+  private readonly external: ExternalSymbols;
+  /** External symbols that failed to load, with the message. */
+  private readonly symbolProblems = new Map<string, string>();
   private pending = new Map<number, Bar>();
   private flushQueued = false;
   private offs: (() => void)[] = [];
@@ -177,6 +185,15 @@ export class IndicatorController {
     this.worker = opts.worker;
     this.schedule = opts.schedule ?? ((fn) => queueMicrotask(fn));
     this.onError = opts.onError ?? ((m) => console.error(m));
+    this.external = new ExternalSymbols({
+      chart: this.chart,
+      feed: this.feed,
+      post: (msg, transfer) => this.worker.post(msg, transfer),
+      schedule: this.schedule,
+      chartType: opts.chartType ?? (() => 'candles'),
+      prepost: () => this.opts.prepost?.() ?? false,
+      onProblem: (symbol, message) => this.onSymbolProblem(symbol, message),
+    });
     this.worker.listen((msg) => this.onMessage(msg));
     this.offs.push(
       this.chart.on('seriesChange', (c) => this.onSeriesChange(c)),
@@ -185,7 +202,10 @@ export class IndicatorController {
     );
     this.interval = this.chart.getInterval();
     this.sendContext();
-    if (this.chart.store.length) this.sendBars(this.chart.seriesRevision);
+    if (this.chart.store.length) {
+      this.sendBars(this.chart.seriesRevision);
+      this.external.reset(this.chart.seriesRevision);
+    }
   }
 
   destroy(): void {
@@ -194,6 +214,7 @@ export class IndicatorController {
     this.offs = [];
     for (const s of this.tfSeries.values()) s.unsub?.();
     this.tfSeries.clear();
+    this.external.destroy();
     this.worker.terminate();
     useIndicatorRuntime.setState({ status: {}, panes: {} });
   }
@@ -404,7 +425,10 @@ export class IndicatorController {
     if (this.destroyed) return;
     const pending = this.pending;
     this.pending = new Map();
-    for (const index of [...pending.keys()].sort((a, b) => a - b))
+    const indices = [...pending.keys()].sort((a, b) => a - b);
+    // External bars first: the worker waits when the chart is ahead of them.
+    if (indices.length) this.external.onBars(indices[0]!);
+    for (const index of indices)
       this.worker.post({
         type: 'bar',
         revision: this.sentRevision,
@@ -436,6 +460,8 @@ export class IndicatorController {
     // With the bars (not before them), so period-anchored indicators compute once,
     // with the right timezone, instead of first on the old bars.
     this.sendBars(revision, this.takeContext());
+    this.external.reset(revision);
+    this.applyProblems();
     for (const tf of this.required) this.ensureTimeframe(tf);
   }
 
@@ -576,11 +602,51 @@ export class IndicatorController {
       });
   }
 
+  // ------------------------------------------------------ external symbols
+
+  private onSymbolProblem(symbol: string, message: string | null): void {
+    if (message === null) this.symbolProblems.delete(symbol);
+    else {
+      this.symbolProblems.set(symbol, message);
+      this.onError(`Could not load ${symbol}: ${message}`);
+    }
+    this.applyProblems();
+  }
+
+  /** Error status of an instance that reads a symbol which cannot be shown, else null. */
+  private externalError(inst: IndicatorState): InstanceStatus | null {
+    const def = getIndicator(inst.type);
+    if (!def) return null;
+    for (const symbol of externalSymbols(def, inst.inputs)) {
+      const message =
+        this.external.unavailableReason === BRICK_MESSAGE
+          ? BRICK_MESSAGE
+          : (this.symbolProblems.get(symbol) ?? this.external.unavailableReason);
+      if (message) return { state: 'error', message: `${symbol}: ${message}` };
+    }
+    return null;
+  }
+
+  /** Show load failures / unavailability on the instances that read those symbols. */
+  private applyProblems(): void {
+    if (this.destroyed) return;
+    const status: Record<string, InstanceStatus> = {};
+    for (const inst of this.list) {
+      const err = this.externalError(inst);
+      if (err) status[inst.id] = err;
+    }
+    if (Object.keys(status).length)
+      useIndicatorRuntime.setState((s) => ({ status: { ...s.status, ...status } }));
+  }
+
   // --------------------------------------------------------------- results
 
   private onMessage(msg: FromWorker): void {
     if (this.destroyed) return;
     switch (msg.type) {
+      case 'symbols':
+        this.external.setRequired(msg.symbols);
+        return;
       case 'results':
         this.onResults(msg);
         return;
@@ -632,7 +698,8 @@ export class IndicatorController {
     const status: Record<string, InstanceStatus> = {};
     for (const ch of msg.changes) {
       if (!this.applied.has(ch.id)) continue;
-      status[ch.id] = ch.status;
+      const inst = this.lookup(ch.id);
+      status[ch.id] = (inst && this.externalError(inst)) || ch.status;
       const { revision, length } = msg;
       this.engine(() => {
         if (ch.from === 0)

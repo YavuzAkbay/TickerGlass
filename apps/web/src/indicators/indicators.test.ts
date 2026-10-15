@@ -14,11 +14,15 @@ import {
 import {
   createInstance,
   defaultVisibility,
+  outputRefLabel,
+  sourceRefOf,
   resolveTimeframe,
   studyTitle,
   validateInstances,
   visibleOnInterval,
 } from './model';
+import { useCompareStore } from '../compare/store';
+import { overlayOption, overlaySymbols, sourceOptions } from './menu';
 import {
   effectiveInstances,
   useIndicatorPrefs,
@@ -167,5 +171,50 @@ describe('indicator actions', () => {
     expect(useIndicatorPrefs.getState().favorites).toEqual(['sma']);
     useIndicatorPrefs.getState().toggleFavorite('sma');
     expect(useIndicatorPrefs.getState().favorites).toEqual([]);
+  });
+});
+
+describe('external symbol sources', () => {
+  const ref = { instanceId: 'sym:GOOG', outputId: 'close' };
+
+  it('labels and titles overlay sources, and they are not instance dependencies', () => {
+    expect(outputRefLabel(ref, () => undefined)).toBe('GOOG: Close');
+    const ma = createInstance(getIndicator('sma')!, undefined, { source: ref });
+    expect(studyTitle(getIndicator('sma')!, ma.inputs, () => undefined)).toBe('SMA 9 GOOG: Close');
+    expect(sourceRefOf(ma)).toBeNull();
+    expect(validateInstances([ma])).toBeNull();
+    const cc = createInstance(getIndicator('correlation')!, undefined, { symbol: 'MSFT' });
+    expect(studyTitle(getIndicator('correlation')!, cc.inputs, () => undefined)).toBe(
+      'CC MSFT close 20',
+    );
+  });
+
+  it('lists compare symbols in the Overlays group', () => {
+    useCompareStore.setState({
+      items: [
+        {
+          id: 'cmp-1',
+          symbol: 'MSFT',
+          placement: 'same',
+          visible: true,
+          color: '#fff',
+          lineWidth: 2,
+        },
+      ],
+    });
+    expect(overlaySymbols()).toEqual(['MSFT']);
+    const sma = createInstance(getIndicator('sma')!, undefined);
+    const opts = sourceOptions(sma, [sma], overlaySymbols());
+    expect(opts.filter((o) => o.group === 'Overlays').map((o) => o.label)).toEqual([
+      'MSFT: Close',
+      'MSFT: Open',
+      'MSFT: High',
+      'MSFT: Low',
+    ]);
+    expect(overlayOption('MSFT', 'close').value).toEqual({
+      instanceId: 'sym:MSFT',
+      outputId: 'close',
+    });
+    useCompareStore.setState({ items: [] });
   });
 });

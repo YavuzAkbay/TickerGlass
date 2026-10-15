@@ -1,7 +1,13 @@
 import { BarStore } from './bars';
 import { DEFAULT_ENV, IndicatorInstance, type RefResolver } from './instance';
 import { defaultRegistry, type AnyIndicatorDefinition, type IndicatorRegistry } from './registry';
-import { resolveInputs, sourceRefs, timeframeInputValue, waitsForTimeframeClose } from './resolve';
+import {
+  externalSymbols,
+  resolveInputs,
+  sourceRefs,
+  timeframeInputValue,
+  waitsForTimeframeClose,
+} from './resolve';
 import type {
   BarArrays,
   BarInput,
@@ -9,11 +15,13 @@ import type {
   IndicatorResult,
   InputValueMap,
   InstanceStatus,
+  PriceSource,
 } from './types';
+import { EXTERNAL_SOURCE_PREFIX } from './types';
 
 /** Serialisable description of one indicator on a chart (persisted in layouts). */
 export interface InstanceSpec {
-  /** Unique per chart; also the engine study id. Not 'main'/'volume*'. */
+  /** Unique per chart; also the engine study id. Not 'main'/'volume*' or 'sym:*' (external sources). */
   id: string;
   /** Definition id in the registry. */
   type: string;
@@ -53,6 +61,10 @@ interface Node {
   /** Resolved timeframe; '' = chart bars. */
   tf: string;
   deps: Set<string>;
+  /** External symbols read directly (`symbol` inputs, `sym:` source refs). */
+  ext: string[];
+  /** Computed state is out of date (the instance was waiting for an external symbol). */
+  stale: boolean;
   /** Chart-aligned outputs for timeframe instances. */
   aligned: IndicatorResult | null;
 }
@@ -70,6 +82,8 @@ type BarChange = 'none' | 'full' | 'update' | 'append';
 export class IndicatorRuntime {
   private readonly bars = new BarStore();
   private readonly tfBars = new Map<string, BarStore>();
+  /** External symbols' bars aligned to the chart bars, by symbol. */
+  private readonly externals = new Map<string, BarStore>();
   private readonly nodes = new Map<string, Node>();
   private order: Node[] = [];
   private readonly registry: IndicatorRegistry;
@@ -132,6 +146,10 @@ export class IndicatorRuntime {
 
   /** Throws for an unknown type, invalid inputs, a cycle or an MTF+ref mix. */
   add(spec: InstanceSpec): Change[] {
+    if (spec.id.startsWith(EXTERNAL_SOURCE_PREFIX))
+      throw new Error(
+        `Instance id "${spec.id}" uses the reserved "${EXTERNAL_SOURCE_PREFIX}" prefix`,
+      );
     if (this.nodes.has(spec.id)) throw new Error(`Instance "${spec.id}" already exists`);
     const def = this.definition(spec.type);
     const inputs = resolveInputs(def, spec.inputs);
@@ -140,6 +158,8 @@ export class IndicatorRuntime {
       inst: new IndicatorInstance(def, inputs),
       tf: '',
       deps: new Set(),
+      ext: [],
+      stale: false,
       aligned: null,
     };
     this.configure(node, inputs);
@@ -152,7 +172,7 @@ export class IndicatorRuntime {
   setInputs(id: string, inputs: InputValueMap): Change[] {
     const node = this.node(id);
     const resolved = resolveInputs(node.inst.def, inputs);
-    const prev = { spec: node.spec, tf: node.tf, deps: node.deps };
+    const prev = { spec: node.spec, tf: node.tf, deps: node.deps, ext: node.ext };
     try {
       this.configure(node, resolved);
       this.reorder();
@@ -186,6 +206,8 @@ export class IndicatorRuntime {
   result(id: string): IndicatorResult | null {
     const node = this.nodes.get(id);
     if (!node) return null;
+    const symbol = this.waitingSymbol(node);
+    if (symbol !== null) return this.emptyResult(node, symbol);
     return node.tf ? (node.aligned ?? this.emptyResult(node)) : node.inst.result();
   }
 
@@ -214,7 +236,80 @@ export class IndicatorRuntime {
   clearData(): Change[] {
     this.bars.clear();
     this.tfBars.clear();
+    this.externals.clear();
     return this.recompute(new Set(), 'full');
+  }
+
+  // ----------------------------------------------------- external symbols
+
+  /** External symbols the host must provide via `setExternal`. */
+  requiredSymbols(): string[] {
+    return [...new Set(this.order.flatMap((n) => n.ext))];
+  }
+
+  /**
+   * Bars of external `symbol` aligned to the chart bars: `cols.time` holds the
+   * chart's times and prices are NaN where the symbol has no bar. Instances
+   * stay 'waiting' until the series covers every chart bar (it may be longer:
+   * send a live update before the chart's append).
+   */
+  setExternal(symbol: string, cols: BarArrays): Change[] {
+    let store = this.externals.get(symbol);
+    if (!store) {
+      store = new BarStore();
+      this.externals.set(symbol, store);
+    }
+    store.setAll(cols);
+    return this.recompute(this.dependentsOfSymbol(symbol));
+  }
+
+  /**
+   * Replace the aligned bars of `symbol` from chart index `from` on with
+   * `cols` (the aligned slice, `cols.time.length` bars). Throws RangeError
+   * when `from` is past the end of the series sent so far. Dependents
+   * recompute from `from`.
+   */
+  updateExternal(symbol: string, from: number, cols: BarArrays): Change[] {
+    const store = this.externals.get(symbol);
+    if (!store) return [];
+    if (!Number.isInteger(from) || from < 0 || from > store.length)
+      throw new RangeError(
+        `External "${symbol}" update from ${from} is outside 0..${store.length}`,
+      );
+    store.length = from;
+    for (let k = 0; k < cols.time.length; k++)
+      store.setBar(from + k, {
+        time: cols.time[k]!,
+        open: cols.open[k]!,
+        high: cols.high[k]!,
+        low: cols.low[k]!,
+        close: cols.close[k]!,
+        volume: cols.volume[k]!,
+      });
+    const seeds = new Map<string, number>();
+    for (const id of this.dependentsOfSymbol(symbol)) seeds.set(id, from);
+    return this.propagate(seeds, 'none');
+  }
+
+  private dependentsOfSymbol(symbol: string): Set<string> {
+    return new Set(this.order.filter((n) => n.ext.includes(symbol)).map((n) => n.spec.id));
+  }
+
+  /** First external symbol the instance (or an instance it reads) still lacks bars for. */
+  private waitingSymbol(node: Node, seen = new Set<string>()): string | null {
+    if (seen.has(node.spec.id)) return null;
+    seen.add(node.spec.id);
+    const n = this.bars.length;
+    for (const sym of node.ext) {
+      const store = this.externals.get(sym);
+      if (!store || store.length < n) return sym;
+    }
+    for (const dep of node.deps) {
+      const d = this.nodes.get(dep);
+      const sym = d ? this.waitingSymbol(d, seen) : null;
+      if (sym !== null) return sym;
+    }
+    return null;
   }
 
   // ---------------------------------------------------------- timeframes
@@ -289,10 +384,12 @@ export class IndicatorRuntime {
   private configure(node: Node, inputs: InputValueMap): void {
     const refs = sourceRefs(node.inst.def, inputs);
     const tf = this.resolveTf(timeframeInputValue(node.inst.def, inputs));
-    if (tf && refs.length)
+    const ext = externalSymbols(node.inst.def, inputs);
+    if (tf && (refs.length || ext.length))
       throw new Error('Indicators on another timeframe can only use price sources');
     node.tf = tf;
     node.deps = new Set(refs.map((r) => r.instanceId));
+    node.ext = ext;
   }
 
   /** Topological order; throws on a cycle (state is left unchanged). */
@@ -338,7 +435,12 @@ export class IndicatorRuntime {
   private propagate(seeds: Map<string, number>, bars: BarChange, diff = false): Change[] {
     const n = this.bars.length;
     const changed = new Map<string, number>();
-    const refs: RefResolver = (ref) => this.result(ref.instanceId)?.values[ref.outputId];
+    const refs: RefResolver = (ref) => {
+      if (!ref.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX))
+        return this.result(ref.instanceId)?.values[ref.outputId];
+      const store = this.externals.get(ref.instanceId.slice(EXTERNAL_SOURCE_PREFIX.length));
+      return store?.source(ref.outputId as PriceSource);
+    };
     for (const node of this.order) {
       const id = node.spec.id;
       let from = seeds.get(id) ?? Infinity;
@@ -349,6 +451,17 @@ export class IndicatorRuntime {
         from = Math.max(0, from);
         const first = this.align(node, from, diff);
         if (first < n || first === 0) changed.set(id, first);
+        continue;
+      }
+      if (this.waitingSymbol(node) !== null) {
+        node.stale = true;
+        if (from !== Infinity || bars !== 'none') changed.set(id, 0);
+        continue;
+      }
+      if (node.stale) {
+        node.stale = false;
+        node.inst.computeAll(this.bars, refs);
+        changed.set(id, 0);
         continue;
       }
       // A change before the last bar (inputs, upstream history) needs a full pass.
@@ -424,11 +537,13 @@ export class IndicatorRuntime {
     return first;
   }
 
-  private emptyResult(node: Node): IndicatorResult {
+  private emptyResult(node: Node, symbol?: string): IndicatorResult {
     const values: Record<string, Float64Array> = {};
     const colors: Record<string, Uint8Array> = {};
     for (const id of Object.keys(node.inst.values)) values[id] = new Float64Array(0);
     for (const id of Object.keys(node.inst.colors)) colors[id] = new Uint8Array(0);
-    return { length: 0, values, colors, status: { state: 'waiting', timeframe: node.tf } };
+    const status: InstanceStatus = { state: 'waiting', timeframe: node.tf };
+    if (symbol !== undefined) status.symbol = symbol;
+    return { length: 0, values, colors, status };
   }
 }

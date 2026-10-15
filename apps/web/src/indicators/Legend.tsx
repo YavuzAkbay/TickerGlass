@@ -121,7 +121,7 @@ function LegendRow({
       </span>
     );
   } else if (status?.state === 'waiting') {
-    tail = <span className="ind-legend-muted">Loading {status.timeframe}…</span>;
+    tail = <span className="ind-legend-muted">Loading {status.symbol ?? status.timeframe}…</span>;
   } else {
     tail = values.map((v) => (
       <span

@@ -171,6 +171,15 @@ export type SourceKeys<S extends InputsSchema> = {
 }[keyof S] &
   string;
 
+/** Keys of `symbol` inputs in a schema. */
+export type SymbolKeys<S extends InputsSchema> = {
+  [K in keyof S]: S[K] extends SymbolInputDef ? K : never;
+}[keyof S] &
+  string;
+
+/** Chart-aligned price columns of an external symbol (arrays may be longer than the chart). */
+export type ExternalColumns = { readonly [P in PriceSource]: Float64Array };
+
 // ----------------------------------------------------------------- outputs
 
 export type PlotKind = 'line' | 'step' | 'histogram' | 'area' | 'columns' | 'circles' | 'cross';
@@ -557,6 +566,8 @@ export interface StepContext<S extends InputsSchema = InputsSchema, O extends st
   readonly volume: Float64Array;
   /** Resolved `source` inputs (price columns or another indicator's output). */
   readonly src: { readonly [K in SourceKeys<S>]: Float64Array };
+  /** Aligned price columns of the symbol chosen in each `symbol` input (NaN where it has no bar). */
+  readonly ext: { readonly [K in SymbolKeys<S>]: ExternalColumns };
   readonly inputs: InputValues<S>;
   readonly env: Readonly<BarsEnv>;
   /**
@@ -691,8 +702,8 @@ export interface Ta {
 
 export type InstanceStatus =
   | { state: 'ok' }
-  /** Waiting for timeframe bars from the host (MTF). */
-  | { state: 'waiting'; timeframe: string }
+  /** Waiting for timeframe bars (MTF) or an external symbol's aligned bars (`symbol`) from the host. */
+  | { state: 'waiting'; timeframe: string; symbol?: string }
   | { state: 'error'; message: string };
 
 /**

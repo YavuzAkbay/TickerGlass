@@ -3,6 +3,7 @@ import {
   type Bar,
   type BarColumns,
   type ChartEvents,
+  type ChartType,
   type DataFeed,
   type GetBarsRequest,
   type StudyData,
@@ -292,7 +293,12 @@ function manualWorker(log: ToWorker[]): WorkerPort & { reply: (m: FromWorker) =>
 }
 
 function setup(
-  opts: { feed?: DataFeed; worker?: (log: ToWorker[]) => WorkerPort; lost?: boolean } = {},
+  opts: {
+    feed?: DataFeed;
+    worker?: (log: ToWorker[]) => WorkerPort;
+    lost?: boolean;
+    chartType?: () => ChartType;
+  } = {},
 ) {
   const chart = new FakeChart();
   const log: ToWorker[] = [];
@@ -306,6 +312,7 @@ function setup(
     onError,
     // As the app: lost studies are removed from the store (an undoable removal).
     ...(opts.lost ? { onStudiesLost: removeIndicators } : {}),
+    ...(opts.chartType ? { chartType: opts.chartType } : {}),
   });
   const frame = () => frames.splice(0).forEach((f) => f());
   return { chart, log, ctl, frame, onError };
@@ -720,3 +727,187 @@ function daysOnly() {
     months: r(false, 1, 12),
   };
 }
+
+/** Feed serving `series[symbol]` and recording live subscriptions. */
+function symbolFeed(series: Record<string, BarColumns>) {
+  const live = new Map<string, (bar: Bar) => void>();
+  const requests: GetBarsRequest[] = [];
+  const feed: DataFeed = {
+    resolveSymbol: (symbol) =>
+      symbol in series
+        ? Promise.resolve({ symbol, timezone: null, session: null } as SymbolInfo)
+        : Promise.reject(new Error(`Unknown symbol ${symbol}`)),
+    searchSymbols: () => Promise.resolve([]),
+    getBars: (req) => {
+      requests.push(req);
+      return Promise.resolve({ bars: series[req.symbol]!, hasMore: false });
+    },
+    subscribe: (req, _last, onBar) => {
+      live.set(req.symbol, onBar);
+      return () => live.delete(req.symbol);
+    },
+  };
+  return { feed, live, requests };
+}
+
+describe('external symbols', () => {
+  const corr = (symbol = 'GOOG') => inst('correlation', { symbol, length: 5 });
+  /** Values of the correlation as the runtime computes them on aligned bars. */
+  const expected = (chart: BarColumns, ext: BarColumns) => {
+    const rt = new IndicatorRuntime();
+    rt.add({ id: 'x', type: 'correlation', inputs: { symbol: 'GOOG', length: 5 } });
+    rt.setBars(chart);
+    rt.setExternal('GOOG', ext);
+    const r = rt.result('x')!;
+    return Array.from(r.values['cc']!.subarray(0, r.length));
+  };
+
+  it('fetches the required symbol, aligns it and computes the indicator', async () => {
+    const main = makeBars(60);
+    const other = makeBars(60, DAY, START, 5);
+    const { feed, requests } = symbolFeed({ GOOG: other });
+    const { chart, log, ctl, onError } = setup({ feed });
+    const cc = corr();
+    ctl.sync([cc]);
+    chart.load(main);
+    await settle();
+    await settle();
+    await settle();
+    expect(requests.map((r) => r.symbol)).toEqual(['GOOG']);
+    expect(log.some((m) => m.type === 'extBars' && m.symbol === 'GOOG')).toBe(true);
+    expect(useIndicatorRuntime.getState().status[cc.id]).toEqual({ state: 'ok' });
+    expect(chart.studies.get(cc.id)!.values['cc']).toEqual(expected(main, other));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('shows waiting with the symbol until its bars arrive', async () => {
+    const other = makeBars(60, DAY, START, 5);
+    const gate = symbolFeed({ GOOG: other });
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const feed: DataFeed = {
+      ...gate.feed,
+      getBars: async (req) => {
+        await held;
+        return gate.feed.getBars(req);
+      },
+    };
+    const { chart, ctl } = setup({ feed });
+    const cc = corr();
+    ctl.sync([cc]);
+    chart.load(makeBars(60));
+    await settle();
+    expect(useIndicatorRuntime.getState().status[cc.id]).toEqual({
+      state: 'waiting',
+      timeframe: '',
+      symbol: 'GOOG',
+    });
+    release();
+    for (let i = 0; i < 4; i++) await settle();
+    expect(useIndicatorRuntime.getState().status[cc.id]).toEqual({ state: 'ok' });
+  });
+
+  it('keeps dependents in step with live bars of either series', async () => {
+    const main = makeBars(60);
+    const other = makeBars(60, DAY, START, 5);
+    const { feed, live } = symbolFeed({ GOOG: other });
+    const { chart, ctl, frame } = setup({ feed });
+    const cc = corr();
+    ctl.sync([cc]);
+    chart.load(main);
+    for (let i = 0; i < 4; i++) await settle();
+    // Overlay tick on its last bar, then an append on the chart without a new overlay bar.
+    const o = live.get('GOOG')!;
+    const lastOther = {
+      time: other.time[59]!,
+      open: other.open[59]!,
+      high: other.high[59]! + 3,
+      low: other.low[59]!,
+      close: other.close[59]! + 2,
+      volume: 5,
+    };
+    o(lastOther);
+    frame();
+    const next = { time: START + 60 * DAY, open: 100, high: 103, low: 99, close: 101, volume: 9 };
+    chart.tick(next);
+    frame();
+    for (let i = 0; i < 3; i++) await settle();
+    expect(useIndicatorRuntime.getState().status[cc.id]).toEqual({ state: 'ok' });
+    const study = chart.studies.get(cc.id)!;
+    expect(study.length).toBe(61);
+    // Reference: a fresh runtime on the final aligned data (the overlay carries forward).
+    const rt = new IndicatorRuntime();
+    rt.add({ id: 'x', type: 'correlation', inputs: { symbol: 'GOOG', length: 5 } });
+    const st = chart.store;
+    const cols = (k: keyof BarColumns) => st[k].slice(0, 61);
+    rt.setBars({
+      time: cols('time'),
+      open: cols('open'),
+      high: cols('high'),
+      low: cols('low'),
+      close: cols('close'),
+      volume: cols('volume'),
+    });
+    const ext = (k: keyof BarColumns) => {
+      const a = new Float64Array(61);
+      a.set(other[k]);
+      a[59] = k === 'close' ? lastOther.close : k === 'high' ? lastOther.high : a[59]!;
+      a[60] = a[59]!;
+      return a;
+    };
+    rt.setExternal('GOOG', {
+      time: cols('time'),
+      open: ext('open'),
+      high: ext('high'),
+      low: ext('low'),
+      close: ext('close'),
+      volume: ext('volume'),
+    });
+    expect(study.values['cc']).toEqual(Array.from(rt.result('x')!.values['cc']!.subarray(0, 61)));
+  });
+
+  it('errors on brick charts and for symbols that fail to load', async () => {
+    const other = makeBars(60, DAY, START, 5);
+    const { feed } = symbolFeed({ GOOG: other });
+    const brick = setup({ feed, chartType: () => 'renko' });
+    const cc = corr();
+    brick.ctl.sync([cc]);
+    brick.chart.load(makeBars(60));
+    await settle();
+    await settle();
+    expect(useIndicatorRuntime.getState().status[cc.id]).toEqual({
+      state: 'error',
+      message: 'GOOG: External symbols are not available on this chart type',
+    });
+
+    useIndicatorRuntime.setState({ status: {}, panes: {}, tick: 0 });
+    const bad = setup({ feed });
+    const nope = corr('NOPE');
+    bad.ctl.sync([nope]);
+    bad.chart.load(makeBars(60));
+    for (let i = 0; i < 4; i++) await settle();
+    expect(useIndicatorRuntime.getState().status[nope.id]).toEqual({
+      state: 'error',
+      message: 'NOPE: Unknown symbol NOPE',
+    });
+    expect(bad.onError).toHaveBeenCalledWith('Could not load NOPE: Unknown symbol NOPE');
+  });
+
+  it('computes an SMA sourced from an overlay symbol', async () => {
+    const other = makeBars(60, DAY, START, 5);
+    const { feed } = symbolFeed({ GOOG: other });
+    const { chart, ctl } = setup({ feed });
+    const ma = inst('sma', {
+      length: 3,
+      source: { instanceId: 'sym:GOOG', outputId: 'close' },
+    });
+    ctl.sync([ma]);
+    chart.load(makeBars(60));
+    for (let i = 0; i < 4; i++) await settle();
+    expect(useIndicatorRuntime.getState().status[ma.id]).toEqual({ state: 'ok' });
+    expect(chart.studies.get(ma.id)!.spec.title).toBe('SMA 3 GOOG: Close');
+    expect(chart.studies.get(ma.id)!.values['ma']).toEqual(
+      reference('sma', { length: 3 }, other, 'ma'),
+    );
+  });
+});

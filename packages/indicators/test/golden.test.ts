@@ -86,15 +86,16 @@ function run(def: AnyIndicatorDefinition, csv: Csv, live: boolean): IndicatorRes
   const bars = barsOf(csv.bars);
   const tf = timeframeInputValue(def, resolveInputs(def, inputs));
   if (tf && tf !== '1D') throw new Error(`golden tests only aggregate 1D bars, got ${tf}`);
-  // TODO(B7): feed `barsOf(csv.extra)` to the runtime as the external symbol series.
-  if (csv.extra) throw new Error(`extra series ${csv.extra} are not supported yet`);
   const rt = new IndicatorRuntime({
     context: { intervalSeconds: intervalOf(bars), timeframeSeconds: { '1D': 86_400 } },
   });
   rt.add({ id: 'x', type: def.id, inputs });
-  if (live) feedLive(rt, bars, 500, tf);
+  // The case's second series is the external symbol its `symbol` input names.
+  const external = csv.extra ? { [String(inputs['symbol'])]: barsOf(csv.extra) } : {};
+  if (live) feedLive(rt, bars, 500, tf, external);
   else {
     rt.setBars(bars);
+    for (const [symbol, ext] of Object.entries(external)) rt.setExternal(symbol, ext);
     if (tf) rt.setTimeframeBars(tf, toColumns(dailyBars(bars)));
   }
   const r = rt.result('x')!;
