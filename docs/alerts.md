@@ -105,7 +105,7 @@ export interface DrawingLineOperand {
 
 export type ChannelOperand =
   | { kind: 'bounds'; upper: ValueOperand; lower: ValueOperand } // e.g. Bollinger upper/lower, two numbers
-  | { kind: 'drawing'; drawingId: string; scale: 'linear' | 'log' }; // parallel-channel or rectangle
+  | { kind: 'drawing'; drawingId: string; scale: 'linear' | 'log' }; // parallel-channel, rectangle, flat-top-bottom or disjoint-channel
 
 export type Condition =
   | { op: 'crossing' | 'crossingUp' | 'crossingDown' | 'greater' | 'less'; right: ValueOperand }
@@ -144,7 +144,7 @@ Validation (the Python pydantic models and TS `validateAlert` must agree; both r
 - `drawing` operands: the drawing must exist in `drawings` (422 `drawing not saved`; the dialog flushes
   `DrawingSync` first). Its type must support the part: line tools (`trend-line ray extended-line info-line
 arrow-line horizontal-line horizontal-ray`) take `part: 'line'`. Channels (`parallel-channel` with 3 points,
-  `rectangle`) take `upper lower middle` as a `DrawingLineOperand`, or the whole channel as a `ChannelOperand`.
+  `rectangle`, `flat-top-bottom`, `disjoint-channel`) take `upper lower middle` as a `DrawingLineOperand`, or the whole channel as a `ChannelOperand`.
   The drawing's `scope` must be `all`, or its `symbol` must equal the alert's symbol. Python reads `type`,
   `points.length`, `scope` and `symbol` from the stored drawing JSON. That is the only place the server looks
   inside a drawing.
@@ -513,6 +513,13 @@ parallel-channel (3 anchors; fewer -> error "incomplete channel"):
 rectangle (2 anchors):
   upper = max(p_0, p_1), lower = min(p_0, p_1), middle = (upper + lower)/2 (linear) or g((f(upper)+f(lower))/2) (log)
   domain: L in [extendLeft ? -∞ : min(l_0, l_1), extendRight ? +∞ : max(l_0, l_1)]   (screen-based, as rectangle.ts box.l/box.r)
+```
+
+```
+flat-top-bottom (3 anchors) and disjoint-channel (3 or 4 anchors; fewer than 3 -> error "incomplete channel"):
+  a = f of line p_0-p_1 at L (extend flags as the parallel channel, else NaN outside l_0..l_1)
+  b = flat-top-bottom: g(f(p_2));  disjoint-channel: line p_2-p_3 at L (p_3 missing -> (t_1, price_2 - (price_1 - price_0)), as completePoints)
+  upper = max(g(a), g(b)), lower = min(g(a), g(b)), middle = g((a + b)/2)   (a, b in f units; lines may cross, upper/lower then swap)
 ```
 
 The parallel channel's width is a pixel offset in the engine (`channelOffsetPx`). Because pixel y is affine in

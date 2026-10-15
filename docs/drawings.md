@@ -68,7 +68,10 @@ Helpers for tools: `drawings/draw-utils.ts` (`setLineStyle extendSegment lineDis
 formatDuration hitRotatedText anchorsInView BODY_HIT WEAK_BODY_HIT TEXT_HIT`) and `drawings/shape-utils.ts`
 (additive: `polylineDistance pointInPolygon quadBezierPoint quadBezierDistance cubicBezierDistance
 ellipseDistance circleThrough3 arcDistance rotate linearRegression strokePolyline tracePolyline`; canvas
-angles, y down). Reference tools:
+angles, y down). Shared tool modules (`drawings/tools/`): `pitchfork-common` (pitchfork variants, pitchfan, rays to the pane
+edge), `fan-common` (fan rays and bands, box grids), `fib-common` (price, time and arc levels), `gann-common`,
+`pattern-common` (labelled zigzag patterns, Elliott degrees, ratio labels), `shape-common` (border/fill props,
+filled polygons), `annotation-common` (wrapped text, bubbles, boxes), `volume-profile` / `vp-common`. Reference tools:
 `tools/trend-line.ts` (2 points, extend, middle-point derived handle, text, stats label) and
 `tools/horizontal-line.ts` (single click, `axes:'price'`, always-on price label).
 
@@ -130,6 +133,15 @@ when it declines. Coordinates are chart-root px; anchors snap to bar slots (`sna
   tool is cleared unless `stayInDrawingMode`. Esc or right-click cancels (`toolFinished`, `drawingId: null`).
   `setActiveTool(type, { style })` (additive) merges `style` over the tool defaults of every drawing created
   until the tool changes (sticker presets).
+- **modes** (additive, like the eraser; set with `setActiveTool`; Esc or `setActiveTool(null)` leaves them,
+  `toolFinished {drawingId:null, active:false}` when one finishes): `ZOOM_TOOL` (`'zoom-in'`) drags a box in a
+  pane, then returns to the cursor; it sets the visible logical range (`setVisibleLogicalRange`) and, on the boxed pane, a manual price range
+  (`PriceScale.setManualRange`; the app host may implement `DrawingHost.zoomTo`); bar-spacing limits clamp it.
+  `MEASURE_TOOL` (`'measure'`) shows a transient date-price-range (created like a two-point tool): it is
+  never inserted, emits no drawing events, is not selectable or persisted, and clears on the next click or Esc. **Shift + click**
+  on empty chart space starts the same quick measure (click, click; Shift + drag stays box select).
+  `PICK_TOOL` (`'pick-point'`) emits `pointPicked {time, price, paneId}` for one click, then returns to the cursor; the
+  toolbar's Anchored VWAP uses it to add the indicator anchored at that bar.
 - **keys** (chart focused): Esc = cancel creation / drag / tool / selection, in that order; Delete and
   Backspace remove selected _unlocked_ drawings (`drawingsRemoved`). Handled keys are `preventDefault`ed,
   so app-level shortcuts skip them.
@@ -160,6 +172,14 @@ Editing API (B, exact signatures):
   `calendar`). A new object per call, but `time` is the live column (no copy): read-only, valid while
   `chart.seriesRevision` is unchanged; call again rather than keeping it. With `timeToLogical`/`logicalToTime` it gives bar numbers that match the chart on every chart
   type (the Coordinates tab's Bar #).
+- `setActiveTool(type|null, opts?: { style?: Record<string, JsonValue> })` (additive) — `style` is merged over the
+  tool defaults of every drawing created until the tool changes. Unknown keys are kept (`icon` `glyph`).
+- `setVisibleLogicalRange(from: number, to: number): void` (additive) — sets the time scale's visible range
+  (bar indices, clamped by the bar-spacing limits); price scales are not touched. `TimeScale.setVisibleLogicalRange`
+  returns whether the range changed; `PriceScale.setManualRange(min, max)` switches a scale to a fixed range.
+- `ZOOM_TOOL`, `MEASURE_TOOL`, `PICK_TOOL` (exported constants): see §4 modes. Event `pointPicked {time, price,
+paneId}` (additive); optional `DrawingHost.zoomTo(paneId, from, to, minPrice?, maxPrice?)` lets the host
+  perform the zoom itself.
 - `bringToFront(ids)`, `sendToBack(ids)`, `bringForward(ids)`, `sendBackward(ids)`: `(ids: readonly
 string[]) => DrawingChange[]` — within each drawing's pane; no events (app edit), the returned changes are
   the app's undo entry (`[]` = nothing moved).
@@ -240,6 +260,44 @@ Implemented in `DrawingInteraction.snap()` and applied to creation and handle dr
 `visibility` matches the chart interval (same rule as the app's `visibleOnInterval`: "60m" counts as 1h).
 Not-shown drawings are neither drawn, hit, dragged, nudged, selected by `selectAllDrawings` nor erased. Hiding
 a drawing (API `hidden: true` or `hideAll`) drops it from the selection.
+
+## 7c. Phase 11 tools (86 types)
+
+Types = toolbar ids (`tools/index.ts` registers them in toolbar order). Added on top of the 20 core tools:
+
+- **Lines**: `trend-angle` (angle arc and label), `regression-trend` (close regression, +-k stdev bands, Pearson r),
+  `flat-top-bottom` (3 anchors), `disjoint-channel` (3 clicks, `completePoints` derives the 4th anchor)
+- **Pitchforks**: `pitchfork`, `schiff-pitchfork`, `modified-schiff-pitchfork`, `inside-pitchfork`, `pitchfan`
+- **Fib**: `fib-channel`, `fib-time-zone`, `fib-speed-fan`, `fib-trend-time`, `fib-circles`, `fib-spiral`,
+  `fib-speed-arcs`, `fib-wedge`
+- **Gann**: `gann-box`, `gann-square-fixed`, `gann-square`, `gann-fan`
+- **Patterns**: `xabcd`, `cypher`, `head-shoulders`, `abcd`, `triangle-pattern`, `three-drives`; Elliott
+  `elliott-impulse`, `elliott-correction`, `elliott-triangle`, `elliott-double-combo`, `elliott-triple-combo`;
+  cycles `cyclic-lines`, `time-cycles`, `sine-line`
+- **Forecasting / volume** (`panes: 'main'`): `forecast`, `bars-pattern`, `ghost-feed` (multi), `projection`,
+  `fixed-range-vp`, `anchored-vp`
+- **Shapes**: `highlighter` (freehand), `arrow-marker`, `arrow-mark-up`, `arrow-mark-down`, `rotated-rectangle`,
+  `path` and `polyline` (multi), `circle`, `ellipse`, `triangle`, `arc`, `curve`, `double-curve`
+- **Annotations**: `anchored-text`, `anchored-note` (`coords: 'pane'`), `note` (pin, hover tooltip), `callout`,
+  `comment`, `price-label`, `price-note`, `signpost`, `flag-mark`, `table` (rows by newline, cells by tab or `|`),
+  `image` (data URL only), `icon` (stickers: the web maps `emoji-*`, `sticker-*`, `icon-*` ids to it with a `glyph`)
+- **Modes**: `zoom-in`, `measure`, `pick-point` (Anchored VWAP); see §4.
+
+Pixel-space tools: circle/arc radii, fib circles, spiral and speed arcs, wedge, Gann and time-cycle arcs,
+trend-angle, projection, channel widths and curve bows are computed in screen px, so their shape changes with zoom
+(by convention). Flat top/bottom and Disjoint channel are alert channel sources (`docs/alerts.md` §2.6).
+
+Semantics we could not verify against reference (documented choices, revisit in the Phase 15 parity sweep):
+
+- Inside pitchfork: handle = midpoint(p1, p2) -> p3; the median is parallel to the line from midpoint(p2, p3).
+- Fib circles: centre = midpoint of the two anchors (level 1 has the anchors as diameter). Fib speed arcs:
+  centre p0, half circle on p1's side (`fullCircles` option).
+- Gann square fixed: the price/bar ratio is carried by the anchors (`completePoints` squares it on screen, drags keep
+  |dprice|/|dbars|). Square arcs are quarter ellipses with radii .25..1; cycles repeat only in p1's direction.
+- Volume profile: each bar's volume is spread evenly over [low, high], up/down by close >= open. POC ties: nearest
+  the middle of the range, then lower. Value area: from the POC add the larger of the next two rows above or below
+  (ties above); it may overshoot the target by one pair. Row size is in price units, not ticks.
+- Cypher and Three drives ratio sets, Gann default colors, arc = ends + through-point, curve = auto midpoint.
 
 ## 8. Work split (follow-up agents)
 

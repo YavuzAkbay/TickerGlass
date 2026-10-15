@@ -149,7 +149,7 @@ Phase 5 notes:
 Phase 6 notes:
 
 - Design, tool definition API, and undo/persistence contract: `docs/drawings.md`.
-- 20 core tools registered; toolbar entries without a definition are dimmed until Phase 11.
+- 20 core tools registered; the remaining toolbar entries were dimmed until Phase 11, which registered them.
 - Drawing limitations and their status (session-aware extrapolation, measure volume, box select, ...): see [LIMITATIONS.md](LIMITATIONS.md#drawings).
 - Drawings persist to localStorage (`investopen-drawings`, per-symbol + synced buckets, backup on unreadable data, cross-tab merge); since Phase 7 that is the offline cache of the API (one row per drawing, see `docs/drawings.md` §6).
 
@@ -222,15 +222,26 @@ Phase 10 notes:
 
 ### Phase 11: Remaining drawing tools (bulk, on the framework)
 
-- [ ] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
-- [ ] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
-- [ ] Gann: Box, Square fixed, Square, Fan
-- [ ] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
-- [ ] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
-- [ ] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
-- [ ] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
-- [ ] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
-- [ ] Zoom-in tool, Measure tool polish; sync drawings across layouts
+- [x] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
+- [x] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
+- [x] Gann: Box, Square fixed, Square, Fan
+- [x] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
+- [x] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
+- [x] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
+- [x] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
+- [x] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
+- [x] Zoom-in tool, Measure tool polish; sync drawings across layouts
+
+Phase 11 notes:
+
+- Tools: `packages/engine/src/drawings/tools/*` (one file per tool, registered in `tools/index.ts` in toolbar order; 86 types). Shared helpers: `pitchfork-common`, `fan-common`, `fib-common` (time and arc levels added), `gann-common`, `pattern-common` (patterns and Elliott), `shape-common`, `annotation-common`, `volume-profile` / `vp-common`; engine-wide `drawings/shape-utils.ts` (polyline, polygon, Bezier, ellipse, arc, regression math) and `drawings/images.ts` (decode cache). Contract additions: `docs/drawings.md` §2/§4/§5; tool list and unverified semantics: §7c.
+- Framework additions (all additive): `creation: {kind:'multi'}` (path, polyline, ghost feed), `coords: 'pane'` (anchored text/note), `panes: 'main'` (bar-data tools), `string` / `image` property kinds, `setActiveTool(type, {style})` (stickers: web maps `emoji-*`, `sticker-*`, `icon-*` to the `icon` tool with a `glyph`), `rc.invalidate`, `chart.setVisibleLogicalRange`, `PriceScale.setManualRange`, the `zoom-in`, `measure` and `pick-point` modes with the `pointPicked` event, and optional `DrawingHost.zoomTo`.
+- Volume profiles are an approximation: each bar's volume is spread evenly over its high-low range (no intrabar data), up/down by close vs open; value area and POC tie rules are ours.
+- Images are stored as data URLs inside the drawing: the dialog downscales to 1024 px and encodes WebP/JPEG at <= 300 KB (API cap `MAX_DRAWING_BYTES` 512,000); only `data:image/` sources are rendered, so imported JSON cannot trigger a network fetch.
+- Cross-layout sync: drawings are already global (one row each, not keyed by layout, `docs/drawings.md` §6), so they appear in every layout; per-layout drawings are Phase 14.
+- Anchored VWAP: the toolbar entry uses the `pick-point` mode and adds the Anchored VWAP indicator at the clicked bar.
+- Alerts: Flat top/bottom and Disjoint channel are channel sources (`packages/alerts/src/drawing-levels.ts` and `api/src/investopen_api/routes/alerts.py`, `docs/alerts.md` §2.6).
+- e2e: `e2e/drawing-tools.spec.ts` (one case per tool family, stickers, callout persistence, image upload) and `e2e/drawing-sweep.spec.ts` (all 86 registered types through `chart.addDrawing`, no page errors). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#drawings).
 
 ### Phase 12: Remaining indicators (bulk)
 
