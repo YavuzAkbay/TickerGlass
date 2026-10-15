@@ -72,6 +72,17 @@ const TYPES = [
   'curve',
   'double-curve',
   'text',
+  'anchored-text',
+  'note',
+  'anchored-note',
+  'callout',
+  'comment',
+  'price-label',
+  'price-note',
+  'signpost',
+  'flag-mark',
+  'table',
+  'image',
   'icon',
 ];
 

@@ -44,6 +44,16 @@ import { highlighter } from './highlighter';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
 import { icon } from './icon';
+import { anchoredText } from './anchored-text';
+import { callout } from './callout';
+import { comment } from './comment';
+import { flagMark } from './flag-mark';
+import { image } from './image';
+import { anchoredNote, note } from './note';
+import { priceLabel } from './price-label';
+import { priceNote } from './price-note';
+import { signpost } from './signpost';
+import { table } from './table';
 import { infoLine } from './info-line';
 import { insidePitchfork } from './inside-pitchfork';
 import { longPosition } from './long-position';
@@ -146,10 +156,32 @@ registerDrawingTool(curve);
 registerDrawingTool(doubleCurve);
 // annotation
 registerDrawingTool(text);
+registerDrawingTool(anchoredText);
+registerDrawingTool(note);
+registerDrawingTool(anchoredNote);
+registerDrawingTool(callout);
+registerDrawingTool(comment);
+registerDrawingTool(priceLabel);
+registerDrawingTool(priceNote);
+registerDrawingTool(signpost);
+registerDrawingTool(flagMark);
+registerDrawingTool(table);
+registerDrawingTool(image);
 registerDrawingTool(icon);
 
 export {
   abcd,
+  anchoredNote,
+  anchoredText,
+  callout,
+  comment,
+  flagMark,
+  image,
+  note,
+  priceLabel,
+  priceNote,
+  signpost,
+  table,
   arc,
   arrowLine,
   arrowMarkDown,

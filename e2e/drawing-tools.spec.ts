@@ -292,3 +292,107 @@ test('finish a path with Enter', async ({ page }) => {
   expect(d!.points).toHaveLength(3);
   expect(errors).toEqual([]);
 });
+
+const ANNOTATION = 'Annotation tools';
+const ONE: [number, number][] = [[600, 350]];
+
+async function pickAnnotationTool(page: Page, name: string, type: string) {
+  await page.getByRole('button', { name: `More ${ANNOTATION.toLowerCase()}` }).click();
+  await page
+    .getByRole('menu', { name: ANNOTATION })
+    .getByRole('menuitem')
+    .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
+    .click();
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
+}
+
+const ANNOTATION_CASES: { name: string; type: string; clicks: [number, number][] }[] = [
+  { name: 'Anchored text', type: 'anchored-text', clicks: ONE },
+  { name: 'Note', type: 'note', clicks: ONE },
+  { name: 'Anchored note', type: 'anchored-note', clicks: ONE },
+  { name: 'Callout', type: 'callout', clicks: TWO },
+  { name: 'Comment', type: 'comment', clicks: ONE },
+  { name: 'Price label', type: 'price-label', clicks: ONE },
+  { name: 'Price note', type: 'price-note', clicks: TWO },
+  { name: 'Signpost', type: 'signpost', clicks: ONE },
+  { name: 'Flag mark', type: 'flag-mark', clicks: ONE },
+  { name: 'Table', type: 'table', clicks: ONE },
+  { name: 'Image', type: 'image', clicks: TWO },
+];
+
+for (const { name, type, clicks } of ANNOTATION_CASES) {
+  test(`draw ${type} from the ${ANNOTATION} flyout`, async ({ page }) => {
+    const errors: Error[] = [];
+    page.on('pageerror', (e) => errors.push(e));
+    await openFresh(page);
+    await pickAnnotationTool(page, name, type);
+
+    for (const [x, y] of clicks) await page.mouse.click(x, y);
+    await expect.poll(async () => (await drawings(page)).length).toBe(1);
+    const [d] = await drawings(page);
+    expect(d!.type).toBe(type);
+    expect(d!.points).toHaveLength(clicks.length);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('callout text typed in the editor persists across reload', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  await pickAnnotationTool(page, 'Callout', 'callout');
+  for (const [x, y] of TWO) await page.mouse.click(x, y);
+
+  const editor = page.getByRole('textbox', { name: 'Callout text' });
+  await expect(editor).toBeVisible();
+  await editor.fill('Breakout level');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(editor).toHaveCount(0);
+  await expect.poll(async () => (await drawings(page))[0]?.text).toBe('Breakout level');
+
+  await page.reload();
+  await waitForChart(page);
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  const [d] = await drawings(page);
+  expect(d!.type).toBe('callout');
+  expect(d!.text).toBe('Breakout level');
+  expect(errors).toEqual([]);
+});
+
+test('image: choose a file in the settings dialog', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  await pickAnnotationTool(page, 'Image', 'image');
+  for (const [x, y] of [
+    [500, 300],
+    [700, 450],
+  ] as [number, number][])
+    await page.mouse.click(x, y);
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+
+  // Select it (inside the box), then open the settings from the floating toolbar.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(600, 375);
+  await expect.poll(() => page.evaluate(() => window.chart.getSelection().length)).toBe(1);
+  await page
+    .getByRole('toolbar', { name: 'Drawing toolbar' })
+    .getByRole('button', { name: 'Settings' })
+    .click();
+
+  // 1x1 PNG, built in the test.
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await page
+    .getByRole('dialog')
+    .getByLabel('Image', { exact: true })
+    .setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
+  await page.getByRole('dialog').getByRole('button', { name: 'Ok' }).click();
+
+  await expect
+    .poll(async () => String((await drawings(page))[0]?.style.src ?? '').slice(0, 11))
+    .toBe('data:image/');
+  expect(errors).toEqual([]);
+});
