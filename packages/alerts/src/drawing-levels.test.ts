@@ -285,3 +285,98 @@ describe('errors', () => {
     expect(drawingLevel(d, 'line', 'linear', empty, at(0))).toBeNaN();
   });
 });
+
+describe('flat top/bottom', () => {
+  // Trend line (bar 0, 100) -> (bar 4, 104) and the flat line at 110.
+  const flat = line('flat-top-bottom', [
+    [at(0), 100],
+    [at(4), 104],
+    [at(0), 110],
+  ]);
+
+  it('is the region between the trend line and the flat line', () => {
+    expect(drawingChannel(flat, 'linear', TL, at(2))).toEqual({ upper: 110, lower: 102 });
+    expect(drawingLevel(flat, 'middle', 'linear', TL, at(2))).toBe(106);
+    expect(drawingLevel(flat, 'upper', 'linear', TL, at(4))).toBe(110);
+    expect(drawingLevel(flat, 'lower', 'linear', TL, at(4))).toBe(104);
+  });
+
+  it('orders upper/lower when the flat line is below the trend line', () => {
+    const below = line('flat-top-bottom', [
+      [at(0), 100],
+      [at(4), 104],
+      [at(0), 90],
+    ]);
+    expect(drawingChannel(below, 'linear', TL, at(2))).toEqual({ upper: 102, lower: 90 });
+  });
+
+  it('log: the middle is the geometric mean', () => {
+    const d = line('flat-top-bottom', [
+      [at(0), 100],
+      [at(4), 100],
+      [at(0), 400],
+    ]);
+    expect(drawingLevel(d, 'middle', 'log', TL, at(1))).toBeCloseTo(200, 9);
+  });
+
+  it('is NaN outside the anchors unless extended; needs 3 anchors', () => {
+    expect(drawingChannel(flat, 'linear', TL, at(6)).upper).toBeNaN();
+    const ext = { ...flat, style: { extendRight: true } };
+    expect(drawingChannel(ext, 'linear', TL, at(6))).toEqual({ upper: 110, lower: 106 });
+    const two = line('flat-top-bottom', [
+      [at(0), 100],
+      [at(4), 104],
+    ]);
+    expect(() => drawingChannel(two, 'linear', TL, at(1))).toThrow('incomplete channel');
+  });
+
+  it('is a channel but not a line target', () => {
+    expect(() => drawingLevel(flat, 'line', 'linear', TL, at(1))).toThrow(DrawingLevelError);
+  });
+});
+
+describe('disjoint channel', () => {
+  // Line 0-1: (0, 100) -> (4, 104); line 2-3: (0, 120) -> (4, 116) (mirrored slope).
+  const four = line('disjoint-channel', [
+    [at(0), 100],
+    [at(4), 104],
+    [at(0), 120],
+    [at(4), 116],
+  ]);
+
+  it('is the region between the two independent lines', () => {
+    expect(drawingChannel(four, 'linear', TL, at(0))).toEqual({ upper: 120, lower: 100 });
+    expect(drawingChannel(four, 'linear', TL, at(2))).toEqual({ upper: 118, lower: 102 });
+    expect(drawingLevel(four, 'middle', 'linear', TL, at(2))).toBe(110);
+  });
+
+  it('the lines may cross: upper and lower swap sides', () => {
+    const crossing = line('disjoint-channel', [
+      [at(0), 100],
+      [at(4), 110],
+      [at(0), 105],
+      [at(4), 95],
+    ]);
+    expect(drawingChannel(crossing, 'linear', TL, at(0))).toEqual({ upper: 105, lower: 100 });
+    expect(drawingChannel(crossing, 'linear', TL, at(4))).toEqual({ upper: 110, lower: 95 });
+  });
+
+  it('derives the 4th anchor of a 3-anchor draft like the engine', () => {
+    const three = line(
+      'disjoint-channel',
+      four.points.slice(0, 3).map((p) => [p.time, p.price]),
+    );
+    expect(drawingChannel(three, 'linear', TL, at(2))).toEqual({ upper: 118, lower: 102 });
+  });
+
+  it('is NaN outside the anchors unless extended; needs 3 anchors', () => {
+    expect(drawingChannel(four, 'linear', TL, at(6)).lower).toBeNaN();
+    const ext = { ...four, style: { extendRight: true } };
+    expect(drawingChannel(ext, 'linear', TL, at(6))).toEqual({ upper: 114, lower: 106 });
+    const two = line('disjoint-channel', [
+      [at(0), 100],
+      [at(4), 104],
+    ]);
+    expect(() => drawingChannel(two, 'linear', TL, at(1))).toThrow('incomplete channel');
+  });
+});

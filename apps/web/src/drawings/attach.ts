@@ -1,9 +1,24 @@
-import { getDrawingTool, type Chart, type DrawingStyle } from '@investopen/engine';
+import {
+  ERASER_TOOL,
+  MEASURE_TOOL,
+  PICK_TOOL,
+  ZOOM_TOOL,
+  getDrawingTool,
+  type Chart,
+  type DrawingStyle,
+} from '@investopen/engine';
 import { useHistory } from '../commands/history';
+import { addIndicator } from '../indicators/actions';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
-import { findSticker, isCursorTool, resetToCursor } from '../toolbar/tools';
+import {
+  ANCHORED_VWAP_ID,
+  findSticker,
+  isCursorTool,
+  isToolAvailable,
+  resetToCursor,
+} from '../toolbar/tools';
 import { openContextMenu } from '../ui/ContextMenu';
 import { toast } from '../ui/Toast';
 import {
@@ -39,15 +54,35 @@ export interface EngineTool {
 }
 
 /**
- * Engine tool for a left-toolbar tool id: a registered type, 'eraser', the engine
- * `icon` tool preset with the glyph for emoji-*, sticker-* and icon-* ids, or null (cursors).
+ * Engine tool for a left-toolbar tool id: a registered type, an engine mode
+ * ('eraser', 'measure', 'zoom-in'; Anchored VWAP arms the pick-point mode), the
+ * engine `icon` tool preset with the glyph for emoji-*, sticker-* and icon-* ids,
+ * or null (cursors).
  */
 export function engineTool(id: string): EngineTool | null {
   if (getDrawingTool(id)) return { type: id };
-  if (id === 'eraser') return { type: id };
+  if (id === ERASER_TOOL || id === MEASURE_TOOL || id === ZOOM_TOOL) return { type: id };
+  if (id === ANCHORED_VWAP_ID) return isToolAvailable(id) ? { type: PICK_TOOL } : null;
   const sticker = findSticker(id);
   if (sticker && getDrawingTool('icon')) return { type: 'icon', style: { glyph: sticker.glyph } };
   return null;
+}
+
+/**
+ * The saved default style `style` for a drawing of `type` just created with
+ * `own` style: per-drawing keys (icon glyph, ghost-feed seed) stay the drawing's.
+ */
+export function keepPerDrawingStyle(
+  type: string,
+  style: DrawingStyle,
+  own: DrawingStyle | undefined,
+): DrawingStyle {
+  if (type === 'icon') return { ...style, glyph: own?.glyph ?? style.glyph ?? '' };
+  if (type === 'ghost-feed') {
+    const { seed: _saved, ...rest } = style;
+    return own && 'seed' in own ? { ...rest, seed: own.seed } : rest;
+  }
+  return style;
 }
 
 /**
@@ -228,17 +263,19 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
         const style = useDrawingTemplates.getState().defaults[type];
         const def = getDrawingTool(type);
         const d = chart.getDrawing(drawingId);
-        // A saved icon default must not replace the sticker that was just placed.
-        if (style)
-          amendGesture(drawingId, {
-            style:
-              type === 'icon' ? { ...style, glyph: d?.style.glyph ?? style.glyph ?? '' } : style,
-          });
+        // A saved icon default must not replace the sticker that was just placed,
+        // nor a saved ghost-feed default the random seed of this drawing.
+        if (style) amendGesture(drawingId, { style: keepPerDrawingStyle(type, style, d?.style) });
         const at = useDrawingRuntime.getState().pointer;
         if (def?.text && def.group === 'annotation' && d && !d.text && at)
           openTextEditor(drawingId, at.x, at.y, true);
       }
       if (!active && !isCursorTool(useUiStore.getState().activeTool)) resetToCursor();
+    }),
+    chart.on('pointPicked', ({ time }) => {
+      // Anchored VWAP entry: the clicked bar is the anchor.
+      if (useUiStore.getState().activeTool === ANCHORED_VWAP_ID)
+        addIndicator(ANCHORED_VWAP_ID, { inputs: { anchor: time } });
     }),
     chart.on('paneRemoved', ({ paneId }) => {
       // An undo/redo removed the pane: its entry restores everything itself.

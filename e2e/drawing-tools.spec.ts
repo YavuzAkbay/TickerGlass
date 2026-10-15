@@ -441,3 +441,119 @@ for (const { name, type, clicks, finish, count } of FORECAST_TOOL_CASES) {
     expect(errors).toEqual([]);
   });
 }
+
+/** The transient measurement (engine internals: never part of getDrawings()). */
+const measurement = (page: Page) =>
+  page.evaluate(() => {
+    const m = (window.chart as unknown as { drawingLayer: { measure: { type: string } | null } })
+      .drawingLayer.measure;
+    return m ? m.type : null;
+  });
+
+test('zoom in: drag a box to zoom the chart to it', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  const before = await page.evaluate(() => window.chart.getState());
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('zoom-in');
+
+  await page.mouse.move(600, 300);
+  await page.mouse.down();
+  await page.mouse.move(700, 350, { steps: 5 });
+  await page.mouse.move(800, 450, { steps: 5 });
+  await page.mouse.up();
+
+  const after = await page.evaluate(() => window.chart.getState());
+  expect(after.timeScale.barSpacing).toBeGreaterThan(before.timeScale.barSpacing * 2);
+  const main = after.panes.find((p) => p.id === 'main')!;
+  expect(main.priceScale.autoScale).toBe(false);
+  expect(main.priceScale.max! - main.priceScale.min!).toBeGreaterThan(0);
+  // Back to the cursor, nothing drawn.
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBeNull();
+  expect(await drawings(page)).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test('zoom in: Esc cancels the box', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  const before = await page.evaluate(() => window.chart.getState().timeScale.barSpacing);
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await page.mouse.move(600, 300);
+  await page.mouse.down();
+  await page.mouse.move(800, 450, { steps: 5 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.chart.getState().timeScale.barSpacing)).toBe(before);
+  expect(errors).toEqual([]);
+});
+
+test('measure: transient range, cleared by the next click, never stored', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  await page.getByRole('button', { name: 'Measure', exact: true }).click();
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('measure');
+
+  await page.mouse.move(500, 400);
+  await page.mouse.down();
+  await page.mouse.move(650, 330, { steps: 5 });
+  await page.mouse.up();
+  expect(await measurement(page)).toBe('date-price-range');
+  expect(await drawings(page)).toHaveLength(0);
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBeNull();
+
+  // The next click clears it.
+  await page.mouse.click(300, 300);
+  expect(await measurement(page)).toBeNull();
+
+  // Esc clears it too.
+  await page.getByRole('button', { name: 'Measure', exact: true }).click();
+  await page.mouse.click(500, 400);
+  await page.mouse.click(650, 330);
+  expect(await measurement(page)).toBe('date-price-range');
+  await page.keyboard.press('Escape');
+  expect(await measurement(page)).toBeNull();
+  expect(await drawings(page)).toHaveLength(0);
+  expect(errors).toEqual([]);
+});
+
+test('measure: Shift+click quick-measures from the cursor', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(500, 400);
+  await page.mouse.move(650, 330, { steps: 5 });
+  await page.mouse.click(650, 330);
+  await page.keyboard.up('Shift');
+  expect(await measurement(page)).toBe('date-price-range');
+  expect(await drawings(page)).toHaveLength(0);
+  await page.mouse.click(300, 300);
+  expect(await measurement(page)).toBeNull();
+  expect(errors).toEqual([]);
+});
+
+test('anchored VWAP: a click adds the indicator anchored at that bar', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  const studies = () => page.evaluate(() => window.chart.getStudies().length);
+  const before = await studies();
+  await page.getByRole('button', { name: 'More forecasting and measurement tools' }).click();
+  await page
+    .getByRole('menu', { name: 'Forecasting and measurement tools' })
+    .getByRole('menuitem')
+    .filter({ has: page.locator('.lt-fly-name').getByText('Anchored VWAP', { exact: true }) })
+    .click();
+  await page.mouse.click(700, 350);
+  await expect.poll(studies).toBe(before + 1);
+  expect(await drawings(page)).toHaveLength(0);
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBeNull();
+  expect(
+    await page.evaluate(() => window.chart.getStudies().some((s) => /anchored/i.test(s.title))),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});

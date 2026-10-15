@@ -60,6 +60,8 @@ export interface DrawingHost {
   format(paneId: string): DrawingFormat;
   /** Request an overlay redraw. */
   invalidate(): void;
+  /** Zoom-in mode: show logical bars [from, to] and, when given, the price range of pane `paneId`. */
+  zoomTo?(paneId: string, from: number, to: number, minPrice?: number, maxPrice?: number): void;
   emit<K extends keyof DrawingEvents>(event: K, payload: DrawingEvents[K]): void;
 }
 
@@ -101,6 +103,8 @@ export class DrawingLayer {
   options: DrawingOptions = { stayInDrawingMode: false, lockAll: false, hideAll: false };
   /** Drawing being created: drawn on top of its pane, not in `items`. */
   draft: Drawing | null = null;
+  /** Finished measure-mode / quick measurement: shown until the next click or Esc, never stored. */
+  measure: Drawing | null = null;
   /** Ids being dragged (render state `editing`). */
   readonly editing = new Set<string>();
   private sorted: Drawing[] | null = null;
@@ -367,7 +371,7 @@ export class DrawingLayer {
   /** Geometry of `d` in `pane` for the current view (reused object), or null without bars. */
   geometry(d: Readonly<Drawing>, pane: DrawingPane): Geometry | null {
     let g: Geometry | undefined;
-    if (d === this.draft) g = this.draftGeom;
+    if (d === this.draft || d === this.measure) g = this.draftGeom;
     else {
       g = this.geoms.get(d.id);
       if (!g) {
@@ -394,7 +398,7 @@ export class DrawingLayer {
 
   /** Draw the pane's drawings (and the draft) on `ctx` (CSS px transform). */
   render(pane: DrawingPane, ctx: CanvasRenderingContext2D, dpr: number): void {
-    if (pane.height <= 0 || (!this.items.size && !this.draft)) return;
+    if (pane.height <= 0 || (!this.items.size && !this.draft && !this.measure)) return;
     this.refreshView();
     const rc = this.rc;
     rc.ctx = ctx;
@@ -402,6 +406,7 @@ export class DrawingLayer {
     rc.theme = this.host.theme;
     for (const d of this.list())
       if (d.paneId === pane.id && this.isShown(d)) this.renderOne(d, pane);
+    if (this.measure?.paneId === pane.id) this.renderOne(this.measure, pane);
     if (this.draft?.paneId === pane.id) this.renderOne(this.draft, pane);
     const m = this.marquee;
     if (m?.paneId === pane.id) {

@@ -101,6 +101,20 @@ export class PriceScale {
     this.max = hi;
   }
 
+  /**
+   * Fix the scale (auto-scale off) so that [minPrice, maxPrice] fills the area
+   * between the margins. Ignored unless both are finite and minPrice < maxPrice.
+   */
+  setManualRange(minPrice: number, maxPrice: number): void {
+    if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice) || !(minPrice < maxPrice)) return;
+    const lo = this.toInternal(minPrice);
+    const hi = this.toInternal(maxPrice);
+    if (!(hi - lo > 1e-12)) return;
+    this.autoScale = false;
+    this.min = lo;
+    this.max = hi;
+  }
+
   /** Stretch around the centre; factor > 1 expands the visible range. */
   scaleBy(factor: number): void {
     this.autoScale = false;

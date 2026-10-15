@@ -9,6 +9,11 @@ export const IMAGE_DEFAULTS = {
   borderColor: '#787b86',
 };
 
+/** Whether `src` is an embedded image data URL (the only source the tool loads). */
+export function isEmbeddedImage(src: unknown): src is string {
+  return typeof src === 'string' && src.startsWith('data:image/');
+}
+
 /** Image (data URL in `style.src`) in the box spanned by two anchors. */
 export const image = defineDrawingTool({
   type: 'image',
@@ -32,7 +37,8 @@ export const image = defineDrawingTool({
     const y = Math.min(a.y, b.y);
     const w = Math.abs(b.x - a.x);
     const h = Math.abs(b.y - a.y);
-    const img = drawingImage(s.src, rc.invalidate);
+    // Only embedded images load: an imported drawing must not make the chart fetch a URL.
+    const img = isEmbeddedImage(s.src) ? drawingImage(s.src, rc.invalidate) : null;
     if (img && img.naturalWidth > 0 && img.naturalHeight > 0 && w > 0 && h > 0) {
       let dw = w;
       let dh = h;

@@ -26,6 +26,23 @@ describe('PriceScale', () => {
     }
   });
 
+  it('setManualRange fits the range between the margins and turns auto-scale off', () => {
+    for (const invert of [false, true]) {
+      const ps = scale();
+      ps.invert = invert;
+      ps.setManualRange(120, 140);
+      expect(ps.autoScale).toBe(false);
+      // Inversion mirrors the whole axis, margins included.
+      const top = 500 * ps.marginTop;
+      const bottom = 500 * (1 - ps.marginBottom);
+      expect(ps.priceToY(140)).toBeCloseTo(invert ? 500 - top : top, 6);
+      expect(ps.priceToY(120)).toBeCloseTo(invert ? 500 - bottom : bottom, 6);
+    }
+    const ps = scale();
+    ps.setManualRange(140, 120);
+    expect(ps.autoScale).toBe(true);
+  });
+
   it('invert flips the axis', () => {
     const ps = scale();
     const y = ps.priceToY(180);

@@ -34,7 +34,12 @@ export const LINE_TOOLS: readonly string[] = [
 ];
 
 /** Tools that are channels (upper/lower/middle parts or a whole-channel operand). */
-export const CHANNEL_TOOLS: readonly string[] = ['parallel-channel', 'rectangle'];
+export const CHANNEL_TOOLS: readonly string[] = [
+  'parallel-channel',
+  'rectangle',
+  'flat-top-bottom',
+  'disjoint-channel',
+];
 
 /** Anchors each tool needs. */
 export const TOOL_POINTS: Readonly<Record<string, number>> = {
@@ -47,6 +52,9 @@ export const TOOL_POINTS: Readonly<Record<string, number>> = {
   'horizontal-ray': 1,
   'parallel-channel': 3,
   rectangle: 2,
+  // Disjoint channels are stored with a 4th anchor; a 3-anchor draft derives it.
+  'flat-top-bottom': 3,
+  'disjoint-channel': 3,
 };
 
 /** Tool default extensions (the engine's `defaults`), used when the style lacks the key. */
@@ -57,6 +65,8 @@ const EXTEND_DEFAULTS: Readonly<Record<string, readonly [boolean, boolean]>> = {
   'info-line': [false, false],
   'parallel-channel': [false, false],
   rectangle: [false, false],
+  'flat-top-bottom': [false, false],
+  'disjoint-channel': [false, false],
 };
 
 /** Whether a drawing type supports `part` as a `DrawingLineOperand`. */
@@ -90,7 +100,7 @@ function point(d: DrawingLike, j: number): { time: number; price: number } {
   const p = d.points[j];
   if (!p)
     throw new DrawingLevelError(
-      d.type === 'parallel-channel' ? 'incomplete channel' : 'incomplete drawing',
+      CHANNEL_TOOLS.includes(d.type) ? 'incomplete channel' : 'incomplete drawing',
     );
   return p;
 }
@@ -205,6 +215,36 @@ function channelParts(
     const a = g(ym);
     const b = g(ym + delta);
     return { upper: Math.max(a, b), lower: Math.min(a, b), middle: g(ym + delta / 2) };
+  }
+  if (drawing.type === 'flat-top-bottom' || drawing.type === 'disjoint-channel') {
+    // Two lines over the same bars: the trend line 0-1 and either a flat line at
+    // anchor 2's price (flat top/bottom) or the line 2-3 (disjoint channel).
+    if (drawing.points.length < 3) throw new DrawingLevelError('incomplete channel');
+    const p0 = point(drawing, 0);
+    const p1 = point(drawing, 1);
+    const p2 = point(drawing, 2);
+    const l0 = logical(timeline, p0.time);
+    const l1 = logical(timeline, p1.time);
+    if (!checkFinite(L, l0, l1)) return NAN_PARTS;
+    const [left, right] = extendOf(drawing);
+    const a = lineAt(l0, f(p0.price), l1, f(p1.price), L, left, right);
+    if (Number.isNaN(a)) return NAN_PARTS;
+    let b = f(p2.price);
+    if (drawing.type === 'disjoint-channel') {
+      // The engine's completePoints mirrors line 0-1's price change (in price) from anchor 2 at anchor 1's time.
+      const p3 = drawing.points[3] ?? {
+        time: p1.time,
+        price: p2.price - (p1.price - p0.price),
+      };
+      const l2 = logical(timeline, p2.time);
+      const l3 = logical(timeline, p3.time);
+      if (!checkFinite(l2, l3)) return NAN_PARTS;
+      b = lineAt(l2, f(p2.price), l3, f(p3.price), L, left, right);
+      if (Number.isNaN(b)) return NAN_PARTS;
+    }
+    const pa = g(a);
+    const pb = g(b);
+    return { upper: Math.max(pa, pb), lower: Math.min(pa, pb), middle: g((a + b) / 2) };
   }
   if (drawing.type === 'rectangle') {
     const p0 = point(drawing, 0);

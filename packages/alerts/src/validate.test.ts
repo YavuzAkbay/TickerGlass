@@ -162,6 +162,9 @@ describe('validateAlert', () => {
       chan: { type: 'parallel-channel', points: [{}, {}, {}], scope: 'all', symbol: 'X' },
       chan2: { type: 'parallel-channel', points: [{}, {}], scope: 'all', symbol: 'X' },
       rect: { type: 'rectangle', points: [{}, {}], scope: 'all', symbol: 'X' },
+      flat: { type: 'flat-top-bottom', points: [{}, {}, {}], scope: 'all', symbol: 'X' },
+      disjoint: { type: 'disjoint-channel', points: [{}, {}, {}, {}], scope: 'all', symbol: 'X' },
+      disjoint2: { type: 'disjoint-channel', points: [{}, {}], scope: 'all', symbol: 'X' },
       fib: { type: 'fib-retracement', points: [{}, {}], scope: 'all', symbol: 'X' },
     };
     const opts = { drawing: (id: string) => drawings[id] };
@@ -208,6 +211,9 @@ describe('validateAlert', () => {
     expect(codes(channel('rect'))).toEqual([]);
     expect(codes(channel('line'))).toEqual(['drawing_unsupported']);
     expect(codes(channel('chan2'))).toEqual(['drawing_unsupported']);
+    expect(codes(channel('flat'))).toEqual([]);
+    expect(codes(channel('disjoint'))).toEqual([]);
+    expect(codes(channel('disjoint2'))).toEqual(['drawing_unsupported']);
     // Without a lookup, drawings are not checked (shape only).
     expect(validateAlert(withRight('missing', 'line')).ok).toBe(true);
   });

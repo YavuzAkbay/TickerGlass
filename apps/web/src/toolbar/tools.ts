@@ -1,4 +1,5 @@
 import { getDrawingTool, type CrosshairMode } from '@investopen/engine';
+import { getIndicator } from '@investopen/indicators';
 import { useAppStore } from '../store/app';
 import { useUiStore, type DrawingToolId } from '../store/ui';
 import { toast } from '../ui/Toast';
@@ -357,13 +358,25 @@ export function isCursorTool(id: string): boolean {
   return groupOf(id) === 'cursors';
 }
 
-/** Hint for toolbar tools without a registered drawing definition yet. */
-export const UNAVAILABLE_HINT = 'Coming in Phase 11';
+/** Hint for toolbar entries whose engine tool or indicator is missing (every shipped entry resolves). */
+export const UNAVAILABLE_HINT = 'Not available in this build';
 
-/** Cursors (incl. the eraser), stickers (engine `icon` tool) and tools with a registered drawing definition. */
+/** Id of the indicator the Anchored VWAP toolbar entry adds. */
+export const ANCHORED_VWAP_ID = 'anchored-vwap';
+
+/**
+ * Cursors (incl. the eraser), the measure and zoom-in modes, stickers (engine
+ * `icon` tool), Anchored VWAP (needs its indicator) and tools with a registered
+ * drawing definition.
+ */
 export function isToolAvailable(id: string): boolean {
+  if (id === ANCHORED_VWAP_ID) return !!getIndicator(ANCHORED_VWAP_ID);
   return (
-    isCursorTool(id) || !!getDrawingTool(id) || (!!findSticker(id) && !!getDrawingTool('icon'))
+    isCursorTool(id) ||
+    id === MEASURE_TOOL.id ||
+    id === ZOOM_TOOL.id ||
+    !!getDrawingTool(id) ||
+    (!!findSticker(id) && !!getDrawingTool('icon'))
   );
 }
 

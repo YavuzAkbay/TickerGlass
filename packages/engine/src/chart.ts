@@ -892,6 +892,15 @@ export class Chart implements StudyApi, DrawingApi {
       pane: (id) => this.panes.find((p) => p.id === id) ?? null,
       format: (paneId) => this.drawingFormat(paneId),
       invalidate: () => this.invalidate(INVALIDATE_OVERLAY),
+      zoomTo: (paneId, from, to, minPrice, maxPrice) => {
+        this.setVisibleLogicalRange(from, to);
+        const ps = this.panes.find((p) => p.id === paneId)?.priceScale;
+        if (ps && minPrice !== undefined && maxPrice !== undefined) {
+          ps.setManualRange(minPrice, maxPrice);
+          this.invalidate(INVALIDATE_MAIN);
+          this.emitState();
+        }
+      },
       // ChartEvents extends DrawingEvents, so this view of the emitter is exact.
       emit: (event, payload) =>
         (this.events as unknown as Emitter<DrawingEvents>).emit(event, payload),
@@ -1645,6 +1654,7 @@ export class Chart implements StudyApi, DrawingApi {
   private load(): Promise<void> {
     // Symbol/interval changed: drawings shown there may differ (scope, visibility).
     if (this.drawingInput.busy) this.drawingInput.abort();
+    this.drawingLayer.measure = null;
     this.drawingLayer.pruneSelection();
     this.loadPromise = this.doLoad();
     return this.loadPromise;

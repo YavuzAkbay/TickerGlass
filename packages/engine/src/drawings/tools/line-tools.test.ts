@@ -264,3 +264,20 @@ describe('disjoint channel', () => {
     expect(def.isVisible!(geometryOf(far), far.style)).toBe(false);
   });
 });
+
+describe('legacy trend line showAngle', () => {
+  it('a saved trend line with style.showAngle still renders its angle label', () => {
+    // The Angle option moved to the trend-angle tool, but the trend line keeps the key.
+    const { d, g, def } = setup('trend-line', [pt(20, 20), pt(40, 60)], { showAngle: true });
+    expect(def.properties.some((p) => p.key === 'showAngle')).toBe(true);
+    const r = recordingContext();
+    def.render(r.rc, g, d.style, SELECTED);
+    expect(r.texts).toContain('38.66°');
+  });
+
+  it('unknown saved style keys are ignored', () => {
+    const { d, g, def } = setup('trend-line', [pt(20, 20), pt(40, 60)], { removedOption: 1 });
+    const r = recordingContext();
+    expect(() => def.render(r.rc, g, d.style, SELECTED)).not.toThrow();
+  });
+});

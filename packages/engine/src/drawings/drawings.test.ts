@@ -4,7 +4,14 @@ import { PriceScale } from '../scale/price-scale';
 import { TimeScale } from '../scale/time-scale';
 import type { DrawingPane } from './geometry';
 import { HANDLE_RADIUS } from './draw-utils';
-import { DrawingInteraction, ERASER_TOOL, type DrawingPointerMods } from './interaction';
+import {
+  DrawingInteraction,
+  ERASER_TOOL,
+  MEASURE_TOOL,
+  PICK_TOOL,
+  ZOOM_TOOL,
+  type DrawingPointerMods,
+} from './interaction';
 import { DrawingLayer, type DrawingHost } from './layer';
 import type { AnchorTimeline } from './mapping';
 import { defineDrawingTool, registerDrawingTool } from './registry';
@@ -22,6 +29,7 @@ type Ev = { [K in keyof DrawingEvents]: [K, DrawingEvents[K]] }[keyof DrawingEve
 let ts: TimeScale;
 let pane: DrawingPane;
 let events: Ev[];
+let zooms: unknown[][];
 let layer: DrawingLayer;
 let input: DrawingInteraction;
 /** Mutable host state (symbol/interval/magnet) read through getters. */
@@ -73,6 +81,7 @@ beforeEach(() => {
     endTime: START + (N - 1) * D,
   };
   events = [];
+  zooms = [];
   env = { symbol: 'TEST', interval: '1D', magnet: 'off', values: () => [] };
   const host: DrawingHost = {
     timeScale: ts,
@@ -92,6 +101,7 @@ beforeEach(() => {
     pane: (id) => (id === pane.id ? pane : null),
     format: () => ({ price: (v) => v.toFixed(2), percent: (v) => `${v}%`, time: String }),
     invalidate: () => undefined,
+    zoomTo: (...a) => zooms.push(a),
     emit: (k, p) => events.push([k, p] as Ev),
   };
   layer = new DrawingLayer(host);
@@ -683,6 +693,94 @@ describe('eraser', () => {
   });
 });
 
+describe('zoom-in mode', () => {
+  it('drags a box, zooms to its bars and prices, then returns to the cursor', () => {
+    input.setActiveTool(ZOOM_TOOL);
+    expect(input.activeTool).toBe('zoom-in');
+    down(X(20), Y(80));
+    move(X(40), Y(30));
+    expect(layer.marquee).not.toBeNull();
+    up(X(40), Y(30));
+    expect(layer.marquee).toBeNull();
+    expect(zooms).toHaveLength(1);
+    const [id, from, to, lo, hi] = zooms[0] as [string, number, number, number, number];
+    expect(id).toBe('main');
+    expect(from).toBeCloseTo(20, 6);
+    expect(to).toBeCloseTo(40, 6);
+    expect(lo).toBeCloseTo(30, 6);
+    expect(hi).toBeCloseTo(80, 6);
+    expect(of('toolFinished')[0]).toEqual({ type: 'zoom-in', drawingId: null, active: false });
+    expect(input.activeTool).toBeNull();
+    expect(of('drawingCreated')).toHaveLength(0);
+  });
+
+  it('Esc cancels the drag, a second Esc leaves the mode; a click does nothing', () => {
+    input.setActiveTool(ZOOM_TOOL);
+    down(X(20), Y(80));
+    move(X(40), Y(30));
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.marquee).toBeNull();
+    expect(input.activeTool).toBe('zoom-in');
+    click(X(20), Y(80));
+    expect(zooms).toHaveLength(0);
+    expect(input.activeTool).toBe('zoom-in');
+    expect(input.key('Escape')).toBe(true);
+    expect(input.activeTool).toBeNull();
+  });
+});
+
+describe('pick-point mode', () => {
+  it('reports the clicked bar time and price once, then returns to the cursor', () => {
+    input.setActiveTool(PICK_TOOL);
+    click(X(30) + 2, Y(40));
+    expect(of('pointPicked')).toEqual([{ time: START + 30 * D, price: 40, paneId: 'main' }]);
+    expect(of('toolFinished')[0]).toEqual({ type: 'pick-point', drawingId: null, active: false });
+    expect(input.activeTool).toBeNull();
+    expect(layer.items.size).toBe(0);
+  });
+});
+
+describe('measure mode', () => {
+  it('shows a transient date and price range without drawing events, cleared by the next click', () => {
+    input.setActiveTool(MEASURE_TOOL);
+    down(X(10), Y(20));
+    move(X(30), Y(60));
+    up(X(30), Y(60));
+    expect(layer.measure?.type).toBe('date-price-range');
+    expect(layer.measure?.points.map((p) => p.price)).toEqual([20, 60]);
+    expect(layer.items.size).toBe(0);
+    expect(layer.draft).toBeNull();
+    expect(names()).toEqual(['toolFinished']);
+    expect(input.activeTool).toBeNull();
+    // The next click clears it and is an ordinary click.
+    expect(input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO)).toBe(false);
+    expect(layer.measure).toBeNull();
+  });
+
+  it('click-click measures, Esc clears the result', () => {
+    input.setActiveTool(MEASURE_TOOL);
+    click(X(10), Y(20));
+    hover(X(20), Y(50));
+    click(X(20), Y(50));
+    expect(layer.measure?.points).toHaveLength(2);
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.measure).toBeNull();
+    expect(of('drawingCreated')).toHaveLength(0);
+  });
+
+  it('Shift+click on empty space quick-measures from the cursor tool', () => {
+    const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
+    input.pointerDown(target(X(10), Y(20)), X(10), Y(20), SH);
+    input.pointerUp(X(10), Y(20), SH);
+    expect(layer.draft?.type).toBe('date-price-range');
+    hover(X(25), Y(70));
+    click(X(25), Y(70));
+    expect(layer.measure?.points.map((p) => p.price)).toEqual([20, 70]);
+    expect(layer.items.size).toBe(0);
+    expect(of('drawingCreated')).toHaveLength(0);
+  });
+});
+
 describe('box select (Shift+drag on empty space)', () => {
   const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
   const box = (x0: number, y0: number, x1: number, y1: number) => {
@@ -705,10 +803,14 @@ describe('box select (Shift+drag on empty space)', () => {
     box(X(80), Y(95), X(85), Y(85));
     expect([...layer.selection].sort()).toEqual([a.id, h.id].sort());
     expect(layer.selection.has(b.id)).toBe(false);
-    // A Shift-click (no drag) keeps the selection; Esc cancels a box without changes.
+    // A Shift-click (no drag) keeps the selection and starts a quick measurement;
+    // Esc cancels it. Esc also cancels a box without changes.
     input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
     input.pointerUp(X(5), Y(5), SH);
     expect(layer.selection.size).toBe(2);
+    expect(layer.draft?.type).toBe('date-price-range');
+    expect(input.key('Escape')).toBe(true);
+    expect(input.busy).toBe(false);
     input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
     input.pointerMove(X(75), Y(5), SH);
     expect(input.key('Escape')).toBe(true);

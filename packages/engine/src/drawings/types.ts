@@ -370,6 +370,8 @@ export interface DrawingEvents {
    * mode); otherwise the engine is back to the cursor (`getActiveTool()` null).
    */
   toolFinished: { type: string; drawingId: string | null; active: boolean };
+  /** A click while the pick-point mode (`PICK_TOOL`) was active: bar time and price under the pointer. */
+  pointPicked: { time: number; price: number; paneId: string };
 }
 
 /** Methods `Chart` implements for drawings. */

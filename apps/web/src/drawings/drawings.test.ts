@@ -6,7 +6,7 @@ import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { isToolAvailable } from '../toolbar/tools';
-import { attachDrawings, engineTool } from './attach';
+import { attachDrawings, engineTool, keepPerDrawingStyle } from './attach';
 import {
   amendCreated,
   amendGesture,
@@ -668,6 +668,51 @@ describe('attach (engine events and sync)', () => {
     expect(engineTool('cross')).toBeNull();
     for (const id of ['emoji-smile', 'sticker-whale', 'icon-bolt'])
       expect(isToolAvailable(id)).toBe(true);
+  });
+
+  it('maps the measure, zoom-in and Anchored VWAP entries to engine modes', () => {
+    expect(engineTool('measure')).toEqual({ type: 'measure' });
+    expect(engineTool('zoom-in')).toEqual({ type: 'zoom-in' });
+    expect(engineTool('anchored-vwap')).toEqual({ type: 'pick-point' });
+    for (const id of ['measure', 'zoom-in', 'anchored-vwap'])
+      expect(isToolAvailable(id)).toBe(true);
+    const f = attach();
+    useUiStore.setState({ activeTool: 'zoom-in' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'zoom-in', opts: undefined });
+    f.detach();
+  });
+
+  it('Anchored VWAP: a picked point adds the indicator anchored at that bar time', () => {
+    const f = attach();
+    useUiStore.setState({ activeTool: 'anchored-vwap' });
+    f.emit('pointPicked', { time: 1_700_000_000, price: 10, paneId: 'main' });
+    const added = useIndicatorStore.getState().instances;
+    expect(added).toHaveLength(1);
+    expect(added[0]!.type).toBe('anchored-vwap');
+    expect(added[0]!.inputs.anchor).toBe(1_700_000_000);
+    // A pick while another tool is active (stale event) adds nothing.
+    useUiStore.setState({ activeTool: 'cross' });
+    f.emit('pointPicked', { time: 1_700_086_400, price: 10, paneId: 'main' });
+    expect(useIndicatorStore.getState().instances).toHaveLength(1);
+    f.detach();
+  });
+
+  it('saved default styles keep the placed icon glyph and the ghost feed seed', () => {
+    expect(keepPerDrawingStyle('icon', { glyph: 'A', size: 9 }, { glyph: 'B' })).toEqual({
+      glyph: 'B',
+      size: 9,
+    });
+    expect(keepPerDrawingStyle('ghost-feed', { seed: 7, up: 'x' }, { seed: 42 })).toEqual({
+      up: 'x',
+      seed: 42,
+    });
+    // The saved seed never leaks into a drawing that has none of its own.
+    expect(keepPerDrawingStyle('ghost-feed', { seed: 7, up: 'x' }, { up: 'y' })).toEqual({
+      up: 'x',
+    });
+    expect(keepPerDrawingStyle('trend-line', { lineWidth: 3 }, { lineWidth: 1 })).toEqual({
+      lineWidth: 3,
+    });
   });
 
   it('labels Alt+drag clones "Clone", not "Create"', async () => {
