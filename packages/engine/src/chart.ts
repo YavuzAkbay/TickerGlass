@@ -582,6 +582,11 @@ export class Chart implements StudyApi, DrawingApi {
     return kind === 'compare' ? pane.legendCompare : pane.legendSlot;
   }
 
+  /** Decimals of the symbol's price format (study text labels). */
+  get symbolDecimals(): number {
+    return this.decimals;
+  }
+
   /** Base value of the main pane's price series at displayed bar `i`: the
    * reference compare overlays ('same % scale') are rescaled to. */
   compareReference(i: number): number | null {

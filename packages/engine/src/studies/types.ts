@@ -59,6 +59,8 @@ export interface StudyPlotMeta {
   offset: number;
   /** Last-value label on the price axis. */
   showLastValue: boolean;
+  /** Lines/steps/area skip NaN bars and join the neighbouring values (additive; default false = break). */
+  connectGaps?: boolean;
 }
 
 export interface StudyHLineMeta {
@@ -103,15 +105,48 @@ export interface StudyShapeMeta {
   size: StudyShapeSize;
   colors: string[];
   text: string;
+  /** Label text = the value formatted with the study's format/precision instead
+   * of `text` (additive; default false). Labels and the text under other shapes. */
+  textFromValue?: boolean;
   textColor: string;
   /** Draw value[i] at bar i + offset (additive; default 0). aboveBar/belowBar
    * anchor to the bar at the drawn position; past the last bar they are not drawn. */
   offset?: number;
 }
 
+/**
+ * Volume profile computed by the engine from the displayed bars (never from
+ * `values`). 'visible': one profile of the visible bars. 'session': one per
+ * period overlapping the view; `values[id][i]` non-NaN marks the first bar of
+ * a period. Not part of autoscale, legends, magnet or hit testing.
+ */
+export interface StudyVolumeProfileMeta {
+  type: 'volumeProfile';
+  id: string;
+  title: string;
+  visible: boolean;
+  mode: 'visible' | 'session';
+  rowsLayout: 'count' | 'size';
+  rows: number;
+  /** Row height in price units ('size' layout). */
+  rowSize: number;
+  /** Value area, % of the volume. */
+  valueArea: number;
+  /** Histogram width in % of the profile's width. */
+  widthPercent: number;
+  placement: 'left' | 'right';
+  /** Up, down, value-area up, value-area down, POC. */
+  colors: string[];
+}
+
 /** Draw order = array order (later on top). */
 export type StudyOutputMeta =
-  StudyPlotMeta | StudyHLineMeta | StudyFillMeta | StudyBgColorMeta | StudyShapeMeta;
+  | StudyPlotMeta
+  | StudyHLineMeta
+  | StudyFillMeta
+  | StudyBgColorMeta
+  | StudyShapeMeta
+  | StudyVolumeProfileMeta;
 
 /** Where a study is drawn. */
 export type StudyTarget =
@@ -164,7 +199,7 @@ export interface StudyData {
    * revision is not drawn (indices would not line up after a reset). */
   revision: number;
   length: number;
-  /** Plots, shapes and bgcolor outputs by id; NaN = no value. */
+  /** Plots, shapes, bgcolor and volume profile (period starts) outputs by id; NaN = no value. */
   values: Record<string, Float64Array>;
   /** Per-bar palette index for outputs with a multi-colour palette (incl. fills). */
   colors: Record<string, Uint8Array>;

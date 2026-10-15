@@ -14,6 +14,8 @@ export interface StudyHost {
   readonly timeScale: TimeScale;
   readonly seriesRevision: number;
   readonly theme: ChartTheme;
+  /** Symbol price decimals for `inherit` formats (additive; default 2). */
+  readonly symbolDecimals?: number;
   /** Main pane base value at displayed bar i (compare overlays), or null. */
   compareReference(i: number): number | null;
 }
@@ -279,6 +281,7 @@ export class StudySeries implements PaneSeries {
       priceScale: scale,
       theme: this.host.theme,
       bars: this.host.store,
+      symbolDecimals: this.host.symbolDecimals ?? 2,
       limit: this.limit,
       pFrom,
       pTo,

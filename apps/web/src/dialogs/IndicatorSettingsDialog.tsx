@@ -488,6 +488,8 @@ export function NumberInput({
 
 // ------------------------------------------------------------------- style
 
+const VP_COLOR_LABELS = ['up volume', 'down volume', 'value area up', 'value area down', 'POC'];
+
 function StyleTab({
   outputs,
   set,
@@ -582,6 +584,19 @@ function StyleTab({
           case 'fill':
           case 'bgcolor':
             rest = swatches(o);
+            break;
+          case 'volumeProfile':
+            // Colours in VOLUME_PROFILE_COLOR_KEYS order.
+            rest = o.colors.map((c, i) => (
+              <ColorSwatch
+                key={i}
+                value={c}
+                label={`${o.title} ${VP_COLOR_LABELS[i] ?? `colour ${i + 1}`}`}
+                onChange={(color) =>
+                  set(o.id, { colors: o.colors.map((x, j) => (j === i ? color : x)) })
+                }
+              />
+            ));
             break;
           case 'shape':
             rest = (

@@ -2,7 +2,9 @@ import type { OhlcvSource } from '../chart-types';
 import type { ChartTheme } from '../options';
 import type { PriceScale } from '../scale/price-scale';
 import type { TimeScale } from '../scale/time-scale';
+import { formatStudyValue } from './format';
 import { paletteColor, plotBase, type Study } from './study';
+import { drawVolumeProfile } from './volume-profile';
 import {
   STUDY_COLOR_NONE,
   type StudyBgColorMeta,
@@ -27,6 +29,8 @@ export interface StudyGeometry {
   bars: OhlcvSource;
   /** Readable data indices: min(study length, displayed bars). */
   limit: number;
+  /** Symbol price decimals for `inherit` formats (additive; default 2). */
+  symbolDecimals?: number;
   /** Drawn positions (logical bar indices, may lie past the last bar). */
   pFrom: number;
   pTo: number;
@@ -101,6 +105,9 @@ export function drawStudy(dc: StudyDrawContext, study: Study): void {
       case 'shape':
         drawShapes(dc, study, o);
         break;
+      case 'volumeProfile':
+        drawVolumeProfile(dc, study, o);
+        break;
     }
   }
   ctx.restore();
@@ -142,7 +149,7 @@ function drawPlot(dc: StudyDrawContext, study: Study, o: StudyPlotMeta): void {
   }
 }
 
-/** Polyline (or steps) with NaN gaps; per-bar colours colour the segment ending at that bar. */
+/** Polyline (or steps) with NaN gaps (joined over with connectGaps); per-bar colours colour the segment ending at that bar. */
 function strokeLine(
   dc: StudyDrawContext,
   vals: Float64Array,
@@ -159,6 +166,7 @@ function strokeLine(
   ctx.lineCap = 'butt';
   ctx.setLineDash(lineDash(o.lineStyle, w));
   const multi = idx !== undefined;
+  const connect = o.connectGaps === true;
   let cur = '';
   let pending = false;
   let have = false;
@@ -168,7 +176,8 @@ function strokeLine(
   for (let j = j0; j <= j1; j++) {
     const v = vals[j]!;
     if (v !== v) {
-      have = false;
+      // connectGaps: the line joins the values either side of the gap.
+      if (!connect) have = false;
       continue;
     }
     const x = ts.indexToX(j + o.offset) * dpr;
@@ -503,6 +512,8 @@ function drawShapes(dc: StudyDrawContext, study: Study, o: StudyShapeMeta): void
   const up = pointsUp(o);
   const label = o.shape === 'labelUp' || o.shape === 'labelDown';
   const fontPx = Math.max(9, Math.round(s * 0.8 + 3));
+  const { format, precision } = study.spec;
+  const decimals = dc.symbolDecimals ?? 2;
   ctx.font = `${Math.round(fontPx * dpr)}px ${dc.theme.fontFamily}`;
   ctx.textAlign = 'center';
   ctx.setLineDash([]);
@@ -514,16 +525,17 @@ function drawShapes(dc: StudyDrawContext, study: Study, o: StudyShapeMeta): void
     const cy = shapeCenterY(dc, o, j + off, v, s);
     if (cy !== cy) continue;
     const x = ts.indexToX(j + off) * dpr;
+    const text = o.textFromValue ? formatStudyValue(v, format, precision, decimals) : o.text;
     if (label) {
-      drawLabel(ctx, x, cy * dpr, up, o.text, color, o.textColor, s * dpr, fontPx * dpr);
+      drawLabel(ctx, x, cy * dpr, up, text, color, o.textColor, s * dpr, fontPx * dpr);
       continue;
     }
     shapePath(ctx, o.shape, x, cy * dpr, s * dpr, color, dpr);
-    if (o.text) {
+    if (text) {
       ctx.fillStyle = o.textColor || color;
       ctx.textBaseline = up ? 'top' : 'bottom';
       const ty = up ? (cy + s / 2 + 2) * dpr : (cy - s / 2 - 2) * dpr;
-      ctx.fillText(o.text, x, ty);
+      ctx.fillText(text, x, ty);
     }
   }
 }

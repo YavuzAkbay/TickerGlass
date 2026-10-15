@@ -1,13 +1,7 @@
 // Shared rendering of Fixed range / Anchored volume profile: a horizontal
 // histogram of the bars between two logical indices, POC and value area lines.
 import { BODY_HIT, setLineStyle, WEAK_BODY_HIT } from '../draw-utils';
-import type {
-  DrawingGeometry,
-  DrawingHitPart,
-  DrawingLineStyle,
-  DrawingProperty,
-  DrawingRenderContext,
-} from '../types';
+import type { DrawingGeometry, DrawingHitPart, DrawingLineStyle, DrawingProperty } from '../types';
 import { cachedVolumeProfile, profileLevels, rowPrice, type VolumeProfile } from './volume-profile';
 
 export const VP_DEFAULTS = {
@@ -97,6 +91,12 @@ export function vpProfile(
   return cachedVolumeProfile(g.drawing.id, g.bars, from, to, s);
 }
 
+/** What laying out and rendering a profile reads of a geometry (studies pass their own). */
+export type VpGeometry = Pick<
+  DrawingGeometry,
+  'width' | 'height' | 'barSpacing' | 'priceToY' | 'logicalToX'
+>;
+
 /** Pixel layout of a profile (shared object). */
 export interface VpLayout {
   profile: VolumeProfile;
@@ -134,7 +134,11 @@ export function vpLayout(
   to: number,
 ): VpLayout | null {
   const p = vpProfile(g, s, from, to);
-  if (!p) return null;
+  return p ? vpLayoutOf(g, s, p) : null;
+}
+
+/** Layout of an already computed profile (shared object), or null when off-scale. */
+export function vpLayoutOf(g: VpGeometry, s: VpStyle, p: VolumeProfile): VpLayout | null {
   const left = g.logicalToX(p.from);
   const right = g.logicalToX(p.to);
   if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
@@ -155,7 +159,7 @@ export function vpLayout(
 }
 
 /** Row `r` top/bottom y (at least 1 px tall). */
-function rowYs(g: DrawingGeometry, p: VolumeProfile, r: number): [number, number] {
+function rowYs(g: VpGeometry, p: VolumeProfile, r: number): [number, number] {
   if (p.rowSize <= 0) {
     const y = g.priceToY(p.low);
     return [y - 1, y + 1];
@@ -175,8 +179,8 @@ function hline(ctx: CanvasRenderingContext2D, x0: number, x1: number, y: number)
 }
 
 export function renderVolumeProfile(
-  { ctx }: DrawingRenderContext,
-  g: DrawingGeometry,
+  { ctx }: { ctx: CanvasRenderingContext2D },
+  g: VpGeometry,
   s: VpStyle,
   L: VpLayout,
 ): void {
