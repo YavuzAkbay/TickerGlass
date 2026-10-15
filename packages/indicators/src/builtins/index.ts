@@ -24,6 +24,12 @@ import { VWAP } from './vwap';
 import { VWMA } from './vwma';
 import { WILLIAMS_R } from './williams-r';
 import { WMA } from './wma';
+import { EXTERNAL } from './groups/external';
+import { MOMENTUM } from './groups/momentum';
+import { OTHER } from './groups/other';
+import { TREND_MA } from './groups/trend-ma';
+import { VOLATILITY } from './groups/volatility';
+import { VOLUME_GROUP } from './groups/volume';
 
 export {
   ANCHORED_VWAP,
@@ -56,9 +62,15 @@ export { MA_TYPES } from './common';
 export type { MaType } from './common';
 export { anchorPeriod, VWAP_ANCHORS } from './vwap';
 export type { VwapAnchor } from './vwap';
+export * from './groups/external';
+export * from './groups/momentum';
+export * from './groups/other';
+export * from './groups/trend-ma';
+export * from './groups/volatility';
+export * from './groups/volume';
 
-/** Every built-in definition, in Indicators-dialog order within a category. */
-export const BUILTIN_INDICATORS: readonly AnyIndicatorDefinition[] = [
+/** Built-ins before Phase 12, in Indicators-dialog order within a category. */
+const CORE: readonly AnyIndicatorDefinition[] = [
   // moving averages
   SMA,
   EMA,
@@ -91,6 +103,20 @@ export const BUILTIN_INDICATORS: readonly AnyIndicatorDefinition[] = [
   MFI,
   // other
   PIVOT_POINTS,
+];
+
+/**
+ * Every built-in definition, in Indicators-dialog order within a category.
+ * Phase 12 groups each own one file in `groups/`; edit those, not this list.
+ */
+export const BUILTIN_INDICATORS: readonly AnyIndicatorDefinition[] = [
+  ...CORE,
+  ...TREND_MA,
+  ...MOMENTUM,
+  ...VOLUME_GROUP,
+  ...VOLATILITY,
+  ...OTHER,
+  ...EXTERNAL,
 ];
 
 for (const def of BUILTIN_INDICATORS) defaultRegistry.register(def);

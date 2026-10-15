@@ -1,6 +1,6 @@
 import type { BarStore } from './bars';
 import type { AnyIndicatorDefinition } from './registry';
-import { isOutputRef, resolveInputs } from './resolve';
+import { isOutputRef, isValueOutput, resolveInputs } from './resolve';
 import { TaScope } from './ta';
 import type {
   BarsEnv,
@@ -37,6 +37,7 @@ class StepCtx implements StepContext {
   volume = new Float64Array(0);
   src: Record<string, Float64Array> = {};
   env: Readonly<BarsEnv> = DEFAULT_ENV;
+  isLast = false;
 
   constructor(
     public inputs: InputValues<InputsSchema>,
@@ -61,6 +62,24 @@ class StepCtx implements StepContext {
     if (j < 0 || j >= this.i) return NaN;
     return this.owner.values[id]?.[j] ?? NaN;
   }
+
+  setAt(id: string, j: number, value: number, color?: number): void {
+    const o = this.owner;
+    if (!o.def.repaints) throw new Error(`${o.def.id}: setAt() requires "repaints: true"`);
+    if (!Number.isInteger(j) || j < 0 || j > this.i)
+      throw new RangeError(`${o.def.id}: setAt() index ${j} is outside 0..${this.i}`);
+    if (j === this.i) this.set(id, value, color);
+    else o.writeBack(id, j, value, color);
+  }
+}
+
+/** Old content of one slot overwritten by `setAt` while stepping the last bar. */
+interface UndoEntry {
+  id: string;
+  j: number;
+  value: number;
+  /** -1: the output has no palette. */
+  color: number;
 }
 
 /**
@@ -80,6 +99,18 @@ export class IndicatorInstance {
   private scope: TaScope | null = null;
   private step: StepFn | null = null;
   private ctx: StepCtx;
+  /**
+   * Retroactive writes of the last bar's run (oldest first). Re-running the
+   * bar replays them in reverse, so a live tick starts from the state the
+   * snapshot describes; committing the bar (append) drops them.
+   */
+  private undo: UndoEntry[] = [];
+  /**
+   * During `computeLast`: what the host currently shows in every past slot
+   * the rewind or the re-run touched (first value seen), to report the first
+   * index that actually differs afterwards.
+   */
+  private shown: Map<string, UndoEntry> | null = null;
 
   constructor(
     readonly def: AnyIndicatorDefinition,
@@ -88,9 +119,12 @@ export class IndicatorInstance {
     this.inputs = resolveInputs(def, inputs);
     this.ctx = new StepCtx(this.inputs as InputValues<InputsSchema>, this);
     for (const o of def.outputs) {
-      if (o.type === 'plot' || o.type === 'shape' || o.type === 'bgcolor')
-        this.values[o.id] = new Float64Array(0);
-      if (o.type !== 'hline' && typeof o.color !== 'string') this.colors[o.id] = new Uint8Array(0);
+      if (isValueOutput(o)) this.values[o.id] = new Float64Array(0);
+      if (
+        (o.type === 'plot' || o.type === 'fill' || o.type === 'bgcolor' || o.type === 'shape') &&
+        typeof o.color !== 'string'
+      )
+        this.colors[o.id] = new Uint8Array(0);
     }
   }
 
@@ -117,6 +151,7 @@ export class IndicatorInstance {
     this.ensureCapacity(n);
     this.length = n;
     this.status = { state: 'ok' };
+    this.undo.length = 0;
     try {
       this.bind(bars, refs);
       this.scope = new TaScope();
@@ -127,9 +162,10 @@ export class IndicatorInstance {
       });
       this.scope.open = false;
       for (let i = 0; i < n; i++) {
-        if (i === n - 1) this.scope.save();
+        if (i === n - 1) this.save();
         this.runBar(i);
       }
+      this.shown = null;
     } catch (err) {
       this.fail(err);
     }
@@ -138,7 +174,8 @@ export class IndicatorInstance {
   /**
    * Re-run the last bar ('update') or step a newly appended one ('append').
    * Falls back to `computeAll` when the bar count does not match. Returns the
-   * first index whose outputs changed.
+   * first index whose outputs changed: the last bar, or earlier when a
+   * repainting definition wrote (or a rewind undid) past values.
    */
   computeLast(bars: BarStore, kind: 'update' | 'append', refs: RefResolver = NO_REFS): number {
     const n = bars.length;
@@ -153,16 +190,74 @@ export class IndicatorInstance {
       this.clearBar(n - 1);
       return n - 1;
     }
+    this.shown = null;
     try {
       this.bind(bars, refs);
-      if (kind === 'update') this.scope.restore();
-      else this.scope.save();
+      if (kind === 'update') this.restore();
+      else this.save();
       this.runBar(n - 1);
     } catch (err) {
+      this.shown = null;
       this.fail(err);
       return 0;
     }
-    return n - 1;
+    return Math.min(n - 1, this.retroChangedFrom());
+  }
+
+  /** Retroactive write of bar j < i (see StepContext.setAt). */
+  writeBack(id: string, j: number, value: number, color?: number): void {
+    const vals = this.values[id];
+    if (!vals) throw new Error(`${this.def.id}: setAt() on unknown output "${id}"`);
+    const cols = this.colors[id];
+    if (this.ctx.isLast) {
+      const old: UndoEntry = { id, j, value: vals[j]!, color: cols ? cols[j]! : -1 };
+      this.undo.push(old);
+      this.remember(old);
+    }
+    vals[j] = value;
+    if (cols) cols[j] = color ?? 0;
+  }
+
+  /** Record the shown content of a slot the first time this tick touches it. */
+  private remember(e: UndoEntry): void {
+    const key = `${e.id}\u0000${e.j}`;
+    this.shown ??= new Map();
+    if (!this.shown.has(key)) this.shown.set(key, e);
+  }
+
+  /** First past index whose content differs from what was shown before the tick. */
+  private retroChangedFrom(): number {
+    const shown = this.shown;
+    this.shown = null;
+    let from = Infinity;
+    if (!shown) return from;
+    for (const e of shown.values()) {
+      if (e.j >= from) continue;
+      const cols = this.colors[e.id];
+      if (!Object.is(this.values[e.id]![e.j], e.value) || (cols && cols[e.j] !== e.color))
+        from = e.j;
+    }
+    return from;
+  }
+
+  /** Snapshot before stepping the last bar; earlier bars are final. */
+  private save(): void {
+    this.scope!.save();
+    this.undo.length = 0;
+  }
+
+  /** Rewind to the snapshot: primitives and retroactive writes. */
+  private restore(): void {
+    this.scope!.restore();
+    for (let k = this.undo.length - 1; k >= 0; k--) {
+      const u = this.undo[k]!;
+      const vals = this.values[u.id]!;
+      const cols = this.colors[u.id];
+      this.remember({ id: u.id, j: u.j, value: vals[u.j]!, color: cols ? cols[u.j]! : -1 });
+      vals[u.j] = u.value;
+      if (cols) cols[u.j] = u.color;
+    }
+    this.undo.length = 0;
   }
 
   result(): IndicatorResult {
@@ -173,6 +268,7 @@ export class IndicatorInstance {
   fail(err: unknown): void {
     const message = err instanceof Error ? err.message : String(err);
     this.status = { state: 'error', message };
+    this.undo.length = 0;
     for (const v of Object.values(this.values)) v.fill(NaN);
     for (const c of Object.values(this.colors)) c.fill(0);
   }
@@ -180,6 +276,7 @@ export class IndicatorInstance {
   private runBar(i: number): void {
     this.clearBar(i);
     this.ctx.i = i;
+    this.ctx.isLast = i === this.length - 1;
     this.step!(this.ctx);
   }
 

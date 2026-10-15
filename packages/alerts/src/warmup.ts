@@ -3,7 +3,14 @@
  * the evaluated bar so recursive indicators match a long-history computation
  * (EMA/RMA seed error decays like (1 - 2/(L+1))^k, below 1e-8 after ~10·L bars).
  */
-import { defaultRegistry, type IndicatorRegistry } from '@investopen/indicators';
+import {
+  defaultRegistry,
+  resolveInputs,
+  type IndicatorRegistry,
+  type InputValueMap,
+  type InputValues,
+  type InputsSchema,
+} from '@investopen/indicators';
 import { isMovingOp } from './condition';
 import type { AlertSpec, IndicatorRef, IndicatorRefInstance, ValueOperand } from './types';
 
@@ -15,7 +22,10 @@ export const MIN_WARMUP_BARS = 300;
 export const TIMEFRAME_WARMUP_BARS = 300;
 
 const PARABOLIC_SAR_BARS = 500;
-/** Indicators whose level depends on the start bar (no converging warm-up). */
+/**
+ * Indicators whose level depends on the start bar (no converging warm-up).
+ * Definitions added later declare `warmup: { kind: 'cumulative' }` instead.
+ */
 const CUMULATIVE: ReadonlySet<string> = new Set(['obv']);
 const VWAP_TYPES: ReadonlySet<string> = new Set(['vwap', 'vwap-bands']);
 
@@ -57,13 +67,39 @@ function intInput(inst: IndicatorRefInstance, key: string, fallback: number): nu
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
+/**
+ * The definition's declared warm-up (`IndicatorDefinition.warmup`), or null
+ * when it declares none. Input values are resolved (defaults filled in);
+ * invalid inputs fall back to the defaults.
+ */
+function declaredWarmup(
+  inst: IndicatorRefInstance,
+  registry: IndicatorRegistry,
+  maxBars: number,
+): number | null {
+  const def = registry.get(inst.type);
+  const w = def?.warmup;
+  if (!def || !w) return null;
+  if ('kind' in w) return maxBars;
+  if (typeof w.bars === 'number') return w.bars;
+  let inputs: InputValueMap;
+  try {
+    inputs = resolveInputs(def, inst.inputs);
+  } catch {
+    inputs = resolveInputs(def, {});
+  }
+  return w.bars(inputs as InputValues<InputsSchema>);
+}
+
 /** Own warm-up of one instance, ignoring upstream instances. */
 export function instanceWarmup(inst: IndicatorRefInstance, opts: WarmupOptions = {}): number {
   const registry = opts.registry ?? defaultRegistry;
   const maxBars = opts.maxBars ?? DEFAULT_MAX_BARS;
   const base = 10 * intInputsMax(inst, registry) + 50;
+  const declared = declaredWarmup(inst, registry, maxBars);
   let own: number;
-  if (CUMULATIVE.has(inst.type)) own = maxBars;
+  if (declared !== null) own = Math.min(maxBars, Math.ceil(declared));
+  else if (CUMULATIVE.has(inst.type)) own = maxBars;
   else if (inst.type === 'parabolic-sar') own = PARABOLIC_SAR_BARS;
   else if (inst.type === 'ichimoku') {
     const lengths = Math.max(

@@ -119,6 +119,19 @@ export interface TimeInputDef extends InputBase<number> {
   kind: 'time';
 }
 
+/**
+ * Another symbol (ticker as the chart's DataFeed knows it, e.g. 'GOOG') whose
+ * bars the host fetches and aligns to the chart bars (Correlation). Its
+ * columns are read through `source` refs with instanceId `sym:<SYMBOL>`
+ * (see EXTERNAL_SOURCE_PREFIX).
+ */
+export interface SymbolInputDef extends InputBase<string> {
+  kind: 'symbol';
+}
+
+/** `OutputSourceRef.instanceId` prefix of an external symbol's price column. */
+export const EXTERNAL_SOURCE_PREFIX = 'sym:';
+
 export type InputDef =
   | IntInputDef
   | FloatInputDef
@@ -127,7 +140,8 @@ export type InputDef =
   | ColorInputDef
   | EnumInputDef
   | TimeframeInputDef
-  | TimeInputDef;
+  | TimeInputDef
+  | SymbolInputDef;
 
 export type InputKind = InputDef['kind'];
 
@@ -222,6 +236,12 @@ export interface PlotDef<
   offset?: FromInputs<S, number>;
   /** Show the last-value label on the price axis. Default true. */
   showLastValue?: boolean;
+  /**
+   * Line/step kinds: draw straight across NaN bars instead of breaking the
+   * line (standard `plot.style_line` vs `style_linebr`), e.g. ZigZag pivots
+   * written sparsely. Default false.
+   */
+  connectGaps?: boolean;
 }
 
 export interface HLineDef<
@@ -267,13 +287,60 @@ export interface ShapeDef<
   color: ColorSpec;
   /** Static label text drawn with the shape. */
   text?: string;
+  /**
+   * Label text is the bar's value formatted with the indicator's format
+   * (Pivots High/Low prices) instead of `text`. With aboveBar/belowBar the
+   * value then both marks presence and supplies the text. Default false.
+   */
+  textFromValue?: boolean;
   textColor?: string;
   /** Shift by N bars when drawn (aboveBar/belowBar use the bar at the drawn position). */
   offset?: FromInputs<S, number>;
 }
 
+/** 'visible': one profile of the bars in view; 'session': one per session period. */
+export type VolumeProfileMode = 'visible' | 'session';
+/** Same values as the engine's volume profile drawings: row count or row size in price. */
+export type VolumeProfileRowsLayout = 'count' | 'size';
+export type VolumeProfilePlacement = 'left' | 'right';
+
+/**
+ * Volume profile computed and drawn by the engine from the chart's own bars
+ * (Visible Range / Session Volume Profile). Its values array marks period
+ * starts in 'session' mode (non-NaN = a new period begins at that bar) and is
+ * unused (all NaN) in 'visible' mode. Not autoscaled, no legend value, not an
+ * alert operand. Numeric settings may come from inputs (like hline values).
+ */
+export interface VolumeProfileDef<
+  O extends string = string,
+  S extends InputsSchema = InputsSchema,
+> extends OutputBase<O> {
+  type: 'volumeProfile';
+  mode: VolumeProfileMode;
+  rowsLayout: FromInputs<S, VolumeProfileRowsLayout>;
+  /** Number of rows ('count' layout). */
+  rows: FromInputs<S, number>;
+  /** Row height in price units ('size' layout). */
+  rowSize: FromInputs<S, number>;
+  /** Value area, % of the profile's volume. */
+  valueArea: FromInputs<S, number>;
+  /** Histogram width in % of the profile's range (session) or pane (visible). */
+  widthPercent: FromInputs<S, number>;
+  placement: FromInputs<S, VolumeProfilePlacement>;
+  upColor: string;
+  downColor: string;
+  valueAreaUpColor: string;
+  valueAreaDownColor: string;
+  pocColor: string;
+}
+
 export type OutputDef<O extends string = string, S extends InputsSchema = InputsSchema> =
-  PlotDef<O, S> | HLineDef<O, S> | FillDef<O> | BgColorDef<O, S> | ShapeDef<O, S>;
+  | PlotDef<O, S>
+  | HLineDef<O, S>
+  | FillDef<O>
+  | BgColorDef<O, S>
+  | ShapeDef<O, S>
+  | VolumeProfileDef<O, S>;
 
 export type OutputType = OutputDef['type'];
 
@@ -293,6 +360,7 @@ export interface ResolvedPlot {
   base: number | null;
   offset: number;
   showLastValue: boolean;
+  connectGaps: boolean;
 }
 
 export interface ResolvedHLine {
@@ -334,12 +402,43 @@ export interface ResolvedShape {
   size: ShapeSize;
   colors: string[];
   text: string;
+  textFromValue: boolean;
   textColor: string;
   offset: number;
 }
 
+/** Order of `ResolvedVolumeProfile.colors` (and of a `colors` style override). */
+export const VOLUME_PROFILE_COLOR_KEYS = [
+  'upColor',
+  'downColor',
+  'valueAreaUpColor',
+  'valueAreaDownColor',
+  'pocColor',
+] as const;
+
+export interface ResolvedVolumeProfile {
+  type: 'volumeProfile';
+  id: string;
+  title: string;
+  visible: boolean;
+  mode: VolumeProfileMode;
+  rowsLayout: VolumeProfileRowsLayout;
+  rows: number;
+  rowSize: number;
+  valueArea: number;
+  widthPercent: number;
+  placement: VolumeProfilePlacement;
+  /** Up, down, value-area up, value-area down, POC (VOLUME_PROFILE_COLOR_KEYS). */
+  colors: string[];
+}
+
 export type ResolvedOutput =
-  ResolvedPlot | ResolvedHLine | ResolvedFill | ResolvedBgColor | ResolvedShape;
+  | ResolvedPlot
+  | ResolvedHLine
+  | ResolvedFill
+  | ResolvedBgColor
+  | ResolvedShape
+  | ResolvedVolumeProfile;
 
 /** User style override for one output (Style tab, "Save as default"). Fields
  * that do not apply to the output type are ignored. */
@@ -347,7 +446,7 @@ export interface OutputStyleOverride {
   visible?: boolean;
   /** Plots only: users may switch e.g. line -> histogram. */
   kind?: PlotKind;
-  /** Plots, fills, bgcolor, shapes: full palette. */
+  /** Plots, fills, bgcolor, shapes: full palette. Volume profiles: VOLUME_PROFILE_COLOR_KEYS order. */
   colors?: string[];
   /** HLines only. */
   color?: string;
@@ -391,12 +490,28 @@ export interface IndicatorDefinition<
   /** Draw order = array order (later on top). */
   outputs: readonly OutputDef<O, S>[];
   /**
+   * Values of past bars may change after they were first computed (ZigZag,
+   * regression channel). Required to use `StepContext.setAt`; such definitions
+   * cannot have a timeframe input and cannot be used as alert operands.
+   */
+  repaints?: true;
+  /**
+   * Bars of history the values need before they are trustworthy, for hosts
+   * that compute on a bounded window (alerts service). 'cumulative': values
+   * depend on all history (OBV, A/D), so no window is enough. Omit to let the
+   * host derive it from the inputs.
+   */
+  warmup?: IndicatorWarmup<S>;
+  /**
    * Called once per full computation. Create every stateful primitive here
    * through `ctx.ta`; never keep mutable state in closure variables (it would
    * not be rewound when the last bar is re-run). Returns the per-bar step.
    */
   setup(ctx: SetupContext<S>): StepFn<S, O>;
 }
+
+export type IndicatorWarmup<S extends InputsSchema = InputsSchema> =
+  { kind: 'cumulative' } | { bars: FromInputs<S, number> };
 
 /**
  * Facts about the bars an instance runs on, provided by the host
@@ -453,6 +568,19 @@ export interface StepContext<S extends InputsSchema = InputsSchema, O extends st
   setColor(id: O, color: number): void;
   /** This indicator's own output at an earlier bar j < i (NaN if none). */
   get(id: O, j: number): number;
+  /**
+   * Retroactive write: value (and palette index) of a plot/shape/bgcolor at
+   * bar j <= i, e.g. moving a ZigZag pivot or redrawing a regression window.
+   * `color` defaults to palette index 0.
+   * Only for definitions with `repaints: true` (throws otherwise). Writes made
+   * while stepping the last bar are undone when a live tick re-runs it, and
+   * the change reported to the host starts at the smallest index touched.
+   * The definition must leave the same arrays after any tick sequence as a
+   * full computation would (e.g. clear what an earlier last-bar run drew).
+   */
+  setAt(id: O, j: number, value: number, color?: number): void;
+  /** True while stepping the last bar of the series (i === length - 1). */
+  readonly isLast: boolean;
 }
 
 // ---------------------------------------------------------- ta primitives
@@ -471,6 +599,12 @@ export interface Streaming {
 export interface WeightedStreaming {
   /** NaN in either argument: NaN, state unchanged (see Streaming). */
   update(x: number, weight: number): number;
+}
+
+/** A streaming calculation fed two aligned values per bar (e.g. correlation). */
+export interface PairStreaming {
+  /** NaN in either argument: NaN, state unchanged (see Streaming). */
+  update(x: number, y: number): number;
 }
 
 /** Last N values (newest first), for lookbacks like `x[k]`. */
@@ -508,6 +642,45 @@ export interface Ta {
   dev(length: number): Streaming;
   highest(length: number): Streaming;
   lowest(length: number): Streaming;
+  /**
+   * Offset (<= 0, in values fed) of the highest of the last `length` values
+   * from the current one (standard `ta.highestbars`); ties pick the most recent.
+   */
+  highestBars(length: number): Streaming;
+  /** Like `highestBars` for the lowest value (standard `ta.lowestbars`). */
+  lowestBars(length: number): Streaming;
+  /** Running total of every value fed (standard `ta.cum`). */
+  cum(): Streaming;
+  /** `x - x[length]` (standard `ta.change(x, length)`), default length 1. */
+  change(length?: number): Streaming;
+  /**
+   * Least-squares line over the last `length` values with x = 0..length-1
+   * oldest to newest: a + b * (length - 1 - offset) (standard `ta.linreg`;
+   * offset 0 = the fitted value at the current bar, TA-Lib LINEARREG).
+   */
+  linreg(length: number, offset?: number): Streaming;
+  /**
+   * Percentage (0..100) of the previous `length` values that are <= the
+   * current one (standard `ta.percentrank`; needs length + 1 values).
+   */
+  percentrank(length: number): Streaming;
+  /** Pearson correlation of x and y over `length` pairs (standard `ta.correlation`). */
+  correlation(length: number): PairStreaming;
+  /** Symmetrically weighted MA of 4 values: (x[3] + 2x[2] + 2x[1] + x) / 6 (standard `ta.swma`). */
+  swma(): Streaming;
+  /**
+   * Arnaud Legoux MA (standard `ta.alma`): gaussian weights centred at
+   * offset * (length - 1) from the oldest value, width length / sigma.
+   */
+  alma(length: number, offset: number, sigma: number): Streaming;
+  /**
+   * Pivot high (standard `ta.pivothigh(left, right)`): on the value that confirms
+   * it, the value `right` values back if it is strictly greater than the
+   * `left` values before and `right` values after it; NaN otherwise.
+   */
+  pivotHigh(left: number, right: number): Streaming;
+  /** Pivot low: like `pivotHigh` with strictly lower (standard `ta.pivotlow`). */
+  pivotLow(left: number, right: number): Streaming;
   history(length: number): History;
   /** Record of numbers carried across bars (standard `var`), e.g. SAR state. */
   vars<T extends Record<string, number>>(init: T): T;

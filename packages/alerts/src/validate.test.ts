@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { IndicatorRegistry, SMA } from '@investopen/indicators';
 import { describe, expect, it } from 'vitest';
 import { validateAlert, type DrawingInfo, type ValidationCode } from './validate';
 
@@ -259,5 +260,82 @@ describe('validateAlert', () => {
     };
     const r = validateAlert({ ...b, spec: huge });
     expect(r.ok ? [] : r.errors.map((e) => [e.path, e.code])).toContainEqual(['spec', 'too_large']);
+  });
+});
+
+describe('indicators that alerts cannot evaluate', () => {
+  const registry = new IndicatorRegistry();
+  registry.register(SMA);
+  const plotOnly = {
+    category: 'other',
+    overlay: true,
+    outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#000' }],
+    setup: () => () => {},
+  } as const;
+  registry.register({
+    ...plotOnly,
+    id: 'zz',
+    name: 'ZigZag',
+    shortName: 'ZZ',
+    repaints: true,
+    inputs: {},
+  });
+  registry.register({
+    ...plotOnly,
+    id: 'corr',
+    name: 'Correlation',
+    shortName: 'CC',
+    inputs: { symbol: { kind: 'symbol', label: 'Symbol', default: 'GOOG' } },
+  });
+
+  const withLeft = (instances: unknown[], instanceId: string, outputId: string) => {
+    const b = base();
+    const spec = b['spec'] as Record<string, unknown>;
+    return {
+      ...b,
+      spec: {
+        ...spec,
+        left: { kind: 'indicator', ref: { instances, instanceId, outputId, title: 'X' } },
+      },
+    };
+  };
+  const errors = (body: unknown) => {
+    const r = validateAlert(body, registry);
+    return r.ok ? [] : r.errors.map((e) => [e.path, e.code, e.message]);
+  };
+
+  it('rejects repainting definitions, also upstream of the operand', () => {
+    expect(errors(withLeft([{ id: 'z', type: 'zz', inputs: {} }], 'z', 'v'))).toEqual([
+      [
+        'spec.left.ref.instances.0.type',
+        'unsupported_indicator',
+        'ZigZag repaints past values and cannot be used in alerts',
+      ],
+    ]);
+    const chain = [
+      { id: 'z', type: 'zz', inputs: {} },
+      { id: 'm', type: 'sma', inputs: { source: { instanceId: 'z', outputId: 'v' } } },
+    ];
+    expect(errors(withLeft(chain, 'm', 'ma')).map((e) => e[1])).toEqual(['unsupported_indicator']);
+  });
+
+  it('rejects symbol inputs and sources on another symbol', () => {
+    expect(errors(withLeft([{ id: 'c', type: 'corr', inputs: {} }], 'c', 'v'))).toEqual([
+      [
+        'spec.left.ref.instances.0.type',
+        'unsupported_indicator',
+        "Correlation uses another symbol's data and cannot be used in alerts",
+      ],
+    ]);
+    const ext = [
+      { id: 'm', type: 'sma', inputs: { source: { instanceId: 'sym:GOOG', outputId: 'close' } } },
+    ];
+    expect(errors(withLeft(ext, 'm', 'ma'))).toEqual([
+      [
+        'spec.left.ref.instances.0.inputs.source',
+        'reference',
+        "sources on another symbol ('sym:GOOG') are not supported in alerts",
+      ],
+    ]);
   });
 });

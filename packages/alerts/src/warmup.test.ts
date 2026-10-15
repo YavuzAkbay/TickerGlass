@@ -1,4 +1,4 @@
-import { IndicatorRuntime, type BarArrays } from '@investopen/indicators';
+import { IndicatorRegistry, IndicatorRuntime, type BarArrays } from '@investopen/indicators';
 import { describe, expect, it } from 'vitest';
 import type { AlertSpec, IndicatorRef } from './types';
 import { alertBars, instanceWarmup, warmupBars, warmupSince } from './warmup';
@@ -214,5 +214,51 @@ describe('warmupSince / alertBars', () => {
       },
     };
     expect(alertBars(obv)).toBe(5000);
+  });
+});
+
+describe('declared warm-ups (IndicatorDefinition.warmup)', () => {
+  const registry = new IndicatorRegistry();
+  const def = {
+    category: 'other',
+    overlay: false,
+    outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#000' }],
+    setup: () => () => {},
+  } as const;
+  registry.register({
+    ...def,
+    id: 'cum',
+    name: 'Cum',
+    shortName: 'C',
+    inputs: {},
+    warmup: { kind: 'cumulative' },
+  });
+  registry.register({
+    ...def,
+    id: 'fixed',
+    name: 'Fixed',
+    shortName: 'F',
+    inputs: {},
+    warmup: { bars: 800 },
+  });
+  registry.register({
+    ...def,
+    id: 'byinput',
+    name: 'By input',
+    shortName: 'B',
+    inputs: { length: { kind: 'int', label: 'Length', default: 20, min: 1 } },
+    warmup: { bars: { fromInputs: (i: { length: number }) => 40 * i.length }['fromInputs'] },
+  });
+  const w = (type: string, inputs = {}, maxBars?: number) =>
+    instanceWarmup({ id: 'a', type, inputs }, { registry, ...(maxBars ? { maxBars } : {}) });
+
+  it('wins over the heuristics, floored at the minimum and capped at maxBars', () => {
+    expect(w('cum')).toBe(5000);
+    expect(w('cum', {}, 2000)).toBe(2000);
+    expect(w('fixed')).toBe(800);
+    expect(w('fixed', {}, 600)).toBe(600);
+    expect(w('byinput')).toBe(800);
+    expect(w('byinput', { length: 5 })).toBe(300);
+    expect(w('byinput', { length: 'bad' })).toBe(800);
   });
 });

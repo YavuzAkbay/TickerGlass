@@ -1,4 +1,4 @@
-import type { History, SeriesVar, Streaming, Ta, WeightedStreaming } from './types';
+import type { History, PairStreaming, SeriesVar, Streaming, Ta, WeightedStreaming } from './types';
 
 /**
  * Snapshot/restore hook every primitive implements. The runtime calls `save`
@@ -61,6 +61,11 @@ class Ring implements Stateful {
 function checkLength(length: number): number {
   if (!Number.isInteger(length) || length < 1) throw new Error(`Invalid length ${length}`);
   return length;
+}
+
+function checkBars(bars: number): number {
+  if (!Number.isInteger(bars) || bars < 0) throw new Error(`Invalid bar count ${bars}`);
+  return bars;
 }
 
 class Sum implements Streaming, Stateful {
@@ -197,6 +202,8 @@ class Extreme implements Streaming, Stateful {
   constructor(
     private readonly length: number,
     private readonly max: boolean,
+    /** Return the extreme's offset from the current value (<= 0) instead of the value. */
+    private readonly offset = false,
   ) {
     this.cap = checkLength(length) + 1;
     this.idx = new Float64Array(this.cap);
@@ -223,7 +230,10 @@ class Extreme implements Streaming, Stateful {
     this.tail++;
     while (this.idx[this.head % cap]! <= this.seen - this.length) this.head++;
     this.seen++;
-    return this.seen >= this.length ? this.val[this.head % cap]! : NaN;
+    if (this.seen < this.length) return NaN;
+    // Ties: the deque drops older equal values, so the head is the most recent.
+    const h = this.head % cap;
+    return this.offset ? this.idx[h]! - (this.seen - 1) : this.val[h]!;
   }
 
   save(): void {
@@ -352,6 +362,218 @@ class Dev implements Streaming, Stateful {
   }
 }
 
+/** Running total (standard `ta.cum`). */
+class Cum implements Streaming, Stateful {
+  private total = NaN;
+  private savedTotal = NaN;
+
+  update(x: number): number {
+    if (Number.isNaN(x)) return NaN;
+    this.total = Number.isNaN(this.total) ? x : this.total + x;
+    return this.total;
+  }
+
+  save(): void {
+    this.savedTotal = this.total;
+  }
+
+  restore(): void {
+    this.total = this.savedTotal;
+  }
+}
+
+/**
+ * Base for calculations over the last `size` values that recompute from the
+ * window each bar (exact, no drift). `calc` runs once the window is full.
+ */
+abstract class Windowed implements Streaming, Stateful {
+  protected ring: Ring;
+
+  constructor(size: number) {
+    this.ring = new Ring(size);
+  }
+
+  update(x: number): number {
+    if (Number.isNaN(x)) return NaN;
+    this.ring.push(x);
+    return this.ring.full ? this.calc(this.ring) : NaN;
+  }
+
+  /** `w.get(k)`: k = 0 newest. */
+  protected abstract calc(w: Ring): number;
+
+  save(): void {
+    this.ring.save();
+  }
+
+  restore(): void {
+    this.ring.restore();
+  }
+}
+
+class Change extends Windowed {
+  constructor(private readonly length: number) {
+    super(checkLength(length) + 1);
+  }
+
+  protected calc(w: Ring): number {
+    return w.get(0) - w.get(this.length);
+  }
+}
+
+/** Least squares over x = 0..n-1 (oldest..newest), evaluated at n - 1 - offset. */
+class LinReg extends Windowed {
+  constructor(
+    private readonly length: number,
+    private readonly offset: number,
+  ) {
+    super(checkLength(length));
+    if (!Number.isFinite(offset)) throw new Error(`Invalid offset ${offset}`);
+  }
+
+  protected calc(w: Ring): number {
+    const n = this.length;
+    if (n === 1) return w.get(0);
+    let sy = 0;
+    let sxy = 0;
+    for (let x = 0; x < n; x++) {
+      const y = w.get(n - 1 - x);
+      sy += y;
+      sxy += x * y;
+    }
+    const sx = (n * (n - 1)) / 2;
+    const sxx = ((n - 1) * n * (2 * n - 1)) / 6;
+    const b = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+    const a = (sy - b * sx) / n;
+    return a + b * (n - 1 - this.offset);
+  }
+}
+
+class PercentRank extends Windowed {
+  constructor(private readonly length: number) {
+    super(checkLength(length) + 1);
+  }
+
+  protected calc(w: Ring): number {
+    const x = w.get(0);
+    let count = 0;
+    for (let k = 1; k <= this.length; k++) if (w.get(k) <= x) count++;
+    return (100 * count) / this.length;
+  }
+}
+
+class Swma extends Windowed {
+  constructor() {
+    super(4);
+  }
+
+  protected calc(w: Ring): number {
+    return (w.get(3) + 2 * w.get(2) + 2 * w.get(1) + w.get(0)) / 6;
+  }
+}
+
+class Alma extends Windowed {
+  /** weights[k]: k = 0 oldest. */
+  private readonly weights: Float64Array;
+  private readonly norm: number;
+
+  constructor(
+    private readonly length: number,
+    offset: number,
+    sigma: number,
+  ) {
+    super(checkLength(length));
+    if (!Number.isFinite(offset) || !(sigma > 0)) throw new Error('Invalid ALMA offset/sigma');
+    const m = offset * (length - 1);
+    const s = length / sigma;
+    this.weights = new Float64Array(length);
+    let norm = 0;
+    for (let k = 0; k < length; k++) {
+      const wk = Math.exp(-((k - m) ** 2) / (2 * s * s));
+      this.weights[k] = wk;
+      norm += wk;
+    }
+    this.norm = norm;
+  }
+
+  protected calc(w: Ring): number {
+    const n = this.length;
+    let sum = 0;
+    for (let k = 0; k < n; k++) sum += this.weights[k]! * w.get(n - 1 - k);
+    return sum / this.norm;
+  }
+}
+
+/** Center `right` values back strictly beyond every other value of the window. */
+class Pivot extends Windowed {
+  constructor(
+    left: number,
+    private readonly right: number,
+    private readonly high: boolean,
+  ) {
+    super(checkBars(left) + checkBars(right) + 1);
+  }
+
+  protected calc(w: Ring): number {
+    const c = w.get(this.right);
+    for (let k = 0; k < w.size; k++) {
+      if (k === this.right) continue;
+      const v = w.get(k);
+      if (this.high ? !(c > v) : !(c < v)) return NaN;
+    }
+    return c;
+  }
+}
+
+/** Pearson correlation over the last `length` pairs (recomputed per bar). */
+class Correlation implements PairStreaming, Stateful {
+  private xs: Ring;
+  private ys: Ring;
+
+  constructor(private readonly length: number) {
+    this.xs = new Ring(checkLength(length));
+    this.ys = new Ring(length);
+  }
+
+  update(x: number, y: number): number {
+    if (Number.isNaN(x) || Number.isNaN(y)) return NaN;
+    this.xs.push(x);
+    this.ys.push(y);
+    if (!this.xs.full) return NaN;
+    const n = this.length;
+    let mx = 0;
+    let my = 0;
+    for (let k = 0; k < n; k++) {
+      mx += this.xs.buf[k]!;
+      my += this.ys.buf[k]!;
+    }
+    mx /= n;
+    my /= n;
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    for (let k = 0; k < n; k++) {
+      const dx = this.xs.buf[k]! - mx;
+      const dy = this.ys.buf[k]! - my;
+      sxy += dx * dy;
+      sxx += dx * dx;
+      syy += dy * dy;
+    }
+    const d = Math.sqrt(sxx * syy);
+    return d > 0 ? sxy / d : NaN;
+  }
+
+  save(): void {
+    this.xs.save();
+    this.ys.save();
+  }
+
+  restore(): void {
+    this.xs.restore();
+    this.ys.restore();
+  }
+}
+
 class HistoryBuf implements History, Stateful {
   private ring: Ring;
 
@@ -434,6 +656,17 @@ export class TaScope {
       dev: (n) => add(new Dev(n)),
       highest: (n) => add(new Extreme(n, true)),
       lowest: (n) => add(new Extreme(n, false)),
+      highestBars: (n) => add(new Extreme(n, true, true)),
+      lowestBars: (n) => add(new Extreme(n, false, true)),
+      cum: () => add(new Cum()),
+      change: (n = 1) => add(new Change(n)),
+      linreg: (n, offset = 0) => add(new LinReg(n, offset)),
+      percentrank: (n) => add(new PercentRank(n)),
+      correlation: (n) => add(new Correlation(n)),
+      swma: () => add(new Swma()),
+      alma: (n, offset, sigma) => add(new Alma(n, offset, sigma)),
+      pivotHigh: (left, right) => add(new Pivot(left, right, true)),
+      pivotLow: (left, right) => add(new Pivot(left, right, false)),
       history: (n) => add(new HistoryBuf(n)),
       vars: (init) => add(new Vars({ ...init })).value,
       series: () => {

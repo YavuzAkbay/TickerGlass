@@ -397,11 +397,11 @@ export class IndicatorRuntime {
       diff && JSON.stringify(res.status) === prevStatus ? Math.max(from, prevLength) : from;
     // Confirmed alignment: a chart bar shows the timeframe bar before the one containing it.
     const back = waitsForTimeframeClose(node.inst.def, node.spec.inputs ?? {}) ? 1 : 0;
-    // Values hold across every chart bar of a timeframe bar; shapes and
-    // background only mark its first chart bar.
+    // Values hold across every chart bar of a timeframe bar; shapes,
+    // background and volume profile period marks only mark its first chart bar.
     const spanOnly = new Set(
       node.inst.def.outputs
-        .filter((o) => o.type === 'shape' || o.type === 'bgcolor')
+        .filter((o) => o.type === 'shape' || o.type === 'bgcolor' || o.type === 'volumeProfile')
         .map((o) => o.id),
     );
     let prevK = from > 0 && store ? store.indexAtOrBefore(this.bars.time[from - 1]!) : -1;

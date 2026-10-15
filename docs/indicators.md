@@ -8,7 +8,9 @@ Contract for the indicator framework. Source of truth for types:
 
 An indicator is a declarative object built with `defineIndicator` (it infers literal input keys and output
 ids, so `step` is fully typed) and registered with `registerIndicator` / looked up with `getIndicator`,
-`listIndicators`. Built-ins register themselves in `src/builtins/index.ts`.
+`listIndicators`. Built-ins register themselves in `src/builtins/index.ts`: the pre-Phase-12 list plus one
+array per Phase 12 group in `src/builtins/groups/{trend-ma,momentum,volume,volatility,other,external}.ts`
+(each indicator in its own `src/builtins/<id>.ts`, imported, listed and exported by its group file).
 
 ```ts
 export const SMA = defineIndicator({
@@ -41,10 +43,18 @@ export const SMA = defineIndicator({
 
 - **Metadata**: `id` (stable, persisted), `name`, `shortName` (legend), `category`, `keywords`, `overlay`
   (price pane vs new pane), `format` (`inherit|price|volume|percent`), `precision`, `scaleRange` (e.g. RSI 0–100).
+  Additive (Phase 12): `repaints: true` (past values may change; required for `c.setAt`, see §2; not allowed
+  together with a `timeframe` input; such indicators are rejected as alert operands) and `warmup`
+  (`{ kind: 'cumulative' }` or `{ bars: n | (inputs) => n }`: history the alerts service loads, read before its
+  built-in heuristics; cumulative = `ALERTS_MAX_BARS`).
 - **Inputs** (`kind`): `int`, `float` (min/max/step), `bool`, `source`, `color`, `enum` (options, labels),
-  `timeframe`, `time` (unix s, for Anchored VWAP; 0 = unset). Common: `label`, `default`, `group`, `inline`,
-  `tooltip`, `hideInTitle`. Key order = dialog order. `resolveInputs` fills defaults and clamps numbers.
+  `timeframe`, `time` (unix s, for Anchored VWAP; 0 = unset), `symbol` (Phase 12, type only until the external
+  series runtime lands: another ticker, e.g. Correlation's; indicators with one are rejected by alerts).
+  Common: `label`, `default`, `group`, `inline`, `tooltip`, `hideInTitle`. Key order = dialog order.
+  `resolveInputs` fills defaults and clamps numbers.
 - **Source values**: `open high low close volume hl2 hlc3 ohlc4 hlcc4`, or `{ instanceId, outputId }`.
+  `instanceId` values starting with `sym:` (`EXTERNAL_SOURCE_PREFIX`, `isExternalRef`) are reserved for an
+  external symbol's price column (`{ instanceId: 'sym:GOOG', outputId: 'close' }`).
 - **Outputs** (array order = draw order): `plot` (kinds line/step/histogram/area/columns/circles/cross,
   `lineWidth`, `lineStyle`, `base`, `offset`, `showLastValue`), `hline` (`value` may be a function of inputs),
   `fill` (`between` two plots/hlines), `bgcolor`, `shape` (shape, location aboveBar/belowBar/absolute/top/bottom,
@@ -54,6 +64,16 @@ export const SMA = defineIndicator({
   `NO_COLOR` (255, = engine `STUDY_COLOR_NONE`) means "no colour" for that bar (standard `na` colour: the line
   segment ending there, the bar, mark, fill segment or background is not drawn); any other out-of-range index
   uses entry 0.
+- Additive output options (Phase 12): plot `connectGaps` (line/step drawn straight across NaN bars, standard
+  `style_line` vs `style_linebr`; default false); shape `textFromValue` (label text = the bar's value formatted
+  with the indicator's format; with aboveBar/belowBar the value marks presence and gives the text); new output
+  type `volumeProfile` (`mode: 'visible' | 'session'`, `rowsLayout: 'count' | 'size'`, `rows`, `rowSize`,
+  `valueArea` %, `widthPercent`, `placement: 'left' | 'right'` — each may be a function of inputs — and
+  `upColor`, `downColor`, `valueAreaUpColor`, `valueAreaDownColor`, `pocColor`). The engine computes and draws
+  the profile from the chart bars; the output's values array marks period starts in session mode (non-NaN = a
+  new period starts at that bar; all NaN in visible mode). Resolved as `ResolvedVolumeProfile` with
+  `colors` in `VOLUME_PROFILE_COLOR_KEYS` order (a `colors` style override uses the same order). Value outputs
+  (`isValueOutput`): plot, shape, bgcolor, volumeProfile.
 - `resolveOutputs(def, inputs, overrides)` produces concrete `ResolvedOutput[]` (defaults + user style
   overrides + input-derived hline values and offsets). It is structurally the engine's `StudyOutputMeta`;
   `apps/web/src/indicators/contract.ts` fails typecheck if they drift.
@@ -72,7 +92,24 @@ indicators use `calendarPeriod(time, unit, tz, session)` (`session|week|month|qu
 DST zones such as Australia/Lord_Howe). VWAP: anchors Session/Week/Month/Quarter/Year/Decade/Century in the
 exchange timezone and "Hide VWAP on 1D or Above" (`env.intervalSeconds >= 1D`). OBV: reference "Smoothing" (None,
 SMA, SMA + Bollinger Bands, EMA, SMMA (RMA), WMA, VWMA; length, BB StdDev). Unset outputs are NaN for the bar. All running state lives in `ta` primitives created in
-`setup` (`sma ema rma sum stdev highest lowest history vars series`); creating one inside `step` is an error.
+`setup` (`sma ema rma wma vwma sum stdev dev highest lowest history vars series`; Phase 12 adds `cum()`,
+`highestBars(n)` / `lowestBars(n)` (offset <= 0 of the extreme within the last n values, ties = most recent),
+`change(n = 1)` (`x - x[n]`), `linreg(n, offset = 0)` (least squares over x = 0..n-1 oldest to newest,
+value `a + b·(n-1-offset)`), `percentrank(n)` (% of the previous n values <= current), `correlation(n)`
+(Pearson, `update(x, y)`), `swma()`, `alma(n, offset, sigma)`, `pivotHigh(left, right)` / `pivotLow(left,
+right)` (on the confirming value, the center `right` values back if strictly beyond every other value of the
+window, else NaN)); creating one inside `step` is an error. Lookbacks count values fed, not bars (NaN inputs
+are skipped).
+
+**Repainting (`setAt`, additive)**: definitions with `repaints: true` may call `c.setAt(id, j, v, color?)`
+for `j <= i` to rewrite a past value (ZigZag pivot moves, regression channel windows); `c.isLast` is true
+while stepping the last bar. Writes made while stepping the last bar go to an undo log: a live tick replays
+it in reverse before re-running the bar (so a tick that moves a pivot and a later tick that moves it back
+give the full-compute arrays), an append commits it. `computeLast` then reports the smallest past index whose
+value or colour differs from what the host showed before the tick (else n-1), the runtime recomputes
+dependents fully from such a change, and the worker / engine patch the tail from that index. The definition
+must leave the same arrays as a full computation, e.g. clear what an earlier last-bar run drew (keep its
+range in `vars`): in a full compute only bar n-1 runs with `isLast`, live every bar did when it was last.
 
 Why per-bar: full compute and live update are the same code, so they cannot diverge; recursive indicators
 (SAR, Supertrend) are natural; a tick costs O(1) per indicator. Conventions (standard/TA-Lib): warm-up is NaN,
@@ -250,6 +287,19 @@ transform's volume column. Timeframe alignment uses brick times (non-decreasing)
   `|a-b| <= 1e-8 * max(1, |b|)` (NaN must match NaN), and repeats via incremental `updateBar` from bar 500
   to assert identical arrays. Golden tests live outside `src` and need `@types/node`; add a
   `test/tsconfig.json` (types: node) and include it in the package `typecheck` script.
+- Phase 12 layout: shared bars/primitives/`Cases` collector in `scripts/golden_common.py`; `golden.py` keeps
+  the earlier cases and imports `golden_{trend_ma,momentum,volume,volatility,other,external}.py`, each exposing
+  `cases()`. Bar series: `bars.csv` (hourly, default) and `bars-daily.csv` (~6 years of seeded weekday daily
+  bars, numpy seed 6, from 2019-01-02). A case on another series adds ` bars: <file>` to its header
+  (`# inputs: {...} ref: numpy bars: bars-daily.csv`), and a second aligned series (external symbol) adds
+  ` extra: <file>`; series files are `bars*.csv` without a header line. The test sets the runtime context
+  `intervalSeconds` to the series' smallest time step (`timeframeSeconds['1D'] = 86400`). Every built-in
+  needs at least one case.
+- `test/incremental.test.ts` runs every registered id live vs full on 400 random 15m bars; per-group
+  overrides live in `test/fixtures/<group>.ts` (`bars`, `context`, `inputs`, `liveFrom`, `sparse`: some
+  value anywhere instead of at the last bar, `noValues`: all NaN expected).
+- `test/repaint.test.ts` covers `setAt` with a test-only ZigZag (ticks moving pivots back and forth,
+  appends, `Change.from`, dependents).
 
 ## 9. Work split (follow-up agents)
 

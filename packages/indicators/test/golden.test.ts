@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_INDICATORS } from '../src/builtins';
 import type { AnyIndicatorDefinition } from '../src/registry';
-import { resolveInputs, timeframeInputValue } from '../src/resolve';
+import { isValueOutput, resolveInputs, timeframeInputValue } from '../src/resolve';
 import { IndicatorRuntime } from '../src/runtime';
 import type { BarArrays, IndicatorResult, InputValueMap } from '../src/types';
 import { dailyBars, feedLive, snapshot, toColumns } from './helpers';
@@ -14,6 +14,10 @@ const DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
 interface Csv {
   inputs: InputValueMap;
   ref: string;
+  /** Bar series file the case runs on (header ` bars: <file>`, default bars.csv). */
+  bars: string;
+  /** Second aligned series (header ` extra: <file>`), e.g. Correlation's symbol. */
+  extra: string | null;
   cols: Record<string, Float64Array>;
 }
 
@@ -21,11 +25,17 @@ function parseCsv(file: string): Csv {
   const lines = readFileSync(join(DIR, file), 'utf8').trimEnd().split('\n');
   let inputs: InputValueMap = {};
   let ref = '';
+  let barsFile = 'bars.csv';
+  let extra: string | null = null;
   if (lines[0]!.startsWith('#')) {
-    const m = /^# inputs: (\{.*\}) ref: (\w+)$/.exec(lines.shift()!);
+    const m = /^# inputs: (\{.*\}) ref: (\w+)(?: bars: ([\w.-]+))?(?: extra: ([\w.-]+))?$/.exec(
+      lines.shift()!,
+    );
     if (!m) throw new Error(`${file}: bad header`);
     inputs = JSON.parse(m[1]!) as InputValueMap;
     ref = m[2]!;
+    barsFile = m[3] ?? barsFile;
+    extra = m[4] ?? null;
   }
   const names = lines.shift()!.split(',');
   const cols: Record<string, Float64Array> = {};
@@ -35,12 +45,30 @@ function parseCsv(file: string): Csv {
       cols[names[k]!]![i] = cell === '' ? NaN : Number(cell);
     });
   });
-  return { inputs, ref, cols };
+  return { inputs, ref, bars: barsFile, extra, cols };
 }
 
-const bars = parseCsv('bars.csv').cols as unknown as BarArrays;
+/** Bar series files (`bars*.csv`, no header), loaded once. */
+const series = new Map<string, BarArrays>();
+function barsOf(file: string): BarArrays {
+  let b = series.get(file);
+  if (!b) {
+    b = parseCsv(file).cols as unknown as BarArrays;
+    series.set(file, b);
+  }
+  return b;
+}
+
+/** Bar interval of a series: its smallest time step. */
+function intervalOf(bars: BarArrays): number {
+  let step = Infinity;
+  for (let i = 1; i < bars.time.length; i++)
+    step = Math.min(step, bars.time[i]! - bars.time[i - 1]!);
+  return Number.isFinite(step) ? step : 0;
+}
+
 const cases = readdirSync(DIR)
-  .filter((f) => f.endsWith('.csv') && f !== 'bars.csv')
+  .filter((f) => f.endsWith('.csv') && !f.startsWith('bars'))
   .map((f) => f.slice(0, -4))
   .sort();
 
@@ -53,10 +81,16 @@ function definitionFor(name: string): AnyIndicatorDefinition {
   return def;
 }
 
-function run(def: AnyIndicatorDefinition, inputs: InputValueMap, live: boolean): IndicatorResult {
+function run(def: AnyIndicatorDefinition, csv: Csv, live: boolean): IndicatorResult {
+  const { inputs } = csv;
+  const bars = barsOf(csv.bars);
   const tf = timeframeInputValue(def, resolveInputs(def, inputs));
   if (tf && tf !== '1D') throw new Error(`golden tests only aggregate 1D bars, got ${tf}`);
-  const rt = new IndicatorRuntime();
+  // TODO(B7): feed `barsOf(csv.extra)` to the runtime as the external symbol series.
+  if (csv.extra) throw new Error(`extra series ${csv.extra} are not supported yet`);
+  const rt = new IndicatorRuntime({
+    context: { intervalSeconds: intervalOf(bars), timeframeSeconds: { '1D': 86_400 } },
+  });
   rt.add({ id: 'x', type: def.id, inputs });
   if (live) feedLive(rt, bars, 500, tf);
   else {
@@ -82,13 +116,12 @@ describe('golden reference values', () => {
 
   it.each(cases)('%s', (name) => {
     const def = definitionFor(name);
-    const { inputs, cols } = parseCsv(`${name}.csv`);
-    const full = run(def, inputs, false);
+    const csv = parseCsv(`${name}.csv`);
+    const { cols } = csv;
+    const full = run(def, csv, false);
 
     // Every value output and every palette is covered by the reference.
-    const valueIds = def.outputs
-      .filter((o) => o.type === 'plot' || o.type === 'shape' || o.type === 'bgcolor')
-      .map((o) => o.id);
+    const valueIds = def.outputs.filter(isValueOutput).map((o) => o.id);
     const refCols = Object.keys(cols).filter((k) => k !== 'time');
     expect(refCols.filter((k) => !k.endsWith('.color')).sort()).toEqual(valueIds.sort());
     for (const id of Object.keys(full.colors)) expect(refCols).toContain(`${id}.color`);
@@ -106,6 +139,6 @@ describe('golden reference values', () => {
     }
 
     // Live ticks and appends from bar 500 give identical arrays.
-    expect(snapshot(run(def, inputs, true))).toEqual(snapshot(full));
+    expect(snapshot(run(def, csv, true))).toEqual(snapshot(full));
   });
 });

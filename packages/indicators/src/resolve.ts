@@ -1,10 +1,13 @@
 import type { AnyIndicatorDefinition } from './registry';
 import {
+  EXTERNAL_SOURCE_PREFIX,
   PRICE_SOURCES,
+  VOLUME_PROFILE_COLOR_KEYS,
   type ColorSpec,
   type InputValueMap,
   type InputValues,
   type InputsSchema,
+  type OutputDef,
   type OutputSourceRef,
   type OutputStyleOverrides,
   type PriceSource,
@@ -19,6 +22,11 @@ export function isOutputRef(v: unknown): v is OutputSourceRef {
     typeof (v as OutputSourceRef).instanceId === 'string' &&
     typeof (v as OutputSourceRef).outputId === 'string'
   );
+}
+
+/** A source ref to an external symbol's price column (`sym:<SYMBOL>`), not an instance. */
+export function isExternalRef(v: unknown): v is OutputSourceRef {
+  return isOutputRef(v) && v.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX);
 }
 
 export function isPriceSource(v: unknown): v is PriceSource {
@@ -69,6 +77,7 @@ export function resolveInputs(
         break;
       case 'color':
       case 'timeframe':
+      case 'symbol':
         if (typeof v !== 'string') throw bad();
         out[key] = v;
         break;
@@ -113,6 +122,13 @@ export function sourceRefs(def: AnyIndicatorDefinition, inputs: InputValueMap): 
   return refs;
 }
 
+/** Outputs with a per-bar values array: plots, shapes, background, volume profile period marks. */
+export function isValueOutput(o: OutputDef): boolean {
+  return (
+    o.type === 'plot' || o.type === 'shape' || o.type === 'bgcolor' || o.type === 'volumeProfile'
+  );
+}
+
 function palette(c: ColorSpec): string[] {
   return typeof c === 'string' ? [c] : [...c];
 }
@@ -147,6 +163,7 @@ export function resolveOutputs(
           base: o.base === undefined ? 0 : o.base,
           offset: o.offset === undefined ? 0 : val(o.offset),
           showLastValue: o.showLastValue ?? true,
+          connectGaps: o.connectGaps ?? false,
         };
       case 'hline':
         return {
@@ -188,8 +205,24 @@ export function resolveOutputs(
           size: ov.size ?? o.size ?? 'small',
           colors: ov.colors ?? palette(o.color),
           text: o.text ?? '',
+          textFromValue: o.textFromValue ?? false,
           textColor: ov.textColor ?? o.textColor ?? palette(o.color)[0] ?? '',
           offset: o.offset === undefined ? 0 : val(o.offset),
+        };
+      case 'volumeProfile':
+        return {
+          type: 'volumeProfile',
+          id: o.id,
+          title: o.title,
+          visible,
+          mode: o.mode,
+          rowsLayout: val(o.rowsLayout),
+          rows: val(o.rows),
+          rowSize: val(o.rowSize),
+          valueArea: val(o.valueArea),
+          widthPercent: val(o.widthPercent),
+          placement: val(o.placement),
+          colors: ov.colors ?? VOLUME_PROFILE_COLOR_KEYS.map((k) => o[k]),
         };
     }
   });

@@ -8,6 +8,7 @@
  */
 import {
   defaultRegistry,
+  isExternalRef,
   isOutputRef,
   resolveInputs,
   type IndicatorRegistry,
@@ -39,6 +40,7 @@ export type ValidationCode =
   | 'too_large'
   | 'unknown_indicator'
   | 'unknown_output'
+  | 'unsupported_indicator'
   | 'invalid_inputs'
   | 'cycle'
   | 'drawing_not_saved'
@@ -413,7 +415,13 @@ function checkInput(c: Checker, v: unknown, path: string): boolean {
   if (isObj(v)) {
     const before = c.errors.length;
     c.obj(v, path, ['instanceId', 'outputId']);
-    if (c.str(v['instanceId'], `${path}.instanceId`) && !INSTANCE_ID_RE.test(v['instanceId']))
+    if (isExternalRef(v))
+      c.err(
+        path,
+        'reference',
+        `sources on another symbol ('${v.instanceId}') are not supported in alerts`,
+      );
+    else if (c.str(v['instanceId'], `${path}.instanceId`) && !INSTANCE_ID_RE.test(v['instanceId']))
       c.err(`${path}.instanceId`, 'format', 'instance id must match [A-Za-z0-9_-]{1,64}');
     c.short(v['outputId'], `${path}.outputId`);
     return c.errors.length === before;
@@ -520,7 +528,10 @@ function checkRef(c: Checker, ref: unknown, path: string): void {
   checkRegistry(c, ids, target as string, outputOk ? (outputId as string) : null, ip, path);
 }
 
-/** TS-only checks: definitions exist, inputs resolve, outputs are plots, no cycle. */
+/**
+ * TS-only checks: definitions exist and are usable in alerts (no repainting,
+ * no other-symbol inputs), inputs resolve, outputs are plots, no cycle.
+ */
 function checkRegistry(
   c: Checker,
   ids: Map<string, CheckedInstance>,
@@ -534,6 +545,24 @@ function checkRegistry(
     const def = c.registry.get(inst.type);
     if (!def) {
       c.err(`${inst.path}.type`, 'unknown_indicator', `unknown indicator '${inst.type}'`);
+      defsOk = false;
+      continue;
+    }
+    if (def.repaints) {
+      c.err(
+        `${inst.path}.type`,
+        'unsupported_indicator',
+        `${def.name} repaints past values and cannot be used in alerts`,
+      );
+      defsOk = false;
+      continue;
+    }
+    if (Object.values(def.inputs).some((d) => d.kind === 'symbol')) {
+      c.err(
+        `${inst.path}.type`,
+        'unsupported_indicator',
+        `${def.name} uses another symbol's data and cannot be used in alerts`,
+      );
       defsOk = false;
       continue;
     }
