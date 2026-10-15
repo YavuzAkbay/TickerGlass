@@ -2,19 +2,27 @@
 // One file per tool, registered below in toolbar order.
 import { registerDrawingTool } from '../registry';
 import { abcd } from './abcd';
+import { arc } from './arc';
 import { arrowLine } from './arrow-line';
+import { arrowMarkDown } from './arrow-mark-down';
+import { arrowMarkUp } from './arrow-mark-up';
+import { arrowMarker } from './arrow-marker';
 import { brush } from './brush';
+import { circle } from './circle';
 import { crossLine } from './cross-line';
+import { curve } from './curve';
 import { cyclicLines } from './cyclic-lines';
 import { cypher } from './cypher';
 import { datePriceRange } from './date-price-range';
 import { dateRange } from './date-range';
 import { disjointChannel } from './disjoint-channel';
+import { doubleCurve } from './double-curve';
 import { elliottCorrection } from './elliott-correction';
 import { elliottDoubleCombo } from './elliott-double-combo';
 import { elliottImpulse } from './elliott-impulse';
 import { elliottTriangle } from './elliott-triangle';
 import { elliottTripleCombo } from './elliott-triple-combo';
+import { ellipse } from './ellipse';
 import { extendedLine } from './extended-line';
 import { fibChannel } from './fib-channel';
 import { fibCircles } from './fib-circles';
@@ -32,6 +40,7 @@ import { gannFan } from './gann-fan';
 import { gannSquare } from './gann-square';
 import { gannSquareFixed } from './gann-square-fixed';
 import { headShoulders } from './head-shoulders';
+import { highlighter } from './highlighter';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
 import { icon } from './icon';
@@ -40,12 +49,15 @@ import { insidePitchfork } from './inside-pitchfork';
 import { longPosition } from './long-position';
 import { modifiedSchiffPitchfork } from './modified-schiff-pitchfork';
 import { parallelChannel } from './parallel-channel';
+import { path } from './path';
 import { pitchfan } from './pitchfan';
 import { pitchfork } from './pitchfork';
+import { polyline } from './polyline';
 import { priceRange } from './price-range';
 import { ray } from './ray';
 import { rectangle } from './rectangle';
 import { regressionTrend } from './regression-trend';
+import { rotatedRectangle } from './rotated-rectangle';
 import { schiffPitchfork } from './schiff-pitchfork';
 import { shortPosition } from './short-position';
 import { sineLine } from './sine-line';
@@ -54,6 +66,7 @@ import { threeDrives } from './three-drives';
 import { timeCycles } from './time-cycles';
 import { trendAngle } from './trend-angle';
 import { trendLine } from './trend-line';
+import { triangle } from './triangle';
 import { trianglePattern } from './triangle-pattern';
 import { verticalLine } from './vertical-line';
 import { xabcd } from './xabcd';
@@ -116,27 +129,48 @@ registerDrawingTool(dateRange);
 registerDrawingTool(datePriceRange);
 // shapes
 registerDrawingTool(brush);
+registerDrawingTool(highlighter);
+registerDrawingTool(arrowMarker);
 registerDrawingTool(arrowLine);
+registerDrawingTool(arrowMarkUp);
+registerDrawingTool(arrowMarkDown);
 registerDrawingTool(rectangle);
+registerDrawingTool(rotatedRectangle);
+registerDrawingTool(path);
+registerDrawingTool(circle);
+registerDrawingTool(ellipse);
+registerDrawingTool(polyline);
+registerDrawingTool(triangle);
+registerDrawingTool(arc);
+registerDrawingTool(curve);
+registerDrawingTool(doubleCurve);
 // annotation
 registerDrawingTool(text);
 registerDrawingTool(icon);
 
 export {
   abcd,
+  arc,
   arrowLine,
+  arrowMarkDown,
+  arrowMarker,
+  arrowMarkUp,
   brush,
+  circle,
   crossLine,
+  curve,
   cyclicLines,
   cypher,
   datePriceRange,
   dateRange,
   disjointChannel,
+  doubleCurve,
   elliottCorrection,
   elliottDoubleCombo,
   elliottImpulse,
   elliottTriangle,
   elliottTripleCombo,
+  ellipse,
   extendedLine,
   fibChannel,
   fibCircles,
@@ -154,6 +188,7 @@ export {
   gannSquare,
   gannSquareFixed,
   headShoulders,
+  highlighter,
   horizontalLine,
   horizontalRay,
   icon,
@@ -162,12 +197,15 @@ export {
   longPosition,
   modifiedSchiffPitchfork,
   parallelChannel,
+  path,
   pitchfan,
   pitchfork,
+  polyline,
   priceRange,
   ray,
   rectangle,
   regressionTrend,
+  rotatedRectangle,
   schiffPitchfork,
   shortPosition,
   sineLine,
@@ -176,6 +214,7 @@ export {
   timeCycles,
   trendAngle,
   trendLine,
+  triangle,
   trianglePattern,
   verticalLine,
   xabcd,

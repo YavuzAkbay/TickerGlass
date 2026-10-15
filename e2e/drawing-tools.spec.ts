@@ -187,3 +187,108 @@ for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
     expect(errors).toEqual([]);
   });
 }
+
+const SHAPES = 'Geometric shapes';
+const PATH_CLICKS: [number, number][] = [
+  [450, 400],
+  [550, 300],
+  [650, 400],
+];
+
+/** Shape tools: clicks, then how a multi-point creation finishes. */
+const SHAPE_TOOL_CASES: {
+  name: string;
+  type: string;
+  clicks: [number, number][];
+  finish?: 'enter' | 'dblclick' | 'close';
+  count: number;
+}[] = [
+  { name: 'Arrow marker', type: 'arrow-marker', clicks: TWO, count: 2 },
+  { name: 'Arrow mark up', type: 'arrow-mark-up', clicks: [[600, 400]], count: 1 },
+  { name: 'Arrow mark down', type: 'arrow-mark-down', clicks: [[600, 300]], count: 1 },
+  { name: 'Rotated rectangle', type: 'rotated-rectangle', clicks: THREE, count: 3 },
+  { name: 'Path', type: 'path', clicks: PATH_CLICKS, finish: 'dblclick', count: 3 },
+  { name: 'Circle', type: 'circle', clicks: TWO, count: 2 },
+  { name: 'Ellipse', type: 'ellipse', clicks: TWO, count: 2 },
+  // Closing on the first anchor stores an exact copy of it as the last anchor.
+  { name: 'Polyline', type: 'polyline', clicks: PATH_CLICKS, finish: 'close', count: 4 },
+  { name: 'Triangle', type: 'triangle', clicks: THREE, count: 3 },
+  { name: 'Arc', type: 'arc', clicks: THREE, count: 3 },
+  { name: 'Curve', type: 'curve', clicks: TWO, count: 3 },
+  { name: 'Double curve', type: 'double-curve', clicks: TWO, count: 4 },
+];
+
+async function pickShapeTool(page: Page, name: string, type: string) {
+  await page.getByRole('button', { name: `More ${SHAPES.toLowerCase()}` }).click();
+  await page
+    .getByRole('menu', { name: SHAPES })
+    .getByRole('menuitem')
+    .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
+    .click();
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
+}
+
+async function openFresh(page: Page) {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('drw-e2e')) return;
+    sessionStorage.setItem('drw-e2e', '1');
+    localStorage.removeItem('investopen-drawings');
+    localStorage.removeItem('investopen-drawing-templates');
+  });
+  await page.goto('/?feed=synthetic');
+  await waitForChart(page);
+}
+
+for (const { name, type, clicks, finish, count } of SHAPE_TOOL_CASES) {
+  test(`draw ${type} from the ${SHAPES} flyout`, async ({ page }) => {
+    const errors: Error[] = [];
+    page.on('pageerror', (e) => errors.push(e));
+    await openFresh(page);
+    await pickShapeTool(page, name, type);
+
+    const last = clicks[clicks.length - 1]!;
+    const placed = finish === 'dblclick' ? clicks.slice(0, -1) : clicks;
+    for (const [x, y] of placed) await page.mouse.click(x, y);
+    if (finish === 'dblclick') await page.mouse.dblclick(last[0], last[1]);
+    if (finish === 'enter') await page.keyboard.press('Enter');
+    if (finish === 'close') await page.mouse.click(clicks[0]![0], clicks[0]![1]);
+    await expect.poll(async () => (await drawings(page)).length).toBe(1);
+    const [d] = await drawings(page);
+    expect(d!.type).toBe(type);
+    expect(d!.points).toHaveLength(count);
+    if (finish === 'close') expect(d!.points[count - 1]).toEqual(d!.points[0]);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('draw a highlighter stroke by dragging', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  await pickShapeTool(page, 'Highlighter', 'highlighter');
+
+  await page.mouse.move(450, 400);
+  await page.mouse.down();
+  await page.mouse.move(550, 350, { steps: 10 });
+  await page.mouse.move(650, 380, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  const [d] = await drawings(page);
+  expect(d!.type).toBe('highlighter');
+  expect(d!.points.length).toBeGreaterThan(2);
+  expect(errors).toEqual([]);
+});
+
+test('finish a path with Enter', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', (e) => errors.push(e));
+  await openFresh(page);
+  await pickShapeTool(page, 'Path', 'path');
+
+  for (const [x, y] of PATH_CLICKS) await page.mouse.click(x, y);
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  const [d] = await drawings(page);
+  expect(d!.points).toHaveLength(3);
+  expect(errors).toEqual([]);
+});
