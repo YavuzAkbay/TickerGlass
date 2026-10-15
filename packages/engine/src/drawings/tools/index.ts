@@ -2,7 +2,9 @@
 // One file per tool, registered below in toolbar order.
 import { registerDrawingTool } from '../registry';
 import { abcd } from './abcd';
+import { anchoredVp } from './anchored-vp';
 import { arc } from './arc';
+import { barsPattern } from './bars-pattern';
 import { arrowLine } from './arrow-line';
 import { arrowMarkDown } from './arrow-mark-down';
 import { arrowMarkUp } from './arrow-mark-up';
@@ -24,6 +26,8 @@ import { elliottTriangle } from './elliott-triangle';
 import { elliottTripleCombo } from './elliott-triple-combo';
 import { ellipse } from './ellipse';
 import { extendedLine } from './extended-line';
+import { fixedRangeVp } from './fixed-range-vp';
+import { forecast } from './forecast';
 import { fibChannel } from './fib-channel';
 import { fibCircles } from './fib-circles';
 import { fibExtension } from './fib-extension';
@@ -35,6 +39,7 @@ import { fibTimeZone } from './fib-time-zone';
 import { fibTrendTime } from './fib-trend-time';
 import { fibWedge } from './fib-wedge';
 import { flatTopBottom } from './flat-top-bottom';
+import { ghostFeed } from './ghost-feed';
 import { gannBox } from './gann-box';
 import { gannFan } from './gann-fan';
 import { gannSquare } from './gann-square';
@@ -64,6 +69,7 @@ import { pitchfan } from './pitchfan';
 import { pitchfork } from './pitchfork';
 import { polyline } from './polyline';
 import { priceRange } from './price-range';
+import { projection } from './projection';
 import { ray } from './ray';
 import { rectangle } from './rectangle';
 import { regressionTrend } from './regression-trend';
@@ -134,6 +140,12 @@ registerDrawingTool(sineLine);
 // forecasting
 registerDrawingTool(longPosition);
 registerDrawingTool(shortPosition);
+registerDrawingTool(forecast);
+registerDrawingTool(barsPattern);
+registerDrawingTool(ghostFeed);
+registerDrawingTool(projection);
+registerDrawingTool(fixedRangeVp);
+registerDrawingTool(anchoredVp);
 registerDrawingTool(priceRange);
 registerDrawingTool(dateRange);
 registerDrawingTool(datePriceRange);
@@ -171,6 +183,12 @@ registerDrawingTool(icon);
 
 export {
   abcd,
+  anchoredVp,
+  barsPattern,
+  fixedRangeVp,
+  forecast,
+  ghostFeed,
+  projection,
   anchoredNote,
   anchoredText,
   callout,

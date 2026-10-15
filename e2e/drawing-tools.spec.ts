@@ -396,3 +396,48 @@ test('image: choose a file in the settings dialog', async ({ page }) => {
     .toBe('data:image/');
   expect(errors).toEqual([]);
 });
+
+const FORECASTING = 'Forecasting and measurement tools';
+
+/** Forecasting/volume tools: clicks, optional double-click finish, stored anchors. */
+const FORECAST_TOOL_CASES: {
+  name: string;
+  type: string;
+  clicks: [number, number][];
+  finish?: 'dblclick';
+  count: number;
+}[] = [
+  { name: 'Forecast', type: 'forecast', clicks: TWO, count: 2 },
+  // The copy origin is derived from the two clicks.
+  { name: 'Bars pattern', type: 'bars-pattern', clicks: TWO, count: 3 },
+  { name: 'Ghost feed', type: 'ghost-feed', clicks: PATH_CLICKS, finish: 'dblclick', count: 3 },
+  { name: 'Projection', type: 'projection', clicks: THREE, count: 3 },
+  { name: 'Fixed range volume profile', type: 'fixed-range-vp', clicks: TWO, count: 2 },
+  { name: 'Anchored volume profile', type: 'anchored-vp', clicks: ONE, count: 1 },
+];
+
+for (const { name, type, clicks, finish, count } of FORECAST_TOOL_CASES) {
+  test(`draw ${type} from the ${FORECASTING} flyout`, async ({ page }) => {
+    const errors: Error[] = [];
+    page.on('pageerror', (e) => errors.push(e));
+    await openFresh(page);
+    await page.getByRole('button', { name: `More ${FORECASTING.toLowerCase()}` }).click();
+    await page
+      .getByRole('menu', { name: FORECASTING })
+      .getByRole('menuitem')
+      .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
+      .click();
+    expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
+
+    const last = clicks[clicks.length - 1]!;
+    const placed = finish === 'dblclick' ? clicks.slice(0, -1) : clicks;
+    for (const [x, y] of placed) await page.mouse.click(x, y);
+    if (finish === 'dblclick') await page.mouse.dblclick(last[0], last[1]);
+    await expect.poll(async () => (await drawings(page)).length).toBe(1);
+    const [d] = await drawings(page);
+    expect(d!.type).toBe(type);
+    expect(d!.points).toHaveLength(count);
+    if (type === 'ghost-feed') expect(d!.style.seed).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+  });
+}
