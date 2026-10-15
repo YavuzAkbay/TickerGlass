@@ -1,5 +1,6 @@
 import {
   getDrawingTool,
+  isEmbeddedImage,
   logicalToTime,
   timeToLogical,
   type AnchorTimeline,
@@ -17,7 +18,13 @@ import { scopePatch, updateDrawings } from '../drawings/actions';
 import { defaultStyleOf, type DrawingSettingsTab } from '../drawings/menu';
 import { imageToDataUrl } from '../drawings/image';
 import { deepEqual } from '../drawings/model';
-import { useDrawingStore, useDrawingTemplates, type DrawingBuckets } from '../drawings/store';
+import { fitsImageBudget, keepPerDrawingStyle } from '../drawings/per-drawing';
+import {
+  allDrawings,
+  useDrawingStore,
+  useDrawingTemplates,
+  type DrawingBuckets,
+} from '../drawings/store';
 import { DEFAULT_TEMPLATE_NAME } from '../persist/drawingTemplatesSync';
 import { getChart, useChartStore } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
@@ -133,6 +140,7 @@ export default function DrawingSettingsDialog({
         props={def.properties.filter((p) => (p.tab ?? 'style') === 'style')}
         style={draft.style}
         set={setStyle}
+        drawingId={draft.id}
       />
     );
   else if (tab === 'text')
@@ -168,7 +176,9 @@ export default function DrawingSettingsDialog({
           <TemplateMenu
             def={def}
             style={draft.style}
-            apply={(style) => setDraft((d) => d && { ...d, style })}
+            apply={(style) =>
+              setDraft((d) => d && { ...d, style: keepPerDrawingStyle(d.type, style, d.style) })
+            }
             startSaving={!!a.saveTemplate}
           />
           <div className="dlg-footer-spacer" />
@@ -345,10 +355,12 @@ function PropertyControl({
   p,
   style,
   set,
+  drawingId,
 }: {
   p: DrawingProperty;
   style: DrawingStyle;
   set: (patch: DrawingStyle) => void;
+  drawingId?: string | undefined;
 }) {
   const v = style[p.key];
   switch (p.kind) {
@@ -452,7 +464,12 @@ function PropertyControl({
       );
     case 'image':
       return (
-        <ImageField label={p.label} value={str(v, '')} onChange={(u) => set({ [p.key]: u })} />
+        <ImageField
+          label={p.label}
+          value={str(v, '')}
+          drawingId={drawingId}
+          onChange={(u) => set({ [p.key]: u })}
+        />
       );
     case 'levels':
       return (
@@ -468,24 +485,38 @@ function PropertyControl({
 function ImageField({
   label,
   value,
+  drawingId,
   onChange,
 }: {
   label: string;
   value: string;
+  drawingId?: string | undefined;
   onChange: (dataUrl: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const pick = async (file: File | undefined) => {
     if (!file) return;
     try {
-      onChange(await imageToDataUrl(file));
+      const url = await imageToDataUrl(file);
+      // All drawings share one localStorage key: cap the embedded images in total.
+      if (!fitsImageBudget(allDrawings(useDrawingStore.getState()), drawingId, url)) {
+        toast('Image storage full — remove an image drawing first', 'error');
+        return;
+      }
+      onChange(url);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not load the image', 'error');
     }
   };
   return (
     <div className="drw-image">
-      {value ? <img className="drw-image-preview" src={value} alt={`${label} preview`} /> : null}
+      {value ? (
+        isEmbeddedImage(value) ? (
+          <img className="drw-image-preview" src={value} alt={`${label} preview`} />
+        ) : (
+          <div className="dlg-note">Image unavailable</div>
+        )
+      ) : null}
       <input
         ref={input}
         type="file"
@@ -570,10 +601,12 @@ function PropertyList({
   props,
   style,
   set,
+  drawingId,
 }: {
   props: readonly DrawingProperty[];
   style: DrawingStyle;
   set: (patch: DrawingStyle) => void;
+  drawingId?: string | undefined;
 }) {
   if (!props.length) return <div className="dlg-note">Nothing to style.</div>;
   const sections: { title: string | undefined; rows: DrawingProperty[][] }[] = [];
@@ -592,14 +625,14 @@ function PropertyList({
     if (row.length === 1 && first.kind === 'bool')
       return (
         <div key={first.key} className="drw-prop-row">
-          <PropertyControl p={first} style={style} set={set} />
+          <PropertyControl p={first} style={style} set={set} drawingId={drawingId} />
         </div>
       );
     return (
       <Row key={first.key} label={first.label}>
         <div className="drw-inline">
           {row.map((p) => (
-            <PropertyControl key={p.key} p={p} style={style} set={set} />
+            <PropertyControl key={p.key} p={p} style={style} set={set} drawingId={drawingId} />
           ))}
         </div>
       </Row>
@@ -639,6 +672,7 @@ function TextTab({
         props={def.properties.filter((p) => p.tab === 'text')}
         style={draft.style}
         set={setStyle}
+        drawingId={draft.id}
       />
       {def.text ? (
         <div className="dlg-section">

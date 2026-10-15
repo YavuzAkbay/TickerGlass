@@ -803,19 +803,59 @@ describe('box select (Shift+drag on empty space)', () => {
     box(X(80), Y(95), X(85), Y(85));
     expect([...layer.selection].sort()).toEqual([a.id, h.id].sort());
     expect(layer.selection.has(b.id)).toBe(false);
-    // A Shift-click (no drag) keeps the selection and starts a quick measurement;
-    // Esc cancels it. Esc also cancels a box without changes.
+    // A Shift-click (no drag) with a selection is multi-select: no quick measure.
     input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
     input.pointerUp(X(5), Y(5), SH);
     expect(layer.selection.size).toBe(2);
-    expect(layer.draft?.type).toBe('date-price-range');
-    expect(input.key('Escape')).toBe(true);
+    expect(layer.draft).toBeNull();
     expect(input.busy).toBe(false);
+    // Esc cancels a box without changes.
     input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
     input.pointerMove(X(75), Y(5), SH);
     expect(input.key('Escape')).toBe(true);
     expect(layer.marquee).toBeNull();
     expect(input.busy).toBe(false);
+  });
+});
+
+describe('quick measure (Shift+click on empty space)', () => {
+  const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
+  const shiftClick = (x: number, y: number) => {
+    input.pointerDown(target(x, y), x, y, SH);
+    input.pointerUp(x, y, SH);
+  };
+
+  it('starts only with an empty selection; Esc cancels without toolFinished', () => {
+    shiftClick(X(5), Y(5));
+    expect(layer.draft?.type).toBe('date-price-range');
+    expect(input.key('Escape')).toBe(true);
+    expect(input.busy).toBe(false);
+    expect(input.activeTool).toBeNull();
+    expect(of('toolFinished')).toEqual([]);
+  });
+
+  it('finishing it leaves the tool alone and emits no toolFinished', () => {
+    shiftClick(X(5), Y(5));
+    input.pointerDown(target(X(20), Y(20)), X(20), Y(20), NO);
+    input.pointerUp(X(20), Y(20), NO);
+    expect(layer.measure).not.toBeNull();
+    expect(input.activeTool).toBeNull();
+    expect(of('toolFinished')).toEqual([]);
+  });
+
+  it('the Measure tool reports MEASURE_TOOL on cancel and on finish', () => {
+    input.setActiveTool(MEASURE_TOOL);
+    input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO);
+    input.pointerUp(X(5), Y(5), NO);
+    input.key('Escape');
+    expect(of('toolFinished')).toEqual([{ type: MEASURE_TOOL, drawingId: null, active: false }]);
+    events = [];
+    input.setActiveTool(MEASURE_TOOL);
+    input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO);
+    input.pointerUp(X(5), Y(5), NO);
+    input.pointerDown(target(X(20), Y(20)), X(20), Y(20), NO);
+    input.pointerUp(X(20), Y(20), NO);
+    expect(of('toolFinished')).toEqual([{ type: MEASURE_TOOL, drawingId: null, active: false }]);
   });
 });
 
@@ -975,6 +1015,15 @@ registerDrawingTool(
 registerDrawingTool(
   defineDrawingTool({
     ...fixture,
+    type: 'test-closable',
+    name: 'Closable',
+    group: 'shapes',
+    creation: { kind: 'multi', min: 2, closable: true },
+  }),
+);
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
     type: 'test-pane',
     name: 'Pane',
     group: 'annotation',
@@ -1072,8 +1121,28 @@ describe('multi-point creation', () => {
     expect(pts().map((p) => p.time)).toEqual([10, 20, 30, 40, 50].map((i) => START + i * D));
   });
 
-  it('a click on the first anchor closes: the last anchor copies anchor 0', () => {
+  it('a double-click drops a trailing anchor within the drag slop, not only an exact one', () => {
     input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(30));
+    click(X(30), Y(20));
+    click(X(30) + 2, Y(20) + 1); // second click of a jittery double-click
+    input.doubleClick(target(X(30), Y(20)), X(30), Y(20));
+    expect(pts()).toEqual([at(10, 10), at(20, 30), at(30, 20)]);
+  });
+
+  it('a click on the first anchor appends unless the tool is closable', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(40));
+    click(X(30), Y(10));
+    click(X(10) + 3, Y(10) - 2);
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(layer.draft?.points).toHaveLength(5);
+  });
+
+  it('a click on the first anchor closes: the last anchor copies anchor 0', () => {
+    input.setActiveTool('test-closable');
     click(X(10), Y(10));
     click(X(20), Y(40));
     click(X(30), Y(10));
@@ -1082,12 +1151,15 @@ describe('multi-point creation', () => {
     expect(pts()).toEqual([at(10, 10), at(20, 40), at(30, 10), at(10, 10)]);
   });
 
-  it('closing needs at least two fixed anchors (no degenerate shape)', () => {
-    input.setActiveTool('test-multi');
+  it('closing needs at least three placed anchors (no degenerate shape)', () => {
+    input.setActiveTool('test-closable');
     click(X(10), Y(10));
     click(X(10), Y(10)); // fixes anchor 2 on anchor 1, does not close
     expect(of('drawingCreated')).toHaveLength(0);
     expect(layer.draft?.points).toHaveLength(3);
+    click(X(10), Y(10)); // only two anchors were placed: still appends
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(layer.draft?.points).toHaveLength(4);
   });
 
   it('press-drag-release places anchor 2, then clicks continue', () => {

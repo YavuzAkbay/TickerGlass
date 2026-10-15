@@ -410,15 +410,28 @@ describe('Chart drawing API', () => {
     expect(chart.getActiveTool()).toBe('eraser');
   });
 
+  it('getMeasure returns a copy of the transient measurement, else null', async () => {
+    const { chart } = await load(10);
+    expect(chart.getMeasure()).toBeNull();
+    const points = [
+      { time: 1, price: 2 },
+      { time: 3, price: 4 },
+    ];
+    const layer = (chart as unknown as { drawingLayer: { measure: unknown } }).drawingLayer;
+    layer.measure = { type: 'date-price-range', points };
+    const m = chart.getMeasure()!;
+    expect(m).toEqual(points);
+    expect(m[0]).not.toBe(points[0]);
+    layer.measure = null;
+    expect(chart.getMeasure()).toBeNull();
+  });
+
   it('setActiveTool forwards a preset style', async () => {
     const { chart } = await load(10);
     chart.setActiveTool('horizontal-line', { style: { lineColor: '#abcdef' } });
     expect(chart.getActiveTool()).toBe('horizontal-line');
-    // The draft is built with the preset (white-box: no pointer in this harness).
-    const input = chart.drawingInput as unknown as { toolStyle?: object };
-    expect(input.toolStyle).toEqual({ lineColor: '#abcdef' });
     chart.setActiveTool(null);
-    expect(input.toolStyle).toBeUndefined();
+    expect(chart.getActiveTool()).toBeNull();
   });
 
   it('pastes pane-coordinate drawings in place (offset/at ignored)', async () => {

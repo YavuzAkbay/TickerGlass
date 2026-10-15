@@ -89,6 +89,7 @@ import type {
   DrawingOptions,
   DrawingPasteOptions,
   DrawingPatch,
+  DrawingPoint,
   DrawingToolOptions,
 } from './drawings/types';
 import './drawings/tools';
@@ -688,6 +689,12 @@ export class Chart implements StudyApi, DrawingApi {
 
   getActiveTool(): string | null {
     return this.drawingInput.activeTool;
+  }
+
+  /** The finished transient measurement's anchors (Measure tool / quick measure), or null. */
+  getMeasure(): DrawingPoint[] | null {
+    const m = this.drawingLayer.measure;
+    return m ? m.points.map((p) => ({ ...p })) : null;
   }
 
   setDrawingOptions(patch: Partial<DrawingOptions>): void {

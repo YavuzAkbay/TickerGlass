@@ -39,7 +39,7 @@ fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color,
 | Field                                    | Meaning                                                                                                                                                                                                                                                                                  |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`, `name`, `group`                  | `group` = left-toolbar group id (`lines fib patterns forecasting shapes annotation measure`)                                                                                                                                                                                             |
-| `creation`                               | `{kind:'click'}` one anchor · `{kind:'points',count}` click-click (count 2 also press-drag-release) · `{kind:'freehand'}` · `{kind:'multi',min,max?}` (additive) variable anchor count, see §4                                                                                           |
+| `creation`                               | `{kind:'click'}` one anchor · `{kind:'points',count}` click-click (count 2 also press-drag-release) · `{kind:'freehand'}` · `{kind:'multi',min,max?,closable?}` (additive) variable anchor count, see §4                                                                                 |
 | `defaults`, `properties`                 | complete default style; Style/Text tab fields (`color lineWidth lineStyle bool number enum fontSize levels`, additive `string {maxLength?}` and `image` (data URL, `''` = none), `tab`, `group`, `inline`)                                                                               |
 | `coords`                                 | additive, `'chart'` (default) / `'pane'`: anchors are pane fractions (§1); drags and nudges move in px, kept inside the pane; paste ignores `offset`/`at`; no default axis labels                                                                                                        |
 | `panes`                                  | additive, `'any'` (default) / `'main'`: creation on study panes is refused (tools that read `g.bars`; they must render nothing when `g.bars.length` is 0)                                                                                                                                |
@@ -127,8 +127,8 @@ when it declines. Coordinates are chart-root px; anchors snap to bar slots (`sna
   pointer until the next click; each click fixes one. `freehand`: samples every 3 px, release finishes
   (< 2 points cancels). `multi` (additive): like `points`, each click fixes one anchor; double-click (its
   second click's duplicate anchor is dropped), Enter, reaching `max`, or a click within handle reach of the
-  first anchor (with >= 2 fixed; the last anchor is then an exact copy of anchor 0, so closed shapes can
-  detect it) finish; double-click/Enter below `min` keep creating; Esc/right-click finish with >= `min`
+  first anchor (only for `closable` tools, with >= 3 fixed: polyline; the last anchor is then an exact copy
+  of anchor 0, so closed shapes can detect it; elsewhere that click just appends) finish; double-click/Enter below `min` keep creating; Esc/right-click finish with >= `min`
   anchors, else cancel. Finish: `completePoints`, insert, `drawingCreated`, select, `toolFinished`; the
   tool is cleared unless `stayInDrawingMode`. Esc or right-click cancels (`toolFinished`, `drawingId: null`).
   `setActiveTool(type, { style })` (additive) merges `style` over the tool defaults of every drawing created
@@ -174,6 +174,10 @@ Editing API (B, exact signatures):
   type (the Coordinates tab's Bar #).
 - `setActiveTool(type|null, opts?: { style?: Record<string, JsonValue> })` (additive) — `style` is merged over the
   tool defaults of every drawing created until the tool changes. Unknown keys are kept (`icon` `glyph`).
+- `getMeasure(): DrawingPoint[] | null` (additive) — the anchors of the finished transient measurement (Measure
+  tool or quick measure), `null` when none is shown. A quick measure (Shift + click on empty space) only starts
+  with an empty selection (Shift-click on empty space is multi-select otherwise) and, started from the cursor,
+  emits no `toolFinished` on finish or cancel; the Measure tool emits `toolFinished {type:'measure'}`.
 - `setVisibleLogicalRange(from: number, to: number): void` (additive) — sets the time scale's visible range
   (bar indices, clamped by the bar-spacing limits); price scales are not touched. `TimeScale.setVisibleLogicalRange`
   returns whether the range changed; `PriceScale.setManualRange(min, max)` switches a scale to a fixed range.

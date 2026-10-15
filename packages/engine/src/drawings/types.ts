@@ -221,11 +221,12 @@ export type DrawingCreation =
   /**
    * Additive. A variable number of anchors, one per click; the next anchor
    * follows the pointer. Finishes on double-click, Enter, reaching `max`, or a
-   * click on the first anchor (then the last anchor is an exact copy of anchor
-   * 0: tools that draw closed shapes detect it). Esc/right-click finish with
+   * click on the first anchor when `closable` and >= 3 anchors are placed (then
+   * the last anchor is an exact copy of anchor 0: tools that draw closed shapes
+   * detect it; otherwise that click just appends). Esc/right-click finish with
    * >= `min` anchors, else cancel. Anchors cannot be added or removed later.
    */
-  | { kind: 'multi'; min: number; max?: number };
+  | { kind: 'multi'; min: number; max?: number; closable?: boolean };
 
 /** Anchor space (additive). 'chart' (default): time/price. 'pane': screen-anchored,
  * `time`/`price` hold the x/y fraction (0..1) of the pane; no bar snapping or magnet,

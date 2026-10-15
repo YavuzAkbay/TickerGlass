@@ -35,4 +35,5 @@ export { logicalToTime, timeToLogical } from './drawings/mapping';
 export type { AnchorTimeline } from './drawings/mapping';
 export { buildTradingCalendar } from './drawings/calendar';
 export type { TradingCalendar } from './drawings/calendar';
+export { isEmbeddedImage } from './drawings/tools/image';
 export { ERASER_TOOL, MEASURE_TOOL, PICK_TOOL, ZOOM_TOOL } from './drawings/interaction';

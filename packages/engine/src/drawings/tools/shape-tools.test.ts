@@ -5,7 +5,7 @@ import { arrowMarkPolygon, MARK_HEIGHT } from './arrow-mark-up';
 import { arrowMarkerPolygon } from './arrow-marker';
 import { quadControl } from './curve';
 import { cubicControls, defaultDoubleCurvePoints } from './double-curve';
-import { isClosedPolyline } from './polyline';
+import { isClosedPolyline, polyline } from './polyline';
 import { rotatedRectCorners, rotatedRectFrame } from './rotated-rectangle';
 import {
   geometryOf,
@@ -271,6 +271,14 @@ describe('ellipse', () => {
 describe('polyline', () => {
   const open = [pt(20, 20), pt(30, 60), pt(40, 20)];
   const closed = [...open, { ...open[0]! }];
+
+  it('is the only multi tool that closes on a first-anchor click', () => {
+    expect(polyline.creation).toEqual({
+      kind: 'multi',
+      min: 2,
+      closable: true,
+    });
+  });
 
   it('closed when the last anchor is an exact copy of the first', () => {
     expect(isClosedPolyline(closed)).toBe(true);

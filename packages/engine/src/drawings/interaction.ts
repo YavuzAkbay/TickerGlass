@@ -346,9 +346,13 @@ export class DrawingInteraction {
         this.layer.marquee = null;
         this.layer.host.invalidate();
         // A Shift-click (no drag) on empty space starts a quick measurement
-        // (the selection stays); the next click finishes it.
+        // (the selection stays); the next click finishes it. Not while a
+        // selection exists: there Shift-click is part of multi-select.
         if (Math.hypot(x - g.downX, y - g.downY) <= DRAG_SLOP) {
-          if (this.startCreate('date-price-range', g.pane, g.downX, g.downY, mods, true)) {
+          if (
+            !this.layer.selection.size &&
+            this.startCreate('date-price-range', g.pane, g.downX, g.downY, mods, true)
+          ) {
             const c = this.gesture as Gesture | null;
             if (c?.kind === 'create') this.createUp(c, x, y, mods);
           }
@@ -624,11 +628,11 @@ export class DrawingInteraction {
     d: Drawing,
     x: number,
     y: number,
-    c: { min: number; max?: number },
+    c: { min: number; max?: number; closable?: boolean },
   ): void {
     // Like 'points': the first release only fixes anchor 2 when it ended a drag.
     if (g.ups++ === 0 && !g.dragged) return;
-    if (g.placed >= 2 && g.placed + 1 >= c.min && this.onFirstAnchor(g, d, x, y)) {
+    if (c.closable && g.placed >= 3 && this.onFirstAnchor(g, d, x, y)) {
       // Closed: the last anchor is an exact copy of anchor 0.
       d.points.length = g.placed;
       d.points.push({ ...d.points[0]! });
@@ -668,12 +672,18 @@ export class DrawingInteraction {
     const d = this.layer.draft;
     if (c.kind !== 'multi' || !d) return this.cancelCreate();
     const fixed = d.points.slice(0, g.placed);
-    while (
-      dedupe &&
-      fixed.length >= 2 &&
-      samePoint(fixed[fixed.length - 1]!, fixed[fixed.length - 2]!)
-    )
-      fixed.pop();
+    if (dedupe) {
+      // The second click of a double-click lands within a few px of the first.
+      this.layer.refreshView();
+      const px = this.layer.geometry(d, g.pane)?.points ?? [];
+      while (fixed.length >= 2) {
+        const a = px[fixed.length - 1];
+        const b = px[fixed.length - 2];
+        const near = a && b && Math.hypot(a.x - b.x, a.y - b.y) <= DRAG_SLOP;
+        if (!near && !samePoint(fixed[fixed.length - 1]!, fixed[fixed.length - 2]!)) break;
+        fixed.pop();
+      }
+    }
     if (fixed.length >= c.min) {
       d.points = fixed;
       return this.finishCreate(g);
@@ -698,10 +708,13 @@ export class DrawingInteraction {
     layer.draft = null;
     if (g.transient) {
       // Measurement: shown until the next click or Esc, no drawing events.
+      // A quick measure (started from the cursor) never touched the tool.
+      const modal = this.tool === MEASURE_TOOL;
       layer.measure = d;
       this.leaveTool();
       layer.host.invalidate();
-      layer.host.emit('toolFinished', { type: MEASURE_TOOL, drawingId: null, active: false });
+      if (modal)
+        layer.host.emit('toolFinished', { type: MEASURE_TOOL, drawingId: null, active: false });
       return;
     }
     layer.insert(d);
@@ -714,11 +727,16 @@ export class DrawingInteraction {
 
   /** Drop the draft and leave the tool (Esc, right-click). */
   private cancelCreate(): void {
-    const type = this.layer.draft?.type ?? this.tool ?? '';
+    const g = this.gesture;
+    const transient = g?.kind === 'create' && g.transient;
+    const modal = this.tool === MEASURE_TOOL;
+    const type = transient ? MEASURE_TOOL : (this.layer.draft?.type ?? this.tool ?? '');
     this.gesture = null;
     this.layer.draft = null;
     this.leaveTool();
     this.layer.host.invalidate();
+    // A cancelled quick measure (started from the cursor) leaves the tool alone.
+    if (transient && !modal) return;
     this.layer.host.emit('toolFinished', { type, drawingId: null, active: false });
   }
 

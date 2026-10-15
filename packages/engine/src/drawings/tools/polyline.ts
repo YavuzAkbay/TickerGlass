@@ -34,7 +34,7 @@ export const polyline = defineDrawingTool({
   type: 'polyline',
   name: 'Polyline',
   group: 'shapes',
-  creation: { kind: 'multi', min: 2 },
+  creation: { kind: 'multi', min: 2, closable: true },
   defaults: POLYLINE_DEFAULTS,
   properties: SHAPE_PROPERTIES,
 

@@ -44,6 +44,8 @@ export function sourceRange(g: DrawingGeometry): [number, number] | null {
 }
 
 const copy: PatternBar[] = [];
+/** Reused bar objects: grown on demand, never shrunk (no per-call allocation). */
+const pool: PatternBar[] = [];
 
 /**
  * Bars of the source range transformed for the copy, shifted so the first
@@ -69,12 +71,12 @@ export function patternBars(
     const c = s.mirrored ? b.open[j]! : b.close[j]!;
     const h = b.high[j]!;
     const l = b.low[j]!;
-    copy.push({
-      open: tf(o),
-      close: tf(c),
-      high: s.flipped ? tf(l) : tf(h),
-      low: s.flipped ? tf(h) : tf(l),
-    });
+    const bar = pool[k] ?? (pool[k] = { open: 0, high: 0, low: 0, close: 0 });
+    bar.open = tf(o);
+    bar.close = tf(c);
+    bar.high = s.flipped ? tf(l) : tf(h);
+    bar.low = s.flipped ? tf(h) : tf(l);
+    copy.push(bar);
   }
   return copy;
 }

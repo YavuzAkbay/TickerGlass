@@ -303,6 +303,13 @@ describe('bars pattern', () => {
     ]);
   });
 
+  it('reuses its bar objects between calls (no per-call allocation)', () => {
+    const { g } = setup('bars-pattern', [pt(20, 0), pt(22, 0), pt(23, 49)], {}, bars);
+    const s = { mirrored: false, flipped: false };
+    const first = patternBars(g, s, 49)[0];
+    expect(patternBars(g, s, 49)[0]).toBe(first);
+  });
+
   it('hits copied bars strongly, the copy box weakly; renders nothing without data', () => {
     const P = [pt(20, 0), pt(22, 0), pt(23, 49)];
     const { at, def, g, d } = setup('bars-pattern', P, {}, bars);

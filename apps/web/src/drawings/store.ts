@@ -1,6 +1,7 @@
 import type { Drawing, DrawingStyle } from '@investopen/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { stripPerDrawingStyle } from './per-drawing';
 
 /**
  * Drawings of every symbol (docs/drawings.md §6). The app owns them; the
@@ -406,14 +407,18 @@ export const useDrawingTemplates = create<DrawingTemplates>()(
         set((s) => ({
           byType: {
             ...s.byType,
-            [type]: [...(s.byType[type] ?? []).filter((t) => t.name !== name), { name, style }],
+            [type]: [
+              ...(s.byType[type] ?? []).filter((t) => t.name !== name),
+              { name, style: stripPerDrawingStyle(type, style) },
+            ],
           },
         })),
       removeTemplate: (type, name) =>
         set((s) => ({
           byType: { ...s.byType, [type]: (s.byType[type] ?? []).filter((t) => t.name !== name) },
         })),
-      saveDefault: (type, style) => set((s) => ({ defaults: { ...s.defaults, [type]: style } })),
+      saveDefault: (type, style) =>
+        set((s) => ({ defaults: { ...s.defaults, [type]: stripPerDrawingStyle(type, style) } })),
       clearDefault: (type) =>
         set((s) => {
           const { [type]: _dropped, ...rest } = s.defaults;

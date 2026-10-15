@@ -32,6 +32,9 @@ import {
 } from './actions';
 import { drawingMenuItems, openDrawingSettings, openTextEditor } from './menu';
 import { toolName } from './model';
+import { keepPerDrawingStyle } from './per-drawing';
+
+export { keepPerDrawingStyle };
 import {
   drawingsFor,
   startDrawingPersistence,
@@ -66,23 +69,6 @@ export function engineTool(id: string): EngineTool | null {
   const sticker = findSticker(id);
   if (sticker && getDrawingTool('icon')) return { type: 'icon', style: { glyph: sticker.glyph } };
   return null;
-}
-
-/**
- * The saved default style `style` for a drawing of `type` just created with
- * `own` style: per-drawing keys (icon glyph, ghost-feed seed) stay the drawing's.
- */
-export function keepPerDrawingStyle(
-  type: string,
-  style: DrawingStyle,
-  own: DrawingStyle | undefined,
-): DrawingStyle {
-  if (type === 'icon') return { ...style, glyph: own?.glyph ?? style.glyph ?? '' };
-  if (type === 'ghost-feed') {
-    const { seed: _saved, ...rest } = style;
-    return own && 'seed' in own ? { ...rest, seed: own.seed } : rest;
-  }
-  return style;
 }
 
 /**

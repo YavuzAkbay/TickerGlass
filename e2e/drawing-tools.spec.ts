@@ -442,13 +442,8 @@ for (const { name, type, clicks, finish, count } of FORECAST_TOOL_CASES) {
   });
 }
 
-/** The transient measurement (engine internals: never part of getDrawings()). */
-const measurement = (page: Page) =>
-  page.evaluate(() => {
-    const m = (window.chart as unknown as { drawingLayer: { measure: { type: string } | null } })
-      .drawingLayer.measure;
-    return m ? m.type : null;
-  });
+/** The transient measurement's anchors (never part of getDrawings()). */
+const measurement = (page: Page) => page.evaluate(() => window.chart.getMeasure());
 
 test('zoom in: drag a box to zoom the chart to it', async ({ page }) => {
   const errors: Error[] = [];
@@ -501,7 +496,7 @@ test('measure: transient range, cleared by the next click, never stored', async 
   await page.mouse.down();
   await page.mouse.move(650, 330, { steps: 5 });
   await page.mouse.up();
-  expect(await measurement(page)).toBe('date-price-range');
+  expect(await measurement(page)).toHaveLength(2);
   expect(await drawings(page)).toHaveLength(0);
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBeNull();
 
@@ -513,7 +508,7 @@ test('measure: transient range, cleared by the next click, never stored', async 
   await page.getByRole('button', { name: 'Measure', exact: true }).click();
   await page.mouse.click(500, 400);
   await page.mouse.click(650, 330);
-  expect(await measurement(page)).toBe('date-price-range');
+  expect(await measurement(page)).toHaveLength(2);
   await page.keyboard.press('Escape');
   expect(await measurement(page)).toBeNull();
   expect(await drawings(page)).toHaveLength(0);
@@ -529,7 +524,7 @@ test('measure: Shift+click quick-measures from the cursor', async ({ page }) => 
   await page.mouse.move(650, 330, { steps: 5 });
   await page.mouse.click(650, 330);
   await page.keyboard.up('Shift');
-  expect(await measurement(page)).toBe('date-price-range');
+  expect(await measurement(page)).toHaveLength(2);
   expect(await drawings(page)).toHaveLength(0);
   await page.mouse.click(300, 300);
   expect(await measurement(page)).toBeNull();
