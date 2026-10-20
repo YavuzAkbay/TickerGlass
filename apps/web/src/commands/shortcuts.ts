@@ -11,6 +11,9 @@ export function comboFromEvent(e: KeyboardEvent): string {
   if (e.code.startsWith('Key')) key = e.code.slice(3).toLowerCase();
   else if (e.code.startsWith('Digit')) key = e.code.slice(5);
   else if (key === ' ') key = 'Space';
+  // Option changes the typed character on some layouts; the brackets keep their key.
+  else if (e.code === 'BracketLeft') key = '[';
+  else if (e.code === 'BracketRight') key = ']';
   else if (key.length === 1) key = key.toLowerCase();
   parts.push(key);
   return parts.join('+');

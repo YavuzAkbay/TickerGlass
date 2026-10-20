@@ -78,10 +78,42 @@ export function setActiveChart(id: string): void {
   useChartStore.setState({ activeId: id, ...mirror(s.sessions.get(id)) });
 }
 
+/** Chart whose session the active-chart accessors resolve to inside runInSession(). */
+let scopedId: string | null = null;
+
+/**
+ * Run `fn` (synchronously) with the active-chart facades and getChart()
+ * resolving to chart `id` instead of the focused one. For callbacks that
+ * originate from a chart that may not be focused (studies lost, drawing
+ * gestures, pane removal): their undo steps and store writes belong to that
+ * chart. Falls back to the active chart when `id` has no session.
+ */
+export function runInSession<T>(id: string, fn: () => T): T {
+  const prev = scopedId;
+  scopedId = id;
+  try {
+    return fn();
+  } finally {
+    scopedId = prev;
+  }
+}
+
+/** The session the active-chart accessors act on (the focused chart, or the runInSession() one). */
 export const getActiveSession = (): ChartSession | null => {
   const { sessions, activeId } = useChartStore.getState();
-  return activeId === null ? null : (sessions.get(activeId) ?? null);
+  const id = scopedId !== null && sessions.has(scopedId) ? scopedId : activeId;
+  return id === null ? null : (sessions.get(id) ?? null);
 };
 
 /** Imperative access for commands. */
-export const getChart = (): Chart | null => useChartStore.getState().chart;
+export const getChart = (): Chart | null =>
+  scopedId === null ? useChartStore.getState().chart : (getActiveSession()?.chart ?? null);
+
+/**
+ * `session.chart.on` whose handlers run in runInSession(session.id): store
+ * writes and undo steps the handler makes land on this chart even when
+ * another one is focused.
+ */
+export function scopedOn(session: { id: string; chart: Chart }): Chart['on'] {
+  return (event, fn) => session.chart.on(event, (p) => runInSession(session.id, () => fn(p)));
+}

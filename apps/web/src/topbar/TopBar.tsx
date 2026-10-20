@@ -32,6 +32,7 @@ import { CHART_TYPE_MENU, chartTypeDef } from './chartTypes';
 import { IndicatorTemplatesButton } from './IndicatorTemplatesButton';
 import { IntervalControl } from './IntervalControl';
 import { LayoutMenu } from './LayoutMenu';
+import { LayoutPicker } from './LayoutPicker';
 import { firstShortcut, useCommand } from './useCommand';
 import './topbar.css';
 
@@ -66,6 +67,7 @@ export function TopBar() {
         active={replayOn}
       />
       <div className="tb-sep" />
+      <LayoutPicker />
       <LayoutMenu />
       <div className="tb-sep" />
       <CommandButton id="chart.settings" icon={Settings} label="Settings" />

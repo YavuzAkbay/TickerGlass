@@ -3,6 +3,7 @@ import { replayFeed } from '../chart/feed';
 import { syncScriptDefinitions } from '../scripts/definitions';
 import { useScriptsStore } from '../scripts/store';
 import type { ChartSession } from '../chart/session';
+import { runInSession, scopedOn } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
 import { toast } from '../ui/Toast';
@@ -31,7 +32,7 @@ export function attachIndicators(session: ChartSession, feed: DataFeed): () => v
     worker: port,
     schedule: (fn) => requestAnimationFrame(fn),
     onError: (message) => toast(message, 'error'),
-    onStudiesLost: removeIndicators,
+    onStudiesLost: (ids) => runInSession(session.id, () => removeIndicators(ids)),
     runtime: session.indicatorRuntime,
     prepost: () => session.view.getState().prepost,
     chartType: () => session.view.getState().chartType,
@@ -53,7 +54,7 @@ export function attachIndicators(session: ChartSession, feed: DataFeed): () => v
     session.indicators.subscribe(sync),
     session.preview.subscribe(sync),
     useUiStore.subscribe((s) => ctl.setHidden(indicatorsHidden(s))),
-    chart.on('studyDoubleClick', (e) => {
+    scopedOn(session)('studyDoubleClick', (e) => {
       // Compare overlays are studies too: they have no indicator settings.
       if (findIndicator(e.id)) openIndicatorSettings(e.id);
     }),

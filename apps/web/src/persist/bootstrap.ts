@@ -10,6 +10,7 @@ import { startAlertNotifications } from '../alerts/notify';
 import { startAlertsSync } from '../alerts/sync';
 import { DEFAULT_CHART_VIEW } from '../store/chartView';
 import type { ChartSession } from '../chart/session';
+import { useLayoutGrid } from '../layout/store';
 import { getActiveSession, useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { actionToast, toast } from '../ui/Toast';
@@ -152,34 +153,38 @@ export function startPersistence(): () => void {
   const changed = () => {
     if (!changeTimer) changeTimer = setTimeout(flushChange, CHANGE_MS);
   };
-  // The layout is the active chart's: follow the active session's stores.
+  // The layout holds every chart: follow all sessions' stores.
   let sessionOffs: (() => void)[] = [];
-  const watchSession = (session: ChartSession | null) => {
+  const watchSession = (session: ChartSession): (() => void)[] => [
+    session.chart.on('stateChange', changed),
+    session.chart.on('visibleRangeChange', changed),
+    session.indicators.subscribe((s, p) => {
+      if (s.instances !== p.instances) changed();
+    }),
+    session.compares.subscribe((s, p) => {
+      if (s.items !== p.items || s.scaleRestore !== p.scaleRestore) changed();
+    }),
+    session.view.subscribe((s, p) => {
+      if (LAYOUT_FIELDS.some((k) => s[k] !== p[k])) changed();
+      if (s.symbol !== p.symbol && online)
+        drawings.pull(s.symbol).catch((err) => report(err, 'Drawings could not be loaded'));
+    }),
+  ];
+  const watchSessions = () => {
     sessionOffs.forEach((off) => off());
-    sessionOffs = session
-      ? [
-          session.chart.on('stateChange', changed),
-          session.chart.on('visibleRangeChange', changed),
-          session.indicators.subscribe((s, p) => {
-            if (s.instances !== p.instances) changed();
-          }),
-          session.compares.subscribe((s, p) => {
-            if (s.items !== p.items || s.scaleRestore !== p.scaleRestore) changed();
-          }),
-          session.view.subscribe((s, p) => {
-            if (LAYOUT_FIELDS.some((k) => s[k] !== p[k])) changed();
-            if (s.symbol !== p.symbol && online)
-              drawings.pull(s.symbol).catch((err) => report(err, 'Drawings could not be loaded'));
-          }),
-        ]
-      : [];
+    sessionOffs = [...useChartStore.getState().sessions.values()].flatMap(watchSession);
   };
-  watchSession(getActiveSession());
+  watchSessions();
 
   const offs = [
     () => sessionOffs.forEach((off) => off()),
     useChartStore.subscribe((s, p) => {
-      if (s.activeId !== p.activeId || s.sessions !== p.sessions) watchSession(getActiveSession());
+      if (s.sessions !== p.sessions) watchSessions();
+      if (s.activeId !== p.activeId || s.sessions !== p.sessions) changed();
+    }),
+    // Grid arrangement (splitter drags, template changes) and sync flags.
+    useLayoutGrid.subscribe((s, p) => {
+      if (s.grid !== p.grid || s.sync !== p.sync || s.template !== p.template) changed();
     }),
   ];
 
@@ -362,7 +367,8 @@ export function startPersistence(): () => void {
     if (send) flushChange();
     else if (changeTimer) clearTimeout(changeTimer);
     offs.forEach((off) => off());
-    watchSession(null);
+    sessionOffs.forEach((off) => off());
+    sessionOffs = [];
     stopAlerts();
     stopAlertNotify();
     window.removeEventListener('pagehide', onPageHide);

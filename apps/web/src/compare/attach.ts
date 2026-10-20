@@ -1,6 +1,7 @@
 import type { ChartState, DataFeed, PriceScaleMode } from '@investopen/engine';
 import { replayFeed } from '../chart/feed';
 import type { ChartSession } from '../chart/session';
+import { runInSession, scopedOn } from '../store/chart';
 import { toast } from '../ui/Toast';
 import { onMainScaleMode, removeCompares } from './actions';
 import { CompareController } from './controller';
@@ -16,7 +17,7 @@ export function attachCompares(session: ChartSession, feed: DataFeed): () => voi
     feed,
     schedule: (fn) => requestAnimationFrame(fn),
     onError: (message) => toast(message, 'error'),
-    onLost: removeCompares,
+    onLost: (ids) => runInSession(session.id, () => removeCompares(ids)),
     runtime: session.compareRuntime,
     prepost: () => session.view.getState().prepost,
     chartType: () => session.view.getState().chartType,
@@ -28,7 +29,7 @@ export function attachCompares(session: ChartSession, feed: DataFeed): () => voi
     session.compares.subscribe((s, p) => {
       if (s.items !== p.items) ctl.sync(s.items);
     }),
-    chart.on('stateChange', (s) => {
+    scopedOn(session)('stateChange', (s) => {
       const next = mainMode(s);
       const prev = mode;
       mode = next;
