@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import '../src/builtins';
 import { IndicatorRuntime, type Change } from '../src/runtime';
 import { randomBars } from '../src/test-utils';
-import type { BarArrays, BarInput, InputValueMap } from '../src/types';
-import { barAt, sliceBars, snapshot, toColumns } from './helpers';
+import type { BarInput, InputValueMap } from '../src/types';
+import { barAt, feedTicks, sliceBars, snapshot, swingTicks, toColumns } from './helpers';
 
 /** Flat bars (open = high = low = close) at the given prices, one minute apart. */
 function flat(prices: number[]): BarInput[] {
@@ -19,18 +19,6 @@ const at = (time: number, p: number): BarInput => ({
   volume: 1,
 });
 
-/** Ticks that push the high/low far out and back (pivots created, cancelled, moved). */
-function wildTicks(b: BarInput): BarInput[] {
-  const o = b.open;
-  return [
-    { ...b, high: o, low: o, close: o },
-    { ...b, high: b.high * 1.04, close: b.high * 1.04 },
-    { ...b, low: b.low * 0.96, close: b.low * 0.96 },
-    { ...b, high: b.high * 1.08, low: b.low * 0.92 },
-    b,
-  ];
-}
-
 function withSma(inputs: InputValueMap): IndicatorRuntime {
   const rt = new IndicatorRuntime();
   rt.add({ id: 'z', type: 'zigzag', inputs });
@@ -40,14 +28,6 @@ function withSma(inputs: InputValueMap): IndicatorRuntime {
     inputs: { length: 2, source: { instanceId: 'z', outputId: 'zz' } },
   });
   return rt;
-}
-
-function feed(rt: IndicatorRuntime, cols: BarArrays, from: number): Change[][] {
-  rt.setBars(sliceBars(cols, 0, from));
-  const all: Change[][] = [];
-  for (let i = from; i < cols.time.length; i++)
-    for (const t of wildTicks(barAt(cols, i))) all.push(rt.updateBar(i, t));
-  return all;
 }
 
 const fromOf = (cs: Change[], id: string) => cs.find((c) => c.id === id)?.from;
@@ -63,7 +43,7 @@ describe('zigzag repaints', () => {
     const full = withSma(inputs);
     full.setBars(bars);
     const live = withSma(inputs);
-    const changes = feed(live, bars, 60);
+    const changes = feedTicks(live, bars, 60, swingTicks);
     expect(full.status('z')).toEqual({ state: 'ok' });
     expect(snapshot(live.result('z')!)).toEqual(snapshot(full.result('z')!));
     expect(snapshot(live.result('ma')!)).toEqual(snapshot(full.result('ma')!));

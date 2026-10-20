@@ -1,4 +1,4 @@
-import { IndicatorRuntime } from '../src/runtime';
+import type { Change, IndicatorRuntime } from '../src/runtime';
 import type { BarArrays, BarInput, IndicatorResult } from '../src/types';
 
 export const DAY = 86_400;
@@ -103,6 +103,35 @@ export function feedLive(
       }
     }
   }
+}
+
+/** Ticks that push the high/low far out and back (pivots created, cancelled, moved). */
+export function swingTicks(b: BarInput): BarInput[] {
+  const o = b.open;
+  return [
+    { ...b, high: o, low: o, close: o },
+    { ...b, high: b.high * 1.04, close: b.high * 1.04 },
+    { ...b, low: b.low * 0.96, close: b.low * 0.96 },
+    { ...b, high: b.high * 1.08, low: b.low * 0.92 },
+    b,
+  ];
+}
+
+/**
+ * Feed `cols` to `rt` as history up to `from`, then each bar as the live
+ * ticks `ticksOf` gives. Returns the changes of every tick, in order.
+ */
+export function feedTicks(
+  rt: IndicatorRuntime,
+  cols: BarArrays,
+  from: number,
+  ticksOf: (b: BarInput) => BarInput[],
+): Change[][] {
+  rt.setBars(sliceBars(cols, 0, from));
+  const all: Change[][] = [];
+  for (let i = from; i < cols.time.length; i++)
+    for (const t of ticksOf(barAt(cols, i))) all.push(rt.updateBar(i, t));
+  return all;
 }
 
 /** Exact copy of a result's live range, for equality checks (NaN-safe via toEqual). */
