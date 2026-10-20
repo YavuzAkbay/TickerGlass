@@ -31,3 +31,13 @@ export { ExpressionFeed } from './expression-feed';
 export * from './expression';
 export { ResamplingFeed } from './resampling-feed';
 export { SyntheticFeed } from './synthetic-feed';
+export {
+  ReplayFeed,
+  type ReplayClock,
+  type ReplayFeedEvents,
+  type ReplayFeedOptions,
+  type ReplayInfo,
+  type ReplayMode,
+  type ReplayStartOptions,
+  type ReplayUpdate,
+} from './replay-feed';
