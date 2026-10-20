@@ -535,6 +535,198 @@ describe('ReplayFeed fixes', () => {
   });
 });
 
+describe('ReplayFeed review fixes', () => {
+  it('keeps resampled bars whole across forward page boundaries', async () => {
+    // 10m from 5m: the first forward page ends mid-bucket (to = from + 1000 * 10m
+    // with from on an odd 5m), so the bucket crossing `to` is partial there.
+    const fiveMin = bars(evenly(MON, 12 * 24 * 10, 5 * MIN));
+    const inner = new FakeFeed({ 'AAA|5m': fiveMin });
+    const M10: Interval = { unit: 'minute', count: 10 };
+    const feed = new ReplayFeed(new ResamplingFeed(inner), { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: M10,
+      lastVisible: MON + 15 * MIN,
+      update: 'bars',
+      prepost: false,
+    });
+    const s = collect(feed, 'AAA', M10);
+    await flush();
+    for (let i = 0; i < 1010; i++) await feed.step();
+    const plain = await new ResamplingFeed(inner).getBars({
+      symbol: 'AAA',
+      interval: M10,
+      limit: 5000,
+    });
+    const byTime = new Map<number, Bar>();
+    for (let i = 0; i < plain.bars.time.length; i++) {
+      const b = {
+        time: plain.bars.time[i] as number,
+        open: plain.bars.open[i] as number,
+        high: plain.bars.high[i] as number,
+        low: plain.bars.low[i] as number,
+        close: plain.bars.close[i] as number,
+        volume: plain.bars.volume[i] as number,
+      };
+      byTime.set(b.time, b);
+    }
+    expect(s.got.length).toBe(1010);
+    for (const b of s.got) expect(b).toEqual(byTime.get(b.time));
+  });
+
+  it('warns once for a failing subscription and keeps stepping', async () => {
+    const inner = dailyFeed();
+    const feed = new ReplayFeed(inner, { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[10] as number,
+      update: 'bars',
+      prepost: false,
+    });
+    const warnings: string[] = [];
+    feed.on('warning', (w) => warnings.push(w));
+    const chart = collect(feed, 'AAA', D1);
+    collect(feed, 'NOPE', D1); // no data: every load throws
+    await flush();
+    expect(await feed.step()).toBe('ok');
+    expect(await feed.step()).toBe('ok');
+    expect(chart.got.map((b) => b.time)).toEqual([DAYS[11], DAYS[12]]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/^Replay data for NOPE 1D failed: no data for NOPE/);
+  });
+
+  it('rejects the step when the chart series subscription fails', async () => {
+    class Flaky extends FakeFeed {
+      override async getBars(req: GetBarsRequest): Promise<GetBarsResult> {
+        if (req.adjusted === true) throw new Error('adjusted down');
+        return super.getBars(req);
+      }
+    }
+    const feed = new ReplayFeed(new Flaky({ 'AAA|1D': DAILY }), { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[10] as number,
+      update: 'bars',
+      prepost: false,
+    });
+    feed.subscribe({ symbol: 'AAA', interval: D1, adjusted: true }, null, () => {});
+    await flush();
+    await expect(feed.step()).rejects.toThrow('adjusted down');
+  });
+
+  it('reports the revealed chart bar in bar mode and after an interval change', async () => {
+    const feed = new ReplayFeed(dailyFeed(), { now: FAR_FUTURE });
+    expect(feed.revealedBar('AAA')).toBeNull();
+    const started = feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[12] as number,
+      update: 'bars',
+      prepost: false,
+    });
+    expect(feed.revealedBar('AAA')).toBeNull(); // not settled yet
+    await started;
+    expect(feed.revealedBar('aaa')).toEqual(DAILY[12]);
+    expect(feed.revealedBar('BBB')).toBeNull();
+    await feed.step();
+    expect(feed.revealedBar('AAA')).toEqual(DAILY[13]);
+    await feed.setPrimary('AAA', W1);
+    expect(feed.revealedBar('AAA')).toEqual(WEEKLY[1]);
+    feed.stop();
+    expect(feed.revealedBar('AAA')).toBeNull();
+  });
+
+  it('reports the forming intrabar aggregate, also after an interval change', async () => {
+    const N = 3 * 24 * 60;
+    const oneMin = bars(evenly(MON, N, MIN));
+    const fifteen = bars(evenly(MON, N / 15, 15 * MIN), 2);
+    const inner = new FakeFeed({
+      'AAA|1m': oneMin,
+      'AAA|5m': bars(evenly(MON, N / 5, 5 * MIN), 1),
+      'AAA|15m': fifteen,
+      'AAA|1D': bars(evenly(MON, 3, DAY), 3),
+    });
+    const feed = new ReplayFeed(inner, { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: { unit: 'minute', count: 5 },
+      lastVisible: MON + 14 * HOUR + 10 * MIN,
+      update: 'auto',
+      prepost: false,
+    });
+    await feed.step();
+    await feed.step();
+    const at = MON + 14 * HOUR + 15 * MIN;
+    const i = at / MIN - MON / MIN;
+    const mins = oneMin.slice(i, i + 2);
+    expect(feed.revealedBar('AAA')).toEqual({
+      time: at,
+      open: (mins[0] as Bar).open,
+      high: Math.max(...mins.map((b) => b.high)),
+      low: Math.min(...mins.map((b) => b.low)),
+      close: (mins[1] as Bar).close,
+      volume: (mins[0] as Bar).volume + (mins[1] as Bar).volume,
+    });
+    await feed.setPrimary('AAA', D1);
+    // E' = 14:15: the daily bar so far is every 15m tick from midnight to 14:00.
+    const day = fifteen.slice(0, 14 * 4 + 1);
+    expect(feed.revealedBar('AAA')).toEqual({
+      time: MON,
+      open: (day[0] as Bar).open,
+      high: Math.max(...day.map((b) => b.high)),
+      low: Math.min(...day.map((b) => b.low)),
+      close: (day[day.length - 1] as Bar).close,
+      volume: day.reduce((v, b) => v + b.volume, 0),
+    });
+  });
+
+  it('answers a getBars pending across a seek for the new clock', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    class Gated extends FakeFeed {
+      override async getBars(req: GetBarsRequest): Promise<GetBarsResult> {
+        const res = await super.getBars(req);
+        if (req.limit === 777) await gate;
+        return res;
+      }
+    }
+    const feed = new ReplayFeed(new Gated({ 'AAA|1D': DAILY }), { now: FAR_FUTURE });
+    const opts = {
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[10] as number,
+      update: 'bars' as const,
+      prepost: false,
+    };
+    await feed.start(opts);
+    const pending = feed.getBars({ symbol: 'AAA', interval: D1, limit: 777 });
+    await flush();
+    await feed.start({ ...opts, lastVisible: DAYS[5] as number });
+    release();
+    const res = await pending;
+    expect(times(res.bars).at(-1)).toBe(DAYS[5]);
+  });
+
+  it('serves scroll-back pages without touching forward buffers', async () => {
+    const inner = dailyFeed();
+    const feed = new ReplayFeed(inner, { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[20] as number,
+      update: 'bars',
+      prepost: false,
+    });
+    inner.requests.length = 0;
+    const req: GetBarsRequest = { symbol: 'BBB', interval: D1, limit: 5, to: DAYS[10] as number };
+    const res = await feed.getBars(req);
+    expect(inner.requests).toEqual([req]);
+    expect(times(res.bars)).toEqual(DAYS.slice(5, 10));
+  });
+});
+
 describe('chooseTick', () => {
   const M = (count: number): Interval => ({ unit: 'minute', count });
   const NOW = MON + 5000 * DAY;
