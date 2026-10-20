@@ -158,6 +158,11 @@ export class IndicatorController {
   private readonly onError: (message: string) => void;
   private list: readonly IndicatorState[] = [];
   private readonly applied = new Map<string, Applied>();
+  /**
+   * Applied script instances whose definition went away (script deleted or
+   * broken): the router stopped their sandbox, so they hold no cap slot.
+   */
+  private readonly stalled = new Set<string>();
   private hidden = false;
   private sentRevision = -1;
   private symbol: string | null = null;
@@ -238,15 +243,28 @@ export class IndicatorController {
     for (const id of [...this.applied.keys()]) {
       if (ids.has(id)) continue;
       this.applied.delete(id);
+      this.stalled.delete(id);
       this.worker.post({ type: 'remove', id });
       this.engine(() => this.chart.removeStudy(id));
       this.forget(id);
     }
     this.sendTimeframeMap(false);
+    // Script instances already running keep their slot; others (new, or whose
+    // definition just came back) start only while fewer than the cap run.
     let scripts = 0;
+    for (const inst of list)
+      if (
+        isUserScriptType(inst.type) &&
+        getIndicator(inst.type) &&
+        this.applied.has(inst.id) &&
+        !this.stalled.has(inst.id)
+      )
+        scripts++;
     for (const inst of list) {
       const def = getIndicator(inst.type);
       if (!def) {
+        // Its sandbox is stopped: no slot while the definition is gone.
+        if (this.applied.has(inst.id)) this.stalled.add(inst.id);
         const problem = userScriptProblem(inst.type);
         // A user script before the scripts are loaded: no error, the load syncs again.
         if (problem === undefined && isUserScriptType(inst.type)) {
@@ -260,9 +278,21 @@ export class IndicatorController {
         continue;
       }
       const prev = this.applied.get(inst.id);
-      if (isUserScriptType(inst.type) && ++scripts > MAX_SCRIPT_INSTANCES_PER_CHART && !prev) {
-        this.setStatus(inst.id, { state: 'error', message: SCRIPT_INSTANCE_CAP_MESSAGE });
-        continue;
+      if (isUserScriptType(inst.type) && (!prev || this.stalled.has(inst.id))) {
+        if (scripts >= MAX_SCRIPT_INSTANCES_PER_CHART) {
+          if (prev) {
+            // Its definition came back with no slot free: take it off the chart (and
+            // the router), so a later sync adds it afresh once there is room.
+            this.applied.delete(inst.id);
+            this.stalled.delete(inst.id);
+            this.worker.post({ type: 'remove', id: inst.id });
+            this.engine(() => this.chart.removeStudy(inst.id));
+          }
+          this.setStatus(inst.id, { state: 'error', message: SCRIPT_INSTANCE_CAP_MESSAGE });
+          continue;
+        }
+        scripts++;
+        this.stalled.delete(inst.id);
       }
       const next = this.describe(inst, def);
       if (!prev) {

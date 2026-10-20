@@ -1004,6 +1004,48 @@ describe('user script instances', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  it('keeps the cap when a broken script comes back while others took the slots', () => {
+    const A = 'user:ctl-a';
+    const B = 'user:ctl-b';
+    const stubOf = (id: string) => ({ ...stub(), id });
+    for (const t of [A, B]) {
+      defaultRegistry.unregister(t);
+      defaultRegistry.register(stubOf(t));
+    }
+    useScriptsStore.setState({ scripts: [], loaded: true });
+    const { chart, ctl, log } = setup({ worker: manualWorker });
+    const bs = Array.from({ length: 7 }, () => createInstance(getIndicator(B)!, undefined));
+    ctl.sync(bs);
+    // B breaks: its instances stay listed but hold no slot.
+    defaultRegistry.unregister(B);
+    ctl.sync(bs);
+    const as = Array.from({ length: MAX_SCRIPT_INSTANCES_PER_CHART }, () =>
+      createInstance(getIndicator(A)!, undefined),
+    );
+    const list = [...bs, ...as];
+    ctl.sync(list);
+    for (const a of as) expect(chart.studies.has(a.id)).toBe(true);
+    // B is fixed: no room, so its instances leave the chart and show the cap.
+    defaultRegistry.register(stubOf(B));
+    log.length = 0;
+    ctl.sync(list);
+    for (const a of as) expect(chart.studies.has(a.id)).toBe(true);
+    for (const b of bs) {
+      expect(chart.studies.has(b.id)).toBe(false);
+      expect(status(b.id)).toEqual({ state: 'error', message: SCRIPT_INSTANCE_CAP_MESSAGE });
+    }
+    expect(log.filter((m) => m.type === 'remove')).toHaveLength(bs.length);
+    // Room again: one B is added afresh.
+    log.length = 0;
+    ctl.sync(list.filter((i) => i.id !== as[0]!.id));
+    expect(chart.studies.has(bs[0]!.id)).toBe(true);
+    expect(chart.studies.has(bs[1]!.id)).toBe(false);
+    expect(log.filter((m) => m.type === 'add').map((m) => m.type === 'add' && m.spec.id)).toEqual([
+      bs[0]!.id,
+    ]);
+    for (const t of [A, B]) defaultRegistry.unregister(t);
+  });
+
   it('refuses the instance over the per-chart cap', () => {
     defaultRegistry.unregister(UT);
     defaultRegistry.register(stub());

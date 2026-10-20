@@ -49,7 +49,7 @@ function fakeScope() {
   /** Stand-in for WorkerGlobalScope.prototype: methods and getters live here. */
   class FakeWorkerGlobalScope {
     posted: [unknown, Transferable[]][] = [];
-    listeners: Listener[] = [];
+    listeners: { fn: Listener; capture: boolean }[] = [];
     Event = FakeEvent as unknown as new (type: string) => Event;
     MessageEvent = FakeMessageEvent as unknown as { prototype: MessageEvent };
     Error = fakeError;
@@ -58,14 +58,21 @@ function fakeScope() {
     Crypto = FakeCrypto;
     crypto = new FakeCrypto();
     Atomics = { wait() {}, waitAsync() {} };
-    addEventListener(_type: 'message', fn: Listener) {
-      this.listeners.push(fn);
+    addEventListener(_type: 'message', fn: Listener, capture = false) {
+      this.listeners.push({ fn, capture });
     }
+    /** At the target: capturing listeners first, each group in registration order. */
     dispatchEvent(e: FakeEvent) {
-      for (const fn of this.listeners) fn(e as unknown as MessageEvent);
+      const ordered = [
+        ...this.listeners.filter((l) => l.capture),
+        ...this.listeners.filter((l) => !l.capture),
+      ];
+      for (const l of ordered) l.fn(e as unknown as MessageEvent);
     }
-    postMessage(message: unknown, options: { transfer: Transferable[] }) {
-      this.posted.push([message, options.transfer]);
+    postMessage(message: unknown, options?: { transfer: Transferable[] }) {
+      // Like WebIDL: the transfer list is read with the iteration protocol.
+      const transfer = options ? Array.from(options.transfer as Iterable<Transferable>) : [];
+      this.posted.push([message, transfer]);
     }
     fetch() {
       return 'fetched';
@@ -178,6 +185,43 @@ describe('sandbox lockdown', () => {
     expect(scope.listeners).toHaveLength(1);
     deliver({ seq: 3 });
     expect(received).toEqual([{ seq: 3 }]);
+  });
+
+  it('runs before a capture listener user code adds, which cannot rewrite the message', () => {
+    const { scope, deliver } = fakeScope();
+    const received: string[] = [];
+    lockdown(scope, (data) => received.push(JSON.stringify(data)));
+    // User code: rewrites every message into a probe before it is handled.
+    scope.addEventListener(
+      'message',
+      (e) => {
+        (e.data as { msg: unknown }).msg = { type: 'probe', code: '' };
+      },
+      true,
+    );
+    deliver({ seq: 1, msg: { type: 'ping' } });
+    expect(received).toEqual(['{"seq":1,"msg":{"type":"ping"}}']);
+    expect(scope.listeners[0]!.capture).toBe(true);
+  });
+
+  it('posts even when user code broke the array iteration protocol', () => {
+    const { scope } = fakeScope();
+    const post = lockdown(scope, () => {});
+    const buf = new ArrayBuffer(8);
+    const original = Array.prototype[Symbol.iterator];
+    Array.prototype[Symbol.iterator] = () => {
+      throw new Error('broken');
+    };
+    try {
+      post({ type: 'ack', seq: 1 });
+      post({ type: 'results' }, [buf]);
+    } finally {
+      Array.prototype[Symbol.iterator] = original;
+    }
+    expect(scope.posted).toEqual([
+      [{ type: 'ack', seq: 1 }, []],
+      [{ type: 'results' }, [buf]],
+    ]);
   });
 
   it('ignores synthetic events: dispatchEvent cannot forge a message', () => {
