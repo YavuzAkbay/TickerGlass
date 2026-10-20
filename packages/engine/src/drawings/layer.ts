@@ -150,6 +150,7 @@ export class DrawingLayer {
       scope: input.scope ?? 'symbol',
       symbol: input.symbol ?? this.host.symbol,
       paneId: input.paneId ?? 'main',
+      ...(input.chartId !== undefined ? { chartId: input.chartId } : {}),
     };
   }
 

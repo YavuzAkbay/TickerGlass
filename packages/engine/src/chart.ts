@@ -76,6 +76,7 @@ import { isPaneCoords, withTime } from './drawings/geometry';
 import { buildTradingCalendar, type TradingCalendar } from './drawings/calendar';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './drawings/mapping';
 import { getDrawingTool } from './drawings/registry';
+import { mapSyncTime, type SyncTimeRef } from './sync/time-map';
 import type {
   Drawing,
   DrawingApi,
@@ -106,6 +107,8 @@ const PLUS_WIDTH = 18;
 const INVALIDATE_OVERLAY = 1;
 const INVALIDATE_MAIN = 2;
 const INVALIDATE_LAYOUT = 4;
+/** Tolerance (bar slots) for pane edges computed in floating point. */
+const EDGE_EPS = 1e-6;
 
 /** Ids reserved for built-in series. */
 const RESERVED_STUDY_IDS = new Set(['main', 'volume', 'volume-pane']);
@@ -119,6 +122,21 @@ export interface CrosshairInfo {
 }
 
 /** A point on the chart in chart terms (for context menus, drawings, alerts). */
+/** What moved the view: a pointer/keyboard gesture, an API call, or a data load. */
+export type ViewChangeCause = 'user' | 'api' | 'data';
+
+/** Crosshair position from another chart of a layout (see `setSyncedCrosshair`). */
+export interface SyncedCrosshair {
+  /** Open time (unix s) of the source chart's bar under its crosshair. */
+  time: number;
+  /** Source chart interval, e.g. "5m", "1D". */
+  interval: string;
+  /** Exchange timezone (IANA) of the source symbol; null = UTC. */
+  timezone: string | null;
+  /** Price for the horizontal line; null = vertical line only (another symbol). */
+  price: number | null;
+}
+
 export interface ChartPoint {
   clientX: number;
   clientY: number;
@@ -138,6 +156,8 @@ export interface ChartEvents extends StudyEvents, DrawingEvents {
   barUpdate: Bar;
   crosshairMove: CrosshairInfo;
   visibleRangeChange: { from: number; to: number };
+  /** The time scale moved or zoomed, or the bars under it changed. */
+  viewChange: { cause: ViewChangeCause };
   symbolResolved: SymbolInfo;
   dataLoaded: { symbol: string; interval: string; bars: number };
   loading: boolean;
@@ -251,6 +271,9 @@ export class Chart implements StudyApi, DrawingApi {
   private loadGen = 0;
   private unsubscribe: Unsubscribe | null = null;
   private crosshair: CrosshairPos | null = null;
+  /** Crosshair mirrored from another chart; `logical` is cached per `key` (bars, chart type). */
+  private synced: { ref: SyncTimeRef; price: number | null; logical: number; key: string } | null =
+    null;
   private maximized: Pane | null = null;
   private separators: HTMLDivElement[] = [];
   private timeAxisEl: HTMLDivElement;
@@ -1051,6 +1074,7 @@ export class Chart implements StudyApi, DrawingApi {
     this.invalidate(INVALIDATE_LAYOUT);
     // Plain types share the raw store, so indices only change through a transform.
     if (wasTransform || this.usesTransform) this.emitSeriesReset();
+    this.emitViewChange('data');
     this.emitState();
   }
 
@@ -1065,6 +1089,7 @@ export class Chart implements StudyApi, DrawingApi {
       this.recomputeWeights();
       this.resetBrickView();
       if (this.usesTransform) this.emitSeriesReset();
+      this.emitViewChange('data');
     }
     this.invalidate(INVALIDATE_MAIN);
   }
@@ -1185,6 +1210,7 @@ export class Chart implements StudyApi, DrawingApi {
     this.timeScale.reset(this.store.length - 1);
     for (const p of this.panes) p.priceScale.autoScale = true;
     this.invalidate(INVALIDATE_MAIN);
+    this.emitViewChange('api');
     this.emitState();
   }
 
@@ -1198,7 +1224,7 @@ export class Chart implements StudyApi, DrawingApi {
     const i1 = to === Infinity ? n - 1 : Math.max(i0, this.store.indexAtOrBefore(to));
     this.timeScale.fitRange(i0, i1);
     for (const p of this.panes) p.priceScale.autoScale = true;
-    this.viewChanged();
+    this.viewChanged('api');
     this.emitState();
   }
 
@@ -1207,7 +1233,7 @@ export class Chart implements StudyApi, DrawingApi {
    * are left alone. Ignored unless both are finite and from < to. */
   setVisibleLogicalRange(from: number, to: number): void {
     if (!this.timeScale.setVisibleLogicalRange(from, to)) return;
-    this.viewChanged();
+    this.viewChanged('api');
     this.emitState();
   }
 
@@ -1226,7 +1252,43 @@ export class Chart implements StudyApi, DrawingApi {
     const ts = this.timeScale;
     ts.rightOffset = ts.width / ts.barSpacing / 2 - (ts.baseIndex - i);
     ts.clamp();
-    this.viewChanged();
+    this.viewChanged('api');
+    this.emitState();
+  }
+
+  /**
+   * Times (unix s) of the first and last bar slots (at least partly) visible at
+   * the pane edges; past the last bar these are future slots (session-aware).
+   * The `to` slot is the one `setRightEdgeTime` puts at the right edge. Null
+   * without bars.
+   */
+  getVisibleTimeRange(): { from: number; to: number } | null {
+    const tl = this.refreshTimeline();
+    if (!tl.length || this.timeScale.width <= 0) return null;
+    const { from, to } = this.timeScale.logicalRange();
+    // Slot k spans logical [k - 0.5, k + 0.5); an edge exactly on a boundary
+    // belongs to the slot inside the pane.
+    const a = logicalToTime(tl, Math.floor(from + 0.5 + EDGE_EPS));
+    const b = logicalToTime(tl, Math.ceil(to - 0.5 - EDGE_EPS));
+    return a && b ? { from: a.time, to: b.time } : null;
+  }
+
+  /**
+   * Scroll so the bar slot at `time` (unix s, may be in the future) ends at the
+   * right pane edge, loading history as needed. Bar spacing is kept. Emits
+   * `viewChange` with cause 'api'.
+   */
+  async setRightEdgeTime(time: number): Promise<void> {
+    await this.whenLoaded();
+    await this.ensureHistory(time);
+    if (!this.store.length || !Number.isFinite(time)) return;
+    const l = timeToLogical(this.refreshTimeline(), { time });
+    if (!Number.isFinite(l)) return;
+    const ts = this.timeScale;
+    // Right edge of slot l at x = width (see TimeScale.indexToX).
+    ts.rightOffset = l - ts.baseIndex;
+    ts.clamp();
+    this.viewChanged('api');
     this.emitState();
   }
 
@@ -1288,6 +1350,7 @@ export class Chart implements StudyApi, DrawingApi {
   scrollToRealtime(): void {
     this.timeScale.reset(this.store.length - 1);
     this.invalidate(INVALIDATE_MAIN);
+    this.emitViewChange('api');
   }
 
   getState(): ChartState {
@@ -1644,11 +1707,53 @@ export class Chart implements StudyApi, DrawingApi {
     return best;
   }
 
-  /** Called by the controller after any view change. */
-  viewChanged(): void {
+  /** Called by the controller after any view change (and by view API calls with 'api'). */
+  viewChanged(cause: ViewChangeCause = 'user'): void {
     this.invalidate(INVALIDATE_MAIN);
     if (this.crosshair)
       this.setCrosshair(this.crosshair.pane, this.crosshair.x, this.crosshair.rawY);
+    this.emitViewChange(cause);
+  }
+
+  private emitViewChange(cause: ViewChangeCause): void {
+    if (this.synced) this.synced.key = '';
+    this.events.emit('viewChange', { cause });
+  }
+
+  /**
+   * Show (or with null, clear) a crosshair mirrored from another chart: a
+   * vertical line at the bar matching `p.time` (see `mapSyncTime`), plus a
+   * horizontal line and price label when `p.price` is not null. Drawn only
+   * while this chart has no crosshair of its own; never emits `crosshairMove`.
+   * Throws on an invalid `p.interval`.
+   */
+  setSyncedCrosshair(p: SyncedCrosshair | null): void {
+    if (!p) {
+      if (!this.synced) return;
+      this.synced = null;
+      this.invalidate(INVALIDATE_OVERLAY);
+      return;
+    }
+    const ref: SyncTimeRef = {
+      time: p.time,
+      interval: parseInterval(p.interval),
+      timezone: p.timezone,
+    };
+    const price = p.price !== null && Number.isFinite(p.price) ? p.price : null;
+    this.synced = { ref, price, logical: NaN, key: '' };
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Logical index of the synced crosshair (NaN: none), recomputed when bars or the view change. */
+  private syncedIndex(): number {
+    const s = this.synced;
+    if (!s) return NaN;
+    const key = `${this._seriesRevision}|${this.rawEpoch}|${this.store.length}|${this._chartType}`;
+    if (s.key !== key) {
+      s.key = key;
+      s.logical = mapSyncTime(s.ref, this.refreshTimeline(), this.symbolInfo?.timezone ?? null);
+    }
+    return s.logical;
   }
 
   viewSettled(): void {
@@ -1714,6 +1819,7 @@ export class Chart implements StudyApi, DrawingApi {
         interval: formatInterval(interval),
         bars: this.store.length,
       });
+      this.emitViewChange('data');
       this.emitState();
     } catch (err) {
       if (gen !== this.loadGen) return;
@@ -1723,6 +1829,7 @@ export class Chart implements StudyApi, DrawingApi {
       this.setStatus(message);
       this.invalidate(INVALIDATE_LAYOUT);
       this.emitSeriesReset();
+      this.emitViewChange('data');
       this.events.emit('error', { message });
     } finally {
       if (gen === this.loadGen) this.events.emit('loading', false);
@@ -1743,6 +1850,7 @@ export class Chart implements StudyApi, DrawingApi {
       this.raw.last(),
       (bar) => {
         if (gen !== this.loadGen) return;
+        const lengthBefore = this.store.length;
         const r = this.raw.upsert(bar);
         if (r === 'ignored') return;
         // Brick views can change more than their tail: compare with a snapshot.
@@ -1769,6 +1877,7 @@ export class Chart implements StudyApi, DrawingApi {
           for (const c of tail)
             this.emitSeriesChange({ kind: c.kind, revision: this._seriesRevision, index: c.index });
         if (this.crosshair) this.emitCrosshair();
+        if (this.store.length !== lengthBefore) this.emitViewChange('data');
         this.events.emit('barUpdate', bar);
       },
     );
@@ -1808,6 +1917,7 @@ export class Chart implements StudyApi, DrawingApi {
           // Brick views are rebuilt from the first bar, so they can differ anywhere.
           if (BRICK_TYPES.has(this._chartType) || added <= 0) this.emitSeriesReset();
           else this.emitSeriesPrepend(added);
+          this.emitViewChange('data');
         }
         return n;
       } catch (err) {
@@ -2103,15 +2213,15 @@ export class Chart implements StudyApi, DrawingApi {
       : formatAxisNumber(value, pane.labelDecimals);
   }
 
-  /** Crosshair-style price label at pane-relative `y`, with the "+" box when enabled. */
+  /** Crosshair-style price label at pane-relative `y`, with the "+" box when `plus` (default: enabled). */
   private drawPriceLabel(
     ax: CanvasRenderingContext2D,
     pane: Pane,
     y: number,
     fontStr: string,
+    plus = this.options.priceAxisPlusButton,
   ): void {
     const t = this.theme;
-    const plus = this.options.priceAxisPlusButton;
     const top = Math.max(0, Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2));
     labelBox(
       ax,
@@ -2142,6 +2252,11 @@ export class Chart implements StudyApi, DrawingApi {
     const c = this.crosshair;
     const fontStr = font(t);
     const paneW = this.paneWidth;
+    // Mirrored crosshair from another chart, only while this chart has none.
+    let syncIndex = c ? NaN : this.syncedIndex();
+    const syncX = this.timeScale.indexToX(syncIndex);
+    if (!(syncX >= 0 && syncX <= paneW)) syncIndex = NaN;
+    const syncPrice = this.synced?.price ?? null;
 
     for (const pane of this.panes) {
       if (pane.height <= 0) continue;
@@ -2262,7 +2377,17 @@ export class Chart implements StudyApi, DrawingApi {
         this.drawPriceLabel(ax, pane, hover.y, fontStr);
       }
 
-      if (!c) continue;
+      if (!c) {
+        if (Number.isNaN(syncIndex)) continue;
+        ctx.strokeStyle = t.crosshair;
+        dashedLine(ctx, syncX, 0, syncX, pane.height, this.dpr, [4, 4]);
+        if (pane.id !== 'main' || syncPrice === null) continue;
+        const y = ps.priceToY(syncPrice);
+        if (!(y >= 0 && y <= pane.height)) continue;
+        dashedLine(ctx, 0, y, paneW, y, this.dpr, [4, 4]);
+        this.drawPriceLabel(ax, pane, y, fontStr, false);
+        continue;
+      }
       ctx.strokeStyle = t.crosshair;
       dashedLine(ctx, c.x, 0, c.x, pane.height, this.dpr, [4, 4]);
       if (c.pane === pane) {
@@ -2304,13 +2429,18 @@ export class Chart implements StudyApi, DrawingApi {
         );
       }
     }
-    if (c) {
-      const time = this.store.time[c.index];
+    const cross = c
+      ? { time: this.store.time[c.index], x: c.x }
+      : Number.isNaN(syncIndex)
+        ? null
+        : { time: logicalToTime(this.refreshTimeline(), syncIndex)?.time, x: syncX };
+    if (cross) {
+      const time = cross.time;
       if (time !== undefined) {
         const text = formatCrosshairTime(time, this.interval.unit, this.tz, this.options.locale);
         tc.font = fontStr;
         const w = tc.measureText(text).width + 16;
-        const x = Math.max(0, Math.min(paneW - w, c.x - w / 2));
+        const x = Math.max(0, Math.min(paneW - w, cross.x - w / 2));
         labelBox(
           tc,
           text,

@@ -80,6 +80,11 @@ export interface Drawing {
   symbol: string;
   /** Pane the drawing lives in. Drawings on a missing pane are kept but not drawn. */
   paneId: string;
+  /**
+   * Chart of a multi-chart layout the drawing is bound to; absent = shown on
+   * every chart of the symbol. Kept as is by copy, paste and clone.
+   */
+  chartId?: string;
 }
 
 /** `addDrawing` input: everything but `type`/`points` is optional (see `addDrawing`). */
