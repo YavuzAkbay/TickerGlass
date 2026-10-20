@@ -13,7 +13,7 @@ import type {
 } from '../types';
 import { ExpressionFeed } from './expression-feed';
 import { formatInterval, intervalSeconds } from './intervals';
-import { ReplayFeed } from './replay-feed';
+import { chooseTick, ReplayFeed, tickIntervals } from './replay-feed';
 import { ResamplingFeed } from './resampling-feed';
 import { SyntheticFeed } from './synthetic-feed';
 
@@ -486,6 +486,326 @@ describe('ReplayFeed epoch and primary changes', () => {
   });
 });
 
+describe('ReplayFeed fixes', () => {
+  it('reveals another symbol bar once its own interval elapsed, across its holiday', async () => {
+    // BBB has no bar on the Monday of week 2 (DAYS[5]); its Friday bar must still
+    // show once AAA's clock reaches that Monday.
+    const bbbDays = DAYS.filter((t) => t !== DAYS[5]);
+    const inner = new FakeFeed({ 'AAA|1D': DAILY, 'BBB|1D': bars(bbbDays, 7) });
+    const feed = new ReplayFeed(inner, { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[3] as number, // Thursday
+      update: 'bars',
+      prepost: false,
+    });
+    const s = collect(feed, 'BBB', D1);
+    await flush();
+    await feed.step();
+    expect(feed.clock.next).toBe(DAYS[5]);
+    expect(s.got.map((b) => b.time)).toEqual([DAYS[4]]);
+    const res = await feed.getBars({ symbol: 'BBB', interval: D1, limit: 100 });
+    expect(times(res.bars).at(-1)).toBe(DAYS[4]);
+  });
+
+  it('pages forward buffers with the consumer adjusted flag', async () => {
+    const inner = dailyFeed();
+    const feed = new ReplayFeed(inner, { now: FAR_FUTURE });
+    await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: DAYS[10] as number,
+      update: 'bars',
+      prepost: false,
+      adjusted: true,
+    });
+    expect(inner.requests.length).toBeGreaterThan(0);
+    expect(inner.requests.every((r) => r.adjusted === true)).toBe(true);
+    inner.requests.length = 0;
+    await feed.getBars({ symbol: 'BBB', interval: D1, limit: 10, adjusted: false });
+    expect(inner.requests.every((r) => r.adjusted === false)).toBe(true);
+    inner.requests.length = 0;
+    const s = feed.subscribe({ symbol: 'BBB', interval: D1, adjusted: false }, null, () => {});
+    await flush();
+    await feed.step();
+    expect(inner.requests.length).toBeGreaterThan(0);
+    expect(inner.requests.every((r) => r.adjusted !== true)).toBe(true);
+    s();
+  });
+});
+
+describe('chooseTick', () => {
+  const M = (count: number): Interval => ({ unit: 'minute', count });
+  const NOW = MON + 5000 * DAY;
+  // Mirrors the API lookback table (api/src/investopen_api/intervals.py).
+  const lookbackSeconds = (iv: Interval): number | null => {
+    const min = intervalSeconds(iv) / 60;
+    if (min === 1) return 29 * DAY;
+    if (min < 60) return 59 * DAY;
+    if (min === 60) return 729 * DAY;
+    return null;
+  };
+  const choose = (chart: string, daysAgo: number, update: 'auto' | 'bars' | Interval = 'auto') => {
+    const c = chooseTick(parseIv(chart), {
+      update,
+      start: NOW - daysAgo * DAY,
+      now: NOW,
+      lookbackSeconds,
+    });
+    return { tick: c.tick ? formatInterval(c.tick) : null, warning: c.warning };
+  };
+  const parseIv = (s: string): Interval => {
+    const m = /^(\d+)([mhDWM])$/.exec(s) as RegExpExecArray;
+    const unit = { m: 'minute', h: 'hour', D: 'day', W: 'week', M: 'month' }[
+      m[2] as 'm'
+    ] as Interval['unit'];
+    return { unit, count: Number(m[1]) };
+  };
+
+  it('lists structurally valid tick intervals', () => {
+    expect(tickIntervals(parseIv('1D')).map(formatInterval)).toEqual(['15m', '30m', '1h']);
+    expect(tickIntervals(parseIv('4h')).map(formatInterval)).toEqual([
+      '2m',
+      '5m',
+      '15m',
+      '30m',
+      '1h',
+    ]);
+    expect(tickIntervals(parseIv('15m')).map(formatInterval)).toEqual(['1m', '5m']);
+    expect(tickIntervals(parseIv('1W')).map(formatInterval)).toEqual(['1D']);
+    expect(tickIntervals(parseIv('1m'))).toEqual([]);
+    expect(tickIntervals(parseIv('12M'))).toEqual([]);
+  });
+
+  it.each([
+    ['5m', 1, '1m', null],
+    ['15m', 1, '1m', null],
+    ['15m', 40, '5m', null],
+    ['5m', 40, null, 'Intrabar data for 1m only covers the last 29 days; replaying whole bars.'],
+    ['1h', 1, '1m', null],
+    ['1h', 40, '2m', null],
+    ['1h', 100, null, 'Intrabar data for 30m only covers the last 59 days; replaying whole bars.'],
+    ['4h', 1, '2m', null],
+    ['4h', 100, '1h', null],
+    ['1D', 1, '15m', null],
+    ['1D', 100, '1h', null],
+    ['1D', 1000, null, 'Intrabar data for 1h only covers the last 729 days; replaying whole bars.'],
+    ['1W', 1000, '1D', null],
+    ['1M', 3000, '1D', null],
+    ['12M', 1, null, null],
+    ['1m', 1, null, null],
+  ])('%s starting %i days ago -> %s', (chart, days, tick, warning) => {
+    expect(choose(chart, days)).toEqual({ tick, warning });
+  });
+
+  it('honours bars and explicit intervals, and rejects invalid ones', () => {
+    expect(choose('1D', 1, 'bars')).toEqual({ tick: null, warning: null });
+    expect(choose('1h', 1, M(5))).toEqual({ tick: '5m', warning: null });
+    expect(choose('1h', 40, M(1))).toEqual({
+      tick: null,
+      warning: 'Intrabar data for 1m only covers the last 29 days; replaying whole bars.',
+    });
+    expect(() => choose('15m', 1, M(2))).toThrow(/not a valid tick interval/);
+    expect(() => choose('1h', 1, M(7))).toThrow(/not a valid tick interval/);
+    expect(
+      chooseTick(parseIv('1D'), {
+        update: 'auto',
+        start: NOW - DAY,
+        now: NOW,
+        lookbackSeconds,
+      }).candidates.map(formatInterval),
+    ).toEqual(['15m', '30m', '1h']);
+  });
+});
+
+describe('ReplayFeed intrabar', () => {
+  const HOURS = evenly(MON, 24 * 10, HOUR);
+  const HOURLY = bars(HOURS, 2);
+  const DAILY10 = bars(evenly(MON, 10, DAY), 9);
+  /** 1D chart replayed from 1h ticks (finer intervals excluded by lookback). */
+  async function intrabar(data: Record<string, Bar[]> = {}) {
+    const inner = new FakeFeed({ 'AAA|1D': DAILY10, 'AAA|1h': HOURLY, ...data });
+    const feed = new ReplayFeed(inner, {
+      now: FAR_FUTURE,
+      lookbackSeconds: (iv) => (intervalSeconds(iv) < HOUR ? 0 : null),
+    });
+    const info = await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: MON + 3 * DAY,
+      update: 'auto',
+      prepost: false,
+    });
+    return { inner, feed, info };
+  }
+  const agg = (time: number, list: Bar[]): Bar => ({
+    time,
+    open: (list[0] as Bar).open,
+    high: Math.max(...list.map((b) => b.high)),
+    low: Math.min(...list.map((b) => b.low)),
+    close: (list[list.length - 1] as Bar).close,
+    volume: list.reduce((v, b) => v + b.volume, 0),
+  });
+
+  it('aggregates revealed ticks into the forming chart bar', async () => {
+    const { feed, info } = await intrabar();
+    expect(info).toEqual({ tick: H1, warning: null });
+    const day4 = MON + 4 * DAY;
+    expect(feed.clock).toEqual({ last: day4 - HOUR, next: day4 });
+    const res = await feed.getBars({ symbol: 'AAA', interval: D1, limit: 100 });
+    expect(times(res.bars).at(-1)).toBe(MON + 3 * DAY);
+    const s = collect(feed, 'AAA', D1);
+    await flush();
+    expect(s.got).toEqual([]);
+    await feed.step();
+    expect(feed.clock).toEqual({ last: day4, next: day4 + HOUR });
+    expect(s.got).toEqual([agg(day4, HOURLY.slice(96, 97))]);
+    await feed.step();
+    await feed.step();
+    expect(s.got.at(-1)).toEqual(agg(day4, HOURLY.slice(96, 99)));
+    // The forming bar stays out of getBars.
+    const again = await feed.getBars({ symbol: 'AAA', interval: D1, limit: 100 });
+    expect(times(again.bars).at(-1)).toBe(MON + 3 * DAY);
+  });
+
+  it('settles the native bar before the first aggregate of the next bar', async () => {
+    const { feed } = await intrabar();
+    const s = collect(feed, 'AAA', D1);
+    await flush();
+    for (let i = 0; i < 25; i++) await feed.step();
+    const day5 = MON + 5 * DAY;
+    expect(feed.clock.next).toBe(day5 + HOUR);
+    const tail = s.got.slice(-3);
+    // Revealing the day's last tick moves E to the next bar: it closes and settles.
+    expect(tail[0]).toEqual(agg(MON + 4 * DAY, HOURLY.slice(96, 119)));
+    expect(tail[1]).toEqual(DAILY10[4]);
+    expect(tail[2]).toEqual(agg(day5, HOURLY.slice(120, 121)));
+  });
+
+  it('builds rule-A buckets from closed bars plus the forming bar', async () => {
+    const { feed } = await intrabar();
+    const s = collect(feed, 'AAA', { unit: 'day', count: 2 });
+    await flush();
+    // 2D buckets are even day numbers from the epoch; MON (2024-01-01) is day 19723.
+    const bucket = MON + 3 * DAY;
+    expect(s.got).toEqual([agg(bucket, DAILY10.slice(3, 4))]);
+    await feed.step();
+    expect(s.got.at(-1)).toEqual(agg(bucket, [DAILY10[3] as Bar, ...HOURLY.slice(96, 97)]));
+  });
+
+  it('falls back to the next candidate when the first has no data at the start', async () => {
+    const inner = new FakeFeed({
+      'AAA|1D': DAILY10,
+      'AAA|1h': HOURLY,
+      'AAA|15m': [],
+      'AAA|30m': bars(evenly(MON, 24 * 2, 30 * MIN)), // ends before the start
+    });
+    const feed = new ReplayFeed(inner, { now: FAR_FUTURE });
+    const info = await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: MON + 3 * DAY,
+      update: 'auto',
+      prepost: false,
+    });
+    expect(info).toEqual({ tick: H1, warning: null });
+  });
+
+  it('replays whole bars with a warning when no candidate has data', async () => {
+    const inner = new FakeFeed({ 'AAA|1D': DAILY10, 'AAA|1h': [], 'AAA|15m': [], 'AAA|30m': [] });
+    const feed = new ReplayFeed(inner, {
+      now: FAR_FUTURE,
+      lookbackSeconds: (iv) => (intervalSeconds(iv) === HOUR ? 729 * DAY : null),
+    });
+    const warnings: string[] = [];
+    feed.on('warning', (w) => warnings.push(w));
+    const info = await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: MON + 3 * DAY,
+      update: 'auto',
+      prepost: false,
+    });
+    const text = 'Intrabar data for 1h only covers the last 729 days; replaying whole bars.';
+    expect(info).toEqual({ tick: null, warning: text });
+    expect(warnings).toEqual([text]);
+    expect(await feed.step()).toBe('ok');
+    expect(feed.clock.next).toBe(MON + 5 * DAY);
+  });
+
+  it('rejects an explicit update interval that does not fit the chart', async () => {
+    const { feed } = await intrabar();
+    const epoch = feed.epoch;
+    await expect(
+      feed.start({
+        symbol: 'AAA',
+        interval: D1,
+        lastVisible: MON + 3 * DAY,
+        update: { unit: 'minute', count: 7 },
+        prepost: false,
+      }),
+    ).rejects.toThrow(/not a valid tick interval/);
+    expect(feed.epoch).toBe(epoch);
+    expect(feed.clock.next).toBe(MON + 4 * DAY);
+  });
+});
+
+describe('ReplayFeed intrabar snapping', () => {
+  const N = 3 * 24 * 60;
+  function feedFor() {
+    const inner = new FakeFeed({
+      'AAA|1m': bars(evenly(MON, N, MIN)),
+      'AAA|5m': bars(evenly(MON, N / 5, 5 * MIN), 1),
+      'AAA|15m': bars(evenly(MON, N / 15, 15 * MIN), 2),
+      'AAA|1D': bars(evenly(MON, 3, DAY), 3),
+    });
+    return new ReplayFeed(inner, { now: FAR_FUTURE });
+  }
+
+  it('5m -> 1D snaps E back to the newest 15m tick', async () => {
+    const feed = feedFor();
+    const info = await feed.start({
+      symbol: 'AAA',
+      interval: { unit: 'minute', count: 5 },
+      lastVisible: MON + 14 * HOUR + 10 * MIN,
+      update: 'auto',
+      prepost: false,
+    });
+    expect(info.tick).toEqual({ unit: 'minute', count: 1 });
+    expect(feed.clock.next).toBe(MON + 14 * HOUR + 15 * MIN);
+    await feed.step();
+    await feed.step();
+    expect(feed.clock.next).toBe(MON + 14 * HOUR + 17 * MIN);
+    const epoch = feed.epoch;
+    const next = await feed.setPrimary('AAA', D1);
+    expect(next.tick).toEqual({ unit: 'minute', count: 15 });
+    expect(feed.clock).toEqual({ last: MON + 14 * HOUR, next: MON + 14 * HOUR + 15 * MIN });
+    expect(feed.epoch).toBe(epoch + 1);
+  });
+
+  it('1D -> 5m keeps E when it is a 1m tick', async () => {
+    const feed = feedFor();
+    await feed.start({
+      symbol: 'AAA',
+      interval: D1,
+      lastVisible: MON,
+      update: 'auto',
+      prepost: false,
+    });
+    for (let i = 0; i < 3; i++) await feed.step();
+    const e = MON + DAY + 45 * MIN;
+    expect(feed.clock.next).toBe(e);
+    const epoch = feed.epoch;
+    const next = await feed.setPrimary('AAA', { unit: 'minute', count: 5 });
+    expect(next.tick).toEqual({ unit: 'minute', count: 1 });
+    expect(feed.clock.next).toBe(e);
+    expect(feed.epoch).toBe(epoch);
+    await feed.step();
+    expect(feed.clock.next).toBe(e + MIN);
+  });
+});
+
 describe('ReplayFeed visibility property', () => {
   /** Deterministic PRNG. */
   function rng(seed: number): () => number {
@@ -496,43 +816,62 @@ describe('ReplayFeed visibility property', () => {
     };
   }
 
-  it('never returns or emits a bar at or after E', async () => {
-    const hours = evenly(MON, 24 * 60, HOUR);
-    const data: Record<string, Bar[]> = {
-      'AAA|1h': bars(hours),
-      'BBB|1h': bars(
-        hours.map((t) => t + 30 * MIN),
-        4,
-      ),
-      'AAA|1D': bars(evenly(MON, 60, DAY), 1),
-      'BBB|1D': bars(evenly(MON + 13 * HOUR, 60, DAY), 2),
-      'AAA|1W': bars(evenly(MON, 9, 7 * DAY), 3),
-      'BBB|1W': bars(evenly(MON, 9, 7 * DAY), 5),
+  /** Bars whose prices depend on the bar time only, so a close identifies its source bar. */
+  function timed(times: number[], seed: number): Bar[] {
+    return times.map((time) => {
+      const p = 100 + seed + Math.sin(time / 7919) * 5;
+      return { time, open: p - 0.25, high: p + 1, low: p - 1, close: p, volume: 1 + (time % 7) };
+    });
+  }
+
+  it('never returns or emits a bar at or after E, nor prices from ticks at or after E', async () => {
+    const data: Record<string, Bar[]> = {};
+    const sources = new Map<string, Bar[]>();
+    const add = (sym: string, iv: string, list: Bar[]) => {
+      data[`${sym}|${iv}`] = list;
+      sources.set(sym, [...(sources.get(sym) ?? []), ...list]);
     };
+    for (const [sym, seed, off] of [
+      ['AAA', 0, 0],
+      ['BBB', 20, 30 * MIN],
+    ] as const) {
+      add(sym, '15m', timed(evenly(MON + (off % (15 * MIN)), 24 * 4 * 50, 15 * MIN), seed));
+      add(sym, '1h', timed(evenly(MON + off, 24 * 50, HOUR), seed + 1));
+      add(sym, '1D', timed(evenly(MON + (sym === 'BBB' ? 13 * HOUR : 0), 50, DAY), seed + 2));
+      add(sym, '1W', timed(evenly(MON, 8, 7 * DAY), seed + 3));
+    }
     const ivs = [H1, H4, D1, D2, W1];
     const syms = ['AAA', 'BBB', 'AAA/BBB'];
-    for (let seed = 1; seed <= 6; seed++) {
+    // Only 15m and coarser ticks have data.
+    const lookbackSeconds = (iv: Interval) => (intervalSeconds(iv) < 15 * MIN ? 0 : null);
+    for (let seed = 1; seed <= 10; seed++) {
       const r = rng(seed);
       const pick = <T>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)] as T;
       const feed = new ReplayFeed(new ExpressionFeed(new ResamplingFeed(new FakeFeed(data))), {
         now: FAR_FUTURE,
+        lookbackSeconds,
       });
       const violations: string[] = [];
-      const check = (where: string, t: number) => {
+      const check = (where: string, sym: string, b: Bar) => {
         const e = feed.clock.next;
-        if (!(t < e)) violations.push(`${where}: ${t} >= ${e}`);
+        if (!(b.time < e)) violations.push(`${where}: ${b.time} >= ${e}`);
+        const src = sources.get(sym);
+        // The close must come from a source bar (or tick) that opened before E.
+        if (src !== undefined && !src.some((x) => x.close === b.close && x.time < e)) {
+          violations.push(`${where}: close ${b.close} of ${b.time} not revealed at ${e}`);
+        }
       };
-      const primary = pick([H1, H4, D1]);
+      const update = pick(['auto', 'bars'] as const);
       await feed.start({
         symbol: pick(['AAA', 'BBB']),
-        interval: primary,
+        interval: pick([H1, H4, D1]),
         lastVisible: MON + Math.floor(r() * 20 * DAY),
-        update: 'bars',
+        update,
         prepost: false,
       });
-      for (let op = 0; op < 40; op++) {
+      for (let op = 0; op < 60; op++) {
         const x = r();
-        if (x < 0.4) {
+        if (x < 0.5) {
           await feed.step();
         } else if (x < 0.7) {
           const iv = pick(ivs);
@@ -540,12 +879,21 @@ describe('ReplayFeed visibility property', () => {
           const req: GetBarsRequest = { symbol: sym, interval: iv, limit: 50 };
           if (r() < 0.3) req.to = feed.clock.next + Math.floor(r() * 5 * DAY);
           const res = await feed.getBars(req);
-          for (const t of res.bars.time) check(`getBars ${sym} ${formatInterval(iv)}`, t);
+          for (let i = 0; i < res.bars.time.length; i++) {
+            check(`getBars ${sym} ${formatInterval(iv)}`, sym, {
+              time: res.bars.time[i] as number,
+              open: res.bars.open[i] as number,
+              high: res.bars.high[i] as number,
+              low: res.bars.low[i] as number,
+              close: res.bars.close[i] as number,
+              volume: res.bars.volume[i] as number,
+            });
+          }
         } else if (x < 0.9) {
           const iv = pick(ivs);
           const sym = pick(['AAA', 'BBB']);
           feed.subscribe({ symbol: sym, interval: iv }, null, (b) =>
-            check(`subscribe ${sym} ${formatInterval(iv)}`, b.time),
+            check(`subscribe ${sym} ${formatInterval(iv)}`, sym, b),
           );
         } else {
           await feed.setPrimary(pick(['AAA', 'BBB']), pick([H1, H4, D1]));
@@ -553,7 +901,7 @@ describe('ReplayFeed visibility property', () => {
       }
       await flush();
       expect(violations).toEqual([]);
-      expect(intervalSeconds(primary)).toBeGreaterThan(0);
+      if (update === 'auto') expect(feed.clock.next).toBeGreaterThan(MON);
     }
   });
 });
@@ -650,5 +998,38 @@ describe('Chart + ReplayFeed over SyntheticFeed', () => {
     feed.stop();
     await chart.reload();
     expect(chart.store.length).toBe(500);
+  });
+
+  it('replays a daily chart intrabar from 15m ticks', async () => {
+    const { Chart } = await import('../chart');
+    const end = 1_700_000_000;
+    const feed = new ReplayFeed(new SyntheticFeed(5000, end), { now: () => end + DAY });
+    const chart = new Chart(new FakeEl() as unknown as HTMLElement, feed);
+    charts.push(chart);
+    chart.applyOptions({ pageSize: 100 });
+    await chart.setSymbolAndInterval('SYN', '1D');
+
+    const picked = end - 10 * DAY;
+    const info = await feed.start({
+      symbol: 'SYN',
+      interval: D1,
+      lastVisible: picked,
+      update: 'auto',
+      prepost: false,
+    });
+    expect(info.tick).toEqual({ unit: 'minute', count: 15 });
+    await chart.reload();
+    expect(chart.store.last()?.time).toBe(picked);
+    const n = chart.store.length;
+
+    await feed.step(); // first 15m tick of the next day: a new forming bar
+    expect(chart.store.length).toBe(n + 1);
+    expect(chart.store.last()?.time).toBe(picked + DAY);
+    await feed.step(); // second tick updates it in place
+    expect(chart.store.length).toBe(n + 1);
+    for (let i = 0; i < 95; i++) await feed.step();
+    // 96 ticks per day: the 97th step starts the bar after.
+    expect(chart.store.length).toBe(n + 2);
+    expect(chart.store.last()?.time).toBe(picked + 2 * DAY);
   });
 });

@@ -1738,6 +1738,7 @@ export class Chart implements StudyApi, DrawingApi {
         prepost: this.options.prepost,
         timezone: info?.timezone ?? null,
         session: info?.session ?? null,
+        adjusted: this.options.adjusted,
       },
       this.raw.last(),
       (bar) => {
