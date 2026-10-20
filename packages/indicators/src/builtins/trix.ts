@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
-/** TRIX : 10000 * change(ema(ema(ema(ln close)))). */
+/** TRIX: 10000 * change(ema(ema(ema(ln close)))). */
 export const TRIX = defineIndicator({
   id: 'trix',
   name: 'TRIX',

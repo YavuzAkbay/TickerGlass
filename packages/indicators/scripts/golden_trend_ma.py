@@ -3,7 +3,7 @@
 Add cases with `out.add(name, inputs, ref, outputs[, bars=DAILY][, extra=...])`
 (see golden_common.py). Case names are `<id>` or `<id>-<variant>`.
 
-TA-Lib where it matches standard including the warm-up (DEMA, TEMA, LINEARREG);
+TA-Lib where it matches including the warm-up (DEMA, TEMA, LINEARREG);
 numpy ports otherwise. KAMA: TA-Lib seeds from the previous value instead of
 starting at the source, so the alpha recurrence is checked against TA-Lib with
 its seeding (exact) and our KAMA must converge to it later.
@@ -43,7 +43,7 @@ def alma(x, n, offset, sigma):
 
 
 def kama(x, n, fast, slow, talib_seed=False):
-    """standard-style KAMA; `talib_seed` starts from x[n-1] like TA-Lib instead of x[n]."""
+    """KAMA; `talib_seed` starts from x[n-1] like TA-Lib instead of x[n]."""
     fa, sa = 2 / (fast + 1), 2 / (slow + 1)
     out = nans(len(x))
     prev = np.nan
@@ -92,7 +92,7 @@ COARSE = Bars(
 
 
 def fractals(n, bars=HOURLY, max_eq=4):
-    """reference Williams Fractals; values = fractal bar high/low on the confirming bar.
+    """Williams Fractals (5-bar definition); values = fractal bar high/low on the confirming bar.
 
     `max_eq` < 4 drops frontier branches (only to assert the full test uses them).
     """

@@ -3,7 +3,7 @@ import { COLOR } from './common';
 
 /**
  * Pivots High/Low: a high strictly above the `left` highs before it and the
- * `right` highs after it (standard `ta.pivothigh`), labelled with its price; lows
+ * `right` highs after it (strict on both sides), labelled with its price; lows
  * mirror. The value is written on the bar that confirms the pivot (`right`
  * bars later) and drawn back on the pivot bar through the shape offset, so
  * nothing repaints.

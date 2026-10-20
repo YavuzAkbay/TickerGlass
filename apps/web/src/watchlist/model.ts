@@ -189,14 +189,14 @@ function mapSymbol(raw: string): { symbol: string; mapped: boolean } {
   return { symbol: ticker, mapped: false }; // EURONEXT and unknown exchanges
 }
 
-/** Yahoo symbol for a standard `EXCHANGE:TICKER` (or plain) symbol; null if unusable. */
+/** Yahoo symbol for a `EXCHANGE:TICKER` (or plain) symbol; null if unusable. */
 export function toYahooSymbol(raw: string): string | null {
   const { symbol } = mapSymbol(raw);
   return SYMBOL_RE.test(symbol) ? symbol : null;
 }
 
 /**
- * Parse a standard export: entries split on commas/newlines,
+ * Parse a plain-text watchlist export: entries split on commas/newlines,
  * `###Title` = section, `EXCHANGE:TICKER` mapped to Yahoo symbols. `unmapped`
  * lists entries whose prefix could not be mapped (ticker kept); `skipped`
  * counts entries that are not valid symbols.

@@ -9,8 +9,8 @@ comes from Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance).
 
 ## Disclaimer
 
-- InvestOpen is **not affiliated with, endorsed by, or connected to reference, Yahoo, or
-  any data vendor.** All trademarks belong to their owners.
+- InvestOpen is **not affiliated with, endorsed by, or connected to Yahoo, any data vendor,
+  or any third-party platform.** All trademarks belong to their owners.
 - Yahoo Finance data is provided under Yahoo's terms, which allow **personal use only**.
   Each user runs their own instance and fetches data for themselves. Do not run a public
   instance that redistributes this data.

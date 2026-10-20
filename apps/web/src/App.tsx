@@ -35,7 +35,7 @@ export function App() {
     const unregisterLayouts = registerLayoutCommands();
     const unregisterWatchlist = registerWatchlistCommands();
     const unregisterReplay = registerReplayCommands();
-    // Digits open the interval input, anything else symbol search .
+    // Digits open the interval input, anything else symbol search.
     const uninstall = installShortcuts((initial) =>
       useUiStore
         .getState()

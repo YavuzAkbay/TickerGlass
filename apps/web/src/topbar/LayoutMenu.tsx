@@ -6,7 +6,7 @@ import { DropdownMenu, type MenuItem } from '../ui/Menu';
 
 const run = (id: string) => commands.execute(id);
 
-/** Current layout name with save status, and the layout menu (the common "Manage layouts"). */
+/** Current layout name with save status, and the layout menu ("Manage layouts"). */
 export function LayoutMenu() {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);

@@ -1,6 +1,6 @@
 import { defineIndicator } from '../registry';
 
-/** the common order of the "Type" options. */
+/** Order of the "Type" options. */
 const PIVOT_TYPES = ['Traditional', 'Fibonacci', 'Woodie', 'Classic', 'DM', 'Camarilla'] as const;
 type PivotType = (typeof PIVOT_TYPES)[number];
 const PIVOT_COLOR = '#fb8c00';
@@ -62,7 +62,7 @@ function pivotLevels(type: PivotType, { o, h, l, c, oCur }: PeriodPrices): Level
       };
     }
     case 'Woodie': {
-      // reference uses the open of the period the levels are drawn in.
+      // The open used is that of the period the levels are drawn in.
       const p = (h + l + 2 * oCur) / 4;
       const r3 = h + 2 * (p - l);
       const s3 = l - 2 * (h - p);

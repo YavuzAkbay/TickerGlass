@@ -25,7 +25,7 @@ export interface ZigZagState {
 type Bars = Pick<StepContext, 'i' | 'high' | 'low'>;
 
 /**
- * reference ZigZag `findPivotPoint`: the value `d` bars back if no newer bar of the
+ * ZigZag pivot test: the value `d` bars back if no newer bar of the
  * last `d` is strictly beyond it and no older bar of the `d` before it is
  * beyond or equal (so among equal extremes the oldest is the pivot); NaN
  * otherwise or before bar 2d. Unlike `ta.pivotHigh`/`pivotLow` (strict on both
@@ -47,7 +47,7 @@ function findPivot(src: ArrayLike<number>, i: number, d: number, high: boolean):
 }
 
 /**
- * reference ZigZag pivots (library `reference/ZigZag`, v7/v8): candidates
+ * ZigZag pivots: candidates
  * are pivot highs/lows over d = max(2, floor(depth / 2)) bars on each side
  * (`findPivot`), found d bars late. A candidate in the direction of the last
  * pivot that goes further moves that pivot; an opposite one at least

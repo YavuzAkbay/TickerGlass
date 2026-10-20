@@ -3,7 +3,7 @@ import type { Streaming, Ta } from '../types';
 import { COLOR, change } from './common';
 
 /**
- * standard `ta.tsi(close, short, long)` (unscaled, -1..1): ema(ema(chg, long),
+ * TSI (unscaled, -1..1): ema(ema(chg, long),
  * short) / ema(ema(|chg|, long), short). Feed `change(close)`. Call in `setup`.
  */
 export function ergodicOf(ta: Ta, long: number, short: number): Streaming {

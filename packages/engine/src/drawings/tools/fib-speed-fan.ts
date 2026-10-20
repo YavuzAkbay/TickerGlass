@@ -12,7 +12,7 @@ import {
   type FanRay,
 } from './fan-common';
 
-/** reference default speed resistance fan levels (shared by price and time). */
+/** default speed resistance fan levels (shared by price and time). */
 const TV_LEVELS: readonly (readonly [number, string])[] = [
   [0, '#787b86'],
   [0.25, '#f23645'],
@@ -23,7 +23,7 @@ const TV_LEVELS: readonly (readonly [number, string])[] = [
   [1, '#787b86'],
 ];
 
-/** Fresh copy of the reference speed fan levels. */
+/** Fresh copy of the speed fan levels. */
 export function defaultSpeedFanLevels(): DrawingLevel[] {
   return TV_LEVELS.map(([value, color]) => ({ value, color, visible: true }));
 }

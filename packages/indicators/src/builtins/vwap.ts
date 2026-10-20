@@ -3,7 +3,7 @@ import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 import { BAND_OUTPUTS, VWAP_SUMS, bandInputs, setBands, vwapUpdate } from './vwap-bands';
 
-/** reference anchors that need only bar times (Earnings/Dividends/Splits need event data). */
+/** Anchors that need only bar times (Earnings/Dividends/Splits need event data). */
 export const VWAP_ANCHORS = [
   'Session',
   'Week',
@@ -76,7 +76,7 @@ export const VWAP = defineIndicator({
   ],
   setup({ inputs, ta, env }) {
     const st = ta.vars({ ...VWAP_SUMS, period: NaN });
-    // standard `timeframe.isdwm`: daily, weekly and monthly charts.
+    // Daily, weekly and monthly charts.
     const hidden = inputs.hideOnDWM && env.intervalSeconds >= DAY;
     return (c) => {
       if (hidden) return;

@@ -43,7 +43,7 @@ function useActiveSymbols(): Set<string> {
   return new Set((lists[ref]?.items ?? []).flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])));
 }
 
-/** standard symbol search: debounced results, type tabs, recents, keyboard. */
+/** Symbol search: debounced results, type tabs, recents, keyboard. */
 export default function SymbolSearchDialog({
   onClose,
   arg,

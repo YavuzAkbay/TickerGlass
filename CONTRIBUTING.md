@@ -26,7 +26,7 @@ git commit -s -m "feat(engine): add log price scale"
 
 ## Ground rules
 
-- Do not copy code, icons, or assets from reference or other proprietary products.
+- Do not copy code, icons, or assets from proprietary products.
   Implement features from public descriptions and your own work.
-- No script compatibility. Custom indicators use our own documented API.
+- Custom indicators use our own documented API.
 - All Yahoo Finance access goes through the API's provider adapter, never the browser.

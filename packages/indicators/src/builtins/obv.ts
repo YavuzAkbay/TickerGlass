@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR, MA_TYPES, change, movingAverage } from './common';
 
-/** reference "Smoothing" types of OBV (and other volume built-ins). */
+/** Smoothing types of OBV (and other volume built-ins). */
 export const OBV_SMOOTHING = [
   'None',
   'SMA',
@@ -13,8 +13,8 @@ const GROUP = 'Smoothing';
 
 /**
  * On Balance Volume: cumulative sign(change(src)) * volume. Starts at 0 on the
- * first bar (standard `ta.cum` of na); TA-Lib starts at the first bar's volume.
- * Optional smoothing MA of OBV (with Bollinger Bands around an SMA), as reference.
+ * first bar (running total of NaN); TA-Lib starts at the first bar's volume.
+ * Optional smoothing MA of OBV (with Bollinger Bands around an SMA), as is common.
  */
 export const OBV = defineIndicator({
   id: 'obv',

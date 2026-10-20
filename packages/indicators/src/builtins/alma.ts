@@ -2,7 +2,7 @@ import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
 /**
- * Arnaud Legoux moving average (standard `ta.alma`): gaussian-weighted window
+ * Arnaud Legoux moving average: gaussian-weighted window
  * centred at offset * (length - 1) from the oldest value, width length / sigma.
  */
 export const ALMA = defineIndicator({

@@ -27,7 +27,7 @@ export const VORTEX = defineIndicator({
       const pl = i > 0 ? c.low[i - 1]! : NaN;
       const p = vmp.update(Math.abs(c.high[i]! - pl));
       const m = vmm.update(Math.abs(c.low[i]! - ph));
-      // standard `ta.atr(1)`: true range with high - low on the first bar.
+      // ATR(1): true range with high - low on the first bar.
       const s = str.update(trueRange(c, true));
       c.set('plus', s === 0 ? NaN : p / s);
       c.set('minus', s === 0 ? NaN : m / s);

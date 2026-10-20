@@ -32,7 +32,7 @@ import './topbar.css';
 
 const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
-/** standard header: symbol, interval, chart type, tools, layout and view actions. */
+/** Header: symbol, interval, chart type, tools, layout and view actions. */
 export function TopBar() {
   const replayOn = useReplayStore((s) => s.status !== 'off');
   return (

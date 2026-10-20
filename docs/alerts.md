@@ -29,7 +29,7 @@ Limitations will be listed in [LIMITATIONS.md](LIMITATIONS.md#alerts) (new secti
 | Service <-> API control          | A second `/ws` connection subscribes to event topics `alerts` and `drawings` (new `op: 'events'`). A full REST resync runs every 60 s as a safety net.                                                                                                                                                                                                                                                                                                                   |
 | Expression symbols (`AAPL/MSFT`) | **Supported.** The expression code (`packages/engine/src/feed/expression/`, `expression-feed.ts`) is pure TS with no DOM. Exposing it through `@investopen/engine/node` gives the service the same bars the chart shows, at no extra cost. A node-environment test keeps that entry DOM-free. Legs outside the `/ws` charset get no live ticks; those series fall back to bar polling (§3.6). Watchlist rows cannot hold expressions, so that entry point is unaffected. |
 | Series the alert runs on         | Always **standard time bars** of `(symbol, interval, prepost)` as captured at creation. Heikin Ashi and brick chart types are display transforms. On Heikin Ashi the dialog notes that values use regular candles. On brick types, drawing sources are disabled, because the drawing geometry would differ.                                                                                                                                                              |
-| Indicator settings               | Snapshot. The alert stores the fully resolved inputs of the indicator and of every upstream indicator. Editing the indicator on the chart later does not change the alert (by convention). The dialog says so.                                                                                                                                                                                                                                                       |
+| Indicator settings               | Snapshot. The alert stores the fully resolved inputs of the indicator and of every upstream indicator. Editing the indicator on the chart later does not change the alert. The dialog says so.                                                                                                                                                                                                                                                       |
 | Drawings                         | Live reference by `drawingId`. Moving the line moves the alert. The price-scale mode (linear or log) is snapshotted, because it changes the line's shape (§2.6). Deleting the drawing puts the alert into `error`.                                                                                                                                                                                                                                                       |
 | Offline creation                 | Not supported. Alerts only work with the server, so the dialog needs the API and shows an error toast when it is unreachable. There is no localStorage queue (unlike drawings and watchlists).                                                                                                                                                                                                                                                                           |
 | Expiry                           | Optional `expiresAt` (null = open-ended; this is self-hosted, so there are no plan limits). The API enforces it (§1.4). The service also stops evaluating locally.                                                                                                                                                                                                                                                                                                       |
@@ -127,7 +127,7 @@ export interface AlertNotify {
   browser: boolean; // Notification API in hidden tabs (default false; needs permission)
   webhook: boolean;
   webhookUrl: string | null; // null = ALERTS_WEBHOOK_URL
-  webhookRaw: boolean; // body = rendered message (standard) instead of the JSON envelope
+  webhookRaw: boolean; // body = rendered message instead of the JSON envelope
   telegram: boolean;
   email: boolean;
 }
@@ -411,12 +411,12 @@ doubles with no epsilon; values are what the chart computes, and the golden test
 | `movingDownPercent` | state | `ref_c != 0` and `(ref_c - x_c) / abs(ref_c) * 100 >= amount`  |
 
 - Edge conditions also require every value of `p` that they use to be valid.
-- The crossing definitions are the standard `ta.crossover`/`ta.crossunder` applied to consecutive samples. Touching
+- The crossing definitions are the usual crossover/crossunder rules applied to consecutive samples. Touching
   and leaving on the same side counts as a cross away from the touch (`9, 10, 9` against 10 is a `crossingDown`
   at the third sample). That is deliberate and pinned by golden tests.
 - Moving: `ref_c` = the left operand at the **close** of bar `i - N` (`N = bars`), i.e. the final value stored
   for that closed bar, for both tick and close samples. If `i - N < 0` or the value is invalid, the condition is
-  false. The window is in bars, not wall-clock time: bars are what the service has, they match the common
+  false. The window is in bars, not wall-clock time: bars are what the service has, they match the usual
   "within N bars", and a time window would depend on session gaps.
 - The condition is evaluated per alert; the operand values are shared per series and bar (§3.3).
 
@@ -700,7 +700,7 @@ Telegram `429` honors `retry_after`; 4xx other than 408/429 fails at once. Pendi
 
 | Channel  | Request                                                                                                                                                                                                                                                                                                                      |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| webhook  | `POST`, 10 s timeout. Default body `application/json`: `{alert:{id,name,symbol,interval}, message, firedAt, barTime, values, delayed}`. With `notify.webhookRaw`: the rendered message as the body, sent as `application/json` if it parses as JSON and `text/plain; charset=utf-8` otherwise (standard bots). |
+| webhook  | `POST`, 10 s timeout. Default body `application/json`: `{alert:{id,name,symbol,interval}, message, firedAt, barTime, values, delayed}`. With `notify.webhookRaw`: the rendered message as the body, sent as `application/json` if it parses as JSON and `text/plain; charset=utf-8` otherwise. |
 | telegram | `POST https://api.telegram.org/bot<token>/sendMessage` `{chat_id, text, disable_web_page_preview: true}`, plain text (no parse mode), message truncated to 4096                                                                                                                                                              |
 | email    | `smtplib` with `SMTP_TLS`; subject `InvestOpen alert: <name>`; plain text body: message, then symbol, interval, bar time, fired at                                                                                                                                                                                           |
 
@@ -854,7 +854,7 @@ expect: fires[]}`) so pytest can reuse the spec files. Required cases (y = 10 un
 | Area             | Input -> expected                                                                                                                                                                                                               |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | crossingUp       | x `9, 11` -> fire at 1 · `9, 10` -> none · `9, 10, 11` -> 2 · first sample `11` with no prev -> none · `9, NaN, 11` -> none                                                                                                     |
-| crossingDown     | `11, 9` -> 1 · `10, 9` -> 1 · `9, 10, 9` -> 2 (standard touch rule)                                                                                                                                                                 |
+| crossingDown     | `11, 9` -> 1 · `10, 9` -> 1 · `9, 10, 9` -> 2 (touch rule)                                                                                                                                                                 |
 | crossing         | `9, 11, 9` -> 1, 2                                                                                                                                                                                                              |
 | greater / less   | `10` -> false; `10.000001` -> true; `NaN` -> false                                                                                                                                                                              |
 | channels [9, 11] | entering `8, 9` -> 1 (inclusive) · exiting `11, 12` -> 1 · bounds given swapped (11, 9) -> same results · upper NaN -> none                                                                                                     |

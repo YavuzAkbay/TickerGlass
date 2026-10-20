@@ -65,7 +65,7 @@ export default function IntervalInputDialog({
             setTried(false);
           }}
           onKeyDown={(e) => {
-            // Backspacing the box empty dismisses it, like reference.
+            // Backspacing the box empty dismisses it.
             if (e.key === 'Backspace' && text === '') onClose();
           }}
         />

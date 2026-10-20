@@ -314,7 +314,7 @@ interface Props {
   onChange: (patch: StyleValues) => void;
 }
 
-/** Spec-driven, standard style rows for the active chart type. */
+/** Spec-driven style rows for the active chart type. */
 export function ChartStyleEditor({ type, style, onChange }: Props) {
   const s = style as unknown as StyleValues;
   return (

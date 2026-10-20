@@ -6,7 +6,7 @@ Add cases with `out.add(name, inputs, ref, outputs[, bars=DAILY][, extra=...])`
 All numpy ports (no TA-Lib equivalents). Repainting definitions (ZigZag, Auto
 Fib, Linear Regression Channel) are checked on their final arrays after the
 last bar: the test also feeds bars 500.. live and expects identical arrays.
-Linear regression uses `np.polyfit` (textbook OLS), independent of the reference
+Linear regression uses `np.polyfit` (textbook OLS), independent of the
 summation form the definition ports.
 """
 
@@ -102,7 +102,7 @@ def pivot_cases(out: Cases):
 
 
 def pivot_np(x, left, right, high):
-    """standard ta.pivothigh/pivotlow: value at the confirming bar i of center i - right."""
+    """Pivot high/low (strict on both sides): value at the confirming bar i of center i - right."""
     out = nans(len(x))
     for i in range(left + right, len(x)):
         c = i - right
@@ -132,9 +132,9 @@ def pivots_hl_cases(out: Cases):
 
 
 def zz_pivot_np(x, d, high):
-    """reference ZigZag findPivotPoint at the confirming bar i of center i - d: no newer
+    """ZigZag pivot test at the confirming bar i of center i - d: no newer
     bar strictly beyond, no older bar beyond or equal (oldest equal bar wins).
-    Differs from pivot_np (standard ta.pivothigh, strict on both sides)."""
+    Differs from pivot_np (strict on both sides)."""
     out = nans(len(x))
     for i in range(2 * d, len(x)):
         p = x[i - d]
@@ -149,7 +149,7 @@ def zz_pivot_np(x, d, high):
 
 
 def zigzag_np(h, l, depth, threshold, pivot=zz_pivot_np):
-    """reference ZigZag pivots (library v7/v8), final state. threshold[i]: reversal % at
+    """ZigZag pivots, final state. threshold[i]: reversal % at
     bar i (NaN: none).
 
     Returns pivots = list of [bar, price, dir] after the last bar (moves
@@ -213,7 +213,7 @@ def zigzag_cases(out: Cases):
         zigzag_outputs(HOURLY, 2.5, 15, False, False),
     )
     # Equal highs/lows within the pivot window (0.25 price grid): the oldest
-    # equal bar is the pivot, unlike ta.pivothigh/pivotlow. Some bars also hold
+    # equal bar is the pivot, unlike the strict pivot. Some bars also hold
     # both a high and a low pivot.
     dev = np.full(COARSE.n, 1.0)
     ties = zigzag_np(COARSE.high, COARSE.low, 6, dev)
@@ -286,7 +286,7 @@ def linreg_outputs(src, length, up_mult, dn_mult):
     outs["mid"][N - length :] = fit
     outs["upper"][N - length :] = fit + up
     outs["lower"][N - length :] = fit - dn
-    outs["r"][N - length :] = np.corrcoef(y, fit)[0, 1]  # reference: |Pearson r|
+    outs["r"][N - length :] = np.corrcoef(y, fit)[0, 1]  # |Pearson r|
     return outs
 
 

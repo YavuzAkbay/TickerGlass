@@ -62,14 +62,14 @@ export const CONNORS_RSI = defineIndicator({
     const rsi = rsiOf(ta, inputs.rsiLength);
     const udRsi = rsiOf(ta, inputs.upDownLength);
     const rank = ta.percentrank(inputs.rocLength);
-    // Streak length (standard `ud`): +k after k rising bars, -k after k falling.
+    // Streak length (`ud`): +k after k rising bars, -k after k falling.
     const s = ta.vars({ ud: NaN });
     return (c) => {
       const src = c.src.source;
       const x = src[c.i]!;
       const prev = c.i > 0 ? src[c.i - 1]! : NaN;
       const p = Number.isNaN(s.ud) ? 0 : s.ud;
-      // standard comparisons with NaN are false: the first bar counts as falling.
+      // Comparisons with NaN are false: the first bar counts as falling.
       const ud = x === prev ? 0 : x > prev ? (p <= 0 ? 1 : p + 1) : p >= 0 ? -1 : p - 1;
       const udChange = ud - s.ud;
       s.ud = ud;

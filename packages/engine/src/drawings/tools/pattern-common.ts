@@ -1,5 +1,5 @@
 // Shared by the chart-pattern and Elliott wave tools: a labelled zigzag through
-// fixed anchors, standard dashed ratio connectors, weak fills and
+// fixed anchors, dashed ratio connectors, weak fills and
 // Elliott wave-degree labels.
 import { BODY_HIT, setLineStyle, textFont, WEAK_BODY_HIT } from '../draw-utils';
 import { defineDrawingTool } from '../registry';
@@ -77,7 +77,7 @@ interface Degree {
   lower: boolean;
 }
 
-/** Wave degrees by convention (largest first). */
+/** Wave degrees (largest first). */
 export const ELLIOTT_DEGREES: Readonly<Record<string, Degree>> = {
   'grand-supercycle': {
     label: 'Grand Supercycle',

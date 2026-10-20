@@ -289,9 +289,9 @@ Types = toolbar ids (`tools/index.ts` registers them in toolbar order). Added on
 
 Pixel-space tools: circle/arc radii, fib circles, spiral and speed arcs, wedge, Gann and time-cycle arcs,
 trend-angle, projection, channel widths and curve bows are computed in screen px, so their shape changes with zoom
-(by convention). Flat top/bottom and Disjoint channel are alert channel sources (`docs/alerts.md` §2.6).
+(inherent to screen-space sizing). Flat top/bottom and Disjoint channel are alert channel sources (`docs/alerts.md` §2.6).
 
-Semantics we could not verify against reference (documented choices, revisit in the Phase 15 parity sweep):
+Semantics not yet cross-checked against an independent reference (documented choices, revisit in the Phase 15 parity sweep):
 
 - Inside pitchfork: handle = midpoint(p1, p2) -> p3; the median is parallel to the line from midpoint(p2, p3).
 - Fib circles: centre = midpoint of the two anchors (level 1 has the anchors as diameter). Fib speed arcs:

@@ -6,7 +6,7 @@ function back(arr: Float64Array, i: number, k: number): number {
 }
 
 /**
- * the common Williams Fractals test for the bar `n` back from `i`: strictly
+ * Williams Fractals test for the bar `n` back from `i`: strictly
  * beyond the `n` bars after it, and beyond `n` bars before it allowing up to
  * four directly preceding equal bars (the "frontier" flags). `beyond(a, b)` is
  * strict, `level(a, b)` the non-strict version; NaN compares false.
@@ -35,8 +35,8 @@ const lt = (a: number, b: number) => a < b;
 const le = (a: number, b: number) => a <= b;
 
 /**
- * Williams Fractals (reference port). Confirmed `periods` bars after the
- * fractal bar and drawn back on it (offset -periods). Values: the fractal
+ * Williams Fractals (Bill Williams, 5-bar definition at the default). Confirmed
+ * `periods` bars after the fractal bar and drawn back on it (offset -periods). Values: the fractal
  * bar's high (up) / low (down) on the confirming bar, NaN elsewhere.
  */
 export const FRACTALS = defineIndicator({

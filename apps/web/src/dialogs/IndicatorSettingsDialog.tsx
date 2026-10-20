@@ -680,7 +680,7 @@ const isAllVisible = (v: IntervalVisibility) =>
     ({ unit, limit }) => v[unit].enabled && v[unit].min === limit[0] && v[unit].max === limit[1],
   );
 
-/** Two-thumb range slider (the common visibility range); thumbs cannot cross. */
+/** Two-thumb range slider (visibility range); thumbs cannot cross. */
 function RangeSlider({
   min,
   max,

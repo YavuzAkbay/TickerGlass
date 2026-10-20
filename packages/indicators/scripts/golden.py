@@ -16,14 +16,14 @@ NaN, floats as `repr`.
 Cases: the pre-Phase-12 built-ins below, plus one module per Phase 12 group
 (`golden_<group>.py`, each exposing `cases()`; see GROUPS).
 
-Target semantics are reference / standard. TA-Lib is used where its output,
-including the warm-up, matches standard (SMA, EMA, WMA, RSI, Bollinger, Williams %R,
-CCI, MFI). Everything else is a plain numpy port of the textbook / standard
+Target semantics are the common charting-platform conventions. TA-Lib is used where its output,
+including the warm-up, matches them (SMA, EMA, WMA, RSI, Bollinger, Williams %R,
+CCI, MFI). Everything else is a plain numpy port of the textbook
 reference formula (ref: numpy). Where TA-Lib differs only in the warm-up or
 seeding, the script cross-checks the numpy reference against TA-Lib after the
 point where they must agree (see `cross_check`).
 
-Conventions mirrored from standard: warm-up is NaN; ema/rma seed with the SMA of
+Conventions mirrored: warm-up is NaN; ema/rma seed with the SMA of
 the first `length` values; stdev is population; leading NaNs are skipped.
 """
 
@@ -83,7 +83,7 @@ CORE = Cases()
 case = CORE.add
 
 
-# Moving averages (TA-Lib matches standard including warm-up).
+# Moving averages (TA-Lib matches including warm-up).
 case("sma", {}, "talib", {"ma": talib.SMA(C, 9)})
 case("sma-hlc3-20", {"length": 20, "source": "hlc3"}, "talib", {"ma": talib.SMA(HLC3, 20)})
 # Exercises the ` bars:` header (daily series).
@@ -104,7 +104,7 @@ case("hma", {}, "numpy", {"hma": hma(C, 9)})
 case("hma-20", {"length": 20, "source": "hl2"}, "numpy", {"hma": hma(HL2, 20)})
 
 
-# VWAP: standard ta.vwap, UTC session/week (Monday)/month boundaries.
+# VWAP: UTC session/week (Monday)/month boundaries.
 def period_key(t, anchor):
     day = int(t // 86400)
     if anchor == "Session":
@@ -239,7 +239,7 @@ case(
 )
 
 
-# Parabolic SAR: literal port of the standard ta.sar reference implementation.
+# Parabolic SAR: literal port of the standard SAR recursion.
 def sar_pine(start, inc, mx):
     out = nans()
     result = max_min = acc = NAN
@@ -293,7 +293,7 @@ case(
 )
 
 
-# Supertrend: port of the standard ta.supertrend; the built-in hides the first bar.
+# Supertrend: port of the standard Supertrend; the built-in hides the first bar.
 def supertrend_pine(factor, atr_len):
     atr = rma(true_range(True), atr_len)
     up_out, down_out, mid = nans(), nans(), nans()
@@ -329,7 +329,7 @@ case("supertrend", {}, "numpy", supertrend_pine(3.0, 10))
 case("supertrend-7-2", {"atrLength": 7, "factor": 2.0}, "numpy", supertrend_pine(2.0, 7))
 
 
-# DMI / ADX (standard built-in "Directional Movement Index")
+# DMI / ADX (Directional Movement Index)
 def dmi(adx_len, di_len):
     up_, down_ = change(H), -change(L)
     plus_dm, minus_dm = nans(), nans()

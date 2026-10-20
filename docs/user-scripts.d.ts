@@ -401,7 +401,7 @@ interface Ta {
   /** Like pivotHigh with strictly lower. */
   pivotLow(left: number, right: number): Streaming;
   history(length: number): History;
-  /** Numbers carried across bars (standard `var`). Read and write the fields of the returned object. */
+  /** Numbers carried across bars (persistent variable). Read and write the fields of the returned object. */
   vars<T extends Record<string, number>>(init: T): T;
   series(): SeriesVar;
 }

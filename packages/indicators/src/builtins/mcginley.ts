@@ -2,8 +2,8 @@ import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
 /**
- * McGinley Dynamic: starts at the SMA of the first `length` values (the standard
- * EMA seed, same value), then mg += (src - mg) / (length * (src / mg)^4).
+ * McGinley Dynamic: starts at the SMA of the first `length` values (the usual EMA
+ * seed, same value), then mg += (src - mg) / (length * (src / mg)^4).
  */
 export const MCGINLEY = defineIndicator({
   id: 'mcginley',

@@ -1,18 +1,18 @@
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
-/** standard `round_`: keep the smoothed position inside (-1, 1). */
+/** Clamp helper: keep the smoothed position inside (-1, 1). */
 function clampValue(v: number): number {
   return v > 0.99 ? 0.999 : v < -0.99 ? -0.999 : v;
 }
 
-/** Value of x, or 0 when NaN (standard `nz`). */
+/** Value of x, or 0 when NaN (NaN to 0). */
 function nz(x: number): number {
   return Number.isNaN(x) ? 0 : x;
 }
 
 /**
- * Fisher Transform of hl2's position in its `length`-bar range (reference port).
+ * Fisher Transform of hl2's position in its `length`-bar range (standard form).
  * An empty range gives NaN for that bar; the next bar restarts from 0 (nz).
  */
 export const FISHER = defineIndicator({

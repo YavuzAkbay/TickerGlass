@@ -2,8 +2,8 @@ import { defineIndicator } from '../registry';
 import type { VolumeProfileDef, VolumeProfileMode } from '../types';
 
 /**
- * Inputs shared by the Visible Range and Session Volume Profiles. the common
- * "Ticks Per Row" needs the symbol's minimum tick, which indicators do not
+ * Inputs shared by the Visible Range and Session Volume Profiles. The
+ * "Ticks Per Row" setting needs the symbol's minimum tick, which indicators do not
  * get, so the row layout uses the engine's terms (as the volume profile
  * drawings do): a number of rows, or a row height in price units (ticks x
  * min tick).

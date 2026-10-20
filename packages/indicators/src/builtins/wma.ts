@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
-/** Linearly weighted moving average (standard `ta.wma`). */
+/** Linearly weighted moving average. */
 export const WMA = defineIndicator({
   id: 'wma',
   name: 'Moving Average Weighted',

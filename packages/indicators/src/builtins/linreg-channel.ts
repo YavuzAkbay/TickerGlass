@@ -5,11 +5,11 @@ const OUTPUT_IDS = ['mid', 'upper', 'lower', 'r'] as const;
 type ChannelId = (typeof OUTPUT_IDS)[number];
 
 /**
- * Linear Regression Channel (port of the common built-in): least-squares
+ * Linear Regression Channel (charting-platform style): least-squares
  * line of the last `length` source values, drawn over those bars on the last
  * bar only. Upper/lower are the line +/- deviation x the residuals' sample
  * standard deviation, or, with a "use deviation" box off, the largest
- * excursion of the highs above (lows below) the line. `r` (hidden) is the common
+ * excursion of the highs above (lows below) the line. `r` (hidden) is the
  * "Pearson's R": the correlation of the source with the fitted line, i.e.
  * |Pearson r| of source and time. The window moves with every bar, so past
  * values repaint (the previous window is cleared where it no longer overlaps).
@@ -109,7 +109,7 @@ export const LINREG_CHANNEL = defineIndicator({
       drawn.to = -1;
       if (start > i) return;
 
-      // the common calcSlope: k = 0 is the newest bar, x = k + 1.
+      // slope: k = 0 is the newest bar, x = k + 1.
       let sumX = 0;
       let sumY = 0;
       let sumXSqr = 0;
@@ -127,7 +127,7 @@ export const LINREG_CHANNEL = defineIndicator({
       // Fitted value at the newest bar; bar i - k is at intercept + slope * k.
       const intercept = average - (slope * sumX) / n + slope;
 
-      // the common calcDev.
+      // Deviation.
       const periods = n - 1;
       const meanFit = intercept + (slope * periods) / 2;
       let upDev = 0;

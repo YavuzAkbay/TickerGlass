@@ -1,6 +1,5 @@
 /* global defineIndicator */
-// Relative Strength Index (Wilder) with an optional smoothing MA or Bollinger Bands,
-// like the standard built-in RSI.
+// Relative Strength Index (Wilder) with an optional smoothing MA or Bollinger Bands.
 defineIndicator({
   id: 'my-rsi',
   name: 'My RSI',

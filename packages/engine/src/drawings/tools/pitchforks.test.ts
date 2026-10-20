@@ -59,7 +59,7 @@ describe('pitchfork geometry', () => {
     expect(pitchforkGeometry('original', p1, { x: -10, y: 5 }, { x: 10, y: -5 })).toBeNull();
   });
 
-  it('reference default levels: 0.5 and 1 visible', () => {
+  it('default levels: 0.5 and 1 visible', () => {
     const lv = defaultPitchforkLevels();
     expect(lv.map((l) => l.value)).toEqual([0.25, 0.382, 0.5, 0.618, 0.75, 1, 1.5, 1.75, 2]);
     expect(lv.filter((l) => l.visible).map((l) => l.value)).toEqual([0.5, 1]);

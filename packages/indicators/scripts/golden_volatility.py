@@ -46,7 +46,7 @@ def shift(x, n):
 
 
 def div(a, b):
-    """a / b with a zero denominator -> NaN (standard)."""
+    """a / b with a zero denominator -> NaN."""
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(b == 0, NAN, a / b)
 
@@ -70,7 +70,7 @@ def percentrank(x, n):
 
 
 def updown(x):
-    """standard Connors streak: comparisons with NaN are false (bar 0 -> -1)."""
+    """Connors streak: comparisons with NaN are false (bar 0 -> -1)."""
     ud = nans(len(x))
     prev_ud = NAN
     for i in range(len(x)):

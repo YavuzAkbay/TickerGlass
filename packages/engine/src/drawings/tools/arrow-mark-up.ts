@@ -44,7 +44,7 @@ function textCentreY(y: number, dir: 1 | -1, h: number): number {
   return y - dir * (MARK_HEIGHT + TEXT_GAP + h / 2);
 }
 
-/** Single-click arrow glyph whose tip marks the anchor; text past its tail (standard). */
+/** Single-click arrow glyph whose tip marks the anchor; text past its tail. */
 export function makeArrowMark(type: string, name: string, dir: 1 | -1, color: string) {
   return defineDrawingTool({
     type,

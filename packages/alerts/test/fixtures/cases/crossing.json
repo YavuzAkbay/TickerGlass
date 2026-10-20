@@ -425,7 +425,7 @@
       "expect": [1]
     },
     {
-      "name": "crossingDown 9, 10, 9 fires at 2 (standard touch rule)",
+      "name": "crossingDown 9, 10, 9 fires at 2 (touch counts as a cross)",
       "spec": {
         "schemaVersion": 1,
         "left": {
