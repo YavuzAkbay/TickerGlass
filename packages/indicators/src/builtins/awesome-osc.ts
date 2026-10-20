@@ -1,5 +1,4 @@
 import { defineIndicator } from '../registry';
-import { COLOR } from './common';
 
 /** Columns palette of AO/AC: 0 rising (or first value), 1 falling or flat. */
 export const AO_COLORS = ['#009688', '#f44336'] as const;
