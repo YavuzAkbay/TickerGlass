@@ -7,3 +7,6 @@ __pycache__/
 api/data/
 test-results/
 playwright-report/
+
+# Local agent instructions
+CLAUDE.local.md
