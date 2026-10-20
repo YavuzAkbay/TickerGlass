@@ -378,4 +378,30 @@ describe('ReplayController', () => {
     expect(feed.startCalls.at(-1)).toMatchObject({ update: 'bars', lastVisible: 180 });
     expect(status()).toBe('paused');
   });
+
+  it('drives session add-ons: reset, prime after load, step per step, end then reset on exit', async () => {
+    const feed = new FakeFeed();
+    const chart = new FakeChart();
+    const calls: string[] = [];
+    const session = {
+      reset: () => calls.push('reset'),
+      prime: () => calls.push('prime'),
+      step: () => calls.push('step'),
+      end: () => calls.push('end'),
+    };
+    const ctl = new ReplayController({
+      feed,
+      getChart: () => chart,
+      prepost: () => false,
+      sessions: [session],
+    });
+    await ctl.start(1000);
+    expect(calls).toEqual(['reset', 'prime']);
+    await ctl.step();
+    ctl.play();
+    await flush();
+    expect(calls.slice(2)).toEqual(['step', 'step']);
+    ctl.exit();
+    expect(calls.slice(-2)).toEqual(['end', 'reset']);
+  });
 });

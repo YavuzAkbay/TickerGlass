@@ -245,3 +245,65 @@ test('exit leaves replay; Shift+Alt+R toggles it', async ({ page }) => {
   await page.keyboard.press('Shift+Alt+KeyR');
   await expect.poll(() => status(page)).toBe('off');
 });
+
+test('a price alert fires locally during replay: toast and replay marker, cleared on exit', async ({
+  page,
+  server,
+}) => {
+  const symbol = await page.evaluate(() => window.chart.getState().symbol);
+  const t = new Date(Date.UTC(2026, 0, 1)).toISOString();
+  server.alerts.set('replay-alert', {
+    id: 'replay-alert',
+    name: 'Replay probe',
+    symbol,
+    interval: '1D',
+    prepost: false,
+    spec: {
+      schemaVersion: 1,
+      left: { kind: 'price', field: 'close' },
+      // Always true once the replay takes a step: a state condition keeps the test independent of prices.
+      condition: { op: 'greater', right: { kind: 'value', value: -1_000_000 } },
+      trigger: 'once',
+    },
+    notify: { toast: true, sound: false, browser: false },
+    message: '',
+    expiresAt: null,
+    drawingId: null,
+    status: 'active',
+    statusReason: null,
+    revision: 1,
+    fireCount: 0,
+    lastFiredAt: null,
+    createdAt: t,
+    updatedAt: t,
+  });
+  await page.reload();
+  await ready(page);
+  const groups = () =>
+    page.evaluate(
+      () =>
+        (
+          window.chart as unknown as { markerGroups: Map<string, { id: string }[]> }
+        ).markerGroups.get('replay-alerts')?.length ?? 0,
+    );
+
+  const picked = await startReplay(page);
+  await setUpdate(page, 'Bars');
+  await expect.poll(() => status(page)).toBe('paused');
+  expect(await groups()).toBe(0); // priming never fires
+  await page.getByRole('button', { name: 'Step forward' }).click();
+  await expect.poll(() => barCount(page)).toBe(picked.length + 1);
+  await expect(page.getByText('Replay: Replay probe')).toBeVisible();
+  await expect.poll(groups).toBe(1);
+  // 'once': more steps add nothing.
+  await page.getByRole('button', { name: 'Step forward' }).click();
+  await page.getByRole('button', { name: 'Step forward' }).click();
+  await expect.poll(() => barCount(page)).toBe(picked.length + 3);
+  expect(await groups()).toBe(1);
+  // Nothing was sent to the server: replay alerts are local.
+  expect(server.alertLog).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Exit replay' }).click();
+  await expect.poll(() => status(page)).toBe('off');
+  expect(await groups()).toBe(0);
+});

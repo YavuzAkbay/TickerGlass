@@ -7,6 +7,7 @@ import {
   type ChartPriceLine,
 } from '@investopen/engine';
 import { commands } from '../commands/registry';
+import { useReplayStore } from '../replay/store';
 import { useAppStore } from '../store/app';
 import { useAlertPrefs } from './prefs';
 import { openAlertLog, useAlerts } from './store';
@@ -34,15 +35,19 @@ export function alertLinePrice(a: Alert): number | null {
   return right?.kind === 'value' && Number.isFinite(right.value) ? (right.value as number) : null;
 }
 
-/** Newest 500 log entries of `symbol`, as markers. */
+/**
+ * Newest 500 log entries of `symbol`, as markers. With `before` (replay clock),
+ * fires of bars at or after it are left out: they have not happened yet.
+ */
 export function buildMarkers(
   log: readonly AlertLogEntry[],
   alerts: Readonly<Record<string, Alert>>,
   symbol: string,
+  before: number = Infinity,
 ): ChartMarker[] {
   const out: ChartMarker[] = [];
   for (const e of log) {
-    if (e.symbol !== symbol) continue;
+    if (e.symbol !== symbol || e.barTime >= before) continue;
     if (out.length >= MAX_MARKERS) break;
     const priceLeft = e.alertId ? alerts[e.alertId]?.spec.left.kind === 'price' : false;
     const x = e.values?.x;
@@ -88,7 +93,10 @@ export function attachAlerts(chart: Chart): () => void {
     const prefs = useAlertPrefs.getState();
     const { log, alerts } = useAlerts.getState();
     const symbol = canon(useAppStore.getState().symbol);
-    chart.setMarkers(ALERT_GROUP, prefs.markers ? buildMarkers(log, alerts, symbol) : []);
+    const replay = useReplayStore.getState();
+    // During replay, only fires the replay clock has passed.
+    const before = replay.status !== 'off' && Number.isFinite(replay.next) ? replay.next : Infinity;
+    chart.setMarkers(ALERT_GROUP, prefs.markers ? buildMarkers(log, alerts, symbol, before) : []);
     chart.setPriceLines(ALERT_GROUP, prefs.lines ? buildLines(alerts, symbol) : []);
   };
   apply();
@@ -101,6 +109,9 @@ export function attachAlerts(chart: Chart): () => void {
     }),
     useAppStore.subscribe((s, p) => {
       if (s.symbol !== p.symbol) apply();
+    }),
+    useReplayStore.subscribe((s, p) => {
+      if (s.next !== p.next || (s.status === 'off') !== (p.status === 'off')) apply();
     }),
     chart.on('priceAxisPlus', ({ paneId, price }) =>
       commands.execute('alert.create', { price, paneId }),

@@ -1,15 +1,43 @@
+import type { ChartMarker } from '@investopen/engine';
+import { useAlerts } from '../alerts/store';
 import { getChart } from '../store/chart';
 import { useAppStore } from '../store/app';
 import { replayFeed } from '../chart/feed';
 import { toast } from '../ui/Toast';
+import { ReplayAlerts } from './alerts';
 import { ReplayController } from './controller';
 import { useReplayStore } from './store';
+
+/** The chart's last bar (the forming bar of the chart symbol during replay). */
+function lastBar() {
+  const s = getChart()?.store;
+  if (!s || s.length === 0) return null;
+  const i = s.length - 1;
+  return {
+    time: s.time[i]!,
+    open: s.open[i]!,
+    high: s.high[i]!,
+    low: s.low[i]!,
+    close: s.close[i]!,
+    volume: s.volume[i]!,
+  };
+}
+
+const alerts = new ReplayAlerts({
+  alerts: () => useAlerts.getState().alerts,
+  symbol: () => useAppStore.getState().symbol,
+  lastBar,
+  setMarkers: (group: string, markers: readonly ChartMarker[]) =>
+    getChart()?.setMarkers(group, markers),
+  notify: (message) => toast(message, 'info'),
+});
 
 export const replay = new ReplayController({
   feed: replayFeed,
   getChart,
   prepost: () => useAppStore.getState().prepost,
   onError: (message) => toast(message, 'error'),
+  sessions: [alerts],
 });
 
 // Expose for debugging and e2e tests.
