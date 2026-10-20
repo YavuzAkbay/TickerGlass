@@ -135,6 +135,15 @@ export function AlertList() {
         </button>
       </div>
       {shown.length ? (
+        <div className="al-head" aria-hidden="true">
+          <span />
+          <span>Name</span>
+          <span>Condition</span>
+          <span>Symbol · Interval · Trigger</span>
+          <span />
+        </div>
+      ) : null}
+      {shown.length ? (
         shown.map((a) => <AlertRow key={a.id} alert={a} />)
       ) : (
         <div className="rs-empty-text al-none">No alerts match.</div>

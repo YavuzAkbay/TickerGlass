@@ -63,7 +63,7 @@
 }
 .rs-badge {
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--panel-2);
   color: var(--text-muted);
   font-size: 11px;
@@ -105,7 +105,7 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   border-left: 3px solid var(--down);
   background: var(--panel-2);
@@ -205,7 +205,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -367,7 +367,7 @@
   width: 64px;
   height: 48px;
   margin: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   object-fit: cover;
   background: var(--panel-2);
 }
@@ -417,7 +417,7 @@
   padding: 10px;
   resize: none;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--input-bg);
   line-height: 1.5;
   outline: none;
@@ -437,7 +437,7 @@
 .rs-notes-tab {
   padding: 4px 10px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: none;
   color: var(--text-muted);
   cursor: pointer;

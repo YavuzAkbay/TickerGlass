@@ -17,34 +17,36 @@ export interface ChartTheme {
   fontSize: number;
 }
 
+const CHROME_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+
 export const DARK_THEME: ChartTheme = {
-  background: '#0f1115',
-  text: '#b2b5be',
-  textMuted: '#787b86',
-  grid: '#1c2029',
-  border: '#2a2e39',
-  crosshair: '#9598a1',
-  crosshairLabelBg: '#363a45',
-  crosshairLabelText: '#d1d4dc',
+  background: '#0e1116',
+  text: '#c3cad5',
+  textMuted: '#8b95a5',
+  grid: 'rgba(255, 255, 255, 0.04)',
+  border: '#262e39',
+  crosshair: '#7f92e8',
+  crosshairLabelBg: '#2a3350',
+  crosshairLabelText: '#e6eaf0',
   up: '#18a383',
   down: '#e5484d',
   wickUp: '#18a383',
   wickDown: '#e5484d',
   extendedHoursBg: '#4f6bed12',
   prevClose: '#9aa4b2',
-  fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
+  fontFamily: CHROME_FONT,
   fontSize: 11,
 };
 
 export const LIGHT_THEME: ChartTheme = {
   ...DARK_THEME,
-  background: '#ffffff',
-  text: '#131722',
-  textMuted: '#6a6d78',
-  grid: '#f0f3fa',
-  border: '#e0e3eb',
-  crosshair: '#9598a1',
-  crosshairLabelBg: '#131722',
+  background: '#f7f8fa',
+  text: '#151a21',
+  textMuted: '#5d6878',
+  grid: 'rgba(0, 0, 0, 0.05)',
+  border: '#dde2e8',
+  crosshair: '#5a70d8',
+  crosshairLabelBg: '#3f5bdb',
   crosshairLabelText: '#ffffff',
   up: '#18a383',
   down: '#e5484d',
