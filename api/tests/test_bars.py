@@ -213,3 +213,27 @@ def test_bars_endpoint_contract(tmp_path: Path) -> None:
         assert (
             client.get("/api/bars", params={"symbol": "AAPL", "interval": "1h"}).status_code == 404
         )
+
+
+def test_bars_endpoint_to_is_exclusive_upper_bound(tmp_path: Path) -> None:
+    # Market replay pages forward with `to` mid-history and past "now".
+    app = create_app(
+        provider=FakeProvider({("AAPL", "1d"): DAILY}), database_url=f"sqlite:///{tmp_path}/a.db"
+    )
+    ts = DAILY["ts"].tolist()
+    with TestClient(app) as client:
+        mid = ts[len(ts) // 2]
+        res = client.get(
+            "/api/bars", params={"symbol": "AAPL", "interval": "1d", "limit": 3, "to": mid}
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["t"] == ts[len(ts) // 2 - 3 : len(ts) // 2]
+        assert body["hasMore"] is True
+
+        future = ts[-1] + 365 * 86_400
+        res = client.get(
+            "/api/bars", params={"symbol": "AAPL", "interval": "1d", "limit": 2, "to": future}
+        )
+        assert res.status_code == 200
+        assert res.json()["t"] == ts[-2:]
