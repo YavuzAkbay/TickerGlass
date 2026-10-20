@@ -7,6 +7,8 @@ export type {
   CrosshairInfo,
   HitTarget,
   PaneState,
+  SyncedCrosshair,
+  ViewChangeCause,
 } from './chart';
 export { DARK_THEME, LIGHT_THEME, DEFAULT_OPTIONS } from './options';
 export type { ChartOptions, ChartTheme, CrosshairMode, MagnetMode } from './options';
@@ -34,6 +36,8 @@ export {
 export { LEGACY_DRAWING_TYPES, resolveDrawingType } from './drawings/legacy-ids';
 export { logicalToTime, timeToLogical } from './drawings/mapping';
 export type { AnchorTimeline } from './drawings/mapping';
+export { mapSyncTime } from './sync/time-map';
+export type { SyncTimeRef } from './sync/time-map';
 export { buildTradingCalendar } from './drawings/calendar';
 export type { TradingCalendar } from './drawings/calendar';
 export { isEmbeddedImage } from './drawings/tools/image';

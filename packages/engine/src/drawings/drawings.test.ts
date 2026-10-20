@@ -480,6 +480,19 @@ describe('clone (Alt+drag)', () => {
     ]);
   });
 
+  it('keeps the chart binding of the cloned drawings', () => {
+    const a = line(20, 40, 20, 60, { chartId: 'chart-a' });
+    const b = line(60, 70, 10, 10);
+    layer.setSelection([a.id, b.id]);
+    events = [];
+    downM(X(30), Y(40), ALT);
+    input.pointerMove(X(40), Y(40), NO);
+    input.pointerUp(X(40), Y(40), NO);
+    const created = of('drawingCreated').map((e) => e.drawing);
+    expect(created[0]!.chartId).toBe('chart-a');
+    expect(created[1]).not.toHaveProperty('chartId');
+  });
+
   it('Esc during a clone drag removes the clones without mutation events', () => {
     const a = line();
     click(X(30), Y(40));

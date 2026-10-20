@@ -270,6 +270,22 @@ describe('Chart drawing API', () => {
     expect(() => chart.pasteDrawings('{"version":2}')).toThrow();
   });
 
+  it('keeps the chart binding through add, copy and paste', async () => {
+    const { chart } = await load(50);
+    const points = [
+      { time: START + 10 * DAY, price: 100 },
+      { time: START + 20 * DAY, price: 110 },
+    ];
+    const bound = chart.addDrawing({ type: 'trend-line', points, chartId: 'chart-a' });
+    const free = chart.addDrawing({ type: 'trend-line', points });
+    expect(bound.chartId).toBe('chart-a');
+    expect(chart.getDrawing(bound.id)!.chartId).toBe('chart-a');
+    expect(free).not.toHaveProperty('chartId');
+    const [p, q] = chart.pasteDrawings(chart.copyDrawings([bound.id, free.id]), { offset: 1 });
+    expect(p!.chartId).toBe('chart-a');
+    expect(q).not.toHaveProperty('chartId');
+  });
+
   it('z-order methods return changes without events', async () => {
     const { chart } = await load(10);
     const mk = (price: number) =>

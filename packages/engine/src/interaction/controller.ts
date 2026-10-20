@@ -172,7 +172,7 @@ export class InteractionController {
         d.samples.push({ t: e.timeStamp, x: p.x });
         if (d.samples.length > 5) d.samples.shift();
         this.el.style.cursor = 'grabbing';
-        chart.viewChanged();
+        chart.viewChanged('user');
         if (e.pointerType === 'mouse') chart.setCrosshair(d.pane, p.x, p.y - d.pane.top);
         break;
       }
@@ -180,7 +180,7 @@ export class InteractionController {
         const dy = p.y - d.lastY;
         d.lastY = p.y;
         d.pane.priceScale.scaleBy(Math.exp(dy * 0.005));
-        chart.viewChanged();
+        chart.viewChanged('user');
         break;
       }
       case 'plus':
@@ -189,7 +189,7 @@ export class InteractionController {
         const dx = p.x - d.lastX;
         d.lastX = p.x;
         chart.timeScale.zoom(chart.paneWidth, Math.exp(dx * 0.006));
-        chart.viewChanged();
+        chart.viewChanged('user');
         break;
       }
       case 'separator': {
@@ -204,7 +204,7 @@ export class InteractionController {
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
         if (d.lastDist > 0) chart.timeScale.zoom((a.x + b.x) / 2, dist / d.lastDist);
         d.lastDist = dist;
-        chart.viewChanged();
+        chart.viewChanged('user');
         break;
       }
     }
@@ -296,7 +296,7 @@ export class InteractionController {
     } else {
       ts.zoom(hit.kind === 'pane' ? p.x : this.chart.paneWidth, Math.exp(-dy * 0.0015));
     }
-    this.chart.viewChanged();
+    this.chart.viewChanged('user');
     if (hit.kind === 'pane') this.chart.setCrosshair(hit.pane, p.x, hit.y);
     clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => this.chart.viewSettled(), 250);
@@ -340,7 +340,7 @@ export class InteractionController {
         return;
     }
     e.preventDefault();
-    this.chart.viewChanged();
+    this.chart.viewChanged('user');
     this.chart.viewSettled();
   }
 
@@ -355,7 +355,7 @@ export class InteractionController {
       const dt = t - prev;
       prev = t;
       this.chart.timeScale.pan(v * dt);
-      this.chart.viewChanged();
+      this.chart.viewChanged('user');
       v *= KINETIC_DECAY ** (dt / 16);
       if (Math.abs(v) > KINETIC_STOP_VELOCITY) this.kineticFrame = requestAnimationFrame(step);
       else {
