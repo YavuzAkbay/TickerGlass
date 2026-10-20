@@ -111,7 +111,20 @@ export function attachAlerts(chart: Chart): () => void {
       if (s.symbol !== p.symbol) apply();
     }),
     useReplayStore.subscribe((s, p) => {
-      if (s.next !== p.next || (s.status === 'off') !== (p.status === 'off')) apply();
+      const on = s.status !== 'off';
+      if (on !== (p.status !== 'off')) return apply();
+      if (!on || s.next === p.next) return;
+      // Only rebuild when the clock moved across a fire of this symbol.
+      if (!Number.isFinite(s.next) || !Number.isFinite(p.next)) return apply();
+      const lo = Math.min(s.next, p.next);
+      const hi = Math.max(s.next, p.next);
+      const symbol = canon(useAppStore.getState().symbol);
+      if (
+        useAlerts
+          .getState()
+          .log.some((e) => e.symbol === symbol && e.barTime >= lo && e.barTime < hi)
+      )
+        apply();
     }),
     chart.on('priceAxisPlus', ({ paneId, price }) =>
       commands.execute('alert.create', { price, paneId }),

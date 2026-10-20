@@ -9,20 +9,8 @@ import { ReplayController } from './controller';
 import { useReplayStore } from './store';
 import { ReplayTrading, useTrading } from './trading';
 
-/** The chart's last bar (the forming bar of the chart symbol during replay). */
-function lastBar() {
-  const s = getChart()?.store;
-  if (!s || s.length === 0) return null;
-  const i = s.length - 1;
-  return {
-    time: s.time[i]!,
-    open: s.open[i]!,
-    high: s.high[i]!,
-    low: s.low[i]!,
-    close: s.close[i]!,
-    volume: s.volume[i]!,
-  };
-}
+/** Raw (untransformed) last revealed bar of the chart symbol, or null. */
+const lastBar = () => replayFeed.revealedBar(useAppStore.getState().symbol);
 
 const alerts = new ReplayAlerts({
   alerts: () => useAlerts.getState().alerts,
