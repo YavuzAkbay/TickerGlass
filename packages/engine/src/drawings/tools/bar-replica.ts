@@ -15,7 +15,7 @@ export type BarReplicaMode = 'hl' | 'oc' | 'line' | 'candles';
 
 export const BAR_REPLICA_DEFAULTS = {
   /** Copied bars; also the handle colour. */
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   mode: 'hl' as BarReplicaMode,
   mirrored: false,
   flipped: false,

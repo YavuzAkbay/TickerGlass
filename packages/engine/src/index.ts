@@ -38,3 +38,5 @@ export { buildTradingCalendar } from './drawings/calendar';
 export type { TradingCalendar } from './drawings/calendar';
 export { isEmbeddedImage } from './drawings/tools/image';
 export { ERASER_TOOL, MEASURE_TOOL, PICK_TOOL, ZOOM_TOOL } from './drawings/interaction';
+export { PALETTE } from './palette';
+export type { PaletteColor } from './palette';

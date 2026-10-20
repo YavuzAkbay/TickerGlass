@@ -24,9 +24,9 @@ export const BB_PERCENT_B = defineIndicator({
       id: 'background',
       title: 'Background',
       between: ['upperBand', 'lowerBand'],
-      color: 'rgba(38, 166, 154, 0.19)',
+      color: 'rgba(24, 163, 131, 0.19)',
     },
-    { type: 'plot', id: 'pb', title: 'Bollinger Bands %B', kind: 'line', color: '#22ab94' },
+    { type: 'plot', id: 'pb', title: 'Bollinger Bands %B', kind: 'line', color: '#18a383' },
   ],
   setup({ inputs, ta }) {
     const ma = ta.sma(inputs.length);

@@ -65,7 +65,8 @@ const APP_PREFS = [
 
 const UI_PREFS = [
   'rightPanel',
-  'rightWidth',
+  'dockHeight',
+  'toolRailHidden',
   'groupTools',
   'favoriteTools',
   'showFavoritesBar',

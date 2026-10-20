@@ -3,6 +3,7 @@
 // square, Gann grid) and the fan rays of the Gann fan. Pixel space
 // (CSS px, pane-local): the box levels divide the box on screen.
 import type { ChartTheme } from '../../options';
+import { levelGradientAt, PALETTE } from '../../palette';
 import {
   BODY_HIT,
   inBox,
@@ -26,55 +27,42 @@ import { fanRayBuffer, hitBoxGrid, renderBoxGrid, type FanRay } from './fan-comm
 import { fillAlpha, levelsOf } from './fib-common';
 
 /** Gann box / square grid levels (fractions of the box). */
-const TV_GRID_LEVELS: readonly (readonly [number, string])[] = [
-  [0, '#787b86'],
-  [0.25, '#ff9800'],
-  [0.382, '#00bcd4'],
-  [0.5, '#4caf50'],
-  [0.618, '#089981'],
-  [0.75, '#2962ff'],
-  [1, '#787b86'],
-];
+const DEFAULT_GRID_LEVELS: readonly number[] = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
 
 /** Fresh copy of the Gann grid levels 0, 0.25, 0.382, 0.5, 0.618, 0.75, 1. */
 export function defaultGannLevels(): DrawingLevel[] {
-  return TV_GRID_LEVELS.map(([value, color]) => ({ value, color, visible: true }));
+  return DEFAULT_GRID_LEVELS.map((value, i, a) => ({
+    value,
+    color: levelGradientAt(i, a.length),
+    visible: true,
+  }));
 }
 
 /**
  * Gann fan ratios as price/time slope multipliers of the 1x1 line:
  * 1x8 = 1/8 (shallow) .. 8x1 = 8 (steep).
  */
-const TV_FAN_LEVELS: readonly (readonly [number, string])[] = [
-  [1 / 8, '#ff9800'],
-  [1 / 4, '#089981'],
-  [1 / 3, '#4caf50'],
-  [1 / 2, '#00bcd4'],
-  [1, '#2962ff'],
-  [2, '#00bcd4'],
-  [3, '#4caf50'],
-  [4, '#089981'],
-  [8, '#ff9800'],
-];
+const DEFAULT_FAN_LEVELS: readonly number[] = [1 / 8, 1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4, 8];
 
 /** Fresh copy of the Gann fan ratios 1x8 .. 8x1. */
 export function defaultGannFanLevels(): DrawingLevel[] {
-  return TV_FAN_LEVELS.map(([value, color]) => ({ value, color, visible: true }));
+  return DEFAULT_FAN_LEVELS.map((value, i, a) => ({
+    value,
+    color: levelGradientAt(i, a.length),
+    visible: true,
+  }));
 }
 
 /** Gann square arcs: radii in box units around the origin corner. */
-const TV_ARC_LEVELS: readonly (readonly [number, string])[] = [
-  [0.25, '#ff9800'],
-  [0.382, '#00bcd4'],
-  [0.5, '#4caf50'],
-  [0.618, '#089981'],
-  [0.75, '#2962ff'],
-  [1, '#787b86'],
-];
+const DEFAULT_ARC_LEVELS: readonly number[] = [0.25, 0.382, 0.5, 0.618, 0.75, 1];
 
 /** Fresh copy of the Gann square arc radii (box units). */
 export function defaultGannArcLevels(): DrawingLevel[] {
-  return TV_ARC_LEVELS.map(([value, color]) => ({ value, color, visible: true }));
+  return DEFAULT_ARC_LEVELS.map((value, i, a) => ({
+    value,
+    color: levelGradientAt(i, a.length),
+    visible: true,
+  }));
 }
 
 /** Ratio label of a fan slope multiplier: 2 -> "2x1", 0.25 -> "1x4", 1/3 -> "1x3". */
@@ -376,7 +364,7 @@ export function hitBoxArcs(
 /** Style keys of the box-fan-arc Gann tools (square, square fixed). */
 export const GANN_SQUARE_DEFAULTS = {
   /** Handle colour. */
-  lineColor: '#787b86',
+  lineColor: PALETTE.neutral,
   levelsLineWidth: 1,
   levelsLineStyle: 'solid' as DrawingLineStyle,
   showLevels: true,

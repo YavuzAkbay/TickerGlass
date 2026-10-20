@@ -18,13 +18,13 @@ export type MeasureKind = 'price' | 'date' | 'date-price';
 
 export const MEASURE_DEFAULTS = {
   /** Arrows and edges; also the handle colour. */
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 1,
   fillBackground: true,
-  backgroundColor: 'rgba(41, 98, 255, 0.2)',
+  backgroundColor: 'rgba(79, 107, 237, 0.12)',
   showBorder: false,
-  borderColor: '#2962ff',
-  labelBackgroundColor: 'rgba(41, 98, 255, 0.85)',
+  borderColor: '#4f6bed',
+  labelBackgroundColor: 'rgba(79, 107, 237, 0.9)',
   textColor: '#ffffff',
 };
 

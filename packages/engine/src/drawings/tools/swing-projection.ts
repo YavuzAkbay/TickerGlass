@@ -19,14 +19,14 @@ import { pointsInView } from './shape-common';
 
 export const SWING_PROJECTION_DEFAULTS = {
   /** Legs and arc; also the handle colour. */
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   fillBackground: true,
-  upFillColor: 'rgba(8, 153, 129, 0.2)',
-  downFillColor: 'rgba(242, 54, 69, 0.2)',
+  upFillColor: 'rgba(24, 163, 131, 0.2)',
+  downFillColor: 'rgba(229, 72, 77, 0.2)',
   showLabels: true,
-  labelBackgroundColor: 'rgba(41, 98, 255, 0.85)',
+  labelBackgroundColor: 'rgba(79, 107, 237, 0.85)',
   textColor: '#ffffff',
 };
 

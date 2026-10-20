@@ -111,32 +111,32 @@ export function bandInputs(showFirst: boolean) {
 
 /** Band plots and fills shared by VWAP and Anchored VWAP (drawn after the VWAP line). */
 export const BAND_OUTPUTS = [
-  { type: 'plot', id: 'upper1', title: 'Upper Band #1', kind: 'line', color: '#4caf50' },
-  { type: 'plot', id: 'lower1', title: 'Lower Band #1', kind: 'line', color: '#4caf50' },
+  { type: 'plot', id: 'upper1', title: 'Upper Band #1', kind: 'line', color: '#8bc34a' },
+  { type: 'plot', id: 'lower1', title: 'Lower Band #1', kind: 'line', color: '#8bc34a' },
   {
     type: 'fill',
     id: 'fill1',
     title: 'Bands Fill #1',
     between: ['upper1', 'lower1'],
-    color: 'rgba(76, 175, 80, 0.05)',
+    color: 'rgba(139, 195, 74, 0.05)',
   },
-  { type: 'plot', id: 'upper2', title: 'Upper Band #2', kind: 'line', color: '#808000' },
-  { type: 'plot', id: 'lower2', title: 'Lower Band #2', kind: 'line', color: '#808000' },
+  { type: 'plot', id: 'upper2', title: 'Upper Band #2', kind: 'line', color: '#7a8a99' },
+  { type: 'plot', id: 'lower2', title: 'Lower Band #2', kind: 'line', color: '#7a8a99' },
   {
     type: 'fill',
     id: 'fill2',
     title: 'Bands Fill #2',
     between: ['upper2', 'lower2'],
-    color: 'rgba(128, 128, 0, 0.05)',
+    color: 'rgba(122, 138, 153, 0.05)',
   },
-  { type: 'plot', id: 'upper3', title: 'Upper Band #3', kind: 'line', color: '#00897b' },
-  { type: 'plot', id: 'lower3', title: 'Lower Band #3', kind: 'line', color: '#00897b' },
+  { type: 'plot', id: 'upper3', title: 'Upper Band #3', kind: 'line', color: '#0fb5c9' },
+  { type: 'plot', id: 'lower3', title: 'Lower Band #3', kind: 'line', color: '#0fb5c9' },
   {
     type: 'fill',
     id: 'fill3',
     title: 'Bands Fill #3',
     between: ['upper3', 'lower3'],
-    color: 'rgba(0, 137, 123, 0.05)',
+    color: 'rgba(15, 181, 201, 0.05)',
   },
 ] as const;
 

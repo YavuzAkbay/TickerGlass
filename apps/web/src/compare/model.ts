@@ -33,14 +33,14 @@ export const MAX_COMPARES = 10;
 export const MAX_COMPARE_SYMBOL = 128;
 export const DEFAULT_COMPARE_LINE_WIDTH = 2;
 export const COMPARE_COLORS = [
-  '#f7a21b',
-  '#e91e63',
-  '#26c6da',
-  '#ab47bc',
-  '#66bb6a',
-  '#ff7043',
-  '#5c6bc0',
-  '#8d6e63',
+  '#f2a93b',
+  '#e8618c',
+  '#0fb5c9',
+  '#8e5cf6',
+  '#8bc34a',
+  '#4f6bed',
+  '#e5484d',
+  '#7a8a99',
 ];
 
 export const PLACEMENTS: readonly ComparePlacement[] = ['same', 'own', 'pane'];

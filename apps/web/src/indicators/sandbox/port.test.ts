@@ -38,7 +38,7 @@ const smaSource = (title = 'MA') => `defineIndicator({
   category: 'movingAverage',
   overlay: true,
   inputs: { length: { kind: 'int', label: 'Length', default: 3, min: 1 } },
-  outputs: [{ type: 'plot', id: 'ma', title: '${title}', kind: 'line', color: '#2962ff' }],
+  outputs: [{ type: 'plot', id: 'ma', title: '${title}', kind: 'line', color: '#4f6bed' }],
   setup({ inputs, ta }) {
     const avg = ta.sma(inputs.length);
     return (c) => c.set('ma', avg.update(c.close[c.i]));

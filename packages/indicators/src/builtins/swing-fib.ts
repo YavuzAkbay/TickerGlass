@@ -7,17 +7,17 @@ import { zigZagPivots } from './zigzag';
  * (conventional defaults). Ids and keys never change.
  */
 const LEVELS = [
-  { id: 'l0', show: 'show0', ratio: 0, on: true, color: '#787b86' },
-  { id: 'l236', show: 'show236', ratio: 0.236, on: true, color: '#f44336' },
-  { id: 'l382', show: 'show382', ratio: 0.382, on: true, color: '#81c784' },
-  { id: 'l500', show: 'show500', ratio: 0.5, on: true, color: '#4caf50' },
-  { id: 'l618', show: 'show618', ratio: 0.618, on: true, color: '#009688' },
-  { id: 'l786', show: 'show786', ratio: 0.786, on: true, color: '#64b5f6' },
-  { id: 'l1000', show: 'show1000', ratio: 1, on: true, color: '#787b86' },
-  { id: 'l1618', show: 'show1618', ratio: 1.618, on: false, color: '#2962ff' },
-  { id: 'l2618', show: 'show2618', ratio: 2.618, on: false, color: '#f44336' },
-  { id: 'l3618', show: 'show3618', ratio: 3.618, on: false, color: '#9c27b0' },
-  { id: 'l4236', show: 'show4236', ratio: 4.236, on: false, color: '#e91e63' },
+  { id: 'l0', show: 'show0', ratio: 0, on: true, color: '#9aa4b2' },
+  { id: 'l236', show: 'show236', ratio: 0.236, on: true, color: '#e5484d' },
+  { id: 'l382', show: 'show382', ratio: 0.382, on: true, color: '#8bc34a' },
+  { id: 'l500', show: 'show500', ratio: 0.5, on: true, color: '#8bc34a' },
+  { id: 'l618', show: 'show618', ratio: 0.618, on: true, color: '#0fb5c9' },
+  { id: 'l786', show: 'show786', ratio: 0.786, on: true, color: '#4f6bed' },
+  { id: 'l1000', show: 'show1000', ratio: 1, on: true, color: '#9aa4b2' },
+  { id: 'l1618', show: 'show1618', ratio: 1.618, on: false, color: '#4f6bed' },
+  { id: 'l2618', show: 'show2618', ratio: 2.618, on: false, color: '#e5484d' },
+  { id: 'l3618', show: 'show3618', ratio: 3.618, on: false, color: '#8e5cf6' },
+  { id: 'l4236', show: 'show4236', ratio: 4.236, on: false, color: '#e8618c' },
 ] as const;
 type LevelId = (typeof LEVELS)[number]['id'];
 type ShowKey = (typeof LEVELS)[number]['show'];
@@ -27,7 +27,10 @@ const LEVEL_INPUTS = Object.fromEntries(
     lv.show,
     { kind: 'bool', label: String(lv.ratio), default: lv.on, group: 'Levels', hideInTitle: true },
   ]),
-) as Record<ShowKey, { kind: 'bool'; label: string; default: boolean; group: string; hideInTitle: true }>;
+) as Record<
+  ShowKey,
+  { kind: 'bool'; label: string; default: boolean; group: string; hideInTitle: true }
+>;
 
 const ATR_LENGTH = 10;
 

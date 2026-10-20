@@ -17,8 +17,8 @@ const SHAFT_HALF = 4;
 const TEXT_GAP = 4;
 
 export const ARROW_POINTER_DEFAULTS = {
-  arrowColor: '#2962ff',
-  ...textDefaults('#2962ff'),
+  arrowColor: '#4f6bed',
+  ...textDefaults('#4f6bed'),
 };
 
 const poly: PixelPoint[] = Array.from({ length: 7 }, () => ({ x: 0, y: 0 }));

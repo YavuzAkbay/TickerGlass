@@ -69,14 +69,14 @@ export const LINREG_CHANNEL = defineIndicator({
       id: 'fillUpper',
       title: 'Upper Fill',
       between: ['upper', 'mid'],
-      color: 'rgba(41, 98, 255, 0.15)',
+      color: 'rgba(79, 107, 237, 0.15)',
     },
     {
       type: 'fill',
       id: 'fillLower',
       title: 'Lower Fill',
       between: ['mid', 'lower'],
-      color: 'rgba(255, 82, 82, 0.15)',
+      color: 'rgba(229, 72, 77, 0.15)',
     },
     {
       type: 'plot',

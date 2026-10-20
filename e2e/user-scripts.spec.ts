@@ -19,7 +19,7 @@ function scriptSource(stepBody: string, setupBody = ''): string {
   return [
     "defineIndicator({ name: 'E2E Script', shortName: 'E2EX', category: 'trend', overlay: true,", // 1
     '  inputs: {},', // 2
-    "  outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#2962ff' }],", // 3
+    "  outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#4f6bed' }],", // 3
     `  setup() { ${setupBody}`, // 4
     '    return (c) => {', // 5
     '      c.set("v", c.close[c.i]);', // 6
@@ -224,7 +224,7 @@ test.describe('user scripts', () => {
     const source = [
       "defineIndicator({ name: 'E2E Script', shortName: 'E2EX', category: 'trend', overlay: true,",
       '  inputs: {},',
-      "  outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#2962ff' }],",
+      "  outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#4f6bed' }],",
       `  setup() { ${setup} },`,
       '});',
       '',

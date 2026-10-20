@@ -196,8 +196,9 @@ export function toYahooSymbol(raw: string): string | null {
 }
 
 /**
- * Parse a plain-text watchlist export: entries split on commas/newlines,
- * `###Title` = section, `EXCHANGE:TICKER` mapped to Yahoo symbols. `unmapped`
+ * Parse the InvestOpen plain-text watchlist format: one `EXCHANGE:TICKER` per
+ * entry, comma or newline separated, optional `###Section` headers. Entries
+ * are mapped to Yahoo symbols. `unmapped`
  * lists entries whose prefix could not be mapped (ticker kept); `skipped`
  * counts entries that are not valid symbols.
  */
@@ -232,7 +233,7 @@ export function parseTxt(text: string): {
   return { items, unmapped, skipped };
 }
 
-/** One line, comma separated, sections as `###Title`; no trailing newline. */
+/** InvestOpen plain-text watchlist format: one line, comma separated, sections as `###Title`; no trailing newline. */
 export const formatTxt = (items: WatchlistItem[]): string =>
   items.map((i) => (i.type === 'section' ? `###${i.title}` : i.symbol)).join(',');
 

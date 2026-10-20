@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-export type Placement = 'bottom-start' | 'bottom-end' | 'right-start' | 'top-start';
+export type Placement = 'bottom-start' | 'bottom-end' | 'right-start' | 'left-start' | 'top-start';
 
 interface Props {
   /** Element to anchor to, or a fixed point (context menus). */
@@ -44,6 +44,10 @@ export function Popover({
         left = r.right + 4;
         top = r.top;
         if (left + w > vw) left = r.left - w - 4;
+      } else if (placement === 'left-start') {
+        left = r.left - w - 4;
+        top = r.top;
+        if (left < 0) left = r.right + 4;
       } else if (placement === 'top-start') {
         left = r.left;
         top = r.top - h - 4;

@@ -32,13 +32,13 @@ export const POSITION_STOP_FRACTION = 0.05;
 
 export const POSITION_DEFAULTS = {
   /** Entry line; also the handle colour. */
-  lineColor: '#787b86',
+  lineColor: '#9aa4b2',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
-  profitColor: 'rgba(8, 153, 129, 0.2)',
-  stopColor: 'rgba(242, 54, 69, 0.2)',
-  targetLabelColor: '#089981',
-  stopLabelColor: '#f23645',
+  profitColor: 'rgba(24, 163, 131, 0.14)',
+  stopColor: 'rgba(229, 72, 77, 0.14)',
+  targetLabelColor: '#18a383',
+  stopLabelColor: '#e5484d',
   textColor: '#ffffff',
   accountSize: 1000,
   lotSize: 1,

@@ -300,7 +300,7 @@ const cmp = (id: string, symbol: string, patch: Partial<CompareState> = {}): Com
   symbol,
   placement: 'same',
   visible: true,
-  color: '#f7a21b',
+  color: '#f2a93b',
   lineWidth: 2,
   ...patch,
 });

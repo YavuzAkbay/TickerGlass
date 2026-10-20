@@ -74,11 +74,11 @@ describe('fib channel', () => {
     expect(at(X(30), Y(50))).toEqual(BODY); // 0
     expect(at(X(25), Y(55))).toEqual(BODY); // 0.5
     expect(at(X(35), Y(66.18))).toEqual(BODY); // 1.618
-    expect(at(X(30), Y(81))).toEqual(WEAK); // between 2.618 and 3.618
-    expect(at(X(30), Y(95))).toBeNull(); // past 4.236
+    expect(at(X(30), Y(63))).toEqual(WEAK); // between 1 and 1.618
+    expect(at(X(30), Y(81))).toBeNull(); // past 1.618
     expect(at(X(50), Y(55))).toBeNull(); // past the anchors
     expect(setup('fib-channel', pts, { extendRight: true }).at(X(50), Y(55))).toEqual(BODY);
-    expect(setup('fib-channel', pts, { fillBackground: false }).at(X(30), Y(81))).toBeNull();
+    expect(setup('fib-channel', pts, { fillBackground: false }).at(X(30), Y(63))).toBeNull();
   });
 
   it('slanted base: levels shift vertically in pixels', () => {
@@ -91,9 +91,9 @@ describe('fib channel', () => {
   it('renders the base for drafts, levels, fills and labels when complete', () => {
     expect(setup('fib-channel', pts.slice(0, 2)).draw().count('stroke')).toBe(1);
     const r = setup('fib-channel', pts).draw();
-    // 11 visible default levels: 11 lines, 10 bands.
-    expect(r.count('stroke')).toBe(11);
-    expect(r.count('fill')).toBe(10);
+    // 8 visible default levels: 8 lines, 7 bands.
+    expect(r.count('stroke')).toBe(8);
+    expect(r.count('fill')).toBe(7);
     expect(r.texts).toContain('0.618');
   });
 
@@ -198,16 +198,16 @@ describe('fib circles', () => {
     expect(at(X(30), Y(75))).toEqual(BODY); // level 1: 100 px = 25 price
     expect(at(X(35), Y(50))).toEqual(BODY); // level 0.5: 50 px = 5 bars (also trend line)
     expect(at(X(30), Y(50 + 12.5))).toEqual(BODY); // level 0.5 vertically
-    expect(at(X(30) + 210, Y(50))).toEqual(WEAK); // between 1.618 and 2.618
+    expect(at(X(30) + 130, Y(50))).toEqual(WEAK); // between 1 and 1.618
     expect(at(X(30), Y(50) - 10)).toBeNull(); // inside 0.236
     expect(at(X(30) + 430, Y(50))).toBeNull(); // outside 4.236
   });
 
   it('renders circles, rings and labels', () => {
     const r = setup('fib-circles', pts).draw();
-    expect(r.count('arc')).toBe(10 + 9 * 2);
-    expect(r.count('fill')).toBe(9);
-    expect(r.texts).toContain('4.236');
+    expect(r.count('arc')).toBe(7 + 6 * 2);
+    expect(r.count('fill')).toBe(6);
+    expect(r.texts).toContain('1.618');
   });
 
   it('culling by the outer circle', () => {

@@ -13,7 +13,7 @@ import {
 } from './annotation-common';
 
 export const CALLOUT_DEFAULTS = {
-  ...annotationDefaults('#2962ff', 'rgba(41, 98, 255, 0.2)'),
+  ...annotationDefaults('#4f6bed', 'rgba(79, 107, 237, 0.2)'),
   wrapWidth: 180,
 };
 

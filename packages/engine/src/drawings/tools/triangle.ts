@@ -7,7 +7,7 @@ import {
   shapeDefaults,
 } from './shape-common';
 
-export const TRIANGLE_DEFAULTS = shapeDefaults('#089981', 'rgba(8, 153, 129, 0.2)');
+export const TRIANGLE_DEFAULTS = shapeDefaults('#18a383', 'rgba(24, 163, 131, 0.2)');
 
 /** Triangle through three anchors; filled interior is grabbable. */
 export const triangle = defineDrawingTool({

@@ -15,8 +15,8 @@ import {
 } from './annotation-common';
 
 export const PIN_DEFAULTS = {
-  ...annotationDefaults('#ffffff', '#089981'),
-  borderColor: '#089981',
+  ...annotationDefaults('#ffffff', '#18a383'),
+  borderColor: '#18a383',
   poleHeight: 60,
   wrapWidth: 140,
 };

@@ -1,20 +1,20 @@
 import type { StepContext, Streaming, Ta, WeightedStreaming } from '../types';
 
-/** Default colours shared by the built-ins (conventional charting palette). */
+/** Default colours shared by the built-ins (mirrors the engine's PALETTE). */
 export const COLOR = {
-  blue: '#2962ff',
-  orange: '#ff6d00',
-  purple: '#7e57c2',
-  red: '#b71c1c',
-  pink: '#f50057',
-  green: '#4caf50',
-  brightRed: '#ff5252',
-  yellow: '#ffeb3b',
-  level: '#787b86',
-  levelMiddle: 'rgba(120, 123, 134, 0.5)',
-  blueFill: 'rgba(33, 150, 243, 0.1)',
-  blueFillLight: 'rgba(33, 150, 243, 0.05)',
-  purpleFill: 'rgba(126, 87, 194, 0.1)',
+  blue: '#4f6bed',
+  orange: '#f2a93b',
+  purple: '#8e5cf6',
+  red: '#e5484d',
+  pink: '#e8618c',
+  green: '#8bc34a',
+  brightRed: '#e5484d',
+  yellow: '#f2a93b',
+  level: '#9aa4b2',
+  levelMiddle: 'rgba(154, 164, 178, 0.5)',
+  blueFill: 'rgba(79, 107, 237, 0.1)',
+  blueFillLight: 'rgba(79, 107, 237, 0.05)',
+  purpleFill: 'rgba(142, 92, 246, 0.1)',
 } as const;
 
 /** Moving-average choices offered by inputs (conventional names). */

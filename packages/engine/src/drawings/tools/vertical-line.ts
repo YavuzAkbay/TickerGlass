@@ -6,11 +6,11 @@ const TEXT_GAP = 4;
 const TEXT_MARGIN = 8;
 
 export const VERTICAL_LINE_DEFAULTS = {
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   showTimeLabel: true,
-  textColor: '#2962ff',
+  textColor: '#4f6bed',
   fontSize: 12,
   bold: false,
   italic: false,

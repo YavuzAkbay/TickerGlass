@@ -4,11 +4,11 @@ import type { DrawingGeometry, DrawingLineStyle } from '../types';
 import { cycleRange } from './cycle-lines';
 
 export const CYCLE_ARCS_DEFAULTS = {
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   fillBackground: true,
-  backgroundColor: 'rgba(41, 98, 255, 0.1)',
+  backgroundColor: 'rgba(79, 107, 237, 0.1)',
 };
 
 type CycleArcsStyle = typeof CYCLE_ARCS_DEFAULTS;

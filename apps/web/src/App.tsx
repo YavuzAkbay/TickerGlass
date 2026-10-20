@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BottomBar } from './bottombar/BottomBar';
+import { RangeStrip } from './bottombar/RangeStrip';
 import { ChartView } from './chart/ChartView';
 import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
@@ -10,10 +10,10 @@ import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
-import { RightSidebar } from './sidebar/RightSidebar';
+import { Dock } from './dock/Dock';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
-import { LeftToolbar } from './toolbar/LeftToolbar';
+import { ToolRail } from './toolbar/ToolRail';
 import { TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
 import { PromptHost } from './ui/Prompt';
@@ -23,6 +23,7 @@ import './App.css';
 
 export function App() {
   const theme = useAppStore((s) => s.theme);
+  const railHidden = useUiStore((s) => s.toolRailHidden);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -60,17 +61,17 @@ export function App() {
       <header className="app-top">
         <TopBar />
       </header>
-      <aside className="app-left">
-        <LeftToolbar />
-      </aside>
       <main className="center">
-        <div className="chart-area">
-          <ChartView />
+        <div className="chart-pane">
+          <div className="chart-area">
+            <ChartView />
+          </div>
+          <RangeStrip />
         </div>
-        <BottomBar />
+        <Dock />
       </main>
-      <aside className="app-right">
-        <RightSidebar />
+      <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
+        <ToolRail />
       </aside>
       <DialogHost />
       <ContextMenuHost />

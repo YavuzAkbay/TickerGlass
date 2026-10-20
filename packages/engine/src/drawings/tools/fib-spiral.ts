@@ -7,7 +7,7 @@ import type { DrawingGeometry, DrawingLineStyle, PixelPoint } from '../types';
 export const PHI = (1 + Math.sqrt(5)) / 2;
 
 export const FIB_SPIRAL_DEFAULTS = {
-  lineColor: '#f23645',
+  lineColor: '#8e5cf6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   counterclockwise: false,

@@ -13,8 +13,8 @@ import {
 
 export const TRADE_MARKER_GROUP = 'replay-trades';
 export const POSITION_LINE_GROUP = 'replay-position';
-const UP = '#26a69a';
-const DOWN = '#ef5350';
+const UP = '#18a383';
+const DOWN = '#e5484d';
 
 interface TradingStore {
   paper: PaperState;

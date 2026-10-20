@@ -19,7 +19,7 @@ const seg = [0, 0, 0, 0];
 const lines: string[] = [];
 
 export const MEASURED_LINE_DEFAULTS = {
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 2,
   lineStyle: 'solid' as DrawingLineStyle,
   extendLeft: false,
@@ -30,7 +30,7 @@ export const MEASURED_LINE_DEFAULTS = {
   showDateTimeRange: true,
   showDistance: true,
   showAngle: true,
-  labelBackgroundColor: 'rgba(41, 98, 255, 0.85)',
+  labelBackgroundColor: 'rgba(79, 107, 237, 0.85)',
   textColor: '#ffffff',
 };
 

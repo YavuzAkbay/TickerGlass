@@ -4,7 +4,7 @@ import { arcDistance, circleThrough3 } from '../shape-utils';
 import type { DrawingGeometry, PixelPoint } from '../types';
 import { pointsInView, SHAPE_PROPERTIES, shapeDefaults } from './shape-common';
 
-export const ARC_DEFAULTS = shapeDefaults('#9c27b0', 'rgba(156, 39, 176, 0.2)');
+export const ARC_DEFAULTS = shapeDefaults('#8e5cf6', 'rgba(142, 92, 246, 0.2)');
 
 export interface ArcSpec {
   x: number;

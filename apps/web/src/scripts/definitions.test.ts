@@ -11,7 +11,7 @@ const manifest = (id: string, name = 'My MA'): Record<string, unknown> => ({
   category: 'movingAverage',
   overlay: true,
   inputs: { length: { kind: 'int', label: 'Length', default: 10, min: 1 } },
-  outputs: [{ type: 'plot', id: 'ma', title: 'MA', kind: 'line', color: '#2962ff' }],
+  outputs: [{ type: 'plot', id: 'ma', title: 'MA', kind: 'line', color: '#4f6bed' }],
 });
 
 const script = (id: string, o: Partial<UserScript> = {}): UserScript => ({

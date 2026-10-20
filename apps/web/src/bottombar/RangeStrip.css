@@ -1,52 +1,91 @@
-.bottom-bar {
+/* Slim strip under the time axis, inside the chart pane. */
+.range-strip {
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 32px;
+  height: 26px;
   padding: 0 8px;
   border-top: 1px solid var(--border);
   background: var(--panel);
   flex-shrink: 0;
+  user-select: none;
 }
 
-.bb-btn {
+/* Range presets as one joined segmented control. */
+.strip-seg {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-right: 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: visible;
+}
+.strip-seg-btn {
   position: relative;
-  height: 24px;
+  height: 100%;
+  padding: 0 8px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.strip-seg-btn:first-child {
+  border-left: 0;
+  border-radius: 4px 0 0 4px;
+}
+.strip-seg-btn:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.strip-seg-btn:hover {
+  background: var(--hover);
+}
+.strip-seg-btn.active {
+  background: var(--active-bg);
+  color: var(--accent-text);
+}
+
+.strip-btn {
+  position: relative;
+  height: 20px;
   padding: 0 8px;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.bb-btn:hover {
+.strip-btn:hover {
   background: var(--hover);
 }
 
-.bb-btn.active {
+.strip-btn.active {
   color: var(--accent-text);
 }
 
-.bb-clock {
+.strip-clock {
   font-variant-numeric: tabular-nums;
 }
 
-.bb-icon {
-  height: 24px;
+.strip-icon {
+  height: 20px;
   min-width: 28px;
 }
 
-.bb-sep {
+.strip-sep {
   width: 1px;
   height: 18px;
   margin: 0 6px;
   background: var(--border);
 }
 
-.bb-spacer {
+.strip-spacer {
   flex: 1;
 }
 

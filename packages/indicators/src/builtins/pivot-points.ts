@@ -3,7 +3,7 @@ import { defineIndicator } from '../registry';
 /** Order of the "Type" options. */
 const PIVOT_TYPES = ['Traditional', 'Fibonacci', 'Woodie', 'Classic', 'DM', 'Camarilla'] as const;
 type PivotType = (typeof PIVOT_TYPES)[number];
-const PIVOT_COLOR = '#fb8c00';
+const PIVOT_COLOR = '#f2a93b';
 
 const LEVELS = ['p', 'r1', 's1', 'r2', 's2', 'r3', 's3', 'r4', 's4', 'r5', 's5'] as const;
 type Level = (typeof LEVELS)[number];
@@ -66,7 +66,17 @@ function pivotLevels(type: PivotType, { o, h, l, c, oCur }: PeriodPrices): Level
       const p = (h + l + 2 * oCur) / 4;
       const r3 = h + 2 * (p - l);
       const s3 = l - 2 * (h - p);
-      return { p, r1: 2 * p - l, s1: 2 * p - h, r2: p + r, s2: p - r, r3, s3, r4: r3 + r, s4: s3 - r };
+      return {
+        p,
+        r1: 2 * p - l,
+        s1: 2 * p - h,
+        r2: p + r,
+        s2: p - r,
+        r3,
+        s3,
+        r4: r3 + r,
+        s4: s3 - r,
+      };
     }
     case 'Classic': {
       const p = (h + l + c) / 3;

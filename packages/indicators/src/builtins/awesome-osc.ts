@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 
 /** Columns palette of AO/AC: 0 rising (or first value), 1 falling or flat. */
-export const AO_COLORS = ['#009688', '#f44336'] as const;
+export const AO_COLORS = ['#0fb5c9', '#e5484d'] as const;
 
 /** Palette index from the bar-to-bar change (`diff <= 0` red, else green; NaN -> green). */
 export function aoColor(diff: number): number {

@@ -19,7 +19,7 @@ export const EMA = defineIndicator({
       id: 'ema',
       title: 'EMA',
       kind: 'line',
-      color: '#2962ff',
+      color: '#4f6bed',
       offset: (inputs) => inputs.offset,
     },
   ],

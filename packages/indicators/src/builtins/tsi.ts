@@ -19,7 +19,7 @@ export const TSI = defineIndicator({
   outputs: [
     { type: 'hline', id: 'zero', title: 'Zero', value: 0, color: COLOR.level },
     { type: 'plot', id: 'tsi', title: 'True Strength Index', kind: 'line', color: COLOR.blue },
-    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#e91e63' },
+    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#e8618c' },
   ],
   setup({ inputs, ta }) {
     const erg = ergodicOf(ta, inputs.long, inputs.short);

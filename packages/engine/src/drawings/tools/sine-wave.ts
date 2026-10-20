@@ -4,7 +4,7 @@ import { polylineDistance, strokePolyline } from '../shape-utils';
 import type { DrawingGeometry, DrawingLineStyle, PixelPoint } from '../types';
 
 export const SINE_WAVE_DEFAULTS = {
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
 };

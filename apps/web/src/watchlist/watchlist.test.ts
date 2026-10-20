@@ -28,7 +28,8 @@ const symbols = (items: WatchlistItem[]) =>
   items.map((i) => (i.type === 'symbol' ? i.symbol : `#${i.id}`));
 
 describe('txt', () => {
-  const SAMPLE_EXPORT = '###INDICES,SP:SPX,NASDAQ:AAPL,BIST:THYAO,BINANCE:BTCUSDT,CME_MINI:ES1!,FX:EURUSD';
+  const SAMPLE_EXPORT =
+    '###INDICES,SP:SPX,NASDAQ:AAPL,BIST:THYAO,BINANCE:BTCUSDT,CME_MINI:ES1!,FX:EURUSD';
   it('parses an exported watchlist', () => {
     const r = parseTxt(SAMPLE_EXPORT);
     expect(symbols(r.items)).toEqual([

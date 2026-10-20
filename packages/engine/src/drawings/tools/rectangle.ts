@@ -16,18 +16,18 @@ import type { DrawingGeometry, DrawingHandle, DrawingLineStyle } from '../types'
 const TEXT_PAD = 6;
 
 export const RECTANGLE_DEFAULTS = {
-  lineColor: '#9c27b0',
+  lineColor: '#8e5cf6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   fillBackground: true,
-  backgroundColor: 'rgba(156, 39, 176, 0.2)',
+  backgroundColor: 'rgba(142, 92, 246, 0.2)',
   extendLeft: false,
   extendRight: false,
   showMiddleLine: false,
-  middleLineColor: '#9c27b0',
+  middleLineColor: '#8e5cf6',
   middleLineWidth: 1,
   middleLineStyle: 'dashed' as DrawingLineStyle,
-  textColor: '#9c27b0',
+  textColor: '#8e5cf6',
   fontSize: 14,
   bold: false,
   italic: false,

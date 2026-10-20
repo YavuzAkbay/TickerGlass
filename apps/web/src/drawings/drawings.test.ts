@@ -61,7 +61,7 @@ function drw(patch: Partial<Drawing> = {}): Drawing {
       { time: 1000 * seq, price: 10 },
       { time: 2000 * seq, price: 20 },
     ],
-    style: { lineColor: '#2962ff', lineWidth: 2 },
+    style: { lineColor: '#4f6bed', lineWidth: 2 },
     text: '',
     locked: false,
     hidden: false,
@@ -198,16 +198,16 @@ describe('undo/redo', () => {
     const a = drw();
     const b = drw();
     seed(a, b);
-    updateDrawings([a.id, b.id], { style: { lineColor: '#f23645' } }, 'Color');
-    expect(currentDrawings().map((d) => d.style.lineColor)).toEqual(['#f23645', '#f23645']);
+    updateDrawings([a.id, b.id], { style: { lineColor: '#e5484d' } }, 'Color');
+    expect(currentDrawings().map((d) => d.style.lineColor)).toEqual(['#e5484d', '#e5484d']);
     expect(findDrawing(a.id)!.style.lineWidth).toBe(2);
     removeDrawings([a.id]);
     expect(currentDrawings().map((d) => d.id)).toEqual([b.id]);
     expect(past().map((e) => e.label)).toEqual(['Color', 'Remove Trend line']);
     undo();
-    expect(findDrawing(a.id)!.style.lineColor).toBe('#f23645');
+    expect(findDrawing(a.id)!.style.lineColor).toBe('#e5484d');
     undo();
-    expect(findDrawing(a.id)!.style.lineColor).toBe('#2962ff');
+    expect(findDrawing(a.id)!.style.lineColor).toBe('#4f6bed');
     redo();
     redo();
     expect(findDrawing(a.id)).toBeUndefined();
@@ -229,7 +229,7 @@ describe('undo/redo', () => {
     setDrawingStyle([a.id], { lineColor: '#222222' }, 'Change line color', 'color:lineColor');
     expect(past()).toHaveLength(1);
     undo();
-    expect(findDrawing(a.id)!.style.lineColor).toBe('#2962ff');
+    expect(findDrawing(a.id)!.style.lineColor).toBe('#4f6bed');
   });
 
   it('records engine gestures of one task as one step (create + default style amend)', async () => {

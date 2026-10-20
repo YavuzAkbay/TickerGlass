@@ -1265,7 +1265,7 @@ describe('tool options and pane restrictions', () => {
     input.setActiveTool('trend-line');
     click(X(10), Y(10));
     click(X(20), Y(20));
-    expect(of('drawingCreated')[1]!.drawing.style.lineColor).toBe('#2962ff');
+    expect(of('drawingCreated')[1]!.drawing.style.lineColor).toBe('#4f6bed');
   });
 
   it('stay mode keeps the preset style for the next drawing', () => {

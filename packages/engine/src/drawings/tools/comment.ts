@@ -14,8 +14,8 @@ import {
 } from './annotation-common';
 
 export const COMMENT_DEFAULTS = {
-  ...annotationDefaults('#ffffff', '#2962ff'),
-  borderColor: '#2962ff',
+  ...annotationDefaults('#ffffff', '#4f6bed'),
+  borderColor: '#4f6bed',
   wrapWidth: 160,
 };
 

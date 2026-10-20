@@ -36,8 +36,8 @@ export const BB_WIDTH = defineIndicator({
   },
   outputs: [
     { type: 'plot', id: 'bbw', title: 'Bollinger BandWidth', kind: 'line', color: COLOR.blue },
-    { type: 'plot', id: 'exp', title: 'Highest Expansion', kind: 'line', color: '#f23645' },
-    { type: 'plot', id: 'con', title: 'Lowest Contraction', kind: 'line', color: '#089981' },
+    { type: 'plot', id: 'exp', title: 'Highest Expansion', kind: 'line', color: '#e5484d' },
+    { type: 'plot', id: 'con', title: 'Lowest Contraction', kind: 'line', color: '#18a383' },
   ],
   setup({ inputs, ta }) {
     const ma = ta.sma(inputs.length);

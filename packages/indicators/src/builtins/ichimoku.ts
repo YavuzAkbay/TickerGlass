@@ -27,7 +27,7 @@ export const ICHIMOKU = defineIndicator({
       id: 'lagging',
       title: 'Lagging Span',
       kind: 'line',
-      color: '#43a047',
+      color: '#18a383',
       offset: (inputs) => 1 - inputs.displacement,
     },
     {
@@ -35,7 +35,7 @@ export const ICHIMOKU = defineIndicator({
       id: 'spanA',
       title: 'Leading Span A',
       kind: 'line',
-      color: '#a5d6a7',
+      color: '#8bc34a',
       offset: (inputs) => inputs.displacement - 1,
     },
     {
@@ -43,7 +43,7 @@ export const ICHIMOKU = defineIndicator({
       id: 'spanB',
       title: 'Leading Span B',
       kind: 'line',
-      color: '#ef9a9a',
+      color: '#f0a3b9',
       offset: (inputs) => inputs.displacement - 1,
     },
     {
@@ -52,7 +52,7 @@ export const ICHIMOKU = defineIndicator({
       title: 'Plots Background',
       between: ['spanA', 'spanB'],
       // 0: span A above span B (bullish), 1: otherwise.
-      color: ['rgba(67, 160, 71, 0.1)', 'rgba(244, 67, 54, 0.1)'],
+      color: ['rgba(24, 163, 131, 0.1)', 'rgba(229, 72, 77, 0.1)'],
     },
   ],
   setup({ inputs, ta }) {

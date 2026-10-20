@@ -7,7 +7,7 @@ import { LINE_PROPERTIES, lineDefaults, pointsInView } from './shape-common';
 type LineEnd = 'normal' | 'arrow';
 
 export const PATH_DEFAULTS = {
-  ...lineDefaults('#2962ff'),
+  ...lineDefaults('#4f6bed'),
   leftEnd: 'normal' as LineEnd,
   rightEnd: 'arrow' as LineEnd,
 };

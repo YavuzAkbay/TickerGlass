@@ -52,17 +52,17 @@ export interface PatternSpec {
 }
 
 export const PATTERN_DEFAULTS: PatternStyle = {
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 2,
   lineStyle: 'solid',
   showLabels: true,
-  textColor: '#2962ff',
+  textColor: '#4f6bed',
   fontSize: 12,
   showRatios: true,
-  ratioColor: '#787b86',
-  necklineColor: '#ff9800',
+  ratioColor: '#9aa4b2',
+  necklineColor: '#f2a93b',
   fillBackground: true,
-  fillColor: 'rgba(41, 98, 255, 0.15)',
+  fillColor: 'rgba(79, 107, 237, 0.15)',
   degree: 'minor',
 };
 

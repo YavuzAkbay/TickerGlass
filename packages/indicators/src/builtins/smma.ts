@@ -12,7 +12,7 @@ export const SMMA = defineIndicator({
     length: { kind: 'int', label: 'Length', default: 7, min: 1, max: 5000 },
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
-  outputs: [{ type: 'plot', id: 'smma', title: 'SMMA', kind: 'line', color: '#673ab7' }],
+  outputs: [{ type: 'plot', id: 'smma', title: 'SMMA', kind: 'line', color: '#8e5cf6' }],
   setup({ inputs, ta }) {
     const rma = ta.rma(inputs.length);
     return (c) => c.set('smma', rma.update(c.src.source[c.i]!));

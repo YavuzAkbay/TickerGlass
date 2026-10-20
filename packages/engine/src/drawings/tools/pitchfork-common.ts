@@ -2,6 +2,7 @@
 // Schiff, Modified Schiff, Inside) and the fork fan. Pixel space (CSS px,
 // pane-local), like the parallel channel: lines stay parallel on screen on
 // every price scale.
+import { levelGradientAt, PALETTE } from '../../palette';
 import {
   anchorsInView,
   BODY_HIT,
@@ -23,28 +24,32 @@ import { levelsOf } from './fib-common';
 
 export type PitchforkVariant = 'original' | 'schiff' | 'modified-schiff' | 'inside';
 
-/** default pitchfork/fork fan levels: [value, colour, visible]. */
-const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
-  [0.25, '#ffb74d', false],
-  [0.382, '#81c784', false],
-  [0.5, '#089981', true],
-  [0.618, '#089981', false],
-  [0.75, '#00bcd4', false],
-  [1, '#2962ff', true],
-  [1.5, '#9c27b0', false],
-  [1.75, '#e91e63', false],
-  [2, '#f23645', false],
+/** default pitchfork/fork fan levels: [value, visible]. */
+const DEFAULT_LEVELS: readonly (readonly [number, boolean])[] = [
+  [0.25, false],
+  [0.382, true],
+  [0.5, false],
+  [0.618, true],
+  [0.75, false],
+  [1, true],
+  [1.5, false],
+  [1.75, false],
+  [2, false],
 ];
 
 /** Fresh copy of the default pitchfork levels (sorted by value). */
 export function defaultPitchforkLevels(): DrawingLevel[] {
-  return TV_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
+  return DEFAULT_LEVELS.map(([value, visible], i, a) => ({
+    value,
+    color: levelGradientAt(i, a.length),
+    visible,
+  }));
 }
 
 /** Style keys shared by the pitchforks and the fork fan. */
 export const PITCHFORK_COMMON_DEFAULTS = {
   /** Median line; also the handle colour. */
-  lineColor: '#f23645',
+  lineColor: PALETTE.primary,
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   levelsLineWidth: 1,
