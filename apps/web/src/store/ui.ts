@@ -2,7 +2,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type RightPanel =
-  'watchlist' | 'alerts' | 'objectTree' | 'dataWindow' | 'details' | 'news' | 'notes';
+  | 'watchlist'
+  | 'alerts'
+  | 'objectTree'
+  | 'dataWindow'
+  | 'details'
+  | 'news'
+  | 'notes'
+  /** Paper trades of the running replay (only while replaying; never saved). */
+  | 'replayTrading';
 
 export type DialogId =
   | 'symbolSearch'
@@ -72,7 +80,11 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'investopen-ui',
-      partialize: ({ dialog: _d, dialogArg: _a, ...rest }) => rest,
+      partialize: ({ dialog: _d, dialogArg: _a, ...rest }) => ({
+        ...rest,
+        // The trading panel only exists while replaying.
+        rightPanel: rest.rightPanel === 'replayTrading' ? null : rest.rightPanel,
+      }),
     },
   ),
 );

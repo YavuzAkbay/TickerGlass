@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  ArrowUpDown,
   FileText,
   Keyboard,
   ListTree,
@@ -13,6 +14,8 @@ import {
 import { useRef, type ComponentType, type ReactNode } from 'react';
 import { useAlerts } from '../alerts/store';
 import { commands } from '../commands/registry';
+import { ReplayTrading } from '../replay/ReplayTrading';
+import { useReplayStore } from '../replay/store';
 import { useUiStore, type RightPanel } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import { Alerts } from './panels/Alerts';
@@ -39,6 +42,12 @@ const PANELS: PanelDef[] = [
   { id: 'details', title: 'Details', icon: FileText, render: () => <Details /> },
   { id: 'news', title: 'News', icon: Newspaper, render: () => <News /> },
   { id: 'notes', title: 'Notes', icon: NotebookPen, render: () => <Notes /> },
+  {
+    id: 'replayTrading',
+    title: 'Replay trading',
+    icon: ArrowUpDown,
+    render: () => <ReplayTrading />,
+  },
 ];
 
 const DEFAULT_WIDTH = 300;
@@ -76,6 +85,7 @@ export function RightSidebar() {
   const togglePanel = useUiStore((s) => s.togglePanel);
   const def = PANELS.find((p) => p.id === panel);
   const unreadAlerts = useAlerts((s) => s.unread);
+  const replaying = useReplayStore((s) => s.status !== 'off');
 
   return (
     <div className="right-sidebar">
@@ -116,7 +126,7 @@ export function RightSidebar() {
         </section>
       ) : null}
       <nav className="rs-iconbar" aria-label="Side panels">
-        {PANELS.map((p) => (
+        {PANELS.filter((p) => p.id !== 'replayTrading' || replaying).map((p) => (
           <IconButton
             key={p.id}
             icon={p.icon}

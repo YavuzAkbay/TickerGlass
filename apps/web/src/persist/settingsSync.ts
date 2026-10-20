@@ -97,7 +97,11 @@ export const SETTING_DEFS: SettingDef[] = [
   },
   {
     key: 'ui.prefs',
-    read: () => pickKeys(useUiStore.getState(), UI_PREFS),
+    read: () => {
+      const prefs = pickKeys(useUiStore.getState(), UI_PREFS);
+      // The replay trading panel only exists while replaying: never synced.
+      return prefs.rightPanel === 'replayTrading' ? { ...prefs, rightPanel: null } : prefs;
+    },
     write: (v) => {
       const { rightPanel: _p, ...cur } = pickKeys(useUiStore.getState(), UI_PREFS);
       const patch: Partial<ReturnType<typeof useUiStore.getState>> = pickTyped(cur, v);

@@ -257,7 +257,7 @@ Phase 11 notes:
 - [x] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
 - [x] Indicators and alerts react incrementally; drawings stay usable
 - [x] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
-- [ ] Optional: replay paper trading (buy/sell, P&L panel)
+- [x] Optional: replay paper trading (buy/sell, P&L panel)
 
 Phase 13 notes:
 
@@ -266,8 +266,9 @@ Phase 13 notes:
 - Tick choice: the finest native interval below the chart interval that divides it, gives at most 120 ticks per bar and whose history reaches the start (a day of margin); otherwise whole bars and a warning badge. The Update picker overrides it (Auto, Bars or any valid interval). Without intrabar data the first step reveals a whole bar; with it, steps move the forming bar.
 - Request budget: forward buffers page in `limit: 2000` requests (`to`-bounded, halved when a page comes back full) and refill when fewer than 500 bars remain; buffers are shared by every subscription of a symbol and interval, so replay adds no `/ws` traffic (live subscriptions are muted and dropped from the inner feed).
 - Alerts: server alerts keep running in real time; while replaying, their fire markers at or after the clock are hidden, and `replay/alerts.ts` evaluates price alerts locally (marker group `replay-alerts` and a toast, no delivery, no log).
+- Paper trading: `replay/paper.ts` (pure: average cost, reduce, flip, realized/unrealized), `trading.ts` (session, markers `replay-trades`, line `replay-position`), `ReplayTrading.tsx` (right panel `replayTrading`). Market orders at the last revealed close, no costs, nothing persisted; reset on start/seek, summary toast on exit.
 - Engine: Alt+arrow keys and Shift+Alt+R pass through to the app (the engine used to swallow them).
-- e2e: `e2e/replay.spec.ts` (`?feed=synthetic-multi`: pick, step, intrabar, play/pause, interval change, compare clipping, indicator, jump to realtime, exit). Synthetic intervals are independent random walks, so specs assert structure and times, not prices. Paper trading is not built yet.
+- e2e: `e2e/replay.spec.ts` (`?feed=synthetic-multi`: pick, step, intrabar, play/pause, interval change, compare clipping, indicator, jump to realtime, exit). Synthetic intervals are independent random walks, so specs assert structure and times, not prices. Paper trading is covered by a buy, step, sell case.
 
 ### Phase 14: Multi-chart layouts
 
