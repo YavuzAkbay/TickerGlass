@@ -1,4 +1,4 @@
-import { IndicatorRuntime, type Change, type IndicatorRegistry } from '@investopen/indicators';
+import { IndicatorRuntime, type Change, type IndicatorRegistry } from '@investopen/indicators/core';
 import type { FromWorker, ResultChange, ToWorker } from './protocol';
 
 export type Post = (msg: FromWorker, transfer: Transferable[]) => void;
