@@ -1,4 +1,5 @@
 import {
+  isUserScriptType,
   listIndicators,
   isOutputRef,
   type AnyIndicatorDefinition,
@@ -133,7 +134,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   const listRef = useRef<HTMLDivElement>(null);
 
   const all = listIndicators()
-    .filter((d) => !sourceOf || sourceInputKey(d))
+    .filter((d) => !sourceOf || (sourceInputKey(d) && !isUserScriptType(d.id)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const nav = groups(all);
   const current = nav.flatMap((g) => g.items).find((c) => c.id === cat);

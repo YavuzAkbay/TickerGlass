@@ -3,6 +3,7 @@ import {
   PRICE_SOURCES,
   getIndicator,
   isOutputRef,
+  isUserScriptType,
   type OutputSourceRef,
   type PriceSource,
   type SourceValue,
@@ -49,6 +50,8 @@ export function indicatorMenuItems(id: string): MenuItem[] {
   const def = inst ? getIndicator(inst.type) : undefined;
   if (!inst || !def) return [];
   const plot = firstPlotId(inst.type);
+  const isUser = isUserScriptType(inst.type);
+  const userTip = isUser ? { title: 'Not available for scripts' } : {};
   const place = (p: Placement, label: string): MenuItem => ({
     label,
     checked: inst.placement === p,
@@ -64,15 +67,17 @@ export function indicatorMenuItems(id: string): MenuItem[] {
     {
       label: 'Add alert…',
       icon: Bell,
-      disabled: !plot,
+      disabled: !plot || isUser,
+      ...userTip,
       onSelect: () => openAlertDialog({ indicatorId: id }),
     },
     { type: 'separator' },
     {
       label: `Add indicator on ${def.shortName}…`,
       icon: SquareFunction,
-      disabled: !plot,
-      onSelect: () => plot && openAddIndicatorOn({ instanceId: id, outputId: plot }),
+      disabled: !plot || isUser,
+      ...userTip,
+      onSelect: () => plot && !isUser && openAddIndicatorOn({ instanceId: id, outputId: plot }),
     },
     {
       label: 'Duplicate',
@@ -145,9 +150,11 @@ export function sourceOptions(
     label: SOURCE_LABELS[s],
     value: s,
   }));
+  // Scripts read price sources only, and built-ins never read script outputs.
+  if (isUserScriptType(inst.type)) return out;
   const blocked = dependentsOf(all, inst.id);
   for (const other of all) {
-    if (other.id === inst.id || blocked.has(other.id)) continue;
+    if (other.id === inst.id || blocked.has(other.id) || isUserScriptType(other.type)) continue;
     const def = getIndicator(other.type);
     if (!def) continue;
     const head = [

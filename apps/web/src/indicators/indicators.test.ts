@@ -1,4 +1,9 @@
-import { getIndicator } from '@investopen/indicators';
+import {
+  defaultRegistry,
+  defineIndicator,
+  getIndicator,
+  type AnyIndicatorDefinition,
+} from '@investopen/indicators';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useHistory } from '../commands/history';
 import {
@@ -14,6 +19,7 @@ import {
 import {
   createInstance,
   defaultVisibility,
+  newInstanceId,
   outputRefLabel,
   sourceRefOf,
   resolveTimeframe,
@@ -22,7 +28,8 @@ import {
   visibleOnInterval,
 } from './model';
 import { useCompareStore } from '../compare/store';
-import { overlayOption, overlaySymbols, sourceOptions } from './menu';
+import { indicatorMenuItems, overlayOption, overlaySymbols, sourceOptions } from './menu';
+import { firstOutputId } from '../alerts/dialog/sources';
 import {
   effectiveInstances,
   useIndicatorPrefs,
@@ -216,5 +223,79 @@ describe('external symbol sources', () => {
       outputId: 'close',
     });
     useCompareStore.setState({ items: [] });
+  });
+});
+
+describe('user script isolation', () => {
+  const UT = 'user:iso-test';
+  const userDef = (): AnyIndicatorDefinition =>
+    defineIndicator({
+      id: UT,
+      name: 'Iso',
+      shortName: 'ISO',
+      category: 'other',
+      overlay: true,
+      inputs: {
+        length: { kind: 'int', label: 'Length', default: 10, min: 1, max: 50 },
+        source: { kind: 'source', label: 'Source', default: 'close' },
+      },
+      outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#fff' }],
+      setup: () => () => {},
+    });
+
+  beforeEach(() => {
+    defaultRegistry.unregister(UT);
+    defaultRegistry.register(userDef());
+  });
+
+  it('newInstanceId sanitises the type and leaves builtin ids alone', () => {
+    expect(newInstanceId(UT)).toMatch(/^user_iso-test_[0-9a-z]+$/);
+    expect(newInstanceId('sma')).toMatch(/^sma_[0-9a-z]+$/);
+    expect(newInstanceId('bollinger_bands')).toMatch(/^bollinger_bands_/);
+    // Every registered builtin id is already within [A-Za-z0-9_-].
+    for (const d of defaultRegistry.list())
+      if (!d.id.startsWith('user:')) expect(d.id).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('validateInstances coerces script inputs and rejects cross references', () => {
+    const sma = createInstance(getIndicator('sma')!, undefined);
+    const u = createInstance(getIndicator(UT)!, undefined);
+    expect(validateInstances([sma, u])).toBeNull();
+    expect(validateInstances([{ ...u, inputs: { length: 'x', gone: 1 } }])).toBeNull();
+    const userOnBuiltin = {
+      ...u,
+      inputs: { ...u.inputs, source: { instanceId: sma.id, outputId: 'ma' } },
+    };
+    expect(validateInstances([sma, userOnBuiltin])).toMatch(/cannot use each other/);
+    const builtinOnUser = {
+      ...sma,
+      inputs: { ...sma.inputs, source: { instanceId: u.id, outputId: 'v' } },
+    };
+    expect(validateInstances([u, builtinOnUser])).toMatch(/cannot use each other/);
+  });
+
+  it('sourceOptions: scripts get price sources only, builtins never see scripts', () => {
+    const sma = createInstance(getIndicator('sma')!, undefined);
+    const u = createInstance(getIndicator(UT)!, undefined);
+    const forUser = sourceOptions(u, [sma, u], ['GOOG']);
+    expect(forUser.every((o) => typeof o.value === 'string')).toBe(true);
+    const forBuiltin = sourceOptions(sma, [sma, u], []);
+    expect(forBuiltin.some((o) => typeof o.value !== 'string')).toBe(false);
+  });
+
+  it('legend menu disables alerts and indicator-on for scripts', () => {
+    const u = createInstance(getIndicator(UT)!, undefined);
+    useIndicatorStore.setState({ instances: [u] });
+    const items = indicatorMenuItems(u.id);
+    for (const label of ['Add alert…', 'Add indicator on ISO…']) {
+      const it = items.find((i) => 'label' in i && i.label === label);
+      expect(it).toMatchObject({ disabled: true });
+      expect((it as { title?: string }).title).toBeTruthy();
+    }
+  });
+
+  it('alert sources skip scripts', () => {
+    expect(firstOutputId(UT)).toBeNull();
+    expect(firstOutputId('sma')).toBe('ma');
   });
 });
