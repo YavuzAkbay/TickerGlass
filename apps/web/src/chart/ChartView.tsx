@@ -9,7 +9,8 @@ import { DrawingToolbar } from '../drawings/DrawingToolbar';
 import { DrawingTextEditor } from '../drawings/TextEditor';
 import { attachIndicators } from '../indicators/attach';
 import { IndicatorLegends } from '../indicators/Legend';
-import type { FromSandbox, ProbeResult, ToSandbox } from '../indicators/sandbox/protocol';
+import { createSandboxWorker } from '../indicators/sandbox/port';
+import type { ProbeResult } from '../indicators/sandbox/protocol';
 import { openChartContextMenu } from './contextMenus';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
@@ -23,10 +24,7 @@ function sandboxProbe(
   code: string,
   timeoutMs = 3000,
 ): Promise<ProbeResult & { terminated?: boolean }> {
-  const w = new Worker(new URL('../indicators/sandbox/sandbox-worker.ts', import.meta.url), {
-    type: 'module',
-    name: 'sandbox',
-  });
+  const w = createSandboxWorker();
   return new Promise((resolve) => {
     let result: ProbeResult | null = null;
     const done = (r: ProbeResult & { terminated?: boolean }) => {
@@ -38,17 +36,17 @@ function sandboxProbe(
       () => done({ ok: false, error: `No response for ${timeoutMs} ms`, terminated: true }),
       timeoutMs,
     );
-    w.onmessage = (e: MessageEvent<FromSandbox>) => {
-      const m = e.data;
-      if (m.type === 'probeResult') {
-        const { type: _type, seq: _seq, ...rest } = m;
-        result = rest;
-      } else if (m.type === 'error') done({ ok: false, error: m.message });
-      else if (m.type === 'ack') done(result ?? { ok: false, error: 'Ack without result' });
-    };
-    w.onerror = (e) => done({ ok: false, error: `Sandbox worker failed: ${e.message}` });
-    w.onmessageerror = () => done({ ok: false, error: 'Sandbox worker: unreadable message' });
-    w.postMessage({ seq: 1, msg: { type: 'probe', code } } satisfies ToSandbox);
+    w.listen(
+      (m) => {
+        if (m.type === 'probeResult') {
+          const { type: _type, seq: _seq, ...rest } = m;
+          result = rest;
+        } else if (m.type === 'error') done({ ok: false, error: m.message });
+        else if (m.type === 'ack') done(result ?? { ok: false, error: 'Ack without result' });
+      },
+      (error) => done({ ok: false, error }),
+    );
+    w.post({ seq: 1, msg: { type: 'probe', code } });
   });
 }
 

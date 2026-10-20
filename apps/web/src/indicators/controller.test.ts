@@ -937,9 +937,10 @@ describe('user script instances', () => {
     useScriptsStore.setState({ scripts: [], loaded: true });
     ctl.sync([a]);
     expect(status(a.id)).toEqual({ state: 'error', message: 'Script deleted' });
+    // Scripts not loaded yet: no error (the load syncs again).
     useScriptsStore.setState({ scripts: [], loaded: false });
     ctl.sync([a]);
-    expect(status(a.id)).toEqual({ state: 'error', message: `Unknown indicator "${UT}"` });
+    expect(status(a.id)).toBeUndefined();
     const b = { ...a, id: 'u_gone2', type: 'nope' };
     ctl.sync([b]);
     expect(status(b.id)).toEqual({ state: 'error', message: 'Unknown indicator "nope"' });
