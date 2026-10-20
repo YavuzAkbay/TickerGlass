@@ -86,4 +86,4 @@ export function makeArrowMark(type: string, name: string, dir: 1 | -1, color: st
   });
 }
 
-export const upMarker = makeArrowMark('up-marker', 'Up marker', -1, '#089981');
+export const upMarker = makeArrowMark('up-marker', 'Up marker', -1, '#18a383');

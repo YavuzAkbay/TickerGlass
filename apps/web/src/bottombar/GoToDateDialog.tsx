@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { getChart } from '../store/chart';
 import { Modal } from '../ui/Modal';
 import { toast } from '../ui/Toast';
-import './BottomBar.css';
+import './RangeStrip.css';
 
 type Tab = 'date' | 'range';
 

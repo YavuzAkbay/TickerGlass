@@ -67,7 +67,7 @@ test('chart context menu opens and scale change is undoable', async ({ page }) =
   await expect.poll(mode).toBe('linear');
 });
 
-test('right sidebar panel opens and resizes', async ({ page }) => {
+test('dock panel opens in the bottom dock', async ({ page }) => {
   await page.getByRole('button', { name: 'Notes' }).first().click();
-  await expect(page.locator('.right-sidebar textarea')).toBeVisible();
+  await expect(page.locator('.dock textarea')).toBeVisible();
 });

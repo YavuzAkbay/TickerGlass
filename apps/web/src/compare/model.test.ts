@@ -17,7 +17,7 @@ const cmp = (id: string, patch: Partial<CompareState> = {}): CompareState => ({
   symbol: 'MSFT',
   placement: 'same',
   visible: true,
-  color: '#f7a21b',
+  color: '#f2a93b',
   lineWidth: 2,
   ...patch,
 });

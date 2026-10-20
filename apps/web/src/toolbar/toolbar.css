@@ -1,5 +1,5 @@
-/* ---- left drawing toolbar ---- */
-.left-toolbar {
+/* ---- right-edge drawing tool rail ---- */
+.tool-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -43,14 +43,14 @@
 /* corner arrow that opens the group's flyout */
 .lt-arrow {
   position: absolute;
-  right: 2px;
+  left: 2px;
   bottom: 0;
   width: 10px;
   height: 14px;
   display: flex;
   align-items: flex-end;
-  justify-content: flex-end;
-  padding: 0 1px 3px 0;
+  justify-content: flex-start;
+  padding: 0 0 3px 1px;
   border: 0;
   border-radius: 2px;
   background: transparent;
@@ -63,6 +63,9 @@
 .lt-group.open .lt-arrow,
 .lt-arrow:focus-visible {
   opacity: 1;
+}
+.lt-arrow svg {
+  transform: scaleX(-1);
 }
 .lt-arrow:hover {
   color: var(--text-strong);

@@ -8,7 +8,7 @@ import {
   shapeDefaults,
 } from './shape-common';
 
-export const ROTATED_RECTANGLE_DEFAULTS = shapeDefaults('#9c27b0', 'rgba(156, 39, 176, 0.2)');
+export const ROTATED_RECTANGLE_DEFAULTS = shapeDefaults('#8e5cf6', 'rgba(142, 92, 246, 0.2)');
 
 const corners: PixelPoint[] = Array.from({ length: 4 }, () => ({ x: 0, y: 0 }));
 

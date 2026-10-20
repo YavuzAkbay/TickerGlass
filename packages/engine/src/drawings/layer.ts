@@ -400,7 +400,11 @@ export class DrawingLayer {
 
   /** Draw the pane's drawings (and the draft) on `ctx` (CSS px transform). */
   render(pane: DrawingPane, ctx: CanvasRenderingContext2D, dpr: number): void {
-    if (pane.height <= 0 || (!this.items.size && !this.draft && !this.measure && this.cutX === null)) return;
+    if (
+      pane.height <= 0 ||
+      (!this.items.size && !this.draft && !this.measure && this.cutX === null)
+    )
+      return;
     this.refreshView();
     const rc = this.rc;
     rc.ctx = ctx;
@@ -414,9 +418,9 @@ export class DrawingLayer {
     if (cut !== null) {
       const w = this.host.paneWidth;
       ctx.save();
-      ctx.fillStyle = 'rgba(120, 123, 134, 0.25)';
+      ctx.fillStyle = 'rgba(154, 164, 178, 0.25)';
       ctx.fillRect(cut, 0, Math.max(0, w - cut), pane.height);
-      ctx.strokeStyle = 'rgba(120, 123, 134, 0.9)';
+      ctx.strokeStyle = 'rgba(154, 164, 178, 0.9)';
       ctx.setLineDash([4, 3]);
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -428,8 +432,8 @@ export class DrawingLayer {
     const m = this.marquee;
     if (m?.paneId === pane.id) {
       ctx.save();
-      ctx.fillStyle = 'rgba(41, 98, 255, 0.1)';
-      ctx.strokeStyle = 'rgba(41, 98, 255, 0.8)';
+      ctx.fillStyle = 'rgba(79, 107, 237, 0.1)';
+      ctx.strokeStyle = 'rgba(79, 107, 237, 0.8)';
       ctx.lineWidth = 1;
       ctx.fillRect(m.left, m.top, m.right - m.left, m.bottom - m.top);
       ctx.strokeRect(m.left + 0.5, m.top + 0.5, m.right - m.left, m.bottom - m.top);

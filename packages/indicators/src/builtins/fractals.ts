@@ -57,7 +57,7 @@ export const FRACTALS = defineIndicator({
       shape: 'triangleUp',
       location: 'aboveBar',
       size: 'small',
-      color: '#009688',
+      color: '#0fb5c9',
       offset: (inputs) => -inputs.periods,
     },
     {
@@ -67,7 +67,7 @@ export const FRACTALS = defineIndicator({
       shape: 'triangleDown',
       location: 'belowBar',
       size: 'small',
-      color: '#f44336',
+      color: '#e5484d',
       offset: (inputs) => -inputs.periods,
     },
   ],

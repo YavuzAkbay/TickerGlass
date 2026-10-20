@@ -59,10 +59,10 @@ describe('pitchfork geometry', () => {
     expect(pitchforkGeometry('original', p1, { x: -10, y: 5 }, { x: 10, y: -5 })).toBeNull();
   });
 
-  it('default levels: 0.5 and 1 visible', () => {
+  it('default levels: 0.382, 0.618 and 1 visible', () => {
     const lv = defaultPitchforkLevels();
     expect(lv.map((l) => l.value)).toEqual([0.25, 0.382, 0.5, 0.618, 0.75, 1, 1.5, 1.75, 2]);
-    expect(lv.filter((l) => l.visible).map((l) => l.value)).toEqual([0.5, 1]);
+    expect(lv.filter((l) => l.visible).map((l) => l.value)).toEqual([0.382, 0.618, 1]);
     expect(defaultPitchforkLevels()).not.toBe(lv);
   });
 });
@@ -75,8 +75,8 @@ describe('pitchfork tools', () => {
     const { at } = setup('pitchfork', pts);
     expect(at(X(30), Y(50))).toEqual({ kind: 'body' }); // handle
     expect(at(X(50), Y(50))).toEqual({ kind: 'body' }); // median tine
-    expect(at(X(50), Y(65))).toEqual({ kind: 'body' }); // 0.5
-    expect(at(X(50), Y(35))).toEqual({ kind: 'body' });
+    expect(at(X(50), Y(68.54))).toEqual({ kind: 'body' }); // 0.618
+    expect(at(X(50), Y(31.46))).toEqual({ kind: 'body' });
     expect(at(X(50), Y(80))).toEqual({ kind: 'body' }); // 1
     expect(at(X(40), Y(72))).toEqual({ kind: 'body' }); // base p2-p3
     expect(at(X(50), Y(72))).toEqual({ kind: 'body', weak: true });
@@ -122,9 +122,9 @@ describe('pitchfork tools', () => {
     const full = setup('pitchfork', pts);
     const r3 = recordingContext();
     def.render(r3.rc, full.g, full.d.style, SELECTED);
-    // 2 levels x 2 sides fills; base + 4 tines + handle + median strokes.
-    expect(r3.calls.filter((c) => c === 'fill')).toHaveLength(4);
-    expect(r3.calls.filter((c) => c === 'stroke')).toHaveLength(7);
+    // 3 levels x 2 sides fills; base + 6 tines + handle + median strokes.
+    expect(r3.calls.filter((c) => c === 'fill')).toHaveLength(6);
+    expect(r3.calls.filter((c) => c === 'stroke')).toHaveLength(9);
   });
 
   it('culling: visible in view, also when extended in from the left', () => {
@@ -148,7 +148,7 @@ describe('fork-fan', () => {
     expect(def.group).toBe('fib');
     expect(at(X(70), Y(50))).toEqual({ kind: 'body' }); // median ray
     expect(at(X(30), Y(65))).toEqual({ kind: 'body' }); // level 1 through P2: +30 per 20 bars
-    expect(at(X(60), Y(80))).toEqual({ kind: 'body' }); // level 0.5: +15 per 20 bars
+    expect(at(X(60), Y(87.08))).toEqual({ kind: 'body' }); // level 0.618: +18.54 per 20 bars
     expect(at(X(40), Y(30))).toEqual({ kind: 'body' }); // p2-p3
     expect(at(X(60), Y(60))).toEqual({ kind: 'body', weak: true });
     expect(at(X(10), Y(50))).toBeNull(); // behind P1
@@ -158,8 +158,8 @@ describe('fork-fan', () => {
     const { def, g, d } = setup('fork-fan', pts);
     const { rc, calls } = recordingContext();
     def.render(rc, g, d.style, SELECTED);
-    expect(calls.filter((c) => c === 'fill')).toHaveLength(4);
-    expect(calls.filter((c) => c === 'stroke')).toHaveLength(6); // p2-p3 + 4 rays + median
+    expect(calls.filter((c) => c === 'fill')).toHaveLength(6);
+    expect(calls.filter((c) => c === 'stroke')).toHaveLength(8); // p2-p3 + 6 rays + median
   });
 
   it('culling: rays pointing away from the pane are not visible', () => {

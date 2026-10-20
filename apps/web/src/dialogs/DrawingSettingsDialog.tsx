@@ -367,7 +367,7 @@ function PropertyControl({
     case 'color':
       return (
         <ColorSwatch
-          value={str(v, '#2962ff')}
+          value={str(v, '#4f6bed')}
           label={p.label}
           onChange={(c) => set({ [p.key]: c })}
         />
@@ -586,7 +586,7 @@ function LevelsEditor({
         onClick={() =>
           set([
             ...levels,
-            { value: (levels.at(-1)?.value ?? 0) + 0.5, color: '#787b86', visible: true },
+            { value: (levels.at(-1)?.value ?? 0) + 0.5, color: '#9aa4b2', visible: true },
           ])
         }
       >

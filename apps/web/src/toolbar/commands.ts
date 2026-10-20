@@ -80,6 +80,13 @@ export function registerToolbarCommands(): () => void {
     },
     ...shortcutCommands,
     {
+      id: 'view.toggleToolRail',
+      title: 'Show or hide the drawing tool rail',
+      category: 'Drawings',
+      shortcut: 'Shift+t',
+      run: () => useUiStore.getState().toggleToolRail(),
+    },
+    {
       id: 'drawings.toggleMagnet',
       title: 'Toggle magnet mode',
       category: 'Drawings',

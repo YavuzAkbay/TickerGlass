@@ -9,12 +9,12 @@ import type {
 } from '../types';
 
 export const BRUSH_DEFAULTS = {
-  lineColor: '#2962ff',
+  lineColor: '#4f6bed',
   lineWidth: 2,
   /** Moving-average radius in samples (0 = raw path). */
   smoothing: 5,
   fillBackground: false,
-  backgroundColor: 'rgba(41, 98, 255, 0.2)',
+  backgroundColor: 'rgba(79, 107, 237, 0.2)',
 };
 
 type BrushStyle = typeof BRUSH_DEFAULTS;

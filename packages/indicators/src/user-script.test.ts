@@ -39,7 +39,7 @@ function userDef(over: Record<string, unknown> = {}): Record<string, unknown> {
         id: 'ma',
         title: 'MA',
         kind: 'line',
-        color: ['#2962ff', 'rgba(1, 2, 3, 0.5)'],
+        color: ['#4f6bed', 'rgba(1, 2, 3, 0.5)'],
       },
       { type: 'hline', id: 'zero', title: 'Zero', value: 0, color: 'gray' },
       {
@@ -70,7 +70,7 @@ defineIndicator({
     length: { kind: 'int', label: 'Length', default: 5, min: 1 },
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
-  outputs: [{ type: 'plot', id: 'ma', title: 'MA', kind: 'line', color: '#2962ff' }],
+  outputs: [{ type: 'plot', id: 'ma', title: 'MA', kind: 'line', color: '#4f6bed' }],
   setup({ inputs, ta }) {
     const sma = ta.sma(inputs.length);
     return (c) => c.set('ma', sma.update(c.src.source[c.i]));
@@ -222,8 +222,8 @@ describe('colours', () => {
   it.each([
     '#fff',
     '#ffff',
-    '#2962ff',
-    '#2962ff80',
+    '#4f6bed',
+    '#4f6bed80',
     'rgb(1, 2, 3)',
     'rgba(1,2,3,0.5)',
     'hsl(120 50% 50%)',
@@ -392,7 +392,7 @@ describe('compileUserScript', () => {
   });
 
   it('validates the definition', () => {
-    const bad = SMA_SCRIPT.replace("color: '#2962ff'", "color: 'url(x)'");
+    const bad = SMA_SCRIPT.replace("color: '#4f6bed'", "color: 'url(x)'");
     expect(() => compileUserScript(bad, { scriptId: 's', lineOffset: LINE_OFFSET })).toThrow(
       /colour/,
     );

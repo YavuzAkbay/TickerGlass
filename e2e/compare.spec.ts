@@ -92,7 +92,7 @@ test('compare: add on same scale and new pane, remove + undo, restore after relo
       const c = l?.state.compares as { items: unknown[] } | undefined;
       return [l?.schemaVersion, c?.items.length];
     })
-    .toEqual([3, 2]);
+    .toEqual([4, 2]);
   await expect(page.getByRole('button', { name: /^Layout: Untitled$/ })).toBeVisible();
   await page.evaluate(() => localStorage.clear());
   await page.reload();

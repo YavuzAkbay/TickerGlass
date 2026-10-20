@@ -17,7 +17,7 @@ const SMA = `defineIndicator({
     length: { kind: 'int', label: 'Length', default: 5, min: 1 },
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
-  outputs: [{ type: 'plot', id: 'ma', title: 'MA', kind: 'line', color: '#2962ff' }],
+  outputs: [{ type: 'plot', id: 'ma', title: 'MA', kind: 'line', color: '#4f6bed' }],
   setup({ inputs, ta }) {
     const avg = ta.sma(inputs.length);
     return (c) => {

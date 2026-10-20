@@ -17,25 +17,25 @@ const LABEL_GAP = 4;
 
 export const REGRESSION_TREND_DEFAULTS = {
   /** Base (regression) line; also the handle colour. */
-  lineColor: '#f23645',
+  lineColor: '#e5484d',
   lineWidth: 1,
   lineStyle: 'dashed' as DrawingLineStyle,
   showUpper: true,
   upperDeviation: 2,
-  upperLineColor: '#2962ff',
+  upperLineColor: '#4f6bed',
   upperLineWidth: 1,
   upperLineStyle: 'solid' as DrawingLineStyle,
   showLower: true,
   lowerDeviation: -2,
-  lowerLineColor: '#2962ff',
+  lowerLineColor: '#4f6bed',
   lowerLineWidth: 1,
   lowerLineStyle: 'solid' as DrawingLineStyle,
   extendLeft: false,
   extendRight: false,
   showPearsonR: true,
   fillBackground: true,
-  upperFillColor: 'rgba(41, 98, 255, 0.2)',
-  lowerFillColor: 'rgba(242, 54, 69, 0.2)',
+  upperFillColor: 'rgba(79, 107, 237, 0.2)',
+  lowerFillColor: 'rgba(229, 72, 77, 0.2)',
   fontSize: 12,
 };
 

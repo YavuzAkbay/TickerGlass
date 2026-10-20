@@ -76,7 +76,7 @@ export const OBV = defineIndicator({
       id: 'bbBackground',
       title: 'Bollinger Bands Background Fill',
       between: ['bbUpper', 'bbLower'],
-      color: 'rgba(76, 175, 80, 0.1)',
+      color: 'rgba(139, 195, 74, 0.1)',
     },
   ],
   setup({ inputs, ta }) {

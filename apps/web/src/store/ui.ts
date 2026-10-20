@@ -33,8 +33,14 @@ export type DialogId =
 export type DrawingToolId = string;
 
 interface UiState {
+  /** Active dock tab; null while the bottom dock is collapsed. */
   rightPanel: RightPanel | null;
-  rightWidth: number;
+  /** Last active dock tab, shown again when the dock is expanded. */
+  dockTab: RightPanel;
+  /** Height of the expanded bottom dock in px. */
+  dockHeight: number;
+  /** The drawing tool rail on the right edge is collapsed to zero width. */
+  toolRailHidden: boolean;
   dialog: DialogId | null;
   /** Payload for the open dialog (e.g. initial search text). */
   dialogArg: unknown;
@@ -51,14 +57,30 @@ interface UiState {
   /** Legacy (before Phase 7): the general note, now in persist/notes. Read once to seed it. */
   notes: string;
   togglePanel: (panel: RightPanel) => void;
-  setRightWidth: (w: number) => void;
+  setDockHeight: (h: number) => void;
+  toggleToolRail: () => void;
   openDialog: (id: DialogId, arg?: unknown) => void;
   closeDialog: () => void;
   set: (patch: Partial<UiState>) => void;
 }
 
-/** Persisted `investopen-ui` version: 1 = renamed drawing tool ids. */
-export const UI_STORE_VERSION = 1;
+/** Persisted `investopen-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail. */
+export const UI_STORE_VERSION = 2;
+
+export const DEFAULT_DOCK_HEIGHT = 260;
+export const MIN_DOCK_HEIGHT = 120;
+export const MAX_DOCK_HEIGHT = 640;
+
+/** Add the dock and tool rail fields to preferences saved before version 2. */
+export function migrateDockDefaults<T extends object>(state: T): T {
+  const { rightWidth: _legacy, ...s } = state as { rightWidth?: unknown; [k: string]: unknown };
+  return {
+    ...s,
+    dockHeight: typeof s.dockHeight === 'number' ? s.dockHeight : DEFAULT_DOCK_HEIGHT,
+    dockTab: typeof s.dockTab === 'string' ? s.dockTab : (s.rightPanel ?? 'watchlist'),
+    toolRailHidden: typeof s.toolRailHidden === 'boolean' ? s.toolRailHidden : false,
+  } as unknown as T;
+}
 
 /** Map renamed tool ids in stored toolbar preferences to the current ones. */
 export function migrateToolIds<T extends object>(state: T): T {
@@ -89,7 +111,9 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       rightPanel: null,
-      rightWidth: 300,
+      dockTab: 'watchlist',
+      dockHeight: DEFAULT_DOCK_HEIGHT,
+      toolRailHidden: false,
       dialog: null,
       dialogArg: undefined,
       activeTool: 'cross',
@@ -101,8 +125,13 @@ export const useUiStore = create<UiState>()(
       lockAll: false,
       hideAll: false,
       notes: '',
-      togglePanel: (panel) => set((s) => ({ rightPanel: s.rightPanel === panel ? null : panel })),
-      setRightWidth: (w) => set({ rightWidth: Math.max(220, Math.min(600, w)) }),
+      togglePanel: (panel) =>
+        set((s) =>
+          s.rightPanel === panel ? { rightPanel: null } : { rightPanel: panel, dockTab: panel },
+        ),
+      setDockHeight: (h) =>
+        set({ dockHeight: Math.max(MIN_DOCK_HEIGHT, Math.min(MAX_DOCK_HEIGHT, Math.round(h))) }),
+      toggleToolRail: () => set((s) => ({ toolRailHidden: !s.toolRailHidden })),
       openDialog: (id, arg) => set({ dialog: id, dialogArg: arg }),
       closeDialog: () => set({ dialog: null, dialogArg: undefined }),
       set: (patch) => set(patch),
@@ -111,7 +140,8 @@ export const useUiStore = create<UiState>()(
       name: 'investopen-ui',
       version: UI_STORE_VERSION,
       // The persisted shape is the `partialize` result; unknown fields pass through untouched.
-      migrate: (persisted) => migrateToolIds((persisted ?? {}) as object) as never,
+      migrate: (persisted) =>
+        migrateDockDefaults(migrateToolIds((persisted ?? {}) as object)) as never,
       partialize: ({ dialog: _d, dialogArg: _a, ...rest }) => ({
         ...rest,
         // The trading panel only exists while replaying.

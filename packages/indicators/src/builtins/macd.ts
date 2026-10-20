@@ -27,7 +27,7 @@ export const MACD = defineIndicator({
       title: 'Histogram',
       kind: 'columns',
       // grow above, fall above, grow below, fall below
-      color: ['#26a69a', '#b2dfdb', '#ffcdd2', '#ff5252'],
+      color: ['#18a383', '#8cd1c1', '#f2b0b2', '#e5484d'],
     },
     { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: COLOR.blue },
     { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: COLOR.orange },

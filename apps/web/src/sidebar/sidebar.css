@@ -1,110 +1,12 @@
-/* ---- right sidebar: panel + far-right icon bar ---- */
-.right-sidebar {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-  background: var(--border);
-  gap: 1px;
-}
-
-.rs-iconbar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  width: 45px;
-  flex: 0 0 45px;
-  padding: 6px 0;
-  background: var(--panel);
-}
-.io-icon-btn.rs-icon-btn {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0;
-  color: var(--text);
-}
-.io-icon-btn.rs-icon-btn.active {
-  color: var(--accent-text);
-  background: var(--active-bg);
-}
-.rs-iconbar-spacer {
-  flex: 1;
-}
-
-.rs-panel {
-  position: relative;
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  background: var(--panel);
-}
-.rs-resize {
-  position: absolute;
-  z-index: 5;
-  top: 0;
-  bottom: 0;
-  left: -3px;
-  width: 6px;
-  cursor: col-resize;
-  touch-action: none;
-}
-.rs-resize:hover,
-.rs-resize.dragging {
-  background: linear-gradient(
-    to right,
-    transparent 2px,
-    var(--accent) 2px,
-    var(--accent) 4px,
-    transparent 4px
-  );
-}
-.rs-header {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 44px;
-  flex: 0 0 44px;
-  padding: 0 6px 0 14px;
-  border-bottom: 1px solid var(--border);
-}
-.rs-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-.io-icon-btn.rs-head-btn {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  padding: 0;
-  color: var(--text-muted);
-}
-.io-icon-btn.rs-head-btn:hover {
-  color: var(--text-strong);
-}
-.rs-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
+/* Panel contents shared by the dock tabs. Dock frame styles live in dock/dock.css. */
 /* ---- shared bits ---- */
 .rs-num {
   font-variant-numeric: tabular-nums;
 }
-.right-sidebar .up {
+.dock .up {
   color: var(--up);
 }
-.right-sidebar .down {
+.dock .down {
   color: var(--down);
 }
 .rs-muted {

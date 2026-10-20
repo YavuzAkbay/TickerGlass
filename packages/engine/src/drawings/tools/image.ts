@@ -6,7 +6,7 @@ export const IMAGE_DEFAULTS = {
   src: '',
   keepAspect: true,
   showBorder: false,
-  borderColor: '#787b86',
+  borderColor: '#9aa4b2',
 };
 
 /** Whether `src` is an embedded image data URL (the only source the tool loads). */
@@ -50,7 +50,7 @@ export const image = defineDrawingTool({
       ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
     } else {
       // Placeholder while empty / decoding / undecodable.
-      ctx.fillStyle = 'rgba(120, 123, 134, 0.15)';
+      ctx.fillStyle = 'rgba(154, 164, 178, 0.15)';
       ctx.fillRect(x, y, w, h);
       setLineStyle(ctx, s.borderColor, 1, 'dashed');
       ctx.strokeRect(x, y, w, h);

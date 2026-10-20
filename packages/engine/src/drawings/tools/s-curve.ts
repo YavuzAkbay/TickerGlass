@@ -4,7 +4,7 @@ import { cubicBezierDistance } from '../shape-utils';
 import type { DrawingGeometry, PixelPoint } from '../types';
 import { LINE_PROPERTIES, lineDefaults, pointsInView, upNormal } from './shape-common';
 
-export const S_CURVE_DEFAULTS = lineDefaults('#2962ff');
+export const S_CURVE_DEFAULTS = lineDefaults('#4f6bed');
 
 /** Default S bow: on-curve points at t = 1/3 and 2/3 sit this fraction of the
  * chord length above / below the chord. */

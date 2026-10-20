@@ -29,7 +29,7 @@ interface Drawing {
   (0..1) of the pane instead: they ignore pan/zoom, bar snapping and the magnet, and are never culled.
 - `style` keys are per tool; common names: `lineColor lineWidth lineStyle extendLeft extendRight textColor
 fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color, visible }`). The
-  framework uses `lineColor` (fallback `#2962ff`) for handles and default axis labels.
+  framework uses `lineColor` (fallback `#4f6bed`) for handles and default axis labels.
 
 ## 2. Tool definition API
 

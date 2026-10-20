@@ -7,7 +7,7 @@ import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { IconButton } from '../ui/IconButton';
 import { applyRangePreset, RANGE_PRESETS } from './ranges';
 import { resolveTimezone, TIMEZONES, utcOffsetLabel } from './timezones';
-import './BottomBar.css';
+import './RangeStrip.css';
 
 function useNow(): Date {
   const [now, setNow] = useState(() => new Date());
@@ -43,7 +43,7 @@ function Clock() {
     <>
       <button
         type="button"
-        className="bb-btn bb-clock"
+        className="strip-btn strip-clock"
         data-tip="Time zone"
         data-tip-side="top"
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
@@ -76,7 +76,7 @@ function ScaleToggles() {
   const btn = (label: string, active: boolean, cmd: string, tip: string) => (
     <button
       type="button"
-      className={`bb-btn${active ? ' active' : ''}`}
+      className={`strip-btn${active ? ' active' : ''}`}
       data-tip={tip}
       data-tip-side="top"
       onClick={() => commands.execute(cmd)}
@@ -93,7 +93,8 @@ function ScaleToggles() {
   );
 }
 
-export function BottomBar() {
+/** Slim strip under the time axis: range presets, go to date, scale, session and time zone. */
+export function RangeStrip() {
   const interval = useAppStore((s) => s.interval);
   const prepost = useAppStore((s) => s.prepost);
   const [activePreset, setActivePreset] = useState<string | null>(null);
@@ -109,43 +110,44 @@ export function BottomBar() {
   }, [chart]);
 
   return (
-    <div className="bottom-bar">
-      {RANGE_PRESETS.map((p) => (
-        <button
-          key={p.label}
-          type="button"
-          className={`bb-btn${activePreset === p.label && interval === p.interval ? ' active' : ''}`}
-          data-tip={p.title}
-          data-tip-side="top"
-          onClick={async () => {
-            applying.current = true;
-            setActivePreset(p.label);
-            try {
-              await applyRangePreset(p);
-            } finally {
-              setTimeout(() => (applying.current = false), 100);
-            }
-          }}
-        >
-          {p.label}
-        </button>
-      ))}
-      <span className="bb-sep" />
+    <div className="range-strip" role="toolbar" aria-label="Range and time controls">
+      <div className="strip-seg" role="group" aria-label="Range presets">
+        {RANGE_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            className={`strip-seg-btn${activePreset === p.label && interval === p.interval ? ' active' : ''}`}
+            data-tip={p.title}
+            data-tip-side="top"
+            onClick={async () => {
+              applying.current = true;
+              setActivePreset(p.label);
+              try {
+                await applyRangePreset(p);
+              } finally {
+                setTimeout(() => (applying.current = false), 100);
+              }
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
       <IconButton
         icon={CalendarSearch}
         label="Go to"
         shortcut="Alt+G"
         tipSide="top"
         size={16}
-        className="bb-icon"
+        className="strip-icon"
         onClick={() => commands.execute('chart.goToDate')}
       />
-      <span className="bb-spacer" />
-      <Clock />
-      <span className="bb-sep" />
+      <span className="strip-spacer" />
+      <ScaleToggles />
+      <span className="strip-sep" />
       <button
         type="button"
-        className={`bb-btn${prepost ? ' active' : ''}`}
+        className={`strip-btn${prepost ? ' active' : ''}`}
         data-tip={
           prepost
             ? 'Extended trading hours (click for regular)'
@@ -156,8 +158,8 @@ export function BottomBar() {
       >
         {prepost ? 'ETH' : 'RTH'}
       </button>
-      <span className="bb-sep" />
-      <ScaleToggles />
+      <span className="strip-sep" />
+      <Clock />
     </div>
   );
 }

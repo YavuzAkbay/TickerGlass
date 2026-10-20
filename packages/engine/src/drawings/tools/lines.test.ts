@@ -132,7 +132,7 @@ describe('horizontal ray', () => {
     expect(at(X(80), Y(50))).toEqual({ kind: 'body' });
     expect(at(X(20), Y(50))).toBeNull();
     expect(at(X(30) + 10, Y(50) - 10)).toEqual({ kind: 'text' });
-    expect(def.priceAxisLabels!(d, d.style, IDLE)).toEqual([{ value: 50, color: '#2962ff' }]);
+    expect(def.priceAxisLabels!(d, d.style, IDLE)).toEqual([{ value: 50, color: '#4f6bed' }]);
     expect(def.isVisible!(g, d.style)).toBe(true);
     const off = geometryOf(makeDrawing('horizontal-ray', [pt(200, 50)]));
     expect(def.isVisible!(off, d.style)).toBe(false);
@@ -148,7 +148,7 @@ describe('vertical line', () => {
     expect(at(X(30) + 2, 5)).toEqual({ kind: 'body' });
     expect(at(X(32), 5)).toBeNull();
     expect(def.timeAxisLabels!(d, d.style, IDLE)).toEqual([
-      { value: START + 30 * D, color: '#2962ff' },
+      { value: START + 30 * D, color: '#4f6bed' },
     ]);
     expect(def.priceAxisLabels!(d, d.style, SELECTED)).toEqual([]);
     expect(def.handles!(g, d.style)).toEqual([{ x: X(30), y: 200, cursor: 'ew-resize' }]);

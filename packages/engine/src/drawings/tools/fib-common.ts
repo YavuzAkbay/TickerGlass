@@ -2,6 +2,7 @@
 // (retracement, extension, channel), time levels (time zone, fib time
 // time) and concentric arcs (circles, speed arcs, wedge; pixel space).
 import type { ChartTheme } from '../../options';
+import { levelGradientAt, PALETTE } from '../../palette';
 import { BODY_HIT, setLineStyle, textFont, WEAK_BODY_HIT } from '../draw-utils';
 import { arcDistance } from '../shape-utils';
 import type {
@@ -14,38 +15,35 @@ import type {
 
 const LABEL_GAP = 4;
 
-/** default fib levels: [value, colour, visible]. */
-const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
-  [0, '#787b86', true],
-  [0.236, '#f23645', true],
-  [0.382, '#ff9800', true],
-  [0.5, '#4caf50', true],
-  [0.618, '#089981', true],
-  [0.786, '#00bcd4', true],
-  [1, '#787b86', true],
-  [1.272, '#ff9800', false],
-  [1.414, '#f23645', false],
-  [1.618, '#2962ff', true],
-  [2, '#089981', false],
-  [2.272, '#ff9800', false],
-  [2.414, '#4caf50', false],
-  [2.618, '#f23645', true],
-  [3, '#00bcd4', false],
-  [3.618, '#9c27b0', true],
-  [4, '#787b86', false],
-  [4.236, '#e91e63', true],
-  [4.618, '#ff9800', false],
+/** Values shown by default on every fib tool; the other levels are present but hidden. */
+const DEFAULT_VISIBLE: ReadonlySet<number> = new Set([
+  0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618,
+]);
+
+/** Standard fib ratios, ascending. */
+const FIB_VALUES: readonly number[] = [
+  0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.272, 2.414, 2.618, 3, 3.618, 4,
+  4.236, 4.618,
 ];
+
+/** Levels for `values`, coloured along the palette gradient. */
+function gradientLevels(values: readonly number[], visible: (v: number) => boolean) {
+  return values.map((value, i) => ({
+    value,
+    color: levelGradientAt(i, values.length),
+    visible: visible(value),
+  }));
+}
 
 /** Fresh copy of the default levels (sorted by value). */
 export function defaultFibLevels(): DrawingLevel[] {
-  return TV_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
+  return gradientLevels(FIB_VALUES, (v) => DEFAULT_VISIBLE.has(v));
 }
 
 /** Style keys shared by the fib tools. */
 export const FIB_COMMON_DEFAULTS = {
   /** Trend (diagonal) line; also the handle colour. */
-  lineColor: '#787b86',
+  lineColor: PALETTE.neutral,
   lineWidth: 1,
   lineStyle: 'dashed' as DrawingLineStyle,
   showTrendLine: true,
@@ -60,8 +58,8 @@ export const FIB_COMMON_DEFAULTS = {
   labelsVAlign: 'middle' as 'top' | 'middle' | 'bottom',
   fontSize: 12,
   fillBackground: true,
-  /** 0 = opaque, 100 = invisible. */
-  backgroundTransparency: 80,
+  /** 0 = opaque, 100 = invisible (94 = 6% opacity). */
+  backgroundTransparency: 94,
 };
 
 export type FibCommonStyle = typeof FIB_COMMON_DEFAULTS & { levels: DrawingLevel[] };
@@ -269,49 +267,26 @@ export function visibleLevels(s: { levels: unknown }): readonly DrawingLevel[] {
 // ------------------------------------------------------------ time levels
 
 /** Fibonacci numbers for the fib time zone (defaults). */
-const TV_TIME_ZONE_LEVELS: readonly (readonly [number, string, boolean])[] = [
-  [0, '#787b86', true],
-  [1, '#2962ff', true],
-  [2, '#2962ff', true],
-  [3, '#2962ff', true],
-  [5, '#2962ff', true],
-  [8, '#2962ff', true],
-  [13, '#2962ff', true],
-  [21, '#2962ff', true],
-  [34, '#2962ff', true],
-  [55, '#2962ff', true],
-  [89, '#2962ff', true],
-];
+const TIME_ZONE_VALUES: readonly number[] = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
 
 /** Fresh copy of the fib time zone levels (Fibonacci sequence 0..89). */
 export function defaultTimeZoneLevels(): DrawingLevel[] {
-  return TV_TIME_ZONE_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
+  return gradientLevels(TIME_ZONE_VALUES, () => true);
 }
 
-const TV_TREND_TIME_LEVELS: readonly (readonly [number, string, boolean])[] = [
-  [0, '#787b86', true],
-  [0.382, '#f23645', true],
-  [0.5, '#81c784', false],
-  [0.618, '#4caf50', true],
-  [1, '#089981', true],
-  [1.382, '#00bcd4', true],
-  [1.618, '#2962ff', true],
-  [2, '#9c27b0', true],
-  [2.382, '#e91e63', true],
-  [2.618, '#f23645', true],
-  [3, '#ff9800', false],
-  [4.236, '#787b86', false],
+const TREND_TIME_VALUES: readonly number[] = [
+  0, 0.382, 0.5, 0.618, 1, 1.382, 1.618, 2, 2.382, 2.618, 3, 4.236,
 ];
 
 /** Fresh copy of the fib time extension levels. */
 export function defaultTrendTimeLevels(): DrawingLevel[] {
-  return TV_TREND_TIME_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
+  return gradientLevels(TREND_TIME_VALUES, (v) => DEFAULT_VISIBLE.has(v));
 }
 
 /** Style keys of the time-level fib tools (vertical, full-height level lines). */
 export const FIB_TIME_DEFAULTS = {
   /** Trend line; also the handle colour. */
-  lineColor: '#787b86',
+  lineColor: PALETTE.neutral,
   lineWidth: 1,
   lineStyle: 'dashed' as DrawingLineStyle,
   showTrendLine: true,
@@ -322,7 +297,7 @@ export const FIB_TIME_DEFAULTS = {
   labelsVAlign: 'bottom' as 'top' | 'middle' | 'bottom',
   fontSize: 12,
   fillBackground: false,
-  backgroundTransparency: 80,
+  backgroundTransparency: 94,
 };
 
 export type FibTimeStyle = typeof FIB_TIME_DEFAULTS & { levels: DrawingLevel[] };
@@ -473,32 +448,19 @@ export function timeLevelsInView(
 
 // ------------------------------------------------------------ arc levels (pixel space)
 
-/** default fib circle / speed arc / wedge levels. */
-const TV_ARC_LEVELS: readonly (readonly [number, string, boolean])[] = [
-  [0.236, '#f23645', true],
-  [0.382, '#ff9800', true],
-  [0.5, '#4caf50', true],
-  [0.618, '#089981', true],
-  [0.786, '#00bcd4', true],
-  [1, '#787b86', true],
-  [1.618, '#2962ff', true],
-  [2.618, '#f23645', true],
-  [3.618, '#9c27b0', true],
-  [4.236, '#e91e63', true],
+/** default fib circle / speed arc / wedge level values. */
+const ARC_VALUES: readonly number[] = [
+  0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236,
 ];
 
 /** Fresh copy of the arc levels; `upTo`: levels above it are hidden. */
 export function defaultArcLevels(upTo = Infinity): DrawingLevel[] {
-  return TV_ARC_LEVELS.map(([value, color, visible]) => ({
-    value,
-    color,
-    visible: visible && value <= upTo,
-  }));
+  return gradientLevels(ARC_VALUES, (v) => DEFAULT_VISIBLE.has(v) && v <= upTo);
 }
 
 /** Style keys of the arc-level fib tools (circles, speed arcs, wedge). */
 export const FIB_ARC_DEFAULTS = {
-  lineColor: '#787b86',
+  lineColor: PALETTE.neutral,
   lineWidth: 1,
   lineStyle: 'dashed' as DrawingLineStyle,
   showTrendLine: true,
@@ -507,7 +469,7 @@ export const FIB_ARC_DEFAULTS = {
   showLabels: true,
   fontSize: 12,
   fillBackground: true,
-  backgroundTransparency: 80,
+  backgroundTransparency: 94,
 };
 
 export type FibArcStyle = typeof FIB_ARC_DEFAULTS & { levels: DrawingLevel[] };

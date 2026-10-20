@@ -5,7 +5,7 @@ import type { PixelPoint } from '../types';
 import { rectInView } from './annotation-common';
 
 export const FLAG_DEFAULTS = {
-  flagColor: '#f23645',
+  flagColor: '#e5484d',
   size: 30,
 };
 

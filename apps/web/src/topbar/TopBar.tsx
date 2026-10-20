@@ -2,9 +2,12 @@ import {
   AlarmClock,
   Camera,
   ChevronDown,
+  Keyboard,
   Maximize,
   Minimize,
   Moon,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Redo2,
   Rewind,
@@ -20,6 +23,7 @@ import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
 import { useReplayStore } from '../replay/store';
 import { useChartStore } from '../store/chart';
+import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import { DropdownMenu, Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
@@ -32,7 +36,7 @@ import './topbar.css';
 
 const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
-/** Header: symbol, interval, chart type, tools, layout and view actions. */
+/** Single-row command bar: symbol | interval | chart type | studies | alerts and replay | layout | settings. */
 export function TopBar() {
   const replayOn = useReplayStore((s) => s.status !== 'off');
   return (
@@ -61,15 +65,33 @@ export function TopBar() {
         active={replayOn}
       />
       <div className="tb-sep" />
-      <UndoRedo />
-      <div className="tb-spacer" />
       <LayoutMenu />
       <div className="tb-sep" />
       <CommandButton id="chart.settings" icon={Settings} label="Settings" />
+      <div className="tb-spacer" />
+      <UndoRedo />
+      <div className="tb-sep" />
       <FullscreenButton />
       <ScreenshotButton />
       <ThemeButton />
+      <CommandButton id="view.shortcuts" icon={Keyboard} label="Keyboard shortcuts" />
+      <div className="tb-sep" />
+      <ToolRailToggle />
     </div>
+  );
+}
+
+function ToolRailToggle() {
+  const hidden = useUiStore((s) => s.toolRailHidden);
+  const shortcut = firstShortcut(useCommand('view.toggleToolRail'));
+  return (
+    <IconButton
+      icon={hidden ? PanelRightOpen : PanelRightClose}
+      label={hidden ? 'Show drawing tools' : 'Hide drawing tools'}
+      {...(shortcut ? { shortcut } : {})}
+      active={!hidden}
+      onClick={() => useUiStore.getState().toggleToolRail()}
+    />
   );
 }
 

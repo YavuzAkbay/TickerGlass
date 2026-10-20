@@ -14,7 +14,7 @@ import { openAlertLog, useAlerts } from './store';
 
 export const ALERT_GROUP = 'alerts';
 export const MAX_MARKERS = 500;
-export const ALERT_COLOR = '#f5a623';
+export const ALERT_COLOR = '#f2a93b';
 
 /** The chart symbol in the form alerts store it. */
 function canon(symbol: string): string {

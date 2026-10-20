@@ -583,7 +583,7 @@ describe('layout state: compare overlays (v3)', () => {
     symbol: 'MSFT',
     placement: 'same',
     visible: true,
-    color: '#f7a21b',
+    color: '#f2a93b',
     lineWidth: 2,
     ...patch,
   });

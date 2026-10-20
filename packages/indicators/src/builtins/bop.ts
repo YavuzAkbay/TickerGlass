@@ -13,7 +13,7 @@ export const BOP = defineIndicator({
   inputs: {},
   outputs: [
     { type: 'hline', id: 'zero', title: 'Zero Line', value: 0, color: COLOR.level },
-    { type: 'plot', id: 'bop', title: 'BOP', kind: 'line', color: '#ff0000' },
+    { type: 'plot', id: 'bop', title: 'BOP', kind: 'line', color: '#e5484d' },
   ],
   setup() {
     return (c) => {

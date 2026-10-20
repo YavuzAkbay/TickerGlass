@@ -127,7 +127,10 @@ function IntervalMenu({ onClose }: { onClose: () => void }) {
         </button>
       )}
       {INTERVAL_GROUPS.map((g) => {
-        const extra = custom.filter((c) => unitOf(c) === g.unit && !isBuiltinInterval(c));
+        const extra = custom.filter((c) => {
+          const u = unitOf(c);
+          return u !== null && g.units.includes(u) && !isBuiltinInterval(c);
+        });
         const list = sortIntervals([...g.intervals, ...extra]);
         const isCollapsed = collapsed[g.unit] ?? false;
         return (

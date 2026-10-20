@@ -55,10 +55,10 @@ describe('compare actions', () => {
     fakeChart('percent');
     const id = addCompare(' aapl/msft ', 'pane')!;
     expect(items()).toEqual([
-      { id, symbol: 'AAPL/MSFT', placement: 'pane', visible: true, color: '#f7a21b', lineWidth: 2 },
+      { id, symbol: 'AAPL/MSFT', placement: 'pane', visible: true, color: '#f2a93b', lineWidth: 2 },
     ]);
     expect(addCompare('MSFT', 'own')).not.toBeNull();
-    expect(items()[1]!.color).toBe('#e91e63');
+    expect(items()[1]!.color).toBe('#e8618c');
     expect(addCompare('AAPL/', 'same')).toBeNull();
     expect(toasts.at(-1)).toMatch(/Expected a symbol/);
     expect(items()).toHaveLength(2);
@@ -189,7 +189,7 @@ describe('compare actions', () => {
     expect(updateCompare(id, { lineWidth: 3 }, 'Style')).toBe(false);
     expect(history().past.map((e) => e.label)).toEqual(['Compare MSFT', 'Style']);
     history().undo();
-    expect(items()[0]).toMatchObject({ color: '#f7a21b', lineWidth: 2 });
+    expect(items()[0]).toMatchObject({ color: '#f2a93b', lineWidth: 2 });
   });
 
   it('removes several overlays as one step', () => {

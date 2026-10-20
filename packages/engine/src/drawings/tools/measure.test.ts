@@ -48,7 +48,7 @@ describe('fib levels', () => {
   it('default levels and visibility', () => {
     const lv = defaultFibLevels();
     const visible = lv.filter((l) => l.visible).map((l) => l.value);
-    expect(visible).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236]);
+    expect(visible).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618]);
     expect(lv.some((l) => !l.visible)).toBe(true);
     expect(defaultFibLevels()).not.toBe(lv); // fresh copies
   });

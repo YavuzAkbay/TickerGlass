@@ -1,3 +1,4 @@
+import { levelGradientAt, PALETTE } from '../../palette';
 import { BODY_HIT, segmentInView, textFont } from '../draw-utils';
 import { defineDrawingTool } from '../registry';
 import type { DrawingGeometry, DrawingLevel, DrawingLineStyle } from '../types';
@@ -13,24 +14,20 @@ import {
 } from './fan-common';
 
 /** default fib fan levels (shared by price and time). */
-const TV_LEVELS: readonly (readonly [number, string])[] = [
-  [0, '#787b86'],
-  [0.25, '#f23645'],
-  [0.382, '#ff9800'],
-  [0.5, '#4caf50'],
-  [0.618, '#089981'],
-  [0.75, '#00bcd4'],
-  [1, '#787b86'],
-];
+const DEFAULT_LEVELS: readonly number[] = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
 
 /** Fresh copy of the speed fan levels. */
 export function defaultSpeedFanLevels(): DrawingLevel[] {
-  return TV_LEVELS.map(([value, color]) => ({ value, color, visible: true }));
+  return DEFAULT_LEVELS.map((value, i, a) => ({
+    value,
+    color: levelGradientAt(i, a.length),
+    visible: true,
+  }));
 }
 
 export const FIB_FAN_DEFAULTS = {
   /** Handle colour. */
-  lineColor: '#787b86',
+  lineColor: PALETTE.neutral,
   levelsLineWidth: 1,
   levelsLineStyle: 'solid' as DrawingLineStyle,
   /** Price levels: rays through the box's far vertical edge. */
@@ -38,7 +35,7 @@ export const FIB_FAN_DEFAULTS = {
   /** Time levels: rays through the box's far horizontal edge. */
   timeLevels: defaultSpeedFanLevels(),
   showGrid: true,
-  gridColor: 'rgba(120, 123, 134, 0.5)',
+  gridColor: 'rgba(154, 164, 178, 0.5)',
   gridLineWidth: 1,
   gridLineStyle: 'solid' as DrawingLineStyle,
   showLabels: true,

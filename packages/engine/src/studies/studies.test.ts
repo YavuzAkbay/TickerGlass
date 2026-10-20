@@ -111,7 +111,7 @@ function plot(id: string, extra: Partial<StudyPlotMeta> = {}): StudyPlotMeta {
     title: id.toUpperCase(),
     visible: true,
     kind: 'line',
-    colors: ['#2962ff'],
+    colors: ['#4f6bed'],
     lineWidth: 1,
     lineStyle: 'solid',
     base: null,
@@ -273,7 +273,7 @@ describe('Study data', () => {
     s.setStyle('a', { color: '#123456', lineWidth: 3, kind: 'step', visible: false });
     const o = s.output('a') as StudyPlotMeta;
     expect(o).toMatchObject({ colors: ['#123456'], lineWidth: 3, kind: 'step', visible: false });
-    expect((original.outputs[0] as StudyPlotMeta).colors).toEqual(['#2962ff']);
+    expect((original.outputs[0] as StudyPlotMeta).colors).toEqual(['#4f6bed']);
     expect(s.setStyle('nope', { visible: false })).toBe(false);
     s.updateSpec({ title: 'New', scaleRange: { min: 0, max: 100 } });
     expect(s.spec.title).toBe('New');
@@ -925,7 +925,7 @@ describe('StudySeries compare and own scale', () => {
     expect(ser.hitTestPx(h.timeScale.indexToX(3), ps.priceToY(54))).toBeNull();
     // Last value: scaled price for the axis, raw value kept.
     expect(ser.lastValues()).toEqual([
-      { outputId: 'close', price: drawn, raw: 54, color: '#2962ff' },
+      { outputId: 'close', price: drawn, raw: 54, color: '#4f6bed' },
     ]);
     // Legends stay raw.
     expect(s.legendValues(3, 1, 2)[0]!.value).toBe(54);
@@ -993,7 +993,7 @@ describe('StudySeries compare and own scale', () => {
     expect(y(1)).toBeCloseTo(10, 9);
     expect(y(0)).toBeCloseTo(92, 9);
     expect(ser.lastValues()).toEqual([
-      { outputId: 'close', price: 10, raw: 10, y: 10, color: '#2962ff' },
+      { outputId: 'close', price: 10, raw: 10, y: 10, color: '#4f6bed' },
     ]);
     expect(ser.hitTestPx(h.timeScale.indexToX(0), 92)).toBe('close');
   });

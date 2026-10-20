@@ -45,7 +45,7 @@ interface SplitProps {
   unavailable?: boolean;
 }
 
-/** 40x40 toolbar button with a hover corner arrow that opens a flyout. */
+/** 40x40 rail button with a hover corner arrow that opens a flyout. */
 function SplitButton({
   label,
   shortcut,
@@ -64,7 +64,7 @@ function SplitButton({
       <IconButton
         label={unavailable ? `${label} (${UNAVAILABLE_HINT.toLowerCase()})` : label}
         {...(shortcut && !unavailable ? { shortcut } : {})}
-        tipSide="right"
+        tipSide="left"
         active={active}
         className={`lt-btn${unavailable ? ' unavailable' : ''}`}
         onClick={() => {
@@ -94,7 +94,7 @@ function SplitButton({
         anchor={wrap}
         open={open}
         onClose={close}
-        placement="right-start"
+        placement="left-start"
         ignore={[wrap]}
         className="lt-popover"
       >
@@ -393,7 +393,7 @@ function SingleToolButton({ tool }: { tool: ToolDef }) {
     <div className="lt-group">
       <IconButton
         label={available ? tool.name : `${tool.name} (${UNAVAILABLE_HINT.toLowerCase()})`}
-        tipSide="right"
+        tipSide="left"
         active={active}
         className={`lt-btn${available ? '' : ' unavailable'}`}
         onClick={() => selectTool(tool.id)}
@@ -419,7 +419,7 @@ function ToggleButton({
     <div className="lt-group">
       <IconButton
         label={label}
-        tipSide="right"
+        tipSide="left"
         active={active}
         className="lt-btn"
         onClick={() => commands.execute(command)}
@@ -430,10 +430,10 @@ function ToggleButton({
   );
 }
 
-/** Vertical drawing toolbar. Tools without a registered
+/** Vertical drawing tool rail on the right edge. Tools without a registered
  * drawing definition are dimmed and only show a hint (drawings/attach syncs
  * the active tool and options to the chart). */
-export function LeftToolbar() {
+export function ToolRail() {
   const stay = useUiStore((s) => s.stayInDrawingMode);
   const syncNew = useUiStore((s) => s.syncNewDrawings);
   const lockAll = useUiStore((s) => s.lockAll);
@@ -443,7 +443,7 @@ export function LeftToolbar() {
   useEffect(() => registerToolbarCommands(), []);
 
   return (
-    <nav className="left-toolbar" aria-label="Drawing tools">
+    <nav className="tool-rail" aria-label="Drawing tools">
       {TOOL_GROUPS.map((g) => (
         <ToolGroupButton key={g.id} group={g} />
       ))}
@@ -477,7 +477,7 @@ export function LeftToolbar() {
       <div className="lt-group">
         <IconButton
           label={showFav ? 'Hide favorites toolbar' : 'Show favorites toolbar'}
-          tipSide="right"
+          tipSide="left"
           active={showFav}
           className="lt-btn lt-btn-fav"
           onClick={() => useUiStore.getState().set({ showFavoritesBar: !showFav })}

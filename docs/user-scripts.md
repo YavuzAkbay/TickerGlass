@@ -23,15 +23,15 @@ defineIndicator({
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
   outputs: [
-    { type: 'plot', id: 'fast', title: 'Fast', kind: 'line', color: '#2962ff' },
-    { type: 'plot', id: 'slow', title: 'Slow', kind: 'line', color: '#ff6d00' },
+    { type: 'plot', id: 'fast', title: 'Fast', kind: 'line', color: '#4f6bed' },
+    { type: 'plot', id: 'slow', title: 'Slow', kind: 'line', color: '#f2a93b' },
     {
       type: 'shape',
       id: 'up',
       title: 'Cross up',
       shape: 'triangleUp',
       location: 'belowBar',
-      color: '#26a69a',
+      color: '#18a383',
     },
     {
       type: 'shape',
@@ -39,7 +39,7 @@ defineIndicator({
       title: 'Cross down',
       shape: 'triangleDown',
       location: 'aboveBar',
-      color: '#ef5350',
+      color: '#e5484d',
     },
   ],
   setup({ inputs, ta }) {
@@ -131,7 +131,7 @@ values. A function there is rejected with a message saying so. The reason: the a
 without running your code, so only the sandbox ever runs it. To make something depend on an input, plot it
 (`c.set`) instead of declaring it as an `hline`.
 
-Colours are checked: hex (`#26a69a`, `#2962ff80`), `rgb()`, `rgba()`, `hsl()`, `hsla()` or a CSS colour name.
+Colours are checked: hex (`#18a383`, `#4f6bed80`), `rgb()`, `rgba()`, `hsl()`, `hsla()` or a CSS colour name.
 Anything else (notably `url(...)`) is rejected.
 
 **Palettes.** `color` may be an array. Then `c.set(id, value, k)` (or `c.setColor(id, k)` for fills) picks entry
@@ -372,16 +372,16 @@ defineIndicator({
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
   outputs: [
-    { type: 'hline', id: 'upper', title: 'Upper band', value: 70, color: '#787b86' },
-    { type: 'hline', id: 'lower', title: 'Lower band', value: 30, color: '#787b86' },
+    { type: 'hline', id: 'upper', title: 'Upper band', value: 70, color: '#9aa4b2' },
+    { type: 'hline', id: 'lower', title: 'Lower band', value: 30, color: '#9aa4b2' },
     {
       type: 'fill',
       id: 'zone',
       title: 'Zone',
       between: ['upper', 'lower'],
-      color: 'rgba(126, 87, 194, 0.1)',
+      color: 'rgba(142, 92, 246, 0.1)',
     },
-    { type: 'plot', id: 'rsi', title: 'RSI', kind: 'line', color: '#7e57c2' },
+    { type: 'plot', id: 'rsi', title: 'RSI', kind: 'line', color: '#8e5cf6' },
   ],
   setup({ inputs, ta }) {
     const diff = ta.change();
@@ -413,17 +413,17 @@ defineIndicator({
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
   outputs: [
-    { type: 'hline', id: 'zero', title: 'Zero line', value: 0, color: 'rgba(120, 123, 134, 0.5)' },
+    { type: 'hline', id: 'zero', title: 'Zero line', value: 0, color: 'rgba(154, 164, 178, 0.5)' },
     {
       type: 'plot',
       id: 'hist',
       title: 'Histogram',
       kind: 'columns',
       // Palette: index 0..3 below, chosen per bar in step().
-      color: ['#26a69a', '#b2dfdb', '#ffcdd2', '#ff5252'],
+      color: ['#18a383', '#b2dfdb', '#ffcdd2', '#e5484d'],
     },
-    { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: '#2962ff' },
-    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#ff6d00' },
+    { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: '#4f6bed' },
+    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#f2a93b' },
   ],
   setup({ inputs, ta }) {
     const GROW_ABOVE = 0;
@@ -490,7 +490,7 @@ defineIndicator({
       id: 'zz',
       title: 'ZigZag',
       kind: 'line',
-      color: '#2962ff',
+      color: '#4f6bed',
       lineWidth: 2,
       connectGaps: true,
       showLastValue: false,
@@ -501,7 +501,7 @@ defineIndicator({
       title: 'High Label',
       shape: 'labelDown',
       location: 'absolute',
-      color: '#2962ff',
+      color: '#4f6bed',
       textColor: '#ffffff',
       textFromValue: true,
     },
@@ -511,7 +511,7 @@ defineIndicator({
       title: 'Low Label',
       shape: 'labelUp',
       location: 'absolute',
-      color: '#2962ff',
+      color: '#4f6bed',
       textColor: '#ffffff',
       textFromValue: true,
     },

@@ -16,8 +16,8 @@ export const RVI = defineIndicator({
     length: { kind: 'int', label: 'Length', default: 10, min: 1, max: 5000 },
   },
   outputs: [
-    { type: 'plot', id: 'rvi', title: 'RVGI', kind: 'line', color: '#008000' },
-    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#ff0000' },
+    { type: 'plot', id: 'rvi', title: 'RVGI', kind: 'line', color: '#18a383' },
+    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#e5484d' },
   ],
   setup({ inputs, ta }) {
     const swBody = ta.swma();

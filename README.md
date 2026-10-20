@@ -2,7 +2,7 @@
 
 Open-source, self-hosted charting and technical-analysis platform that runs in your browser.
 It aims for feature parity with professional charting tools: multiple chart types, drawing
-tools, indicators, compare, alerts, watchlists, templates, and market replay. Market data
+tools, indicators, compare, alerts, watchlists (with a plain-text import/export, see [docs/watchlists.md](docs/watchlists.md)), templates, and market replay. Market data
 comes from Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance).
 
 > **Status:** early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for progress.

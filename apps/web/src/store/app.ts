@@ -8,6 +8,7 @@ import {
   type DeepPartial,
   type MagnetMode,
 } from '@investopen/engine';
+import { DEFAULT_FAVORITE_INTERVALS } from '../topbar/intervals';
 
 export type Theme = 'dark' | 'light';
 export type { ChartType };
@@ -53,7 +54,7 @@ export const useAppStore = create<AppState>()(
       theme: 'dark',
       symbol: 'AAPL',
       interval: '1D',
-      favoriteIntervals: ['5m', '1h', '1D', '1W'],
+      favoriteIntervals: [...DEFAULT_FAVORITE_INTERVALS],
       customIntervals: [],
       chartType: 'candles',
       chartStyle: {},
