@@ -9,9 +9,48 @@ import { DrawingToolbar } from '../drawings/DrawingToolbar';
 import { DrawingTextEditor } from '../drawings/TextEditor';
 import { attachIndicators } from '../indicators/attach';
 import { IndicatorLegends } from '../indicators/Legend';
+import type { FromSandbox, ProbeResult, ToSandbox } from '../indicators/sandbox/sandbox-worker';
 import { openChartContextMenu } from './contextMenus';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
+
+/**
+ * Dev/e2e hook: runs `code` as a user-script body in a fresh sandbox worker and
+ * returns what it returned or threw. A worker that doesn't answer within
+ * `timeoutMs` is terminated (`terminated: true`).
+ */
+function sandboxProbe(
+  code: string,
+  timeoutMs = 3000,
+): Promise<ProbeResult & { terminated?: boolean }> {
+  const w = new Worker(new URL('../indicators/sandbox/sandbox-worker.ts', import.meta.url), {
+    type: 'module',
+    name: 'sandbox',
+  });
+  return new Promise((resolve) => {
+    let result: ProbeResult | null = null;
+    const done = (r: ProbeResult & { terminated?: boolean }) => {
+      clearTimeout(timer);
+      w.terminate();
+      resolve(r);
+    };
+    const timer = setTimeout(
+      () => done({ ok: false, error: `No response for ${timeoutMs} ms`, terminated: true }),
+      timeoutMs,
+    );
+    w.onmessage = (e: MessageEvent<FromSandbox>) => {
+      const m = e.data;
+      if (m.type === 'probeResult') {
+        const { type: _type, seq: _seq, ...rest } = m;
+        result = rest;
+      } else if (m.type === 'error') done({ ok: false, error: m.message });
+      else if (m.type === 'ack') done(result ?? { ok: false, error: 'Ack without result' });
+    };
+    w.onerror = (e) => done({ ok: false, error: `Sandbox worker failed: ${e.message}` });
+    w.onmessageerror = () => done({ ok: false, error: 'Sandbox worker: unreadable message' });
+    w.postMessage({ seq: 1, msg: { type: 'probe', code } } satisfies ToSandbox);
+  });
+}
 
 /** Hosts the engine chart and keeps it in sync with the app stores. */
 export function ChartView() {
@@ -37,6 +76,9 @@ export function ChartView() {
     useChartStore.setState({ chart });
     // Expose for debugging and e2e tests.
     (window as unknown as { chart?: Chart }).chart = chart;
+    if (import.meta.env.DEV || import.meta.env.VITE_E2E === '1') {
+      (window as unknown as { sandboxProbe?: typeof sandboxProbe }).sandboxProbe = sandboxProbe;
+    }
     const offs = [
       chart.on('symbolResolved', (info) => useChartStore.setState({ symbolInfo: info })),
       chart.on('crosshairMove', (c) => useChartStore.setState({ crosshair: c })),
