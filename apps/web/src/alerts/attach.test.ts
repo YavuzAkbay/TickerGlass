@@ -49,6 +49,13 @@ describe('price lines', () => {
 });
 
 describe('markers', () => {
+  it('hides fires at or after the replay clock', () => {
+    const log = [entry(3), entry(2), entry(1)]; // bar times 1003, 1002, 1001
+    const m = buildMarkers(log, { a: alert('a') }, 'AAPL', 1003);
+    expect(m.map((x) => x.id)).toEqual(['2', '1']);
+    expect(buildMarkers(log, { a: alert('a') }, 'AAPL')).toHaveLength(3);
+  });
+
   it('places price-left alerts at x, others above the bar', () => {
     const m = buildMarkers([entry(2), entry(1, { alertId: null })], { a: alert('a') }, 'AAPL');
     expect(m[0]).toMatchObject({

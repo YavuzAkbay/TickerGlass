@@ -25,7 +25,20 @@ export interface ReplayChart {
   readonly store: { readonly length: number; readonly time: Float64Array };
 }
 
+/** Per-session add-ons driven by the clock (replay alerts, paper trading). */
+export interface ReplaySession {
+  /** A session starts or restarts (start/seek): drop all state. */
+  reset(): void;
+  /** The chart shows the start bar: take the first sample without acting on it. */
+  prime(): void;
+  /** A step revealed more data. */
+  step(): void;
+  /** Leaving replay, before `reset` (e.g. a summary). */
+  end?(): void;
+}
+
 export interface ReplayControllerDeps {
+  sessions?: readonly ReplaySession[];
   feed: ReplayFeedLike;
   getChart: () => ReplayChart | null;
   prepost: () => boolean;
@@ -89,6 +102,7 @@ export class ReplayController {
     this.clearTimer();
     const gen = ++this.generation;
     this.set({ status: 'loading' });
+    this.each((s) => s.reset());
     try {
       const interval = parseInterval(chart.getInterval());
       const info = await this.begin(chart, interval, lastVisible as UTCTimestamp);
@@ -97,6 +111,7 @@ export class ReplayController {
       this.applyInfo(info);
       await chart.reload();
       if (gen !== this.generation) return;
+      this.each((s) => s.prime());
       this.set({ status: 'paused' });
     } catch (err) {
       if (gen !== this.generation) return;
@@ -162,6 +177,7 @@ export class ReplayController {
       const r = await this.deps.feed.step();
       if (gen !== this.generation) return;
       if (r === 'end') this.onEnd();
+      else this.each((s) => s.step());
     } catch (err) {
       if (gen !== this.generation) return;
       this.onError(`Replay: ${errText(err)}`);
@@ -177,6 +193,7 @@ export class ReplayController {
         this.onEnd();
         return;
       }
+      this.each((s) => s.step());
     } catch (err) {
       if (gen !== this.generation) return;
       this.onError(`Replay: ${errText(err)}`);
@@ -251,6 +268,8 @@ export class ReplayController {
     this.clearTimer();
     this.offs.forEach((off) => off());
     this.offs = [];
+    this.each((s) => s.end?.());
+    this.each((s) => s.reset());
     this.deps.feed.stop();
     this.set({ status: 'off', last: NaN, next: NaN, tick: null, warning: null });
     if (reload && chart) {
@@ -294,6 +313,17 @@ export class ReplayController {
       tick: info.tick ? formatInterval(info.tick) : null,
       warning: info.warning,
     });
+  }
+
+  /** Run `fn` on every session add-on; one failing never breaks replay. */
+  private each(fn: (s: ReplaySession) => void): void {
+    for (const s of this.deps.sessions ?? []) {
+      try {
+        fn(s);
+      } catch (err) {
+        this.onError(`Replay: ${errText(err)}`);
+      }
+    }
   }
 
   private clearTimer(): void {
