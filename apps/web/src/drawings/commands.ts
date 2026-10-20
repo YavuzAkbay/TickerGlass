@@ -9,7 +9,7 @@ import {
   selectAllDrawings,
 } from './actions';
 import { openDrawingSettings } from './menu';
-import { useDrawingRuntime } from './store';
+import { useDrawingClipboard, useDrawingRuntime } from './store';
 
 const selection = () => useDrawingRuntime.getState().selection;
 const hasSelection = () => selection().length > 0;
@@ -51,7 +51,7 @@ export function registerDrawingCommands(): () => void {
       shortcut: 'Mod+v',
       icon: ClipboardPaste,
       enabled: () =>
-        !!useDrawingRuntime.getState().clipboard && !!getChart() && chartClipboardTarget(),
+        !!useDrawingClipboard.getState().clipboard && !!getChart() && chartClipboardTarget(),
       run: () => void pasteDrawings(),
     },
     {

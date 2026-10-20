@@ -50,6 +50,7 @@ export default tseslint.config(
                 'useCompareRuntime',
                 'currentCompareLayout',
                 'useHistory',
+                'useDrawingRuntime',
               ],
               message:
                 'Active-chart facade: use the explicit session stores (ChartSession) instead.',

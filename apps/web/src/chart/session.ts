@@ -16,6 +16,7 @@ import {
   type IndicatorRuntimeState,
   type IndicatorStore,
 } from '../indicators/store';
+import { createDrawingRuntimeStore, type DrawingRuntime } from '../drawings/store';
 import { useAppStore } from '../store/app';
 import { createChartViewStore, type ChartViewData, type ChartViewState } from '../store/chartView';
 import { feed } from './feed';
@@ -43,6 +44,7 @@ export interface ChartSession {
   compares: StoreApi<CompareStore>;
   compareRuntime: StoreApi<CompareRuntimeState>;
   history: StoreApi<HistoryState>;
+  drawingRuntime: StoreApi<DrawingRuntime>;
   info: StoreApi<ChartInfoState>;
   /** Destroys the engine chart. Detach the controllers (attach* disposers) first. */
   destroy: () => void;
@@ -82,6 +84,7 @@ export function createChartSession(
     compares: createCompareStore(),
     compareRuntime: createCompareRuntimeStore(),
     history: createHistoryStore(),
+    drawingRuntime: createDrawingRuntimeStore(),
     info,
     destroy: () => chart.destroy(),
   };

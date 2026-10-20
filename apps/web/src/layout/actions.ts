@@ -1,6 +1,7 @@
 /** Changing the grid: templates, adding a chart, sync flags, moving focus. */
 import { normalizeSymbol } from '../store/app';
 import { setActiveChart, useChartStore } from '../store/chart';
+import { applyLayoutState, captureLayoutState, ensureUniqueChartIds } from '../persist/layoutState';
 import { confirmDialog } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 import { cycleFocus } from './focus';
@@ -56,6 +57,25 @@ export async function applyTemplate(id: string): Promise<boolean> {
 
 export function setSyncFlag<K extends keyof SyncFlags>(key: K, value: SyncFlags[K]): void {
   useLayoutGrid.setState((s) => ({ sync: { ...s.sync, [key]: value } }));
+  if (key === 'drawings' && value === false) void rekeyLegacyChartIds();
+}
+
+/**
+ * Drawings bound to a chart store its id, so ids must be unique across layouts
+ * before the first one is bound: charts with an old-style id (the first chart
+ * of a pre-grid layout is "c1") are re-created under fresh UUIDs, keeping their
+ * state, as the layout is re-applied.
+ */
+async function rekeyLegacyChartIds(): Promise<void> {
+  const before = captureLayoutState();
+  const after = ensureUniqueChartIds(before);
+  if (after === before) return;
+  try {
+    await applyLayoutState(after);
+  } catch (err) {
+    console.error(err);
+    toast('Could not prepare charts for separate drawings', 'error');
+  }
 }
 
 /**

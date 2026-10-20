@@ -13,6 +13,7 @@ import { useAlerts } from '../alerts/store';
 import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
 import { changeScale, toggleScaleMode } from './scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
+import { activeChartId, syncBus } from '../layout/sync';
 import { getChart } from '../store/chart';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
@@ -85,7 +86,9 @@ export function registerCoreCommands(): () => void {
           toast(TOO_LONG_FOR_CHART, 'error');
           return;
         }
-        useChartView.getState().setSymbol(symbol);
+        const from = activeChartId();
+        if (from !== null) syncBus.setSymbol(from, symbol);
+        else useChartView.getState().setSymbol(symbol);
       },
     },
     {
@@ -93,7 +96,10 @@ export function registerCoreCommands(): () => void {
       title: 'Set interval',
       hidden: true,
       run: (arg) => {
-        if (typeof arg === 'string' && arg) useChartView.getState().setInterval(arg);
+        if (typeof arg !== 'string' || !arg) return;
+        const from = activeChartId();
+        if (from !== null) syncBus.setInterval(from, arg);
+        else useChartView.getState().setInterval(arg);
       },
     },
     {

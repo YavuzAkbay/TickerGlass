@@ -1,3 +1,4 @@
+import { activeChartId, syncBus } from '../layout/sync';
 import { getChart } from '../store/chart';
 import { useChartView } from '../store/chartView';
 
@@ -63,6 +64,9 @@ export async function applyRangePreset(preset: RangePreset): Promise<void> {
   await loading;
   const n = chart.store.length;
   if (!n) return;
-  if (preset.from === null) await chart.showAllHistory();
-  else await chart.setVisibleTimeRange(preset.from(chart.store.time[n - 1]!));
+  const from = activeChartId();
+  if (from === null) return;
+  // The range is worked out on this chart's data; with date-range sync the others show the same dates.
+  if (preset.from === null) await syncBus.range(from, 'all');
+  else await syncBus.range(from, { from: preset.from(chart.store.time[n - 1]!), to: Infinity });
 }
