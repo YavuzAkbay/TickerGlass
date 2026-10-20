@@ -1,7 +1,9 @@
 import { resolveIndicatorId, type InstanceStatus } from '@investopen/indicators';
 import { useMemo } from 'react';
-import { create } from 'zustand';
+import { create, useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createStore, type StoreApi } from 'zustand/vanilla';
+import { createActiveFacade } from '../chart/facade';
 import { isObj, readJson, safeStorage } from '../persist/net';
 import { withLegacyVolume, type IndicatorDefaults, type IndicatorState } from './model';
 
@@ -9,7 +11,7 @@ import { withLegacyVolume, type IndicatorDefaults, type IndicatorState } from '.
  * Indicators on the chart (localStorage for now; Phase 7 moves layouts to the
  * API). Mutate through ./actions so changes are validated and undoable.
  */
-interface IndicatorStore {
+export interface IndicatorStore {
   instances: IndicatorState[];
   /** Insert at `index` (default: end). */
   add: (inst: IndicatorState, index?: number) => void;
@@ -62,34 +64,50 @@ export function migrateIndicatorStore(persisted: unknown, version: number): Indi
   return { ...s, instances } as unknown as IndicatorStore;
 }
 
-export const useIndicatorStore = create<IndicatorStore>()(
-  persist(
-    (set) => ({
-      // A new chart shows Volume (or what the old built-in volume setting said).
-      instances: withLegacyVolume([], legacyAppVolume()) as IndicatorState[],
-      add: (inst, index) =>
-        set((s) => {
-          const list = s.instances.filter((i) => i.id !== inst.id);
-          const at = index === undefined ? list.length : Math.max(0, Math.min(index, list.length));
-          list.splice(at, 0, inst);
-          return { instances: list };
-        }),
-      remove: (id) => set((s) => ({ instances: s.instances.filter((i) => i.id !== id) })),
-      update: (id, patch) =>
-        set((s) => ({
-          instances: s.instances.map((i) => (i.id === id ? { ...i, ...patch } : i)),
-        })),
-      replaceAll: (list) => set({ instances: list }),
+type IndicatorSet = StoreApi<IndicatorStore>['setState'];
+
+const indicatorActions = (set: IndicatorSet): Omit<IndicatorStore, 'instances'> => ({
+  add: (inst, index) =>
+    set((s) => {
+      const list = s.instances.filter((i) => i.id !== inst.id);
+      const at = index === undefined ? list.length : Math.max(0, Math.min(index, list.length));
+      list.splice(at, 0, inst);
+      return { instances: list };
     }),
-    {
+  remove: (id) => set((s) => ({ instances: s.instances.filter((i) => i.id !== id) })),
+  update: (id, patch) =>
+    set((s) => ({
+      instances: s.instances.map((i) => (i.id === id ? { ...i, ...patch } : i)),
+    })),
+  replaceAll: (list) => set({ instances: list }),
+});
+
+// A new chart shows Volume (or what the old built-in volume setting said).
+const initialInstances = () => withLegacyVolume([], legacyAppVolume()) as IndicatorState[];
+
+/**
+ * One chart's indicator instances. With `persistLocal` they also live in
+ * localStorage (the primary chart only: the key is a single slot).
+ */
+export function createIndicatorStore(persistLocal = false): StoreApi<IndicatorStore> {
+  if (!persistLocal)
+    return createStore<IndicatorStore>()((set) => ({
+      instances: initialInstances(),
+      ...indicatorActions(set),
+    }));
+  return createStore<IndicatorStore>()(
+    persist((set) => ({ instances: initialInstances(), ...indicatorActions(set) }), {
       name: 'investopen-indicators',
       version: 3,
       // v1 -> v2: the engine's built-in volume became the Volume indicator.
       // v2 -> v3: renamed built-ins get their current type id.
       migrate: migrateIndicatorStore,
-    },
-  ),
-);
+    }),
+  );
+}
+
+/** The active chart's indicator instances. */
+export const useIndicatorStore = createActiveFacade((s) => s.indicators, createIndicatorStore);
 
 export type IndicatorPatch = Partial<Omit<IndicatorState, 'id' | 'type'>>;
 
@@ -98,9 +116,18 @@ export type IndicatorPatch = Partial<Omit<IndicatorState, 'id' | 'type'>>;
  * instances. Never persisted and never in the undo history; Ok commits one
  * patch to useIndicatorStore (see ./actions), Cancel drops it.
  */
-export const useIndicatorPreview = create<{ overrides: Record<string, IndicatorPatch> }>()(() => ({
-  overrides: {},
-}));
+export interface IndicatorPreviewState {
+  overrides: Record<string, IndicatorPatch>;
+}
+
+export const createIndicatorPreviewStore = () =>
+  createStore<IndicatorPreviewState>()(() => ({ overrides: {} }));
+
+/** The active chart's settings-dialog preview. */
+export const useIndicatorPreview = createActiveFacade(
+  (s) => s.preview,
+  createIndicatorPreviewStore,
+);
 
 /** Persisted instances with preview patches applied (what the chart shows). */
 export function withPreview(
@@ -114,14 +141,28 @@ export function withPreview(
   });
 }
 
-export const effectiveInstances = () =>
-  withPreview(useIndicatorStore.getState().instances, useIndicatorPreview.getState().overrides);
+/** Instances of the given stores as drawn (persisted + live preview). */
+export const effectiveInstancesOf = (
+  indicators: StoreApi<IndicatorStore>,
+  preview: StoreApi<IndicatorPreviewState>,
+) => withPreview(indicators.getState().instances, preview.getState().overrides);
 
-/** React: instances as drawn (persisted + live preview). */
-export function useEffectiveInstances(): IndicatorState[] {
-  const instances = useIndicatorStore((s) => s.instances);
-  const overrides = useIndicatorPreview((s) => s.overrides);
+export const effectiveInstances = () =>
+  effectiveInstancesOf(useIndicatorStore, useIndicatorPreview);
+
+/** React: instances as drawn (persisted + live preview) of the given stores. */
+export function useEffectiveInstancesOf(
+  indicators: StoreApi<IndicatorStore>,
+  preview: StoreApi<IndicatorPreviewState>,
+): IndicatorState[] {
+  const instances = useStore(indicators, (s) => s.instances);
+  const overrides = useStore(preview, (s) => s.overrides);
   return useMemo(() => withPreview(instances, overrides), [instances, overrides]);
+}
+
+/** React: the active chart's instances as drawn. */
+export function useEffectiveInstances(): IndicatorState[] {
+  return useEffectiveInstancesOf(useIndicatorStore, useIndicatorPreview);
 }
 
 /** Per-user picker favourites and "Save as default" settings. */
@@ -170,7 +211,7 @@ export const useIndicatorPrefs = create<IndicatorPrefs>()(
 );
 
 /** Live (not persisted) per-instance state reported by the chart controller. */
-interface IndicatorRuntimeState {
+export interface IndicatorRuntimeState {
   status: Record<string, InstanceStatus>;
   /** Engine pane of each study. */
   panes: Record<string, string>;
@@ -178,8 +219,15 @@ interface IndicatorRuntimeState {
   tick: number;
 }
 
-export const useIndicatorRuntime = create<IndicatorRuntimeState>()(() => ({
-  status: {},
-  panes: {},
-  tick: 0,
-}));
+export const createIndicatorRuntimeStore = () =>
+  createStore<IndicatorRuntimeState>()(() => ({
+    status: {},
+    panes: {},
+    tick: 0,
+  }));
+
+/** The active chart's indicator runtime state. */
+export const useIndicatorRuntime = createActiveFacade(
+  (s) => s.indicatorRuntime,
+  createIndicatorRuntimeStore,
+);

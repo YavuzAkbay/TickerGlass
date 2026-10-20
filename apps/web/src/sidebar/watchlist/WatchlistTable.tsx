@@ -12,7 +12,7 @@ import {
 import { commands } from '../../commands/registry';
 import { useLiveQuotes } from '../../quotes/hooks';
 import { useQuoteStore } from '../../quotes/store';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import { IconButton } from '../../ui/IconButton';
 import { DropdownMenu, type MenuItem } from '../../ui/Menu';
 import { buildRows, flagRows, isFlagRef } from '../../watchlist/model';
@@ -65,7 +65,7 @@ export function WatchlistTable({ listRef }: Props) {
   const sort = useWatchlistPrefs((s) => s.sort);
   const setSort = useWatchlistPrefs((s) => s.setSort);
   const toggleColumn = useWatchlistPrefs((s) => s.toggleColumn);
-  const chartSymbol = useAppStore((s) => s.symbol);
+  const chartSymbol = useChartView((s) => s.symbol);
   const quoteError = useQuoteStore((s) => s.error);
 
   // Own selection, valid while the chart symbol it was made on is unchanged

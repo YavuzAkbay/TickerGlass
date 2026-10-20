@@ -13,6 +13,7 @@ import { currentCompareLayout, useCompareStore } from '../compare/store';
 import { DEFAULT_VOLUME_ID, withLegacyVolume, type IndicatorState } from '../indicators/model';
 import { useIndicatorPreview, useIndicatorStore } from '../indicators/store';
 import { normalizeSymbol, useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useChartStore } from '../store/chart';
 import { isObj } from './net';
 
@@ -35,7 +36,7 @@ export interface LayoutState {
 }
 
 export function currentChartSettings(): ChartSettings {
-  const s = useAppStore.getState();
+  const s = useChartView.getState();
   return {
     chartType: s.chartType,
     chartStyle: s.chartStyle,
@@ -173,13 +174,14 @@ export async function applyLayoutState(
   state: LayoutState,
   chart: Chart | null = useChartStore.getState().chart,
 ): Promise<void> {
-  const app = useAppStore.getState();
-  const patch: Parameters<typeof app.set>[0] = { ...state.chartSettings };
+  const patch: Parameters<ReturnType<typeof useChartView.getState>['set']>[0] = {
+    ...state.chartSettings,
+  };
   if (state.chart) {
     patch.symbol = normalizeSymbol(state.chart.symbol);
     patch.interval = state.chart.interval;
   }
-  app.set(patch);
+  useChartView.getState().set(patch);
   useIndicatorPreview.setState({ overrides: {} });
   useIndicatorStore.getState().replaceAll(state.indicators);
   // Fires the compare controller's sync before chart.setState: harmless, as

@@ -1,5 +1,5 @@
 import type { Chart, PriceScaleMode } from '@investopen/engine';
-import { useHistory } from '../commands/history';
+import { useHistory } from './history';
 
 type ScaleState = { mode: PriceScaleMode; autoScale: boolean; invert: boolean };
 

@@ -1,5 +1,5 @@
 /** `AlertContext` from the live stores and the chart (the dialog and the commands read it on open). */
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import { getChart } from '../../store/chart';
 import { currentDrawings } from '../../drawings/actions';
 import { useIndicatorRuntime, useIndicatorStore } from '../../indicators/store';
@@ -7,7 +7,7 @@ import { useQuoteStore } from '../../quotes/store';
 import type { AlertContext, LastBar } from './sources';
 
 export function currentAlertContext(): AlertContext {
-  const app = useAppStore.getState();
+  const app = useChartView.getState();
   const chart = getChart();
   const store = chart?.store;
   const last = store && store.length > 0 ? store.length - 1 : -1;

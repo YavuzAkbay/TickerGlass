@@ -2,14 +2,15 @@ import { getIndicator, type InstanceStatus } from '@investopen/indicators';
 import { Database, Ellipsis, Eye, EyeOff, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useChartStore } from '../store/chart';
+import { useStore } from 'zustand';
+import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';
 import { DropdownMenu } from '../ui/Menu';
 import { removeIndicator, toggleIndicatorVisible } from './actions';
 import type { ChartHost } from './controller';
 import { inputsTitle, sourceInputKey, type IndicatorState } from './model';
 import { indicatorMenuItems, openIndicatorSettings, sourceMenuItems } from './menu';
-import { useEffectiveInstances, useIndicatorRuntime } from './store';
+import { useEffectiveInstancesOf } from './store';
 import './indicators.css';
 
 /**
@@ -46,14 +47,14 @@ function shieldFromChart(el: HTMLDivElement | null) {
 type LegendChart = Pick<ChartHost, 'getLegendSlot' | 'getStudyValues' | 'store'>;
 
 /** Study legend rows, rendered into each pane's engine legend slot. */
-export function IndicatorLegends({ chart }: { chart: LegendChart | null }) {
-  const instances = useEffectiveInstances();
-  const status = useIndicatorRuntime((s) => s.status);
-  const panes = useIndicatorRuntime((s) => s.panes);
+export function IndicatorLegends({ session }: { session: ChartSession }) {
+  const { chart } = session;
+  const instances = useEffectiveInstancesOf(session.indicators, session.preview);
+  const status = useStore(session.indicatorRuntime, (s) => s.status);
+  const panes = useStore(session.indicatorRuntime, (s) => s.panes);
   // Re-read last-bar values when results arrive.
-  useIndicatorRuntime((s) => s.tick);
-  const crossIndex = useChartStore((s) => s.crosshair?.index ?? null);
-  if (!chart) return null;
+  useStore(session.indicatorRuntime, (s) => s.tick);
+  const crossIndex = useStore(session.info, (s) => s.crosshair?.index ?? null);
   const index = crossIndex ?? chart.store.length - 1;
   const byPane = new Map<string, IndicatorState[]>();
   for (const inst of instances) {

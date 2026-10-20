@@ -11,7 +11,7 @@ import {
 import { drawingMenuItems, openDrawingSettings } from '../../drawings/menu';
 import { toolName } from '../../drawings/model';
 import { drawingsFor, useDrawingRuntime, useDrawingStore } from '../../drawings/store';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import { useChartStore } from '../../store/chart';
 import { openContextMenu } from '../../ui/ContextMenu';
 import { useChartTick } from '../hooks';
@@ -130,8 +130,8 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
 /** Panes with their series, studies and drawings, kept in sync with the chart. */
 export function ObjectTree() {
   const chart = useChartStore((s) => s.chart);
-  const symbol = useAppStore((s) => s.symbol);
-  const interval = useAppStore((s) => s.interval);
+  const symbol = useChartView((s) => s.symbol);
+  const interval = useChartView((s) => s.interval);
   // Re-render on drawing store changes (paneStack reads it). Select the
   // stable bucket arrays: a selector building a new array every call makes
   // useSyncExternalStore loop forever.

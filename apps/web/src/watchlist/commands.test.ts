@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../commands/registry';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { registerWatchlistCommands } from './commands';
 import { useWatchlistStore } from './store';
 
@@ -21,7 +21,7 @@ beforeEach(() => {
 describe('watchlist.addSymbol', () => {
   it('refuses symbol expressions with a toast and adds nothing', () => {
     const off = registerWatchlistCommands();
-    useAppStore.setState({ symbol: 'AAPL/MSFT' });
+    useChartView.setState({ symbol: 'AAPL/MSFT' });
     commands.execute('watchlist.addSymbol');
     expect(toasts).toEqual(["Symbol expressions can't be added to watchlists"]);
     expect(Object.keys(useWatchlistStore.getState().lists)).toEqual([]);

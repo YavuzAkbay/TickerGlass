@@ -25,7 +25,7 @@ import { AlertsSettingsTab } from '../alerts/SettingsTab';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { ChartTemplate } from '../api/types';
-import { changeScale } from '../chart/scaleActions';
+import { changeScale } from '../commands/scaleActions';
 import {
   CHART_TEMPLATE_SCHEMA_VERSION,
   readChartTemplate,
@@ -34,6 +34,7 @@ import {
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
@@ -139,22 +140,24 @@ function readScale(chart: Chart | null): Draft['scale'] {
 
 function readDraft(): Draft {
   const s = useAppStore.getState();
+  const v = useChartView.getState();
   return {
     theme: s.theme,
     crosshair: s.crosshair,
     magnet: s.magnet,
-    prepost: s.prepost,
-    timezone: s.timezone,
-    chartStyle: s.chartStyle,
-    showPrevClose: s.showPrevClose,
+    prepost: v.prepost,
+    timezone: v.timezone,
+    chartStyle: v.chartStyle,
+    showPrevClose: v.showPrevClose,
     scale: readScale(getChart()),
   };
 }
 
 /** Push a draft to the app store and chart (live preview, without undo entries). */
 function applyDraft(d: Draft): void {
-  const { scale, ...app } = d;
-  useAppStore.getState().set(app);
+  const { scale, theme, crosshair, magnet, ...view } = d;
+  useAppStore.getState().set({ theme, crosshair, magnet });
+  useChartView.getState().set(view);
   const chart = getChart();
   if (chart && scale && readScale(chart)) {
     chart.setPriceScaleMode('main', scale.mode);
@@ -171,7 +174,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   const [initial] = useState(readDraft);
   const [draft, setDraft] = useState(initial);
   const [tab, setTab] = useState<TabId>('symbol');
-  const chartType = useAppStore((st) => st.chartType);
+  const chartType = useChartView((st) => st.chartType);
   const [templateBtn, setTemplateBtn] = useState<HTMLButtonElement | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [templates, setTemplates] = useState<ChartTemplate[] | null>(null);

@@ -1,6 +1,7 @@
 import { isExpressionSymbol } from '@investopen/engine';
 import { commands, type Command } from '../commands/registry';
-import { normalizeSymbol, useAppStore } from '../store/app';
+import { normalizeSymbol } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useUiStore } from '../store/ui';
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
@@ -49,7 +50,7 @@ export function listSymbols(ref: ListRef | null): string[] {
 }
 
 function addSymbol(arg: unknown): void {
-  const sym = normalizeSymbol(typeof arg === 'string' ? arg : useAppStore.getState().symbol);
+  const sym = normalizeSymbol(typeof arg === 'string' ? arg : useChartView.getState().symbol);
   if (!sym) return;
   if (isExpressionSymbol(sym)) {
     toast("Symbol expressions can't be added to watchlists", 'error');
@@ -145,7 +146,7 @@ function pickFile(): void {
 function step(dir: 1 | -1): void {
   const syms = listSymbols(activeRef());
   if (!syms.length) return;
-  const cur = syms.indexOf(useAppStore.getState().symbol);
+  const cur = syms.indexOf(useChartView.getState().symbol);
   const next = cur < 0 ? (dir > 0 ? 0 : syms.length - 1) : cur + dir;
   const sym = syms[next];
   if (sym) commands.execute('chart.setSymbol', sym);

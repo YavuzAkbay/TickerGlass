@@ -1,37 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import {
-  tryParseSymbolExpression,
-  type ChartStyle,
-  type ChartType,
-  type CrosshairMode,
-  type DeepPartial,
-  type MagnetMode,
-} from '@investopen/engine';
+import { tryParseSymbolExpression, type CrosshairMode, type MagnetMode } from '@investopen/engine';
+import type { ChartViewData } from './chartView';
 import { DEFAULT_FAVORITE_INTERVALS } from '../topbar/intervals';
 
 export type Theme = 'dark' | 'light';
-export type { ChartType };
+export type { ChartType } from '@investopen/engine';
 
-/** Persisted user preferences and the active chart's symbol/interval. */
+/** Persisted user preferences (a chart's symbol and settings live in its chart view). */
 interface AppState {
   theme: Theme;
-  symbol: string;
-  interval: string;
   favoriteIntervals: string[];
   customIntervals: string[];
-  chartType: ChartType;
-  /** Per-type style overrides on top of theme defaults. */
-  chartStyle: DeepPartial<ChartStyle>;
-  showPrevClose: boolean;
-  timezone: string; // 'exchange' | 'local' | 'UTC' | IANA
-  prepost: boolean;
   crosshair: CrosshairMode;
   magnet: MagnetMode;
   recentSymbols: string[];
   toggleTheme: () => void;
-  setSymbol: (symbol: string) => void;
-  setInterval: (interval: string) => void;
   toggleFavoriteInterval: (interval: string) => void;
   addCustomInterval: (interval: string) => void;
   removeCustomInterval: (interval: string) => void;
@@ -48,33 +32,39 @@ export function normalizeSymbol(symbol: string): string {
   return parsed.ok ? parsed.value.canonical : upper;
 }
 
+/** Chart view values the app store held before v4 (null once migrated or on a fresh start). */
+let legacy: Record<string, unknown> | null = null;
+
+/**
+ * The symbol, interval and chart settings a pre-v4 app store held, validated,
+ * for the first chart to start from. Does not consume them (React StrictMode
+ * mounts the chart twice).
+ */
+export function legacyChartView(): Partial<ChartViewData> | null {
+  if (!legacy) return null;
+  const out: Partial<ChartViewData> = {};
+  const l = legacy;
+  if (typeof l.symbol === 'string') out.symbol = normalizeSymbol(l.symbol);
+  if (typeof l.interval === 'string') out.interval = l.interval;
+  if (typeof l.chartType === 'string') out.chartType = l.chartType as ChartViewData['chartType'];
+  if (typeof l.chartStyle === 'object' && l.chartStyle !== null)
+    out.chartStyle = l.chartStyle as ChartViewData['chartStyle'];
+  if (typeof l.showPrevClose === 'boolean') out.showPrevClose = l.showPrevClose;
+  if (typeof l.timezone === 'string') out.timezone = l.timezone;
+  if (typeof l.prepost === 'boolean') out.prepost = l.prepost;
+  return Object.keys(out).length ? out : null;
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       theme: 'dark',
-      symbol: 'AAPL',
-      interval: '1D',
       favoriteIntervals: [...DEFAULT_FAVORITE_INTERVALS],
       customIntervals: [],
-      chartType: 'candles',
-      chartStyle: {},
-      showPrevClose: false,
-      timezone: 'exchange',
-      prepost: false,
       crosshair: 'cross',
       magnet: 'off',
       recentSymbols: [],
       toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
-      // Upper-cased like the engine (Chart.setSymbol), so drawing bucket keys
-      // match the symbol the engine filters by.
-      setSymbol: (raw) => {
-        const symbol = normalizeSymbol(raw);
-        set((s) => ({
-          symbol,
-          recentSymbols: [symbol, ...s.recentSymbols.filter((x) => x !== symbol)].slice(0, 12),
-        }));
-      },
-      setInterval: (interval) => set({ interval }),
       toggleFavoriteInterval: (iv) =>
         set((s) => ({
           favoriteIntervals: s.favoriteIntervals.includes(iv)
@@ -89,8 +79,24 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'investopen-app',
-      version: 3,
-      migrate: (s) => ({ chartStyle: {}, showPrevClose: false, ...(s as object) }) as AppState,
+      version: 4,
+      // v3 -> v4: symbol, interval and chart settings moved to the per-chart view;
+      // the old values seed the first chart (see legacyChartView).
+      migrate: (s, version) => {
+        const {
+          symbol,
+          interval,
+          chartType,
+          chartStyle,
+          showPrevClose,
+          timezone,
+          prepost,
+          ...rest
+        } = (s ?? {}) as Record<string, unknown>;
+        if (version < 4)
+          legacy = { symbol, interval, chartType, chartStyle, showPrevClose, timezone, prepost };
+        return rest as unknown as AppState;
+      },
       merge: (persisted, current) => {
         // `volume` (built-in volume mode) is legacy: the indicator store migrates
         // it to the Volume indicator (see legacyAppVolume) and the key is dropped
@@ -98,11 +104,7 @@ export const useAppStore = create<AppState>()(
         const { volume: _legacy, ...p } = (persisted ?? {}) as Partial<AppState> & {
           volume?: unknown;
         };
-        return {
-          ...current,
-          ...p,
-          symbol: typeof p.symbol === 'string' ? normalizeSymbol(p.symbol) : current.symbol,
-        };
+        return { ...current, ...p };
       },
     },
   ),

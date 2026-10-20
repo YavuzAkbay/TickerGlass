@@ -1,5 +1,5 @@
 import { getChart } from '../store/chart';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 
 export interface RangePreset {
   label: string;
@@ -56,7 +56,7 @@ export const RANGE_PRESETS: RangePreset[] = [
 export async function applyRangePreset(preset: RangePreset): Promise<void> {
   const chart = getChart();
   if (!chart) return;
-  const { symbol, setInterval } = useAppStore.getState();
+  const { symbol, setInterval } = useChartView.getState();
   // Load first, then sync the store (the chart treats the repeat as a no-op).
   const loading = chart.setSymbolAndInterval(symbol, preset.interval);
   setInterval(preset.interval);

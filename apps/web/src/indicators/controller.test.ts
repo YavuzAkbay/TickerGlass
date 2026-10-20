@@ -310,6 +310,7 @@ function setup(
   const onError = vi.fn();
   const ctl = new IndicatorController({
     chart,
+    runtime: useIndicatorRuntime,
     feed: opts.feed ?? stubFeed(() => makeBars(0)),
     worker: (opts.worker ?? inProcessWorker)(log),
     schedule: (fn) => frames.push(fn),

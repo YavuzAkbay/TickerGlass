@@ -25,7 +25,7 @@ import { findIndicator } from '../indicators/actions';
 import { indicatorMenuItems } from '../indicators/menu';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
-import { changeScale, toggleScaleMode } from './scaleActions';
+import { changeScale, toggleScaleMode } from '../commands/scaleActions';
 import { openContextMenu } from '../ui/ContextMenu';
 import type { MenuItem } from '../ui/Menu';
 import { toast } from '../ui/Toast';

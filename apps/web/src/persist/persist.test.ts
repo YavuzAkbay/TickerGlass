@@ -19,7 +19,7 @@ import {
   useIndicatorPrefs,
   useIndicatorStore,
 } from '../indicators/store';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { readChartTemplate } from './chartTemplates';
 import { DrawingSync, DRAWING_SYNC_KEY, type DrawingApi } from './drawingSync';
 import { capToasts } from '../ui/Toast';
@@ -509,7 +509,7 @@ describe('layout state parsing', () => {
     });
     expect(s!.indicators).toEqual([indicator('x')]);
     expect(s!.chart).toBeNull();
-    expect(s!.chartSettings.chartType).toBe(useAppStore.getState().chartType);
+    expect(s!.chartSettings.chartType).toBe(useChartView.getState().chartType);
     expect(parseLayoutState({}, 99)).toBeNull();
   });
 

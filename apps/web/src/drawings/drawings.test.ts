@@ -4,6 +4,7 @@ import { useHistory } from '../commands/history';
 import { useChartStore } from '../store/chart';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useUiStore } from '../store/ui';
 import { isToolAvailable } from '../toolbar/tools';
 import { attachDrawings, engineTool, keepPerDrawingStyle } from './attach';
@@ -86,7 +87,7 @@ function seed(...list: Drawing[]) {
 beforeEach(() => {
   useDrawingStore.setState({ bySymbol: {}, synced: [] });
   useHistory.getState().clear();
-  useAppStore.setState({ symbol: 'AAPL', interval: '1D' });
+  useChartView.setState({ symbol: 'AAPL', interval: '1D' });
   useIndicatorStore.setState({ instances: [] });
   flushGestures();
   useHistory.getState().clear();
@@ -428,8 +429,8 @@ describe('copy/paste, scope, symbol', () => {
   });
 
   it('normalizes the app symbol like the engine (bucket keys match)', () => {
-    useAppStore.getState().setSymbol(' msft ');
-    expect(useAppStore.getState().symbol).toBe('MSFT');
+    useChartView.getState().setSymbol(' msft ');
+    expect(useChartView.getState().symbol).toBe('MSFT');
     expect(useAppStore.getState().recentSymbols[0]).toBe('MSFT');
   });
 
@@ -621,7 +622,10 @@ describe('attach (engine events and sync)', () => {
   function attach() {
     vi.stubGlobal('window', { addEventListener: () => {}, removeEventListener: () => {} });
     const f = fakeChart();
-    const detach = attachDrawings(f.chart, {} as HTMLElement);
+    const detach = attachDrawings(
+      { chart: f.chart, view: useChartView, history: useHistory },
+      {} as HTMLElement,
+    );
     return {
       ...f,
       detach: () => {
@@ -640,7 +644,7 @@ describe('attach (engine events and sync)', () => {
     // The eraser removed `synced` mid-gesture; switching symbol aborts it,
     // which reports the removal from inside setDrawings.
     f.onNextSet(() => f.emit('drawingsRemoved', { drawings: [synced] }));
-    useAppStore.setState({ symbol: 'MSFT' });
+    useChartView.setState({ symbol: 'MSFT' });
     expect(findDrawing(synced.id)).toBeUndefined();
     expect(f.ids()).toEqual([]);
     f.detach();

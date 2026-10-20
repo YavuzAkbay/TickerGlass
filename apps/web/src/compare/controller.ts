@@ -32,7 +32,8 @@ import {
   type Unsubscribe,
 } from '@investopen/engine';
 import { comparePaneId, type ComparePlacement, type CompareState } from './model';
-import { useCompareRuntime, type CompareStatus } from './store';
+import type { StoreApi } from 'zustand/vanilla';
+import type { CompareRuntimeState, CompareStatus } from './store';
 
 /** What the controller needs from the engine chart (Chart implements it). */
 export interface CompareHost extends StudyApi {
@@ -48,6 +49,8 @@ export interface CompareHost extends StudyApi {
 export interface CompareControllerOptions {
   chart: CompareHost;
   feed: DataFeed;
+  /** The chart's live per-overlay state (statuses, symbol info) the legends read. */
+  runtime: StoreApi<CompareRuntimeState>;
   /** Coalesces live bars (requestAnimationFrame in the app). */
   schedule?: (fn: () => void) => void;
   /** User-facing errors (toasts in the app). */
@@ -186,7 +189,7 @@ export class CompareController {
     this.offs = [];
     for (const ov of this.overlays.values()) this.drop(ov);
     this.overlays.clear();
-    useCompareRuntime.setState({ status: {}, info: {} });
+    this.opts.runtime.setState({ status: {}, info: {} });
   }
 
   /** Mirror the store's overlay list into the engine and fetch what it needs. */
@@ -638,7 +641,7 @@ export class CompareController {
           }),
         ) || changed;
     }
-    if (changed) useCompareRuntime.setState((s) => ({ tick: s.tick + 1 }));
+    if (changed) this.opts.runtime.setState((s) => ({ tick: s.tick + 1 }));
   }
 
   // ------------------------------------------------------------- runtime
@@ -661,12 +664,12 @@ export class CompareController {
       const i = this.overlayOf(item)?.info;
       if (i) info[item.id] = i;
     }
-    const cur = useCompareRuntime.getState();
+    const cur = this.opts.runtime.getState();
     if (JSON.stringify(cur.status) === JSON.stringify(status) && sameInfo(cur.info, info)) {
-      useCompareRuntime.setState((s) => ({ tick: s.tick + 1 }));
+      this.opts.runtime.setState((s) => ({ tick: s.tick + 1 }));
       return;
     }
-    useCompareRuntime.setState((s) => ({ status, info, tick: s.tick + 1 }));
+    this.opts.runtime.setState((s) => ({ status, info, tick: s.tick + 1 }));
   }
 }
 

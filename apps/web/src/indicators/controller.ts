@@ -38,7 +38,8 @@ import { BRICK_MESSAGE, ExternalSymbols } from './external';
 import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './sandbox/limits';
 import { userScriptProblem } from '../scripts/definitions';
 import type { FromWorker, ToWorker } from './protocol';
-import { useIndicatorRuntime } from './store';
+import type { StoreApi } from 'zustand/vanilla';
+import type { IndicatorRuntimeState } from './store';
 
 /** What the controller needs from the engine chart (Chart implements it). */
 export interface ChartHost extends StudyApi {
@@ -80,6 +81,8 @@ export function createIndicatorWorker(): WorkerPort {
 export interface ControllerOptions {
   chart: ChartHost;
   feed: DataFeed;
+  /** The chart's live per-instance state (statuses, panes) the legends read. */
+  runtime: StoreApi<IndicatorRuntimeState>;
   worker: WorkerPort;
   /** Coalesces live bars (requestAnimationFrame in the app). */
   schedule?: (fn: () => void) => void;
@@ -230,7 +233,7 @@ export class IndicatorController {
     this.tfSeries.clear();
     this.external.destroy();
     this.worker.terminate();
-    useIndicatorRuntime.setState({ status: {}, panes: {} });
+    this.opts.runtime.setState({ status: {}, panes: {} });
   }
 
   /** Global "hide indicators" (left toolbar hide button). */
@@ -351,7 +354,7 @@ export class IndicatorController {
     const placed = this.applied.get(inst.id)?.targetKey === inst.placement;
     const target = this.target(inst, def);
     const paneId = placed
-      ? useIndicatorRuntime.getState().panes[inst.id]
+      ? this.opts.runtime.getState().panes[inst.id]
       : 'paneId' in target
         ? target.paneId
         : null;
@@ -381,7 +384,7 @@ export class IndicatorController {
     if (inst.placement === 'main') return { paneId: 'main' };
     if (inst.placement === 'own') return own;
     const ref = sourceRefOf(inst);
-    const srcPane = ref ? useIndicatorRuntime.getState().panes[ref.instanceId] : undefined;
+    const srcPane = ref ? this.opts.runtime.getState().panes[ref.instanceId] : undefined;
     if (srcPane) return { paneId: srcPane };
     return def.overlay ? { paneId: 'main' } : own;
   }
@@ -420,23 +423,23 @@ export class IndicatorController {
   }
 
   private setPane(id: string, paneId: string): void {
-    useIndicatorRuntime.setState((s) => ({ panes: { ...s.panes, [id]: paneId } }));
+    this.opts.runtime.setState((s) => ({ panes: { ...s.panes, [id]: paneId } }));
   }
 
   private setStatus(id: string, status: InstanceStatus): void {
-    useIndicatorRuntime.setState((s) => ({ status: { ...s.status, [id]: status } }));
+    this.opts.runtime.setState((s) => ({ status: { ...s.status, [id]: status } }));
   }
 
   private clearStatus(id: string): void {
-    if (!(id in useIndicatorRuntime.getState().status)) return;
-    useIndicatorRuntime.setState((s) => {
+    if (!(id in this.opts.runtime.getState().status)) return;
+    this.opts.runtime.setState((s) => {
       const { [id]: _s, ...status } = s.status;
       return { status };
     });
   }
 
   private forget(id: string): void {
-    useIndicatorRuntime.setState((s) => {
+    this.opts.runtime.setState((s) => {
       const { [id]: _s, ...status } = s.status;
       const { [id]: _p, ...panes } = s.panes;
       return { status, panes };
@@ -446,7 +449,7 @@ export class IndicatorController {
   private onPaneRemoved(): void {
     const panes: Record<string, string> = {};
     for (const s of this.chart.getStudies()) panes[s.id] = s.paneId;
-    useIndicatorRuntime.setState({ panes });
+    this.opts.runtime.setState({ panes });
     const lost = [...this.applied.keys()].filter((id) => !(id in panes));
     if (!lost.length) return;
     for (const id of lost) {
@@ -707,7 +710,7 @@ export class IndicatorController {
       if (err) status[inst.id] = err;
     }
     if (Object.keys(status).length)
-      useIndicatorRuntime.setState((s) => ({ status: { ...s.status, ...status } }));
+      this.opts.runtime.setState((s) => ({ status: { ...s.status, ...status } }));
   }
 
   // --------------------------------------------------------------- results
@@ -800,7 +803,7 @@ export class IndicatorController {
           });
       });
     }
-    useIndicatorRuntime.setState((s) => ({
+    this.opts.runtime.setState((s) => ({
       status: { ...s.status, ...status },
       tick: s.tick + 1,
     }));
