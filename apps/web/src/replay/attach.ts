@@ -2,7 +2,7 @@ import type { ChartSession } from '../chart/session';
 import { getActiveSession } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { resetToCursor } from '../toolbar/tools';
-import { replay } from './instance';
+import { pinReplayChart, replay } from './instance';
 import { useReplayStore } from './store';
 import { REPLAY_PICK_ID, barAtOrBefore } from './tool';
 
@@ -30,6 +30,11 @@ export function attachReplay(session: Pick<ChartSession, 'id' | 'chart'>): () =>
       // The pick tool is armed on the active chart only.
       if (getActiveSession()?.id !== session.id) return;
       if (!armed() || useReplayStore.getState().status !== 'picking') return;
+      // One clock per layout: only the replay chart may start or move it.
+      if (!pinReplayChart(session.id)) {
+        replay.cancelPick();
+        return;
+      }
       const bar = barAtOrBefore(chart.store.time, chart.store.length, time);
       if (bar === null) {
         replay.cancelPick();
@@ -41,6 +46,8 @@ export function attachReplay(session: Pick<ChartSession, 'id' | 'chart'>): () =>
   return () => {
     offs.forEach((off) => off());
     // The chart is going away: stop the play loop, drop the feed's replay state and listeners.
-    replay.detach();
+    // Other charts leaving (layout change) do not stop the replay.
+    const pinned = useReplayStore.getState().chartId;
+    if (pinned === null || pinned === session.id) replay.detach();
   };
 }

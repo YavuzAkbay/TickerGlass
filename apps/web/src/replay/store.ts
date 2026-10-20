@@ -19,6 +19,8 @@ interface ReplayStore {
   /** Tick interval text (e.g. "1m"), or null when whole bars are replayed. */
   tick: string | null;
   warning: string | null;
+  /** The replay chart (the active chart when replay began), pinned until replay ends. */
+  chartId: string | null;
   /** Delay per step in ms (persisted). */
   speed: number;
   /** Update picker (persisted). */
@@ -59,6 +61,7 @@ export const useReplayStore = create<ReplayStore>()(
       next: NaN,
       tick: null,
       warning: null,
+      chartId: null,
       speed: DEFAULT_SPEED,
       update: 'auto',
       set: (patch) => set(patch),

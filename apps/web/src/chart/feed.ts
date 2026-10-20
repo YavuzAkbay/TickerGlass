@@ -1,4 +1,5 @@
 import {
+  CoalescingFeed,
   ExpressionFeed,
   HttpDataFeed,
   ReplayFeed,
@@ -19,7 +20,7 @@ function makeFeed(): DataFeed {
   if (mode === 'synthetic') return new ExpressionFeed(new SyntheticFeed());
   if (mode === 'synthetic-multi')
     return new ExpressionFeed(new SyntheticFeed(100_000, undefined, 42, { perSymbol: true }));
-  return new ExpressionFeed(new ResamplingFeed(new HttpDataFeed()));
+  return new ExpressionFeed(new ResamplingFeed(new CoalescingFeed(new HttpDataFeed())));
 }
 
 /** Outermost layer: passthrough while live, clipped to the replay clock during replay.

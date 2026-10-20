@@ -106,11 +106,17 @@ class FakeChart implements ReplayChart {
   }
 }
 
-function setup() {
+function setup(others: ReplayChart[] = []) {
   const feed = new FakeFeed();
   const chart = new FakeChart();
   const onError = vi.fn();
-  const ctl = new ReplayController({ feed, getChart: () => chart, prepost: () => false, onError });
+  const ctl = new ReplayController({
+    feed,
+    getChart: () => chart,
+    getOtherCharts: () => others,
+    prepost: () => false,
+    onError,
+  });
   return { feed, chart, ctl, onError };
 }
 
@@ -135,6 +141,24 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('ReplayController', () => {
+  it('reloads every chart on start, seek and stop; the replay chart drives the clock', async () => {
+    const other = new FakeChart();
+    other.symbol = 'MSFT';
+    const { feed, chart, ctl } = setup([other]);
+    await ctl.start(1000);
+    expect(feed.startCalls).toHaveLength(1);
+    expect(feed.startCalls[0]).toMatchObject({ symbol: 'AAPL' });
+    expect([chart.reloads, other.reloads]).toEqual([1, 1]);
+    await ctl.seek(1200);
+    expect([chart.reloads, other.reloads]).toEqual([2, 2]);
+    // Only the replay chart re-points the clock; the other chart's events are not listened to.
+    expect(other.listeners()).toBe(0);
+    expect(chart.listeners()).toBe(1);
+    ctl.exit();
+    expect([chart.reloads, other.reloads]).toEqual([3, 3]);
+    expect(status()).toBe('off');
+  });
+
   it('start loads through the feed, reloads the chart once and pauses', async () => {
     const { feed, chart, ctl } = setup();
     const p = ctl.start(1000);
@@ -398,6 +422,7 @@ describe('ReplayController', () => {
     const ctl = new ReplayController({
       feed,
       getChart: () => chart,
+      getOtherCharts: () => [],
       prepost: () => false,
       sessions: [session],
     });
@@ -457,6 +482,7 @@ describe('ReplayController', () => {
     const ctl = new ReplayController({
       feed,
       getChart: () => chart,
+      getOtherCharts: () => [],
       prepost: () => false,
       sessions: [{ reset: () => undefined, prime: () => undefined, step }],
     });

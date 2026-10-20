@@ -40,7 +40,10 @@ export interface ReplaySession {
 export interface ReplayControllerDeps {
   sessions?: readonly ReplaySession[];
   feed: ReplayFeedLike;
+  /** The replay chart: pinned from the start until replay ends; owns the clock's symbol and interval. */
   getChart: () => ReplayChart | null;
+  /** The other charts of the layout: clipped by the shared feed and reloaded with the replay chart. */
+  getOtherCharts: () => readonly ReplayChart[];
   prepost: () => boolean;
   /** User-facing errors (toasts in the app). */
   onError?: (message: string) => void;
@@ -110,7 +113,7 @@ export class ReplayController {
       const info = await this.begin(chart, interval, lastVisible as UTCTimestamp);
       if (gen !== this.generation) return;
       this.applyInfo(info);
-      await chart.reload();
+      await this.reloadAll(chart);
       if (gen !== this.generation) return;
       this.each((s) => s.prime());
       this.set({ status: 'paused' });
@@ -119,6 +122,11 @@ export class ReplayController {
       this.onError(`Replay: ${errText(err)}`);
       this.leave(chart, feed.mode === 'replay');
     }
+  }
+
+  /** Reload the replay chart and every other chart (their data is clipped to the clock). */
+  private reloadAll(chart: ReplayChart): Promise<unknown> {
+    return Promise.all([chart, ...this.deps.getOtherCharts()].map((c) => c.reload()));
   }
 
   /** Move the replay to another bar. Same as start: the feed seeks when already replaying. */
@@ -285,10 +293,13 @@ export class ReplayController {
     this.offs = [];
     this.each((s) => s.end?.());
     this.each((s) => s.reset());
+    // Read before the caller unpins the replay chart (status 'off' below).
+    const others = reload ? this.deps.getOtherCharts() : [];
     this.deps.feed.stop();
     this.set({ status: 'off', last: NaN, next: NaN, tick: null, warning: null });
     if (reload && chart) {
-      chart.reload().catch((err: unknown) => this.onError(`Replay: ${errText(err)}`));
+      for (const c of [chart, ...others])
+        c.reload().catch((err: unknown) => this.onError(`Replay: ${errText(err)}`));
     }
   }
 

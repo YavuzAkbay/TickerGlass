@@ -202,6 +202,23 @@ def test_drawings_batch_and_query(client: TestClient) -> None:
     assert ids(client.get("/api/drawings", params={"symbol": "MSFT"})) == ["d1", "s1"]
 
 
+def test_drawing_chart_id_round_trips_inside_data(client: TestClient) -> None:
+    # Chart-bound drawings keep their chart id in the drawing JSON; the API stores it as sent.
+    batch(
+        client,
+        upserts=[
+            {"drawing": drawing("b1", chartId="chart-uuid-1")},
+            {"drawing": drawing("u1")},
+        ],
+    )
+    out = {d["id"]: d for d in client.get("/api/drawings").json()["drawings"]}
+    assert out["b1"]["data"]["chartId"] == "chart-uuid-1"
+    assert "chartId" not in out["u1"]["data"]
+    batch(client, upserts=[{"drawing": drawing("b1", chartId="chart-uuid-2"), "baseRevision": 1}])
+    got = client.get("/api/drawings").json()["drawings"]
+    assert {d["id"]: d["data"].get("chartId") for d in got} == {"b1": "chart-uuid-2", "u1": None}
+
+
 def test_drawings_conflicts_are_all_or_nothing(client: TestClient) -> None:
     batch(client, upserts=[{"drawing": drawing("d1")}, {"drawing": drawing("d2")}])
     batch(client, upserts=[{"drawing": drawing("d1", text="other device"), "baseRevision": 1}])

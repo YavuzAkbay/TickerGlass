@@ -107,6 +107,15 @@ uses whole bars (the synthetic dev feed's intervals are unrelated random walks, 
 - Jump to realtime and Exit both call `ReplayFeed.stop()`: epoch bump, one chart reload, controllers refetch and
   resubscribe live.
 
+**Multiple charts (Phase 14).** There is one replay clock per layout. The replay chart is the chart that was
+active when replay started (when the scissors picked a bar); it is pinned (`useReplayStore.chartId`) until replay
+ends, so moving focus to another chart retargets the toolbar and dock but not the replay. The replay chart owns the
+scissors picker (a pick on another chart cancels the pick), the ReplayBar (rendered in its cell), paper trading
+and local alerts. The feed's primary is the replay chart's symbol and interval. Every other chart reads the same
+`replayFeed`, so it is clipped to the clock; `ReplayController` reloads all charts after start, seek and stop
+(deps `getChart()` for the replay chart and `getOtherCharts()`), never per step. Removing another chart's cell
+does not stop the replay; removing the replay chart does.
+
 ## 4. Alerts in replay
 
 Server alerts keep running in real time and are unaffected. While replay is on:

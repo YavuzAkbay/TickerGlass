@@ -433,3 +433,57 @@ test('drawing sync off: a drawing stays on its chart; selection is per chart', a
   await setSync(page, 'Drawings', true);
   expect(await drawn(idA!)).toBe(0);
 });
+
+test('a 4-chart layout of one symbol and interval fetches bars once', async ({ page }) => {
+  const requests: string[] = [];
+  const N = 400;
+  const DAY = 86_400;
+  const t0 = Math.floor(Date.UTC(2024, 0, 1) / 1000);
+  await page.route('**/api/symbols/*', (route) =>
+    route.fulfill({
+      json: {
+        symbol: 'AAPL',
+        name: 'Apple Inc.',
+        exchange: 'NMS',
+        exchangeName: 'NasdaqGS',
+        type: 'EQUITY',
+        currency: 'USD',
+        timezone: 'America/New_York',
+        session: '0930-1600',
+        priceHint: 2,
+        minTick: 0.01,
+      },
+    }),
+  );
+  await page.route('**/api/bars?*', (route) => {
+    const q = new URL(route.request().url()).searchParams;
+    requests.push(`${q.get('symbol')}|${q.get('interval')}`);
+    const t = Array.from({ length: N }, (_, i) => t0 + i * DAY);
+    const c = t.map((_, i) => 100 + Math.sin(i / 9) * 8);
+    return route.fulfill({
+      json: {
+        t,
+        o: c,
+        h: c.map((x) => x + 1),
+        l: c.map((x) => x - 1),
+        c,
+        v: t.map(() => 1000),
+        hasMore: false,
+      },
+    });
+  });
+  await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
+  await page.goto('/');
+  await page.waitForFunction(() => window.chart?.store.length > 0);
+  await expect(layoutButton(page)).toBeVisible();
+  await chooseTemplate(page, '2x2');
+  await expect(cells(page)).toHaveCount(4);
+  await page.waitForFunction(() => {
+    const all = Object.values(window.charts);
+    return all.length === 4 && all.every((c) => c.store.length > 0);
+  });
+  const counts = new Map<string, number>();
+  for (const r of requests) counts.set(r, (counts.get(r) ?? 0) + 1);
+  expect(counts.size).toBeGreaterThan(0);
+  for (const [, n] of counts) expect(n).toBe(1);
+});
