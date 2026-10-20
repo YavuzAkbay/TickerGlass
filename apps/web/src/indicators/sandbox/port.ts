@@ -33,6 +33,10 @@ export interface SandboxPort {
 }
 
 export function createSandboxWorker(): SandboxPort {
+  // Must stay `type: 'module'`: module code is always strict, and the sandbox
+  // relies on strict mode (no `arguments.callee` / `fn.caller` / sloppy stack
+  // frames leaking the captured post). The built file also starts with
+  // "use strict" (vite.config.ts sandboxWorkerSelfContained).
   const w = new Worker(new URL('./sandbox-worker.ts', import.meta.url), {
     type: 'module',
     name: 'sandbox',
@@ -44,7 +48,7 @@ export function createSandboxWorker(): SandboxPort {
       w.onerror = (e) => {
         // Handled here: not an uncaught error of the page.
         e.preventDefault();
-        onFailure(`Sandbox worker failed: ${e.message}`);
+        onFailure(`Sandbox worker failed: ${textOf(e.message, 'unknown error')}`);
       };
       w.onmessageerror = () => onFailure('Sandbox worker: unreadable message');
     },
@@ -71,14 +75,37 @@ export const SLOW_MESSAGE_MS = 10_000;
 export const MESSAGE_MS = 5_000;
 /** A sandbox with nothing outstanding is pinged this often. */
 export const PING_MS = 10_000;
+/**
+ * A ping must be acknowledged within this: it is only sent to an idle sandbox,
+ * which answers at once, so a longer wait means user code keeps the worker
+ * busy in the background. Generous for a loaded machine or a GC pause.
+ */
+export const PING_DEADLINE_MS = 2_000;
+/** Messages awaiting an ack beyond which a sandbox is stopped (it cannot keep up). */
+export const MAX_PENDING_MESSAGES = 500;
+/** No message may wait longer than this for its ack, however the queue moves. */
+export const MAX_MESSAGE_AGE_MS = 30_000;
+/**
+ * Non-ack messages a sandbox may post between two acks: this many, plus
+ * POSTS_PER_PENDING per message it has not acknowledged yet (the most one
+ * message causes is 3: results or error, timeframes, symbols).
+ */
+export const POSTS_SLACK = 4;
+export const POSTS_PER_PENDING = 4;
 /** Resends of the bars to one sandbox per series revision. */
 export const MAX_SANDBOX_RESYNCS = 3;
 
 export const SCRIPT_CHANGED_MESSAGE =
   'Script changed since it was saved – open the editor and save again';
 export const OUT_OF_SYNC_MESSAGE = 'Indicator data keeps falling out of sync with the chart';
+export const PROTOCOL_MESSAGE = 'Stopped: the script broke the sandbox protocol';
+export const FLOOD_MESSAGE = 'Stopped: the script sent too many messages';
+export const BACKLOG_MESSAGE = 'Stopped: the script cannot keep up with the chart';
 
 const SLOW_TYPES = new Set<SandboxMessage['type']>(['load', 'bars', 'check']);
+
+const limitOf = (type: SandboxMessage['type']) =>
+  type === 'ping' ? PING_DEADLINE_MS : SLOW_TYPES.has(type) ? SLOW_MESSAGE_MS : MESSAGE_MS;
 const MAX_MESSAGE = 500;
 
 export const stoppedMessage = (ms: number) =>
@@ -97,6 +124,8 @@ interface Instance {
 interface Pending {
   seq: number;
   limit: number;
+  /** Date.now() of its post (MAX_MESSAGE_AGE_MS). */
+  posted: number;
 }
 
 /** A spawned sandbox worker with its watchdog. */
@@ -106,6 +135,8 @@ interface Sandbox {
   sig: string;
   /** Stub definition of the saved manifest (input coercion). */
   def: AnyIndicatorDefinition;
+  /** Output ids of `def`: the only keys a result may carry. */
+  outputIds: ReadonlySet<string>;
   /** Canonical JSON of the saved manifest. */
   manifestKey: string;
   seq: number;
@@ -114,6 +145,10 @@ interface Sandbox {
   /** When the oldest pending message started waiting (its post, or the previous ack). */
   since: number;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Non-ack messages received since the last ack (rate cap). */
+  received: number;
+  /** Terminated: nothing more is sent or armed. */
+  stopped: boolean;
   /** `bars` messages posted (the sandbox echoes its count in resync). */
   barsSent: number;
   resyncRevision: number;
@@ -250,7 +285,11 @@ export class ScriptRouterPort implements WorkerPort {
       this.stop(old);
       this.instances.delete(spec.id);
     }
-    if (this.instances.size >= MAX_SCRIPT_INSTANCES_PER_CHART) {
+    // Counted like the controller: instances whose script can run (a stopped
+    // instance of a deleted or broken script takes no slot).
+    let running = 0;
+    for (const i of this.instances.values()) if (i.sandbox || this.runnable(i.scriptId)) running++;
+    if (running >= MAX_SCRIPT_INSTANCES_PER_CHART) {
       this.emit({ type: 'error', id: spec.id, message: SCRIPT_INSTANCE_CAP_MESSAGE });
       return;
     }
@@ -286,16 +325,11 @@ export class ScriptRouterPort implements WorkerPort {
    */
   private start(inst: Instance): void {
     const script = this.deps.getScript(inst.scriptId);
-    if (!script?.manifest) return;
-    let def: AnyIndicatorDefinition;
-    let manifestKey: string;
-    try {
-      const manifest = parseManifest(script.manifest);
-      manifestKey = canonicalJson(manifest);
-      def = { ...definitionFromManifest(manifest), id: inst.type };
-    } catch {
-      return; // No stub is registered for it either: the controller reports it.
-    }
+    const parsed = script && parsedManifest(script);
+    // No stub is registered for it either: the controller reports it.
+    if (!script || !parsed) return;
+    const def: AnyIndicatorDefinition = { ...parsed.def, id: inst.type };
+    const { manifestKey } = parsed;
     let port: SandboxPort;
     try {
       port = this.spawnPort();
@@ -311,11 +345,14 @@ export class ScriptRouterPort implements WorkerPort {
       port,
       sig: sigOf(script),
       def,
+      outputIds: new Set(def.outputs.map((o) => o.id)),
       manifestKey,
       seq: 0,
       pending: [],
       since: 0,
       timer: null,
+      received: 0,
+      stopped: false,
       barsSent: 0,
       resyncRevision: -1,
       resyncs: 0,
@@ -346,11 +383,26 @@ export class ScriptRouterPort implements WorkerPort {
     this.arm(sb);
   }
 
+  /** The saved script of `scriptId` has a manifest a sandbox can start with. */
+  private runnable(scriptId: string): boolean {
+    const script = this.deps.getScript(scriptId);
+    return !!script && parsedManifest(script) !== null;
+  }
+
+  /** Stop `sb` (if still its instance's sandbox) and report `message` on the instance. */
+  private kill(sb: Sandbox, message: string): void {
+    const inst = [...this.instances.values()].find((i) => i.sandbox === sb);
+    if (!inst) return;
+    this.stop(inst);
+    this.emit({ type: 'error', id: inst.id, message });
+  }
+
   /** Terminate the instance's sandbox (if any); the instance stays known. */
   private stop(inst: Instance): void {
     const sb = inst.sandbox;
     if (!sb) return;
     inst.sandbox = null;
+    sb.stopped = true;
     if (sb.timer !== null) clearTimeout(sb.timer);
     sb.timer = null;
     sb.port.terminate();
@@ -382,9 +434,15 @@ export class ScriptRouterPort implements WorkerPort {
   }
 
   private send(sb: Sandbox, msg: SandboxMessage, transfer: Transferable[] = []): void {
+    if (sb.stopped) return;
+    if (sb.pending.length >= MAX_PENDING_MESSAGES) {
+      this.kill(sb, BACKLOG_MESSAGE);
+      return;
+    }
     const seq = ++sb.seq;
-    if (!sb.pending.length) sb.since = Date.now();
-    sb.pending.push({ seq, limit: SLOW_TYPES.has(msg.type) ? SLOW_MESSAGE_MS : MESSAGE_MS });
+    const now = Date.now();
+    if (!sb.pending.length) sb.since = now;
+    sb.pending.push({ seq, limit: limitOf(msg.type), posted: now });
     sb.port.post({ seq, msg }, transfer);
     this.arm(sb);
   }
@@ -392,11 +450,14 @@ export class ScriptRouterPort implements WorkerPort {
   // -------------------------------------------------------------- watchdog
 
   /**
-   * One timer per sandbox: the oldest unacknowledged message's deadline, or
-   * the next idle ping when nothing is outstanding.
+   * One timer per sandbox: the oldest unacknowledged message's deadline (its
+   * limit from when it became the oldest, capped at MAX_MESSAGE_AGE_MS from
+   * its post), or the next idle ping when nothing is outstanding.
    */
   private arm(sb: Sandbox): void {
     if (sb.timer !== null) clearTimeout(sb.timer);
+    sb.timer = null;
+    if (sb.stopped) return;
     const oldest = sb.pending[0];
     if (!oldest) {
       sb.timer = setTimeout(() => {
@@ -405,23 +466,35 @@ export class ScriptRouterPort implements WorkerPort {
       }, PING_MS);
       return;
     }
-    const wait = Math.max(0, sb.since + oldest.limit - Date.now());
-    sb.timer = setTimeout(() => this.onTimeout(sb, oldest), wait);
+    const deadline = sb.since + oldest.limit;
+    const tooOld = oldest.posted + MAX_MESSAGE_AGE_MS;
+    const message = tooOld < deadline ? BACKLOG_MESSAGE : stoppedMessage(oldest.limit);
+    const wait = Math.max(0, Math.min(deadline, tooOld) - Date.now());
+    sb.timer = setTimeout(() => {
+      sb.timer = null;
+      this.kill(sb, message);
+    }, wait);
   }
 
-  private onTimeout(sb: Sandbox, oldest: Pending): void {
-    sb.timer = null;
-    const inst = [...this.instances.values()].find((i) => i.sandbox === sb);
-    if (!inst) return;
-    this.stop(inst);
-    this.emit({ type: 'error', id: inst.id, message: stoppedMessage(oldest.limit) });
-  }
-
+  /**
+   * Acks are cumulative and must name a message that is outstanding
+   * (`pending[0].seq <= seq <= sb.seq`); anything else is a protocol
+   * violation and stops the sandbox.
+   */
   private onAck(sb: Sandbox, seq: unknown): void {
-    if (typeof seq !== 'number') return;
-    const before = sb.pending.length;
+    const first = sb.pending[0];
+    if (
+      typeof seq !== 'number' ||
+      !Number.isInteger(seq) ||
+      !first ||
+      seq < first.seq ||
+      seq > sb.seq
+    ) {
+      this.kill(sb, PROTOCOL_MESSAGE);
+      return;
+    }
     sb.pending = sb.pending.filter((p) => p.seq > seq);
-    if (sb.pending.length === before) return;
+    sb.received = 0;
     // The next message's handling starts now.
     sb.since = Date.now();
     this.arm(sb);
@@ -430,13 +503,19 @@ export class ScriptRouterPort implements WorkerPort {
   // ------------------------------------------------------------- receiving
 
   private onSandboxMessage(inst: Instance, sb: Sandbox, msg: FromSandbox): void {
+    if (isObj(msg) && msg.type === 'ack') {
+      this.onAck(sb, msg.seq);
+      return;
+    }
+    // Rate cap: everything else must be caused by a message still outstanding.
+    if (++sb.received > POSTS_SLACK + POSTS_PER_PENDING * sb.pending.length) {
+      this.kill(sb, FLOOD_MESSAGE);
+      return;
+    }
     if (!isObj(msg)) return;
     switch (msg.type) {
-      case 'ack':
-        this.onAck(sb, msg.seq);
-        return;
       case 'results': {
-        const results = ownResults(msg, inst.id);
+        const results = ownResults(msg, inst.id, this.mirror, sb.outputIds);
         if (results) this.emit(results);
         return;
       }
@@ -493,32 +572,59 @@ export class ScriptRouterPort implements WorkerPort {
   }
 }
 
+/** Parsed saved manifest: its stub definition and canonical JSON; null if it cannot run. */
+function parsedManifest(
+  script: ScriptSource,
+): { def: AnyIndicatorDefinition; manifestKey: string } | null {
+  if (!script.manifest) return null;
+  try {
+    const manifest = parseManifest(script.manifest);
+    return { def: definitionFromManifest(manifest), manifestKey: canonicalJson(manifest) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The `results` message reduced to `id`'s changes, rebuilt from validated
- * fields (Float64Array values, Uint8Array colours); null if nothing is left.
+ * fields; null if nothing is left. Bounded by what the router itself sent:
+ * the mirror's revision, at most its length, arrays of exactly
+ * `length - from` (Float64Array values, Uint8Array colours) keyed by output
+ * ids of the instance's definition.
  */
-function ownResults(msg: Record<string, unknown>, id: string): FromWorker | null {
+function ownResults(
+  msg: Record<string, unknown>,
+  id: string,
+  mirror: { readonly revision: number; readonly length: number },
+  outputIds: ReadonlySet<string>,
+): FromWorker | null {
   const { revision, length, changes } = msg;
-  if (!Number.isInteger(revision) || !Number.isInteger(length) || (length as number) < 0)
-    return null;
+  if (revision !== mirror.revision || !Number.isInteger(length)) return null;
+  if ((length as number) < 0 || (length as number) > mirror.length) return null;
   if (!Array.isArray(changes)) return null;
   const out: ResultChange[] = [];
   for (const ch of changes as unknown[]) {
     if (!isObj(ch) || ch.id !== id) continue;
-    const change = ownChange(ch, id, length as number);
+    const change = ownChange(ch, id, length as number, outputIds);
     if (change) out.push(change);
   }
   if (!out.length) return null;
   return { type: 'results', revision: revision as number, length: length as number, changes: out };
 }
 
-function ownChange(ch: Record<string, unknown>, id: string, length: number): ResultChange | null {
+function ownChange(
+  ch: Record<string, unknown>,
+  id: string,
+  length: number,
+  outputIds: ReadonlySet<string>,
+): ResultChange | null {
   const { from, status, values, colors } = ch;
   if (!Number.isInteger(from) || (from as number) < 0 || (from as number) > length) return null;
   const st = statusOf(status);
   if (!st || !isObj(values) || !isObj(colors)) return null;
-  const vals = typedEntries(values, Float64Array);
-  const cols = typedEntries(colors, Uint8Array);
+  const size = length - (from as number);
+  const vals = typedEntries(values, Float64Array, size, outputIds);
+  const cols = typedEntries(colors, Uint8Array, size, outputIds);
   if (!vals || !cols) return null;
   return {
     id,
@@ -529,13 +635,16 @@ function ownChange(ch: Record<string, unknown>, id: string, length: number): Res
   };
 }
 
+/** Entries of `rec` if every one is a `ctor` of exactly `size` under a known output id; else null. */
 function typedEntries<T extends Float64Array | Uint8Array>(
   rec: Record<string, unknown>,
   ctor: abstract new (...args: never[]) => T,
+  size: number,
+  outputIds: ReadonlySet<string>,
 ): [string, T][] | null {
   const out: [string, T][] = [];
   for (const [k, v] of Object.entries(rec)) {
-    if (!(v instanceof ctor)) return null;
+    if (!outputIds.has(k) || !(v instanceof ctor) || v.length !== size) return null;
     out.push([k, v]);
   }
   return out;

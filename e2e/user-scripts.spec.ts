@@ -153,6 +153,23 @@ test.describe('user scripts', () => {
     await expect(error).toContainText('boom');
   });
 
+  test('a script that loops forever at load is saved without a manifest and says why', async ({
+    page,
+    server,
+  }) => {
+    await open(page);
+    await openNewScriptEditor(page);
+    await setSource(page, `while (true) {}\n${GOOD}`);
+    await editor(page).getByRole('button', { name: 'Save', exact: true }).click();
+    const message = 'Script did not finish loading within 10 s (endless loop?)';
+    await expect(editor(page).locator('.se-diag-msg', { hasText: message })).toHaveCount(1, {
+      timeout: 20_000,
+    });
+    await expect(page.locator('.io-toast', { hasText: message })).toHaveCount(1);
+    const saved = [...server.userScripts.values()][0]!;
+    expect(saved.manifest).toBeNull();
+  });
+
   test('an endless loop in step is stopped by the watchdog; builtin SMA keeps updating', async ({
     page,
   }) => {
@@ -278,11 +295,11 @@ test.describe('user scripts', () => {
       page,
       server,
     }) => {
-      // APP BUG (reported, not fixed): the controller sets the status "Script deleted"
-      // (indicators/controller.ts sync, scripts/definitions.ts userScriptProblem), but
-      // indicators/Legend.tsx ignores the status when the definition is gone (`!def`) and
-      // always shows "Unknown indicator" next to the raw `user:<id>` type. Drop test.fail
-      // once the legend shows the status message.
+      // APP BUG (reported, not fixed): the legend now shows "Script deleted" (Legend.tsx
+      // uses the status message when the definition is gone), but the controller keeps the
+      // deleted script's engine study on the chart (controller.ts sync skips an applied
+      // instance whose definition disappeared), so getStudies() still has 2 entries. Drop
+      // test.fail once the study is removed (or change the expectation if it should stay).
       test.fail();
       await open(page);
       await createAndAdd(page, GOOD);

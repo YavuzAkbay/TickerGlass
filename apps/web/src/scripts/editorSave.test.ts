@@ -5,12 +5,17 @@ import type { UserScript, UserScriptIn } from '../api/types';
 import type { SandboxPort } from '../indicators/sandbox/port';
 import type { FromSandbox, ToSandbox } from '../indicators/sandbox/protocol';
 import { SandboxCore } from '../indicators/sandbox/sandboxCore';
+import { UserScriptConflict } from '../persist/userScripts';
 import {
   MAX_CHECK_BARS,
+  PROBE_TIMEOUT_MS,
   analyzeScript,
   checkRequestOf,
+  loadTimedOut,
+  loadTimeoutMessage,
   parseSource,
   probeScript,
+  renameScript,
   saveScript,
   type AnalyzeDeps,
   type CheckRequest,
@@ -164,7 +169,10 @@ describe('probeScript', () => {
       await vi.advanceTimersByTimeAsync(1000);
       const out = await p;
       expect(out.ok).toBe(false);
-      expect(out.ok === false && out.error.message).toMatch(/did not finish loading/);
+      expect(out.ok === false && out.error.message).toBe(loadTimeoutMessage(1000));
+      expect(loadTimeoutMessage(PROBE_TIMEOUT_MS)).toBe(
+        'Script did not finish loading within 10 s (endless loop?)',
+      );
       expect(sb.terminated).toBe(true);
     } finally {
       vi.useRealTimers();
@@ -338,6 +346,17 @@ describe('saveScript', () => {
     expect(save).toHaveBeenCalledOnce();
   });
 
+  it('a script whose load times out is saved with manifest null and says why', async () => {
+    const message = loadTimeoutMessage(PROBE_TIMEOUT_MS);
+    const { d, save } = deps({ probe: okProbe({ ok: false, error: { message } }) });
+    const { analysis } = await saveScript('s1', 'n', 'src', d);
+    expect(save.mock.calls[0]?.[1]).toMatchObject({ manifest: null });
+    expect(analysis.diagnostics).toEqual([{ severity: 'error', origin: 'compile', message }]);
+    expect(loadTimedOut(analysis)).toBe(true);
+    const other = { manifest: null, diagnostics: [], checkSkipped: false };
+    expect(loadTimedOut(other)).toBe(false);
+  });
+
   it('a script that does not compile is saved with manifest null', async () => {
     const { d, save } = deps({
       parse: async () => ({ severity: 'error', origin: 'syntax', message: 'bad', line: 1 }),
@@ -368,5 +387,65 @@ describe('saveScript', () => {
     expect(save).toHaveBeenCalledWith('s1', expect.objectContaining({ manifest }), {
       overwrite: true,
     });
+  });
+});
+
+describe('renameScript', () => {
+  const script = (over: Partial<UserScript> = {}): UserScript => ({
+    id: 's1',
+    name: 'Old',
+    source: 'mine',
+    manifest,
+    apiVersion: 1,
+    revision: 1,
+    createdAt: '',
+    updatedAt: '',
+    ...over,
+  });
+
+  it('keeps source and manifest, changes the name', async () => {
+    const save = vi.fn(async (_id: string, input: UserScriptIn) => script(input));
+    await renameScript(script(), 'New', { save, onConflict: vi.fn(), onError: vi.fn() });
+    expect(save).toHaveBeenCalledWith(
+      's1',
+      { name: 'New', source: 'mine', manifest, apiVersion: 1 },
+      {},
+    );
+  });
+
+  it("overwrite after a conflict renames the server's version, not the stale copy", async () => {
+    const theirs = script({ name: 'Theirs', source: 'theirs', manifest: null, revision: 5 });
+    const save = vi
+      .fn<(id: string, input: UserScriptIn, opts: { overwrite?: boolean }) => Promise<UserScript>>()
+      .mockRejectedValueOnce(new UserScriptConflict(theirs))
+      .mockImplementation(async (_id, input) => script(input));
+    let overwrite: (() => Promise<void>) | null = null;
+    const onConflict = vi.fn((err: UserScriptConflict, run: () => Promise<void>) => {
+      expect(err.current).toBe(theirs);
+      overwrite = run;
+    });
+    const onError = vi.fn();
+    await renameScript(script(), 'New', { save, onConflict, onError });
+    expect(onConflict).toHaveBeenCalledOnce();
+    await overwrite!();
+    expect(save).toHaveBeenLastCalledWith(
+      's1',
+      { name: 'New', source: 'theirs', manifest: null, apiVersion: 1 },
+      { overwrite: true },
+    );
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('other failures go to onError', async () => {
+    const err = new Error('offline');
+    const onError = vi.fn();
+    await renameScript(script(), 'New', {
+      save: async () => {
+        throw err;
+      },
+      onConflict: vi.fn(),
+      onError,
+    });
+    expect(onError).toHaveBeenCalledWith(err);
   });
 });

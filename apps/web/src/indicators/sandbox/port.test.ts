@@ -9,11 +9,20 @@ import type { WorkerPort } from '../controller';
 import type { FromWorker, ToWorker } from '../protocol';
 import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './limits';
 import {
+  BACKLOG_MESSAGE,
+  FLOOD_MESSAGE,
+  MAX_MESSAGE_AGE_MS,
+  MAX_PENDING_MESSAGES,
   MAX_SANDBOX_RESYNCS,
   OUT_OF_SYNC_MESSAGE,
+  PING_DEADLINE_MS,
+  POSTS_PER_PENDING,
+  POSTS_SLACK,
+  PROTOCOL_MESSAGE,
   SCRIPT_CHANGED_MESSAGE,
   ScriptRouterPort,
   canonicalJson,
+  createSandboxWorker,
   stoppedMessage,
   type SandboxPort,
   type ScriptSource,
@@ -140,8 +149,11 @@ class FakeSandbox implements SandboxPort {
   fail(message: string) {
     this.onFailure?.(message);
   }
+  private acked = 0;
+  /** Ack every message not acknowledged yet. */
   ackAll() {
-    for (const p of this.posted) this.emit({ type: 'ack', seq: p.data.seq });
+    for (const p of this.posted)
+      if (p.data.seq > this.acked) this.emit({ type: 'ack', seq: (this.acked = p.data.seq) });
   }
   msgs = (): SandboxMessage[] => this.posted.map((p) => p.data.msg);
   types = () => this.msgs().map((m) => m.type);
@@ -327,6 +339,25 @@ describe('ScriptRouterPort routing', () => {
     ]);
   });
 
+  it('a stopped instance of a deleted or broken script takes no slot (as in the controller)', () => {
+    const { port, sandboxes, out, scripts } = setup({
+      scripts: { s1: script(), s2: script(smaSource(), 's2'), s3: script(smaSource(), 's3') },
+    });
+    addUser(port, 'gone', {}, 's2');
+    addUser(port, 'broken', {}, 's3');
+    scripts.delete('s2');
+    port.reloadScript('s2');
+    scripts.set('s3', { ...scripts.get('s3')!, manifest: null });
+    port.reloadScript('s3');
+    for (let i = 0; i < MAX_SCRIPT_INSTANCES_PER_CHART; i++) addUser(port, `u${i}`);
+    expect(errors(out)).toEqual([]);
+    expect(sandboxes.filter((s) => !s.terminated)).toHaveLength(MAX_SCRIPT_INSTANCES_PER_CHART);
+    addUser(port, 'over');
+    expect(errors(out)).toEqual([
+      { type: 'error', id: 'over', message: SCRIPT_INSTANCE_CAP_MESSAGE },
+    ]);
+  });
+
   it('terminate kills every sandbox and the inner worker', () => {
     const { port, inner, sandboxes } = setup();
     addUser(port, 'u1');
@@ -358,6 +389,7 @@ describe('ScriptRouterPort messages from sandboxes', () => {
 
   it('drops spoofed results for other instances and malformed arrays', () => {
     const { port, sandboxes, out } = setup();
+    sendBars(port, 1, 2);
     addUser(port, 'u1');
     port.post({ type: 'add', spec: { id: 'b1', type: 'sma', inputs: {} } });
     const sb = sandboxes[0]!;
@@ -418,6 +450,99 @@ describe('ScriptRouterPort messages from sandboxes', () => {
         ],
       },
     ]);
+  });
+
+  it('drops results not bounded by the mirror and the definition', () => {
+    const { port, sandboxes, out } = setup();
+    sendBars(port, 3, 4);
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    const results = (patch: Record<string, unknown>, change: Record<string, unknown> = {}) => ({
+      type: 'results',
+      revision: 3,
+      length: 4,
+      changes: [
+        {
+          id: 'u1',
+          from: 2,
+          status: { state: 'ok' },
+          values: { ma: new Float64Array(2) },
+          colors: {},
+          ...change,
+        },
+      ],
+      ...patch,
+    });
+    const bad = [
+      results({ length: 1e9 }, { from: 1e9 - 2 }),
+      results({ length: 2 ** 31 }),
+      results({ length: 5 }, { values: { ma: new Float64Array(3) } }),
+      results({ revision: 2 }),
+      results({ revision: 4 }),
+      results({ revision: '3' }),
+      results({}, { values: { ma: new Float64Array(4) } }),
+      results({}, { values: { ma: new Float64Array(1) } }),
+      results({}, { values: { other: new Float64Array(2) } }),
+      results({}, { values: { ma: new Float64Array(2), __proto__x: new Float64Array(2) } }),
+      results({}, { colors: { ma: new Uint8Array(3) } }),
+      results({}, { colors: { nope: new Uint8Array(2) } }),
+    ];
+    for (const m of bad) sb.emit(m);
+    expect(out).toEqual([]);
+    expect(sb.terminated).toBe(false);
+    // Shorter than the mirror (the sandbox lags a tick behind) is fine.
+    sb.emit(results({ length: 3 }, { values: { ma: new Float64Array(1) } }));
+    sb.emit(results({}, { colors: { ma: new Uint8Array(2) } }));
+    expect(out.map((m) => m.type)).toEqual(['results', 'results']);
+  });
+
+  it('stops a sandbox whose ack names no outstanding message', () => {
+    for (const seq of [1e300, 0, -1, 1.5, NaN, '2', undefined, 99]) {
+      const { port, sandboxes, out } = setup();
+      addUser(port, 'u1'); // load = 1, add = 2
+      sandboxes[0]!.emit({ type: 'ack', seq });
+      expect(sandboxes[0]!.terminated, String(seq)).toBe(true);
+      expect(out).toEqual([{ type: 'error', id: 'u1', message: PROTOCOL_MESSAGE }]);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+    // Acked twice, or acked while idle.
+    const { port, sandboxes, out } = setup();
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    sb.emit({ type: 'ack', seq: 2 });
+    expect(sb.terminated).toBe(false);
+    sb.emit({ type: 'ack', seq: 2 });
+    expect(sb.terminated).toBe(true);
+    expect(out).toEqual([{ type: 'error', id: 'u1', message: PROTOCOL_MESSAGE }]);
+  });
+
+  it(`stops a sandbox posting more than ${POSTS_SLACK} + ${POSTS_PER_PENDING} per outstanding message between acks`, () => {
+    const { port, sandboxes, out } = setup();
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    // Two outstanding (load, add): 4 + 2·4 = 12 messages allowed.
+    for (let i = 0; i < POSTS_SLACK + 2 * POSTS_PER_PENDING; i++)
+      sb.emit({ type: 'error', message: `e${i}` });
+    expect(sb.terminated).toBe(false);
+    sb.ackAll();
+    // Idle: the slack only.
+    for (let i = 0; i < POSTS_SLACK; i++) sb.emit({ type: 'error', message: 'idle' });
+    expect(sb.terminated).toBe(false);
+    sb.emit({ type: 'error', message: 'one too many' });
+    expect(sb.terminated).toBe(true);
+    expect(errors(out)).toHaveLength(POSTS_SLACK * 3 + 2 * POSTS_PER_PENDING - POSTS_SLACK + 1);
+    expect(errors(out).at(-1)).toEqual({ type: 'error', id: 'u1', message: FLOOD_MESSAGE });
+    expect(errors(out).some((e) => e.message === 'one too many')).toBe(false);
+  });
+
+  it('a live sandbox stays under the rate cap through a burst of input changes', () => {
+    const { port, sandboxes, out } = setup({ live: true });
+    sendBars(port, 1, 50, CONTEXT);
+    addUser(port, 'u1');
+    for (let i = 1; i <= 40; i++) port.post({ type: 'setInputs', id: 'u1', inputs: { length: i } });
+    sandboxes[0]!.flush();
+    expect(errors(out)).toEqual([]);
+    expect(sandboxes[0]!.terminated).toBe(false);
   });
 
   it('labels id-less (and foreign) errors with the instance id', () => {
@@ -599,21 +724,80 @@ describe('ScriptRouterPort watchdog', () => {
     expect(out).toEqual([{ type: 'error', id: 'u1', message: stoppedMessage(10_000) }]);
   });
 
-  it('pings an idle sandbox every 10 s and kills it 5 s after an unanswered ping', () => {
+  it('pings an idle sandbox every 10 s and kills it 2 s after an unanswered ping', () => {
     const { port, sandboxes, out } = setup();
     addUser(port, 'u1');
     const sb = sandboxes[0]!;
     sb.ackAll();
     vi.advanceTimersByTime(10_000);
     expect(sb.types().at(-1)).toBe('ping');
+    vi.advanceTimersByTime(PING_DEADLINE_MS - 1);
     sb.ackAll();
     vi.advanceTimersByTime(10_000);
     expect(sb.types().filter((t) => t === 'ping')).toHaveLength(2);
-    vi.advanceTimersByTime(4_999);
+    expect(PING_DEADLINE_MS).toBe(2_000);
+    vi.advanceTimersByTime(PING_DEADLINE_MS - 1);
     expect(sb.terminated).toBe(false);
     vi.advanceTimersByTime(1);
     expect(sb.terminated).toBe(true);
+    expect(out).toEqual([{ type: 'error', id: 'u1', message: stoppedMessage(2_000) }]);
+    expect(stoppedMessage(2_000)).toBe('Stopped: no response for 2 s (endless loop?)');
+  });
+
+  it('a message queued behind a ping still gets its own limit', () => {
+    const { port, sandboxes, out } = setup();
+    sendBars(port, 1, 3);
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    sb.ackAll();
+    vi.advanceTimersByTime(10_000);
+    port.post({ type: 'bar', revision: 1, index: 3, bar: barAt(bars(4), 3) });
+    expect(sb.types().slice(-2)).toEqual(['ping', 'bar']);
+    vi.advanceTimersByTime(100);
+    sb.emit({ type: 'ack', seq: sb.posted.at(-2)!.data.seq });
+    vi.advanceTimersByTime(4_999);
+    expect(sb.terminated).toBe(false);
+    vi.advanceTimersByTime(1);
     expect(out).toEqual([{ type: 'error', id: 'u1', message: stoppedMessage(5_000) }]);
+  });
+
+  it(`stops a sandbox with more than ${MAX_PENDING_MESSAGES} messages outstanding`, () => {
+    const { port, sandboxes, out } = setup();
+    sendBars(port, 1, 1);
+    addUser(port, 'u1'); // load, bars, add
+    const sb = sandboxes[0]!;
+    const tick = () => port.post({ type: 'bar', revision: 1, index: 0, bar: barAt(bars(1), 0) });
+    for (let i = 3; i < MAX_PENDING_MESSAGES; i++) tick();
+    expect(sb.posted).toHaveLength(MAX_PENDING_MESSAGES);
+    expect(sb.terminated).toBe(false);
+    tick();
+    expect(sb.terminated).toBe(true);
+    expect(sb.posted).toHaveLength(MAX_PENDING_MESSAGES);
+    expect(out).toEqual([{ type: 'error', id: 'u1', message: BACKLOG_MESSAGE }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it(`stops a sandbox whose oldest message waits over ${MAX_MESSAGE_AGE_MS / 1000} s`, () => {
+    const { port, sandboxes, out } = setup();
+    sendBars(port, 1, 1);
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    sb.ackAll();
+    // A tick every second; the sandbox acks one message every 4 s: never
+    // late for one message, ever further behind.
+    let acked = sb.posted.at(-1)!.data.seq;
+    const postedAt = new Map<number, number>();
+    for (let t = 1; t <= 60 && !sb.terminated; t++) {
+      port.post({ type: 'bar', revision: 1, index: 0, bar: barAt(bars(1), 0) });
+      postedAt.set(sb.posted.at(-1)!.data.seq, Date.now());
+      vi.advanceTimersByTime(1_000);
+      if (t % 4 === 0 && !sb.terminated) sb.emit({ type: 'ack', seq: ++acked });
+    }
+    expect(sb.terminated).toBe(true);
+    expect(out).toEqual([{ type: 'error', id: 'u1', message: BACKLOG_MESSAGE }]);
+    // Stopped right when the oldest unacknowledged tick turned 30 s old.
+    expect(Date.now() - postedAt.get(acked + 1)!).toBeLessThanOrEqual(MAX_MESSAGE_AGE_MS + 1_000);
+    expect(Date.now() - postedAt.get(acked + 1)!).toBeGreaterThanOrEqual(MAX_MESSAGE_AGE_MS);
   });
 
   it('a live sandbox that keeps answering is never stopped', () => {
@@ -732,6 +916,39 @@ describe('ScriptRouterPort reloadScript', () => {
       ],
     });
     expect(out).toEqual([]);
+  });
+});
+
+describe('createSandboxWorker', () => {
+  it('caps the worker failure message', () => {
+    class StubWorker {
+      onerror: ((e: { message: string; preventDefault(): void }) => void) | null = null;
+      postMessage() {}
+      terminate() {}
+    }
+    const made: StubWorker[] = [];
+    vi.stubGlobal(
+      'Worker',
+      class extends StubWorker {
+        constructor() {
+          super();
+          made.push(this);
+        }
+      },
+    );
+    try {
+      const failures: string[] = [];
+      createSandboxWorker().listen(
+        () => {},
+        (m) => failures.push(m),
+      );
+      made[0]!.onerror?.({ message: 'x'.repeat(100_000), preventDefault() {} });
+      made[0]!.onerror?.({ message: '', preventDefault() {} });
+      expect(failures[0]).toBe(`Sandbox worker failed: ${'x'.repeat(500)}`);
+      expect(failures[1]).toBe('Sandbox worker failed: unknown error');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

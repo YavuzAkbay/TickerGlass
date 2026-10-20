@@ -9,10 +9,14 @@ import { useIndicatorStore } from '../indicators/store';
 import { getPersistence } from '../persist/bootstrap';
 import { UserScriptConflict, type UserScriptsSync } from '../persist/userScripts';
 import {
+  PROBE_TIMEOUT_MS,
   analyzeScript,
   checkRequestOf,
+  loadTimedOut,
+  loadTimeoutMessage,
   parseSource,
   probeScript,
+  renameScript,
   saveScript,
   type Analysis,
   type Diagnostic,
@@ -230,6 +234,8 @@ export default function ScriptEditorDialog({
       setDraft({ id, isNew: false, name: saved.name });
       setBaseline(source);
       if (analysis.manifest) toast(`"${saved.name}" saved`, 'success', 1800);
+      else if (loadTimedOut(analysis))
+        toast(`Saved, but it cannot run: ${loadTimeoutMessage(PROBE_TIMEOUT_MS)}`, 'error');
       else toast('Saved, but the script has errors and cannot run yet', 'error');
       return saved;
     } catch (err) {
@@ -284,21 +290,11 @@ export default function ScriptEditorDialog({
     }
     const s = requireSync();
     if (!s) return;
-    const input = {
-      name: next,
-      source: current.source,
-      manifest: current.manifest,
-      apiVersion: current.apiVersion,
-    };
-    const run = async (overwrite: boolean) => {
-      try {
-        await s.save(current.id, input, overwrite ? { overwrite } : {});
-      } catch (err) {
-        if (err instanceof UserScriptConflict) conflictToast(err, () => void run(true));
-        else toast(errorMessage(err), 'error');
-      }
-    };
-    await run(false);
+    await renameScript(current, next, {
+      save: (id, input, opts) => s.save(id, input, opts),
+      onConflict: (err, overwrite) => conflictToast(err, () => void overwrite()),
+      onError: (err) => toast(errorMessage(err), 'error'),
+    });
   };
 
   const remove = async (alsoInstances: boolean) => {

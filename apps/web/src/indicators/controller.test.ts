@@ -946,6 +946,64 @@ describe('user script instances', () => {
     expect(status(b.id)).toEqual({ state: 'error', message: 'Unknown indicator "nope"' });
   });
 
+  it('script results do not reset the indicator worker resync budget', () => {
+    defaultRegistry.unregister(UT);
+    defaultRegistry.register(stub());
+    let port!: ReturnType<typeof manualWorker>;
+    const { chart, log, ctl, onError } = setup({ worker: (l) => (port = manualWorker(l)) });
+    const sma = inst('sma', { length: 3 });
+    const user = createInstance(getIndicator(UT)!, undefined);
+    ctl.sync([sma, user]);
+    chart.load(makeBars(10));
+    const revision = chart.seriesRevision;
+    const resends = () => log.filter((m) => m.type === 'bars').length;
+    const tick = (id: string) =>
+      port.reply({
+        type: 'results',
+        revision,
+        length: 10,
+        changes: [
+          { id, from: 9, status: { state: 'ok' }, values: { v: new Float64Array(1) }, colors: {} },
+        ],
+      });
+    for (let k = 1; k <= 5; k++) {
+      port.reply({ type: 'resync', revision, bars: resends() });
+      tick(user.id); // a sandbox's live tick in between
+    }
+    expect(resends()).toBe(4); // MAX_RESYNCS = 3
+    expect(onError).toHaveBeenCalledTimes(1);
+    defaultRegistry.unregister(UT);
+  });
+
+  it('built-in results still reset the resync budget', () => {
+    let port!: ReturnType<typeof manualWorker>;
+    const { chart, log, ctl, onError } = setup({ worker: (l) => (port = manualWorker(l)) });
+    const sma = inst('sma', { length: 3 });
+    ctl.sync([sma]);
+    chart.load(makeBars(10));
+    const revision = chart.seriesRevision;
+    const resends = () => log.filter((m) => m.type === 'bars').length;
+    for (let k = 1; k <= 5; k++) {
+      port.reply({ type: 'resync', revision, bars: resends() });
+      port.reply({
+        type: 'results',
+        revision,
+        length: 10,
+        changes: [
+          {
+            id: sma.id,
+            from: 9,
+            status: { state: 'ok' },
+            values: { ma: new Float64Array(1) },
+            colors: {},
+          },
+        ],
+      });
+    }
+    expect(resends()).toBe(6);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('refuses the instance over the per-chart cap', () => {
     defaultRegistry.unregister(UT);
     defaultRegistry.register(stub());
