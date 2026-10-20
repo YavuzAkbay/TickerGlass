@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart } from './persistence';
 
 declare global {
   interface Window {
@@ -84,7 +85,10 @@ test('an SMA sourced from an overlay symbol survives a reload', async ({ page, s
   await expect
     .poll(() => {
       const l = [...server.layouts.values()][0];
-      const list = (l?.state.indicators ?? []) as { type: string; inputs: { source?: unknown } }[];
+      const list = (firstChart(l?.state)?.indicators ?? []) as {
+        type: string;
+        inputs: { source?: unknown };
+      }[];
       return list.find((i) => i.type === 'sma')?.inputs.source;
     })
     .toEqual({ instanceId: 'sym:MSFT', outputId: 'close' });

@@ -15,7 +15,7 @@ import { useUiStore } from '../store/ui';
 import { actionToast, toast } from '../ui/Toast';
 import { DrawingSync } from './drawingSync';
 import { DrawingTemplatesSync } from './drawingTemplatesSync';
-import { captureLayoutState } from './layoutState';
+import { activeSlot, captureLayoutState, parseLayoutState, type LayoutState } from './layoutState';
 import { LayoutSession, useLayoutStatus, type Notifier } from './layouts';
 import {
   LOCAL_BUNDLE_KEY,
@@ -272,17 +272,24 @@ export function startPersistence(): () => void {
   const offerLocalData = () => {
     const summary = localDataSummary(storage);
     if (!summary) return;
-    const bundle = readJson<{ drawings?: { data?: unknown }[]; layouts?: { state?: unknown }[] }>(
-      storage.get(LOCAL_BUNDLE_KEY),
-    );
+    const bundle = readJson<{
+      drawings?: { data?: unknown }[];
+      layouts?: { state?: unknown; schemaVersion?: unknown }[];
+    }>(storage.get(LOCAL_BUNDLE_KEY));
     const missing = (bundle?.drawings ?? []).filter(
       (d) => isObj(d.data) && !(String(d.data.id) in drawings.meta.revisions),
     ).length;
-    const localIndicators = JSON.stringify(
-      (isObj(bundle?.layouts?.[0]?.state) && bundle.layouts[0].state.indicators) || [],
-    );
+    const local = bundle?.layouts?.[0];
+    const localState = local
+      ? parseLayoutState(
+          local.state,
+          typeof local.schemaVersion === 'number' ? local.schemaVersion : 1,
+        )
+      : null;
+    const indicatorsOf = (s: LayoutState | null) =>
+      JSON.stringify(s ? activeSlot(s).indicators : []);
     const layoutDiffers =
-      summary.layout && localIndicators !== JSON.stringify(captureLayoutState().indicators);
+      summary.layout && indicatorsOf(localState) !== indicatorsOf(captureLayoutState());
     if (!missing && !layoutDiffers) {
       dismissLocalData(storage); // nothing new; the backups stay
       return;

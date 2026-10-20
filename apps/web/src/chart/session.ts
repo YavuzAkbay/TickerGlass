@@ -19,11 +19,12 @@ import {
 import { useAppStore } from '../store/app';
 import { createChartViewStore, type ChartViewData, type ChartViewState } from '../store/chartView';
 import { feed } from './feed';
+import { PRIMARY_CHART_ID } from './ids';
 
 export { createActiveFacade } from './facade';
 
-/** Id of the chart a single-chart layout has (and the one saved in localStorage). */
-export const PRIMARY_CHART_ID = 'c1';
+// In its own module so pure code (persist, layout) can use it without the engine feed.
+export { PRIMARY_CHART_ID } from './ids';
 
 export interface ChartInfoState {
   symbolInfo: SymbolInfo | null;

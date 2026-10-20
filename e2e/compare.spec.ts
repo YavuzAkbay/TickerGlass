@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart } from './persistence';
 
 declare global {
   interface Window {
@@ -85,14 +86,14 @@ test('compare: add on same scale and new pane, remove + undo, restore after relo
   await expect(legendRow(page, 'MSFT')).toHaveCount(1);
   await expect.poll(() => mainMode(page)).toBe('percent');
 
-  // 4) Reload from the server copy: both overlays are back, saved as layout schema v3.
+  // 4) Reload from the server copy: both overlays are back, saved as layout schema v5.
   await expect
     .poll(() => {
       const l = [...server.layouts.values()][0];
-      const c = l?.state.compares as { items: unknown[] } | undefined;
+      const c = firstChart(l?.state)?.compares as { items: unknown[] } | undefined;
       return [l?.schemaVersion, c?.items.length];
     })
-    .toEqual([4, 2]);
+    .toEqual([5, 2]);
   await expect(page.getByRole('button', { name: /^Layout: Untitled$/ })).toBeVisible();
   await page.evaluate(() => localStorage.clear());
   await page.reload();

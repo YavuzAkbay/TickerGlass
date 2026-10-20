@@ -35,9 +35,16 @@ import {
   applyLayoutState,
   captureLayoutState,
   LAYOUT_SCHEMA_VERSION,
+  ensureUniqueChartIds,
   parseLayoutState,
+  wrapSingleChart,
+  type ChartSlotState,
   type LayoutState,
 } from './layoutState';
+import { DEFAULT_SYNC_FLAGS, leaves, mapLeaves } from '../layout/grid';
+import { applyAligned } from '../layout/splitter';
+import { defaultLayoutGrid, useLayoutGrid } from '../layout/store';
+import { template } from '../layout/templates';
 import {
   LAYOUT_CACHE_KEY,
   LAYOUT_ORPHAN_KEY,
@@ -92,7 +99,8 @@ const settle = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-const state = (symbol: string, extra: Partial<LayoutState> = {}): LayoutState => ({
+const slot = (symbol: string, extra: Partial<ChartSlotState> = {}): ChartSlotState => ({
+  id: 'c1',
   chart: null,
   indicators: [],
   compares: { items: [], scaleRestore: null },
@@ -106,6 +114,18 @@ const state = (symbol: string, extra: Partial<LayoutState> = {}): LayoutState =>
   ...extra,
   // Symbol travels in the chart state; tests use a marker indicator list instead.
   ...(symbol ? { indicators: [indicator(symbol)] } : {}),
+});
+
+/** The first chart of a parsed state. */
+const first = (s: LayoutState | null): ChartSlotState => s!.charts[0]!;
+
+/** A one-chart layout state (as parsed: same key order, so stateKey compares). */
+const state = (symbol: string, extra: Partial<ChartSlotState> = {}): LayoutState => ({
+  template: '1',
+  grid: { kind: 'leaf', chartId: 'c1' },
+  charts: [slot(symbol, extra)],
+  activeChartId: 'c1',
+  sync: { ...DEFAULT_SYNC_FLAGS },
 });
 
 function indicator(id: string, inputs: Record<string, unknown> = {}): IndicatorState {
@@ -315,7 +335,7 @@ describe('layout startup and restore', () => {
     await t.s.start({ fromLocal: id });
     expect(t.applied).toEqual([]);
     await t.s.save();
-    expect(server.layouts.get(id)!.state.indicators[0]!.id).toBe('now');
+    expect(server.layouts.get(id)!.state.charts[0]!.indicators[0]!.id).toBe('now');
   });
 
   it('restores the last-used layout', async () => {
@@ -324,7 +344,7 @@ describe('layout startup and restore', () => {
     const t = session(server);
     await t.s.start();
     expect(t.applied).toHaveLength(1);
-    expect(t.applied[0]!.indicators.map((i) => i.id)).toEqual(['rsi_1']);
+    expect(t.applied[0]!.charts[0]!.indicators.map((i) => i.id)).toEqual(['rsi_1']);
     expect(t.s.revision).toBe(3);
     expect(useLayoutStatus.getState().current?.name).toBe('Swing');
   });
@@ -344,7 +364,7 @@ describe('layout startup and restore', () => {
     server.setDown(true);
     const t = session(server, storage);
     expect(await t.s.start()).toBe(false);
-    expect(t.applied.map((a) => a.indicators[0]!.id)).toEqual(['cached']);
+    expect(t.applied.map((a) => a.charts[0]!.indicators[0]!.id)).toEqual(['cached']);
     expect(useLayoutStatus.getState()).toMatchObject({ online: false, ready: true });
     expect(t.s.connected).toBe(false);
 
@@ -357,7 +377,7 @@ describe('layout startup and restore', () => {
     server.setDown(false);
     expect(await t.s.start()).toBe(true);
     await t.s.save();
-    expect(server.layouts.get(id)!.state.indicators[0]!.id).toBe('offline-edit');
+    expect(server.layouts.get(id)!.state.charts[0]!.indicators[0]!.id).toBe('offline-edit');
     expect(server.layouts.get(id)!.revision).toBe(3);
     expect(cacheOf(storage)).toMatchObject({ dirty: false, revision: 3 });
   });
@@ -417,7 +437,7 @@ describe('layout autosave and conflicts', () => {
 
     actions[1]!.run(); // Overwrite
     await settle();
-    expect(server.layouts.get(id)!.state.indicators[0]!.id).toBe('mine');
+    expect(server.layouts.get(id)!.state.charts[0]!.indicators[0]!.id).toBe('mine');
     expect(server.layouts.get(id)!.revision).toBe(8);
 
     // Conflict again; this time reload theirs.
@@ -428,7 +448,7 @@ describe('layout autosave and conflicts', () => {
     const again = t.notify.conflict.mock.calls[1]![1] as { label: string; run: () => void }[];
     again[0]!.run(); // Reload
     await settle();
-    expect(t.current().indicators[0]!.id).toBe('theirs2');
+    expect(t.current().charts[0]!.indicators[0]!.id).toBe('theirs2');
     expect(t.s.revision).toBe(20);
     expect(useLayoutStatus.getState().dirty).toBe(false);
   });
@@ -466,11 +486,11 @@ describe('named layouts', () => {
     await t.s.copy('C');
     const c = useLayoutStatus.getState().current!.id!;
     // The copy has the saved state of B.
-    expect(server.layouts.get(b)!.state.indicators[0]!.id).toBe('b-edit');
-    expect(server.layouts.get(c)!.state.indicators[0]!.id).toBe('b-edit');
+    expect(server.layouts.get(b)!.state.charts[0]!.indicators[0]!.id).toBe('b-edit');
+    expect(server.layouts.get(c)!.state.charts[0]!.indicators[0]!.id).toBe('b-edit');
 
     expect(await t.s.load(a)).toBe(true);
-    expect(t.current().indicators[0]!.id).toBe('a');
+    expect(t.current().charts[0]!.indicators[0]!.id).toBe('a');
     expect(useLayoutStatus.getState().current?.id).toBe(a);
 
     // Deleting another layout keeps the current one.
@@ -504,12 +524,14 @@ describe('named layouts', () => {
 
 describe('layout state parsing', () => {
   it('fills missing parts and rejects newer schema versions', () => {
-    const s = parseLayoutState({
-      indicators: [{ id: 'x', type: 'sma', inputs: {}, styles: {} }, 5],
-    });
-    expect(s!.indicators).toEqual([indicator('x')]);
-    expect(s!.chart).toBeNull();
-    expect(s!.chartSettings.chartType).toBe(useChartView.getState().chartType);
+    const s = first(
+      parseLayoutState({
+        indicators: [{ id: 'x', type: 'sma', inputs: {}, styles: {} }, 5],
+      }),
+    );
+    expect(s.indicators).toEqual([indicator('x')]);
+    expect(s.chart).toBeNull();
+    expect(s.chartSettings.chartType).toBe(useChartView.getState().chartType);
     expect(parseLayoutState({}, 99)).toBeNull();
   });
 
@@ -539,7 +561,8 @@ describe('layout state parsing', () => {
   });
 
   it('turns the built-in overlay volume of v1 layouts into a Volume indicator, once', () => {
-    const s = parseLayoutState(legacy('overlay', [indicator('a')]), 1)!;
+    const parsed = parseLayoutState(legacy('overlay', [indicator('a')]), 1)!;
+    const s = first(parsed);
     expect(s.indicators.map((i) => [i.id, i.type, i.placement])).toEqual([
       [DEFAULT_VOLUME_ID, 'volume', 'main'],
       ['a', 'sma', 'auto'],
@@ -547,31 +570,32 @@ describe('layout state parsing', () => {
     expect(s.chartSettings).not.toHaveProperty('volume');
     expect(s.chart!.volume).toBe('hidden');
     // Idempotent: the migrated state (saved as v2, or cached without a version) is unchanged.
-    expect(parseLayoutState(s, 2)).toEqual(s);
-    expect(parseLayoutState(s)).toEqual(s);
-    expect(parseLayoutState(JSON.parse(JSON.stringify(s)))).toEqual(s);
+    expect(parseLayoutState(parsed, 2)).toEqual(parsed);
+    expect(parseLayoutState(parsed)).toEqual(parsed);
+    expect(parseLayoutState(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
   });
 
   it('moves a built-in volume pane to the Volume indicator, keeping its size', () => {
-    const s = parseLayoutState(legacy('pane', [], [{ id: 'volume', ratio: 1.5 }]), 1)!;
+    const parsed = parseLayoutState(legacy('pane', [], [{ id: 'volume', ratio: 1.5 }]), 1)!;
+    const s = first(parsed);
     expect(s.indicators.map((i) => [i.id, i.placement])).toEqual([[DEFAULT_VOLUME_ID, 'own']]);
     expect(s.chart!.panes.map((p) => [p.id, p.ratio])).toEqual([
       ['main', 3],
       [`pane-${DEFAULT_VOLUME_ID}`, 1.5],
     ]);
-    expect(parseLayoutState(s)).toEqual(s);
+    expect(parseLayoutState(parsed)).toEqual(parsed);
   });
 
   it('adds no Volume indicator for hidden volume or when one exists', () => {
-    const hidden = parseLayoutState(legacy('hidden', [], [{ id: 'volume', ratio: 1 }]), 1)!;
+    const hidden = first(parseLayoutState(legacy('hidden', [], [{ id: 'volume', ratio: 1 }]), 1));
     expect(hidden.indicators).toEqual([]);
     expect(hidden.chart!.panes.map((p) => p.id)).toEqual(['main']);
     const own = { ...indicator('v1'), type: 'volume', placement: 'own' as const };
-    const both = parseLayoutState(legacy('overlay', [own]), 1)!;
+    const both = first(parseLayoutState(legacy('overlay', [own]), 1));
     expect(both.indicators).toEqual([own]);
     expect(both.chart!.volume).toBe('hidden');
     // Indicator templates (no chart settings) are left alone.
-    expect(parseLayoutState({ indicators: [indicator('x')] })!.indicators).toEqual([
+    expect(first(parseLayoutState({ indicators: [indicator('x')] })).indicators).toEqual([
       indicator('x'),
     ]);
   });
@@ -591,43 +615,46 @@ describe('layout state: compare overlays (v3)', () => {
   beforeEach(() => useCompareStore.setState({ items: [], scaleRestore: null }));
 
   it('v2 layouts upgrade to no compares; newer versions are rejected', () => {
-    expect(LAYOUT_SCHEMA_VERSION).toBe(4);
-    const s = parseLayoutState({ indicators: [indicator('a')] }, 2)!;
+    const s = first(parseLayoutState({ indicators: [indicator('a')] }, 2));
     expect(s.compares).toEqual({ items: [], scaleRestore: null });
     expect(s.indicators).toEqual([indicator('a')]);
     // Unversioned (cached) states read as v1 keep their compares.
-    const cached = parseLayoutState({ compares: { items: [cmp('cmp-a')], scaleRestore: 'log' } })!;
+    const cached = first(
+      parseLayoutState({ compares: { items: [cmp('cmp-a')], scaleRestore: 'log' } }),
+    );
     expect(cached.compares).toEqual({ items: [cmp('cmp-a')], scaleRestore: 'log' });
-    expect(parseLayoutState({}, 5)).toBeNull();
+    expect(parseLayoutState({}, LAYOUT_SCHEMA_VERSION + 1)).toBeNull();
   });
 
   it('drops invalid compare items and re-canonicalizes symbols', () => {
-    const s = parseLayoutState(
-      {
-        compares: {
-          items: [
-            cmp('cmp-ok', { symbol: ' (aapl+msft)/2 ' }),
-            cmp('bad-id'),
-            cmp('cmp-sym', { symbol: 'AAPL/' }),
-            cmp('cmp-long', { symbol: `A${'+B'.repeat(70)}` }),
-            cmp('cmp-place', { placement: 'left' as CompareState['placement'] }),
-            cmp('cmp-color', { color: 'red' }),
-            cmp('cmp-width', { lineWidth: 5 }),
-            cmp('cmp-width2', { lineWidth: 1.5 }),
-            cmp('cmp-ok'),
-            { ...cmp('cmp-vis'), visible: undefined },
-            'nope',
-          ],
-          scaleRestore: 'sideways',
+    const s = first(
+      parseLayoutState(
+        {
+          compares: {
+            items: [
+              cmp('cmp-ok', { symbol: ' (aapl+msft)/2 ' }),
+              cmp('bad-id'),
+              cmp('cmp-sym', { symbol: 'AAPL/' }),
+              cmp('cmp-long', { symbol: `A${'+B'.repeat(70)}` }),
+              cmp('cmp-place', { placement: 'left' as CompareState['placement'] }),
+              cmp('cmp-color', { color: 'red' }),
+              cmp('cmp-width', { lineWidth: 5 }),
+              cmp('cmp-width2', { lineWidth: 1.5 }),
+              cmp('cmp-ok'),
+              { ...cmp('cmp-vis'), visible: undefined },
+              'nope',
+            ],
+            scaleRestore: 'sideways',
+          },
         },
-      },
-      3,
-    )!;
+        3,
+      ),
+    );
     expect(s.compares).toEqual({
       items: [cmp('cmp-ok', { symbol: '(AAPL+MSFT)/2' }), cmp('cmp-vis')],
       scaleRestore: null,
     });
-    expect(parseLayoutState({ compares: 'x' }, 3)!.compares).toEqual({
+    expect(first(parseLayoutState({ compares: 'x' }, 3)).compares).toEqual({
       items: [],
       scaleRestore: null,
     });
@@ -640,7 +667,7 @@ describe('layout state: compare overlays (v3)', () => {
     };
     useCompareStore.getState().replaceAll(compares);
     const captured = captureLayoutState(null);
-    expect(captured.compares).toEqual(compares);
+    expect(first(captured).compares).toEqual(compares);
     expect(parseLayoutState(JSON.parse(JSON.stringify(captured)), 3)).toEqual(captured);
     useCompareStore.getState().replaceAll({ items: [], scaleRestore: null });
     await applyLayoutState(captured, null);
@@ -655,13 +682,153 @@ describe('layout state: compare overlays (v3)', () => {
       getState: () => ({ panes: panes.map((id) => ({ id })) }),
       removePane: (id: string) => removed.push(id),
     } as unknown as Chart;
+    const captured = captureLayoutState(null);
     const state = {
-      ...captureLayoutState(null),
-      chart: { version: 1, symbol: 'AAPL', interval: '1D', timeScale: {}, panes: [] } as never,
-      compares: { items: [cmp('cmp-a', { placement: 'pane' })], scaleRestore: null },
+      ...captured,
+      charts: [
+        {
+          ...first(captured),
+          chart: { version: 1, symbol: 'AAPL', interval: '1D', timeScale: {}, panes: [] } as never,
+          compares: { items: [cmp('cmp-a', { placement: 'pane' })], scaleRestore: null },
+        },
+      ],
     };
     await applyLayoutState(state, chart);
     expect(removed).toEqual(['pane-cmp-gone']);
+  });
+});
+
+describe('layout state: chart grid (v5)', () => {
+  beforeEach(() => useLayoutGrid.setState(defaultLayoutGrid()));
+
+  const v4 = () => ({
+    chart: null,
+    indicators: [indicator('a')],
+    compares: { items: [], scaleRestore: null },
+    chartSettings: {
+      chartType: 'line',
+      chartStyle: {},
+      showPrevClose: true,
+      timezone: 'UTC',
+      prepost: false,
+    },
+  });
+
+  it('wraps a v4 single-chart state as chart c1; deterministic and idempotent', () => {
+    expect(LAYOUT_SCHEMA_VERSION).toBe(5);
+    const s = parseLayoutState(v4(), 4)!;
+    expect(s).toEqual({
+      template: '1',
+      grid: { kind: 'leaf', chartId: 'c1' },
+      charts: [{ id: 'c1', ...v4() }],
+      activeChartId: 'c1',
+      sync: DEFAULT_SYNC_FLAGS,
+    });
+    expect(parseLayoutState(v4(), 4)).toEqual(s);
+    expect(JSON.stringify(parseLayoutState(v4(), 1))).toBe(JSON.stringify(s));
+    expect(wrapSingleChart(wrapSingleChart(v4()))).toEqual(wrapSingleChart(v4()));
+    // A v5 state read as any older version (unversioned caches read as v1) is unchanged.
+    for (const v of [1, 2, 3, 4, 5]) expect(parseLayoutState(s, v), `v${v}`).toEqual(s);
+    expect(parseLayoutState(s, 6)).toBeNull();
+  });
+
+  const four = (): LayoutState => {
+    const ids = ['c1', 'c2', 'c3', 'c4'];
+    const grid = mapLeaves(template('2x2')!, (_, i) => ids[i]!);
+    return {
+      template: '2x2',
+      grid: applyAligned(grid, [0], [0.3, 0.7]),
+      charts: ids.map((id) => slot(id, { id })),
+      activeChartId: 'c3',
+      sync: { ...DEFAULT_SYNC_FLAGS, symbol: true, crosshair: false },
+    };
+  };
+
+  it('round-trips a 4-chart state through JSON', () => {
+    const s = four();
+    const parsed = parseLayoutState(JSON.parse(JSON.stringify(s)), LAYOUT_SCHEMA_VERSION)!;
+    expect(parsed).toEqual(s);
+    expect(JSON.stringify(parsed)).toBe(JSON.stringify(s));
+  });
+
+  it('apply stores every slot; capture returns them (the active one from the focused chart)', async () => {
+    const s = four();
+    await applyLayoutState(s, null);
+    expect(useLayoutGrid.getState()).toMatchObject({ template: '2x2', activeId: 'c3' });
+    // The active slot went to the (detached) active stores.
+    expect(useIndicatorStore.getState().instances.map((i) => i.id)).toEqual(['c3']);
+    useIndicatorStore.setState({ instances: [indicator('edited')] });
+    const captured = captureLayoutState(null);
+    expect(captured.grid).toEqual(s.grid);
+    expect(captured.sync).toEqual(s.sync);
+    expect(captured.charts.map((c) => c.indicators[0]!.id)).toEqual(['c1', 'c2', 'edited', 'c4']);
+    expect(captured.activeChartId).toBe('c3');
+  });
+
+  it('repairs charts and grid that do not match', () => {
+    const s = four();
+    const raw = {
+      ...s,
+      charts: [...s.charts, { ...s.charts[0]!, indicators: [] }, { id: 'orphan' }, { nope: 1 }],
+      activeChartId: 'gone',
+    };
+    const parsed = parseLayoutState(raw, 5)!;
+    expect(parsed.charts.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4']);
+    expect(parsed.charts[0]!.indicators[0]!.id).toBe('c1');
+    expect(parsed.activeChartId).toBe('c1');
+    const noGrid = parseLayoutState({ ...s, grid: { kind: 'bogus' } }, 5)!;
+    expect(leaves(noGrid.grid)).toEqual(['c1', 'c2', 'c3', 'c4']);
+    const empty = parseLayoutState({ charts: [], grid: null }, 5)!;
+    expect(empty.charts.map((c) => c.id)).toEqual(['c1']);
+    expect(empty.grid).toEqual({ kind: 'leaf', chartId: 'c1' });
+  });
+
+  it('ensureUniqueChartIds rekeys legacy and repeated ids everywhere', () => {
+    let n = 0;
+    const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+    const s = four();
+    const out = ensureUniqueChartIds(s, uuid);
+    const ids = out.charts.map((c) => c.id);
+    expect(ids).toEqual(
+      [1, 2, 3, 4].map((i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`),
+    );
+    expect(leaves(out.grid)).toEqual(ids);
+    expect(out.activeChartId).toBe(ids[2]);
+    expect(out.charts[2]!.indicators[0]!.id).toBe('c3');
+    expect(ensureUniqueChartIds(out, uuid)).toBe(out);
+  });
+
+  it('view-only changes in any chart are not edits while settling', async () => {
+    let clock = 1_000_000;
+    const server = fakeLayoutServer();
+    const withSpacing = (st: LayoutState, i: number, barSpacing: number): LayoutState => ({
+      ...st,
+      charts: st.charts.map((c, j) =>
+        j === i
+          ? {
+              ...c,
+              chart: {
+                version: 1,
+                symbol: 'AAPL',
+                interval: '1D',
+                timeScale: { barSpacing, rightOffset: 0 },
+                panes: [],
+              } as unknown as NonNullable<ChartSlotState['chart']>,
+            }
+          : c,
+      ),
+    });
+    const base = withSpacing(withSpacing(four(), 0, 6), 3, 6);
+    server.seed('Grid', base);
+    const t = session(server, memStorage(), () => clock);
+    await t.s.start();
+    t.edit(withSpacing(base, 3, 8));
+    await t.s.save();
+    expect(server.fns.saveLayout).not.toHaveBeenCalled();
+    clock += 5000;
+    t.edit(withSpacing(base, 3, 9));
+    await t.s.save();
+    expect(server.fns.saveLayout).toHaveBeenCalledOnce();
   });
 });
 
@@ -1652,11 +1819,11 @@ describe('layouts: offline caches and deleted layouts', () => {
     });
     const t = session(server, storage);
     await t.s.start();
-    expect(server.layouts.get(other)!.state.indicators[0]!.id).toBe('theirs');
+    expect(server.layouts.get(other)!.state.charts[0]!.indicators[0]!.id).toBe('theirs');
     expect(server.layouts.get(other)!.revision).toBe(4);
     const mine = [...server.layouts.values()].find((l) => l.id !== other)!;
     expect(mine.name).toBe('Untitled (offline)');
-    expect(mine.state.indicators[0]!.id).toBe('offline');
+    expect(mine.state.charts[0]!.indicators[0]!.id).toBe('offline');
     expect(useLayoutStatus.getState().current?.id).toBe(mine.id);
   });
 
@@ -1677,7 +1844,7 @@ describe('layouts: offline caches and deleted layouts', () => {
     await t.s.start();
     await t.s.save();
     expect(useLayoutStatus.getState().current?.id).toBe(a);
-    expect(server.layouts.get(a)!.state.indicators[0]!.id).toBe('a-edit');
+    expect(server.layouts.get(a)!.state.charts[0]!.indicators[0]!.id).toBe('a-edit');
   });
 
   it('a layout deleted elsewhere: one notice, saving stops, "Save as new layout" restores it', async () => {
@@ -1693,14 +1860,16 @@ describe('layouts: offline caches and deleted layouts', () => {
     expect(t.notify.conflict).toHaveBeenCalledOnce();
     expect(t.notify.error).not.toHaveBeenCalled();
     expect(server.fns.saveLayout).toHaveBeenCalledOnce(); // not retried per edit
-    expect(JSON.parse(t.storage.get(LAYOUT_ORPHAN_KEY)!).state.indicators[0].id).toBe('e2');
+    expect(JSON.parse(t.storage.get(LAYOUT_ORPHAN_KEY)!).state.charts[0]!.indicators[0].id).toBe(
+      'e2',
+    );
     const [action] = t.notify.conflict.mock.calls[0]![1] as { label: string; run: () => void }[];
     expect(action!.label).toBe('Save as new layout');
     action!.run();
     await settle();
     const restored = [...server.layouts.values()][0]!;
     expect(restored.name).toBe('A (restored)');
-    expect(restored.state.indicators[0]!.id).toBe('e2');
+    expect(restored.state.charts[0]!.indicators[0]!.id).toBe('e2');
     expect(t.storage.get(LAYOUT_ORPHAN_KEY)).toBeNull();
   });
 
@@ -1719,7 +1888,9 @@ describe('layouts: offline caches and deleted layouts', () => {
     const t = session(server, storage);
     await t.s.start();
     expect(t.notify.conflict).toHaveBeenCalledOnce();
-    expect(JSON.parse(storage.get(LAYOUT_ORPHAN_KEY)!).state.indicators[0].id).toBe('unsaved');
+    expect(JSON.parse(storage.get(LAYOUT_ORPHAN_KEY)!).state.charts[0]!.indicators[0].id).toBe(
+      'unsaved',
+    );
   });
 
   it('edits made while another layout loads are saved to the old layout', async () => {
@@ -1734,7 +1905,7 @@ describe('layouts: offline caches and deleted layouts', () => {
       return realGet(id);
     });
     expect(await t.s.load(a)).toBe(true);
-    expect(server.layouts.get(b)!.state.indicators[0]!.id).toBe('b-late-edit');
+    expect(server.layouts.get(b)!.state.charts[0]!.indicators[0]!.id).toBe('b-late-edit');
     expect(useLayoutStatus.getState().current?.id).toBe(a);
   });
 
@@ -1751,18 +1922,18 @@ describe('layouts: offline caches and deleted layouts', () => {
         timezone: 'exchange',
         panes: [],
         maximizedPane: null,
-      }) as unknown as NonNullable<LayoutState['chart']>;
-    server.seed('A', { ...state('a'), chart: chart(6) });
+      }) as unknown as NonNullable<ChartSlotState['chart']>;
+    server.seed('A', state('a', { chart: chart(6) }));
     const t = session(server, memStorage(), () => clock);
     await t.s.start();
-    t.edit({ ...state('a'), chart: chart(7) }); // the chart clamps after loading
+    t.edit(state('a', { chart: chart(7) })); // the chart clamps after loading
     await t.s.save();
     expect(server.fns.saveLayout).not.toHaveBeenCalled();
-    t.edit({ ...state('a2'), chart: chart(7) }); // a real edit is still saved
+    t.edit(state('a2', { chart: chart(7) })); // a real edit is still saved
     await t.s.save();
     expect(server.fns.saveLayout).toHaveBeenCalledOnce();
     clock += 5000; // later, zooming is an edit
-    t.edit({ ...state('a2'), chart: chart(9) });
+    t.edit(state('a2', { chart: chart(9) }));
     await t.s.save();
     expect(server.fns.saveLayout).toHaveBeenCalledTimes(2);
   });
@@ -1963,13 +2134,13 @@ describe('renamed indicator ids', () => {
   const OLD = ['pivots-hl', 'auto-fib', 'relative-volume'];
   const NEW = ['swing-hl', 'swing-fib', 'tod-relative-volume'];
   const typed = (id: string, type: string) => ({ ...indicator(id), type });
-  const types = (s: { indicators: IndicatorState[] }) => s.indicators.map((i) => i.type);
+  const types = (s: LayoutState) => first(s).indicators.map((i) => i.type);
 
   it('layout upgrade (v3 -> v4) retypes old ids and is idempotent', () => {
     const raw = { indicators: OLD.map((t, i) => typed(`i${i}`, t)).concat([typed('s', 'sma')]) };
     const s = parseLayoutState(raw, 3)!;
     expect(types(s)).toEqual([...NEW, 'sma']);
-    expect(parseLayoutState(s)!.indicators).toEqual(s.indicators);
+    expect(first(parseLayoutState(s)).indicators).toEqual(first(s).indicators);
     expect(types(parseLayoutState(raw, 1)!)).toEqual([...NEW, 'sma']);
   });
 
