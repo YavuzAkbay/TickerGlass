@@ -674,6 +674,10 @@ describe('attach (engine events and sync)', () => {
     expect(engineTool('measure')).toEqual({ type: 'measure' });
     expect(engineTool('zoom-in')).toEqual({ type: 'zoom-in' });
     expect(engineTool('anchored-vwap')).toEqual({ type: 'pick-point' });
+    expect(engineTool('replay-pick')).toMatchObject({ type: 'pick-point', cutPreview: true });
+    expect(engineTool('replay-pick')?.cursor).toMatch(
+      /^url\("data:image\/svg\+xml,.*\) 12 12, crosshair$/,
+    );
     for (const id of ['measure', 'zoom-in', 'anchored-vwap'])
       expect(isToolAvailable(id)).toBe(true);
     const f = attach();

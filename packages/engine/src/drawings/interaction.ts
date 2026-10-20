@@ -122,6 +122,9 @@ export class DrawingInteraction {
   private tool: string | null = null;
   /** `setActiveTool` preset style, merged into every drawing the tool creates. */
   private toolStyle: DrawingStyle | undefined;
+  /** `setActiveTool` CSS cursor override. */
+  private toolCursor: string | undefined;
+  private cutPreview = false;
   private gesture: Gesture | null = null;
 
   constructor(private readonly layer: DrawingLayer) {}
@@ -142,6 +145,9 @@ export class DrawingInteraction {
     if (type !== null) this.clearMeasure();
     this.tool = type;
     this.toolStyle = type !== null && opts.style ? structuredClone(opts.style) : undefined;
+    this.toolCursor = type !== null ? opts.cursor : undefined;
+    this.cutPreview = type === PICK_TOOL && opts.cutPreview === true;
+    this.layer.cutX = null;
     this.layer.host.invalidate();
   }
 
@@ -155,6 +161,9 @@ export class DrawingInteraction {
   private leaveTool(): void {
     this.tool = null;
     this.toolStyle = undefined;
+    this.toolCursor = undefined;
+    this.cutPreview = false;
+    this.layer.cutX = null;
   }
 
   /** Cancel any gesture without events (API calls): drop the draft, undo a drag. */
@@ -163,6 +172,7 @@ export class DrawingInteraction {
     this.gesture = null;
     this.layer.draft = null;
     this.layer.marquee = null;
+    this.layer.cutX = null;
     if (g?.kind === 'move' || g?.kind === 'handle') this.cancelDrag(g);
     else if (g?.kind === 'erase' && g.removed.length)
       // The removals already happened: report them rather than losing them.
@@ -308,6 +318,13 @@ export class DrawingInteraction {
     const g = this.gesture;
     if (g?.kind === 'create' && !g.pressed) this.updateDraft(x, y, mods);
     // The eraser highlights what it would remove.
+    if (this.cutPreview) {
+      const cutX = target ? this.snap(target.pane, x, y - target.pane.top, mods, null, false).x : null;
+      if (cutX !== this.layer.cutX) {
+        this.layer.cutX = cutX;
+        this.layer.host.invalidate();
+      }
+    }
     const next = (this.tool && this.tool !== ERASER_TOOL) || g ? null : (target?.drawing ?? null);
     const prev = this.layer.hovered;
     if (sameHit(prev, next)) return;
@@ -521,6 +538,7 @@ export class DrawingInteraction {
     if (g?.kind === 'move') return 'grabbing';
     if (g?.kind === 'handle') return g.cursor;
     if (g?.kind === 'box' || g?.kind === 'zoom') return 'crosshair';
+    if (this.tool === PICK_TOOL && this.toolCursor) return target ? this.toolCursor : null;
     if (this.tool === ZOOM_TOOL || this.tool === PICK_TOOL) return target ? 'crosshair' : null;
     if (this.tool === ERASER_TOOL || g?.kind === 'erase')
       return target ? (target.drawing ? 'pointer' : 'crosshair') : null;

@@ -11,6 +11,9 @@ import { attachIndicators } from '../indicators/attach';
 import { IndicatorLegends } from '../indicators/Legend';
 import { createSandboxWorker } from '../indicators/sandbox/port';
 import type { ProbeResult } from '../indicators/sandbox/protocol';
+import { attachReplay } from '../replay/attach';
+import { ReplayBar } from '../replay/ReplayBar';
+import { useReplayStore } from '../replay/store';
 import { openChartContextMenu } from './contextMenus';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
@@ -57,6 +60,7 @@ export function ChartView() {
   const { symbol, interval, theme, timezone, prepost, crosshair, magnet } = useAppStore();
   const { chartType, chartStyle, showPrevClose } = useAppStore();
   const chartState = useChartStore((s) => s.chart);
+  const replaying = useReplayStore((s) => s.status !== 'off');
 
   useEffect(() => {
     const s = useAppStore.getState();
@@ -87,6 +91,7 @@ export function ChartView() {
       attachIndicators(chart, feed),
       attachCompares(chart, feed),
       attachAlerts(chart),
+      attachReplay(chart),
     ];
     return () => {
       offs.forEach((off) => off());
@@ -125,6 +130,7 @@ export function ChartView() {
       <IndicatorLegends chart={chartState} />
       <DrawingToolbar />
       <DrawingTextEditor />
+      {replaying ? <ReplayBar /> : null}
     </>
   );
 }

@@ -441,6 +441,10 @@ export interface DrawingApi {
 export interface DrawingToolOptions {
   /** Preset style keys for drawings created with this tool. */
   style?: DrawingStyle;
+  /** CSS `cursor` value shown over the chart while the tool is armed (default: crosshair). */
+  cursor?: string;
+  /** `PICK_TOOL` only: preview the cut, a vertical line at the bar under the pointer and the area to its right dimmed. */
+  cutPreview?: boolean;
 }
 
 /** `getDrawingBounds` result (chart-root CSS px). */
