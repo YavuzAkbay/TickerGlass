@@ -242,7 +242,8 @@ cannot tell the difference). Routing table:
 | `timeframeMap`, `tfBars`, `tfBar`, `extBars`, `extUpdate` | always                    | never (scripts read chart bars only)                                |
 
 One sandbox per instance, at most 8 instances per chart (`MAX_SCRIPT_INSTANCES_PER_CHART`; the rest get an
-`error` with the cap message). A script with no saved manifest, or a manifest that does not parse, starts no
+`error` with the cap message). Router and controller count the same instances: those whose script can run (a
+stopped instance of a deleted script, or one without a valid manifest, takes no slot). A script with no saved manifest, or a manifest that does not parse, starts no
 sandbox; the controller reports it. A stopped instance (watchdog, failure) stays known and restarts on
 `setInputs` or `reloadScript`.
 
@@ -259,8 +260,21 @@ Limits: 5 s per message, 10 s for `load`, `bars`, `check`. **The deadline starts
 oldest unacknowledged one** (its post when nothing was outstanding, otherwise the ack of its predecessor), so a
 queue of cheap messages behind a slow one is not charged for the wait. Missing the deadline terminates the
 sandbox and reports `Stopped: no response for N s (endless loop?)` on the instance. A sandbox with nothing
-outstanding is pinged every 10 s (`ping`: acked only), which catches a script that hangs between messages.
-`onerror`/`onmessageerror` of the worker stop the instance with an `error` too.
+outstanding is pinged every 10 s (`ping`: acked only) with a **2 s** deadline (`PING_DEADLINE_MS`): an idle
+sandbox answers at once, so this catches a script that hangs between messages or keeps the worker busy in the
+background (best effort, see Lockdown). Pings are only sent to an idle queue, so slow but legitimate compute is
+never charged against it. `onerror`/`onmessageerror` of the worker stop the instance with an `error` too (message
+capped at 500 characters).
+
+**Protocol limits.** Acks are cumulative and must name an outstanding message: an integer with
+`pending[0].seq <= seq <= sb.seq`. Anything else (a forged huge seq, a repeat, an ack while idle) stops the
+sandbox with "the script broke the sandbox protocol". Rate cap: between two acks a sandbox may post at most
+`4 + 4 × (messages outstanding)` non-ack messages (one message legitimately causes at most 3: `results` or `error`,
+`timeframes`, `symbols`); more stops it with "the script sent too many messages". Together these bound what a
+sandbox can post by what the router sent it, so it cannot flood the main thread with toasts or status updates.
+Backlog: a sandbox with 500 messages outstanding (`MAX_PENDING_MESSAGES`), or whose oldest unacknowledged
+message was posted more than 30 s ago (`MAX_MESSAGE_AGE_MS`, whatever the per-message deadlines say), is stopped
+with "the script cannot keep up with the chart".
 
 **Internal resync.** A `resync` from a sandbox (same RangeError rule as §5, `bars` = count of `bars` it
 handled) is answered by the router from the mirror and never reaches the controller. Ignored when the router
@@ -268,8 +282,10 @@ has sent more `bars` since, or the revision is not the mirror's; at most 3 resen
 "keeps falling out of sync" `error`.
 
 **Untrusted results.** Nothing a sandbox posts is trusted. `results` are rebuilt from validated fields and
-only the instance's own change survives: integer `revision`/`length`/`from` (`from <= length`), `Float64Array`
-values, `Uint8Array` colours, `status` reduced to a known state with message length capped (500). `error`
+only the instance's own change survives, bounded by what the router sent: `revision` equal to the mirror's,
+integer `length <= mirror.length`, integer `from <= length`, values (`Float64Array`) and colours (`Uint8Array`) of
+exactly `length - from` elements keyed by output ids of the instance's definition (a change with any other key or
+size is dropped), `status` reduced to a known state with message length capped (500). `error`
 without `id` is relabelled with the instance id (the sandbox only runs that instance). `timeframes`,
 `compileError` (reported by the `add` that follows) and `checkResult`/`probeResult` are dropped by the router.
 
@@ -287,14 +303,34 @@ loaded with the same source and manifest, and stops them when the script is gone
 what compiling the script needs. Production: `docker/nginx.conf` (location `/assets/sandbox-worker-*.js`)
 and `vite preview` send it with no `'self'`, so not even same-origin `import()` loads. Dev: `vite.config.ts`
 `sandboxCsp()` serves the unbundled modules, so `script-src` adds `'self'`. Keep the three in sync. In JS,
-`lockdown()` runs first in the worker: it captures `postMessage`, then removes `fetch`, XHR, sockets,
-`importScripts`, storage APIs, nested workers, message channels, timers, `WebAssembly`, `navigator` and
-others from the scope and its prototype chain, and throws (no user code runs) if any is still reachable.
+`lockdown()` runs first in the worker:
+
+- It captures `postMessage`, `Reflect.apply` and the original `isTrusted` and `MessageEvent.prototype.data`
+  getters, and registers the one message listener. The listener ignores events with `isTrusted !== true` and reads
+  `data` through the captured getter, so a script's `dispatchEvent(new MessageEvent(...))` or a redefined `data`
+  getter cannot feed `SandboxCore` (which would answer through the captured post).
+- It pins `Error.prepareStackTrace` to `undefined` (non-writable, non-configurable): V8 call sites expose
+  sloppy-mode functions through `getFunction()`. The default stack format stays, which `annotateError` parses.
+- It removes `fetch`, XHR, sockets, `Request`/`Response`, `importScripts`, storage APIs, nested workers, message
+  channels, timers, `WebAssembly`, `navigator` and others (`BLOCKED_GLOBALS`) from the scope and its prototype
+  chain, plus the ways to schedule work in the background: `scheduler`, `AbortSignal.timeout`,
+  `Atomics.waitAsync`, `FileReader(Sync)`, the `Blob` read methods, `crypto.subtle`, `createImageBitmap`,
+  `OffscreenCanvas`, `fonts`/`FontFace`, `PerformanceObserver`, `ReportingObserver` and WebCodecs
+  (`BLOCKED_MEMBERS` for members of objects that stay).
+- It throws (no user code runs) if any of these is still reachable.
+
+Background-CPU protection is **best effort**: some task sources cannot be removed in JS (a rejected `import()`, the
+`unhandledrejection` and `securitypolicyviolation` events), so a script can still alternate busy spins with short
+waits. The 2 s ping deadline catches any spin that is in progress when a ping arrives and longer than that; a
+script that spins in shorter slices can keep a core busy until the instance is removed.
+
+Strict mode: user code is compiled with `"use strict"`, the worker is spawned with `type: 'module'` (always strict;
+`createSandboxWorker` must keep it), and the built file starts with a `"use strict";` prologue as well.
 
 **Single-file build guard.** Because the production CSP allows no script loads, `vite.config.ts` builds the
-worker as one IIFE and fails the build if the sandbox worker entry has imports, dynamic imports or emits any
-other file (`sandboxWorkerSelfContained`), or if the emitted worker file mentions another emitted file
-(`sandboxWorkerNoAssetRefs`).
+worker as one IIFE and fails the build if the sandbox worker entry has imports, dynamic imports, emits any
+other file or does not start with `"use strict";` (`sandboxWorkerSelfContained`, which also adds that prologue), or
+if the emitted worker file mentions another emitted file (`sandboxWorkerNoAssetRefs`).
 
 ## 6. Engine study API (`@investopen/engine`, `StudyApi`)
 

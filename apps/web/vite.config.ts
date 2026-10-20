@@ -41,20 +41,32 @@ function sandboxCsp(): Plugin {
   };
 }
 
+/** Directive the built sandbox worker starts with (its code must be strict on its own). */
+const USE_STRICT = '"use strict";';
+
 /**
  * Worker-build guard: the sandbox worker bundle must be exactly one chunk with no
  * static or dynamic imports, since its production CSP blocks every script load.
+ * It also gets a `"use strict"` prologue: the IIFE output is a classic script,
+ * strict today only because the worker is spawned with `type: 'module'`
+ * (sloppy mode would let a stack trace hand user code the captured postMessage).
  * Fails the build otherwise.
  */
 function sandboxWorkerSelfContained(): Plugin {
+  const isSandboxEntry = (chunk: { isEntry: boolean; facadeModuleId: string | null }) =>
+    chunk.isEntry && SANDBOX_WORKER_ENTRY.test(chunk.facadeModuleId ?? '');
   return {
     name: 'investopen:sandbox-worker-self-contained',
+    renderChunk(code, chunk) {
+      if (!isSandboxEntry(chunk) || code.startsWith(USE_STRICT)) return null;
+      return { code: `${USE_STRICT}\n${code}`, map: null };
+    },
     generateBundle(_options, bundle) {
       const files = Object.values(bundle);
-      const entry = files.find(
-        (f) => f.type === 'chunk' && f.isEntry && SANDBOX_WORKER_ENTRY.test(f.facadeModuleId ?? ''),
-      );
+      const entry = files.find((f) => f.type === 'chunk' && isSandboxEntry(f));
       if (!entry || entry.type !== 'chunk') return; // another worker
+      if (!entry.code.startsWith(USE_STRICT))
+        this.error(`sandbox worker must start with ${USE_STRICT} (${entry.fileName})`);
       const deps = [...entry.imports, ...entry.dynamicImports];
       const others = files.filter((f) => f !== entry && !f.fileName.endsWith('.map'));
       if (deps.length > 0 || others.length > 0) {

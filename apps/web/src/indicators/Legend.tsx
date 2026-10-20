@@ -114,7 +114,8 @@ function LegendRow({
 
   let tail;
   if (!def || status?.state === 'error') {
-    const msg = def ? (status?.state === 'error' ? status.message : '') : 'Unknown indicator';
+    // No definition: the controller's reason ("Script deleted", ...) when it gave one.
+    const msg = status?.state === 'error' ? status.message : def ? '' : 'Unknown indicator';
     tail = (
       <span className="ind-legend-error" title={msg}>
         {msg}

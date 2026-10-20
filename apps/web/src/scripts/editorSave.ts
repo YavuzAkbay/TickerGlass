@@ -18,6 +18,7 @@ import type { UserScript, UserScriptIn } from '../api/types';
 import { copyColumns, secondsOf, type ChartHost } from '../indicators/controller';
 import { createSandboxWorker, type SandboxPort } from '../indicators/sandbox/port';
 import type { CheckMismatch, FromSandbox, SandboxMessage } from '../indicators/sandbox/protocol';
+import { UserScriptConflict } from '../persist/userScripts';
 
 export type Severity = 'error' | 'warning' | 'info';
 
@@ -32,6 +33,12 @@ export interface Diagnostic {
 
 /** A throwaway sandbox must answer a `load` / `check` within this (the live watchdog allows the same). */
 export const PROBE_TIMEOUT_MS = 10_000;
+/** Compile error of a script whose `load` did not answer within `ms` (saved with no manifest). */
+export const loadTimeoutMessage = (ms: number) =>
+  `Script did not finish loading within ${ms / 1000} s (endless loop?)`;
+/** The analysis failed because the script's `load` timed out (endless loop at the top level). */
+export const loadTimedOut = (analysis: Analysis, ms = PROBE_TIMEOUT_MS) =>
+  analysis.diagnostics.some((d) => d.origin === 'compile' && d.message === loadTimeoutMessage(ms));
 /** The Check runs on the latest bars only: it must stay quick on long histories. */
 export const MAX_CHECK_BARS = 5_000;
 /** Fewer bars than this say nothing about live consistency. */
@@ -147,8 +154,7 @@ export async function probeScript(
       { type: 'load', source, apiVersion: USER_SCRIPT_API_VERSION, scriptId },
       (m) => m.type === 'loaded' || m.type === 'compileError' || m.type === 'error',
     );
-    if (loaded === 'timeout')
-      return fail('The script did not finish loading in time (endless loop at the top level?)');
+    if (loaded === 'timeout') return fail(loadTimeoutMessage(timeoutMs));
     if ('failure' in loaded) return fail(loaded.failure);
     const reply = loaded.value;
     if (reply.type === 'compileError')
@@ -328,4 +334,39 @@ export async function saveScript(
     opts.overwrite ? { overwrite: true } : {},
   );
   return { saved, analysis };
+}
+
+// ------------------------------------------------------------------ rename
+
+export interface RenameDeps {
+  save(id: string, input: UserScriptIn, opts: { overwrite?: boolean }): Promise<UserScript>;
+  /** 409: offer "Overwrite", which renames the version stored elsewhere (`err.current`). */
+  onConflict(err: UserScriptConflict, overwrite: () => Promise<void>): void;
+  onError(err: unknown): void;
+}
+
+/**
+ * Store `script` under `name`, keeping its source and manifest. On a conflict
+ * the overwrite renames `err.current` (what the server has now), never this
+ * tab's possibly stale copy. Never throws.
+ */
+export async function renameScript(
+  script: UserScript,
+  name: string,
+  deps: RenameDeps,
+  overwrite = false,
+): Promise<void> {
+  const input: UserScriptIn = {
+    name,
+    source: script.source,
+    manifest: script.manifest,
+    apiVersion: script.apiVersion,
+  };
+  try {
+    await deps.save(script.id, input, overwrite ? { overwrite } : {});
+  } catch (err) {
+    if (err instanceof UserScriptConflict)
+      deps.onConflict(err, () => renameScript(err.current, name, deps, true));
+    else deps.onError(err);
+  }
 }

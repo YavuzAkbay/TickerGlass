@@ -717,8 +717,18 @@ export class IndicatorController {
   }
 
   private onResults(msg: Extract<FromWorker, { type: 'results' }>): void {
-    // A live bar applied cleanly: the worker is in step again.
-    if (msg.revision === this.sentRevision && msg.changes.every((c) => c.from > 0))
+    // A live bar applied cleanly: the worker is in step again. Only the
+    // indicator worker's own (non-script) results count: sandboxes have their
+    // own resync budget in the router, and must not reset this one.
+    const builtin = msg.changes.filter((c) => {
+      const inst = this.lookup(c.id);
+      return inst !== undefined && !isUserScriptType(inst.type);
+    });
+    if (
+      msg.revision === this.sentRevision &&
+      builtin.length > 0 &&
+      builtin.every((c) => c.from > 0)
+    )
       this.resyncs = 0;
     if (msg.revision !== this.chart.seriesRevision) return;
     const status: Record<string, InstanceStatus> = {};

@@ -242,15 +242,23 @@ be missing or off.
 **Time.** Every script instance runs in its own worker. Each message the app sends it (load, bars, a live tick,
 changed inputs, Check) must be acknowledged in time: **10 s** for load, bars and Check, **5 s** for everything else.
 The clock for a message starts when it becomes the oldest unacknowledged one, so cheap messages queued behind a
-slow one are not charged for the wait. An idle worker is pinged every **10 s**, which catches a script that hangs
-between messages. On a miss the worker is stopped and the legend shows
-`Stopped: no response for N s (endless loop?)`. It is not restarted automatically: change a setting, save the
+slow one are not charged for the wait. An idle worker is pinged every **10 s** and must answer within **2 s**,
+which catches a script that hangs between messages or keeps working in the background. On a miss the worker is
+stopped and the legend shows `Stopped: no response for N s (endless loop?)`. A worker that falls ever further
+behind (500 messages waiting, or one waiting for over **30 s**) is stopped with
+`Stopped: the script cannot keep up with the chart`. It is not restarted automatically: change a setting, save the
 script again or reload the page. A heavy but legitimate script on a very long history can hit these limits.
 
-**Not available inside scripts.** Network (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, ...), storage
-(`indexedDB`, `caches`), other workers and channels, timers (`setTimeout`, `setInterval`, `queueMicrotask`,
-`requestAnimationFrame`), `postMessage`, `WebAssembly`, `navigator`, notifications. Reading any of them gives
-`undefined`, so calling one throws. A script is synchronous code: it cannot wait for anything.
+A script that loops forever while loading (at the top level) cannot be compiled: Save waits 10 s, then stores it
+without a definition and reports `Script did not finish loading within 10 s (endless loop?)`.
+
+**Not available inside scripts.** Network (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `Request`,
+`Response`, ...), storage (`indexedDB`, `caches`), other workers and channels, timers and schedulers (`setTimeout`,
+`setInterval`, `queueMicrotask`, `requestAnimationFrame`, `scheduler`, `AbortSignal.timeout`, `Atomics.waitAsync`),
+asynchronous readers and decoders (`FileReader`, `Blob` `text`/`arrayBuffer`/`bytes`/`stream`, `crypto.subtle`,
+`createImageBitmap`, `OffscreenCanvas`, `fonts`/`FontFace`, `PerformanceObserver`, WebCodecs), `postMessage`,
+`WebAssembly`, `navigator`, notifications, and `Error.prepareStackTrace` (fixed to `undefined`). Reading any of
+them gives `undefined`, so calling one throws. A script is synchronous code: it cannot wait for anything.
 
 **Sizes.**
 
@@ -311,13 +319,19 @@ What the sandbox **guarantees**:
   access) is unreachable. In addition `fetch`, `XMLHttpRequest`, `WebSocket`, `importScripts`, `indexedDB`,
   `Worker` and the other names in section 6 are removed before your code runs, and the sandbox refuses to start
   if any of them is still reachable.
-- **Narrow channel.** The page only accepts numeric result arrays for the script's own instance and re-validates
-  the definition (strict whitelist, no unknown keys, no `__proto__`, colours checked) before using it. It never runs
-  your code.
+- **Narrow channel.** The worker only takes messages the browser delivered from the page (`isTrusted`; events a
+  script dispatches itself are ignored). The page only accepts numeric result arrays for the script's own
+  instance, sized to the chart's bars and keyed by the script's own output ids, and re-validates the definition
+  (strict whitelist, no unknown keys, no `__proto__`, colours checked) before using it. Acknowledgements must match
+  messages the page sent, and a worker posting more than its messages explain is stopped, so a script cannot
+  flood the page. The page never runs your code.
 
 What it does **not** guarantee:
 
-- **CPU and memory.** A script can burn CPU until the watchdog stops it (5 s / 10 s) and can allocate memory.
+- **CPU and memory.** A script can burn CPU until the watchdog stops it (5 s / 10 s, 2 s for an idle ping) and can
+  allocate memory. Stopping background work is **best effort**: timers and other scheduling APIs are removed, but
+  a script can still alternate short busy spins with waits on things that cannot be removed (for example a failing
+  `import()`), keeping a CPU core busy until you remove the indicator. Spins longer than 2 s are caught.
 - **Correct-looking output.** A script can draw whatever it likes, including misleading levels or marks.
 - **A page-wide CSP.** The app page itself has no CSP (a separate hardening item), so the guarantees above rest on the
   worker's own header. Only the nginx image in `docker/`, `vite dev` and `vite preview` set it. If you put another

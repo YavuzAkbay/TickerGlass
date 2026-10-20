@@ -136,6 +136,64 @@ test.describe('user-script sandbox', () => {
     expect(await probe(page, code)).toEqual({ ok: true, value: '[]' });
   });
 
+  test('background-scheduling APIs are gone', async ({ page }) => {
+    // Each would let a script run work between watchdog pings (a task, not a microtask).
+    const code = `
+      const left = [];
+      const check = (name, get) => {
+        let v;
+        try { v = get(); } catch (e) { return; }
+        if (v !== undefined) left.push(name);
+      };
+      check('scheduler', () => self.scheduler);
+      check('Scheduler', () => self.Scheduler);
+      check('AbortSignal.timeout', () => AbortSignal.timeout);
+      check('Atomics.waitAsync', () => Atomics.waitAsync);
+      check('FileReader', () => self.FileReader);
+      check('FileReaderSync', () => self.FileReaderSync);
+      for (const m of ['text', 'arrayBuffer', 'bytes', 'stream'])
+        check('Blob.' + m, () => new Blob(['x'])[m]);
+      check('crypto.subtle', () => crypto.subtle);
+      check('createImageBitmap', () => self.createImageBitmap);
+      check('OffscreenCanvas', () => self.OffscreenCanvas);
+      check('fonts', () => self.fonts);
+      check('FontFace', () => self.FontFace);
+      check('Response', () => self.Response);
+      check('Request', () => self.Request);
+      check('PerformanceObserver', () => self.PerformanceObserver);
+      return JSON.stringify(left);`;
+    expect(await probe(page, code)).toEqual({ ok: true, value: '[]' });
+    // The reported repro: re-arming a spin with AbortSignal.timeout(0) throws up front.
+    const r = await probe(page, 'AbortSignal.timeout(0).onabort = () => {}; return 1;');
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/^TypeError: /);
+  });
+
+  test('dispatchEvent cannot forge a message to the sandbox', async ({ page }) => {
+    // Untrusted events are ignored: a forged ping would be acked (the probe hook then
+    // resolves "Ack without result"), a forged seq-less message would post an error.
+    const code = `
+      self.dispatchEvent(new MessageEvent('message', { data: { seq: 1e300, msg: { type: 'ping' } } }));
+      self.dispatchEvent(new MessageEvent('message', { data: {} }));
+      Object.defineProperty(MessageEvent.prototype, 'data', {
+        get() { return { seq: 1e300, msg: { type: 'ping' } }; },
+      });
+      self.dispatchEvent(new MessageEvent('message', { data: null }));
+      return 'sent';`;
+    expect(await probe(page, code)).toEqual({ ok: true, value: 'sent' });
+  });
+
+  test('Error.prepareStackTrace is pinned (no call sites for user code)', async ({ page }) => {
+    const code = `
+      try { Error.prepareStackTrace = (e, sites) => sites; } catch (e) { return e.name; }
+      return 'assigned';`;
+    expect(await probe(page, code)).toEqual({ ok: true, value: 'TypeError' });
+    expect(await probe(page, 'return typeof Error.prepareStackTrace;')).toEqual({
+      ok: true,
+      value: 'undefined',
+    });
+  });
+
   test('fetch, XHR and WebSocket fail', async ({ page }) => {
     // Each probe settles on the request's outcome, so it only passes if the request
     // fails (lockdown: TypeError up front; CSP alone: error event / rejection).
