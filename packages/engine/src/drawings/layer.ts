@@ -115,6 +115,8 @@ export class DrawingLayer {
   private readonly state: DrawingRenderState = { selected: false, hovered: false, editing: false };
   /** Last pointer was a finger: larger hit tolerance and handle reach. */
   touch = false;
+  /** Pick-tool cut preview: pane-local x of the bar under the pointer, or null. */
+  cutX: number | null = null;
   /** Box-select rectangle being dragged (pane-local CSS px). */
   marquee: { paneId: string; left: number; top: number; right: number; bottom: number } | null =
     null;
@@ -398,7 +400,7 @@ export class DrawingLayer {
 
   /** Draw the pane's drawings (and the draft) on `ctx` (CSS px transform). */
   render(pane: DrawingPane, ctx: CanvasRenderingContext2D, dpr: number): void {
-    if (pane.height <= 0 || (!this.items.size && !this.draft && !this.measure)) return;
+    if (pane.height <= 0 || (!this.items.size && !this.draft && !this.measure && this.cutX === null)) return;
     this.refreshView();
     const rc = this.rc;
     rc.ctx = ctx;
@@ -408,6 +410,21 @@ export class DrawingLayer {
       if (d.paneId === pane.id && this.isShown(d)) this.renderOne(d, pane);
     if (this.measure?.paneId === pane.id) this.renderOne(this.measure, pane);
     if (this.draft?.paneId === pane.id) this.renderOne(this.draft, pane);
+    const cut = this.cutX;
+    if (cut !== null) {
+      const w = this.host.paneWidth;
+      ctx.save();
+      ctx.fillStyle = 'rgba(120, 123, 134, 0.25)';
+      ctx.fillRect(cut, 0, Math.max(0, w - cut), pane.height);
+      ctx.strokeStyle = 'rgba(120, 123, 134, 0.9)';
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(cut) + 0.5, 0);
+      ctx.lineTo(Math.round(cut) + 0.5, pane.height);
+      ctx.stroke();
+      ctx.restore();
+    }
     const m = this.marquee;
     if (m?.paneId === pane.id) {
       ctx.save();

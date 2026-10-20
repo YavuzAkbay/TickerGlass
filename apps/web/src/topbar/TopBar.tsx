@@ -18,6 +18,7 @@ import { useState, useSyncExternalStore, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
+import { useReplayStore } from '../replay/store';
 import { useChartStore } from '../store/chart';
 import { IconButton } from '../ui/IconButton';
 import { DropdownMenu, Menu, type MenuItem } from '../ui/Menu';
@@ -33,6 +34,7 @@ const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
 /** standard header: symbol, interval, chart type, tools, layout and view actions. */
 export function TopBar() {
+  const replayOn = useReplayStore((s) => s.status !== 'off');
   return (
     <div className="top-bar" role="toolbar" aria-label="Chart toolbar">
       <SymbolButton />
@@ -51,7 +53,13 @@ export function TopBar() {
       <IndicatorTemplatesButton />
       <div className="tb-sep" />
       <CommandButton id="alert.create" icon={AlarmClock} label="Create alert" text="Alert" />
-      <CommandButton id="replay.toggle" icon={Rewind} label="Bar replay" text="Replay" />
+      <CommandButton
+        id="replay.toggle"
+        icon={Rewind}
+        label="Bar replay"
+        text="Replay"
+        active={replayOn}
+      />
       <div className="tb-sep" />
       <UndoRedo />
       <div className="tb-spacer" />
@@ -90,10 +98,12 @@ interface CommandButtonProps {
   showLabel?: boolean;
   /** Short text next to the icon (hidden on narrow screens). */
   text?: string;
+  /** Pressed look (a mode that is on). */
+  active?: boolean;
 }
 
 /** Icon button bound to a command; tooltip shows its shortcut. */
-function CommandButton({ id, icon, label, showLabel, text }: CommandButtonProps) {
+function CommandButton({ id, icon, label, showLabel, text, active }: CommandButtonProps) {
   const cmd = useCommand(id);
   const shortcut = firstShortcut(cmd);
   const visible = showLabel ? label : text;
@@ -103,6 +113,7 @@ function CommandButton({ id, icon, label, showLabel, text }: CommandButtonProps)
       label={label}
       {...(shortcut ? { shortcut } : {})}
       className={visible ? 'tb-labeled' : ''}
+      {...(active === undefined ? {} : { active })}
       onClick={() => run(id)}
     >
       {visible ? (

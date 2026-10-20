@@ -1,0 +1,54 @@
+/* ---- replay bar: floats at the bottom centre of the chart ---- */
+.replay-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover);
+  box-shadow: var(--shadow);
+  user-select: none;
+  max-width: calc(100% - 16px);
+}
+.replay-bar .io-icon-btn.rb-labeled {
+  gap: 6px;
+  padding: 0 10px 0 8px;
+}
+.rb-label {
+  font-size: 13px;
+}
+.rb-sep {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 5px;
+  background: var(--border);
+}
+.rb-select {
+  height: 28px;
+  padding: 0 6px;
+  margin-left: 4px;
+  color: var(--text);
+  font-size: 13px;
+}
+.rb-time {
+  min-width: 110px;
+  margin: 0 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rb-warning {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--star);
+  cursor: help;
+}

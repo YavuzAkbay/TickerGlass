@@ -19,6 +19,7 @@ import {
   isToolAvailable,
   resetToCursor,
 } from '../toolbar/tools';
+import { REPLAY_PICK_ID, SCISSORS_CURSOR } from '../replay/tool';
 import { openContextMenu } from '../ui/ContextMenu';
 import { toast } from '../ui/Toast';
 import {
@@ -54,6 +55,9 @@ const drawingsHidden = (s: UiSnapshot) =>
 export interface EngineTool {
   type: string;
   style?: DrawingStyle;
+  /** CSS cursor and cut preview (the replay scissors). */
+  cursor?: string;
+  cutPreview?: boolean;
 }
 
 /**
@@ -65,6 +69,7 @@ export interface EngineTool {
 export function engineTool(id: string): EngineTool | null {
   if (getDrawingTool(id)) return { type: id };
   if (id === ERASER_TOOL || id === MEASURE_TOOL || id === ZOOM_TOOL) return { type: id };
+  if (id === REPLAY_PICK_ID) return { type: PICK_TOOL, cursor: SCISSORS_CURSOR, cutPreview: true };
   if (id === ANCHORED_VWAP_ID) return isToolAvailable(id) ? { type: PICK_TOOL } : null;
   const sticker = findSticker(id);
   if (sticker && getDrawingTool('icon')) return { type: 'icon', style: { glyph: sticker.glyph } };
@@ -131,10 +136,17 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
   const syncTool = () => {
     const ui = useUiStore.getState();
     const want = engineTool(ui.activeTool);
-    const key = want ? `${want.type}:${String(want.style?.glyph ?? '')}` : null;
+    const key = want
+      ? `${want.type}:${String(want.style?.glyph ?? '')}:${want.cursor ? 'cut' : ''}`
+      : null;
     if (chart.getActiveTool() === (want?.type ?? null) && key === armed) return;
     try {
-      chart.setActiveTool(want?.type ?? null, want?.style ? { style: want.style } : undefined);
+      const opts = {
+        ...(want?.style ? { style: want.style } : {}),
+        ...(want?.cursor ? { cursor: want.cursor } : {}),
+        ...(want?.cutPreview ? { cutPreview: true } : {}),
+      };
+      chart.setActiveTool(want?.type ?? null, Object.keys(opts).length ? opts : undefined);
       armed = key;
     } catch {
       toast('This tool is not available yet');

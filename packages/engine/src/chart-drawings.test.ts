@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Chart } from './chart';
 import type { DrawingHost } from './drawings/layer';
 import { logicalToTime, timeToLogical } from './drawings/mapping';
+import { PICK_TOOL, type DrawingPointerTarget } from './drawings/interaction';
 import { defineDrawingTool, registerDrawingTool } from './drawings/registry';
 import type {
   Bar,
@@ -432,6 +433,37 @@ describe('Chart drawing API', () => {
     expect(chart.getActiveTool()).toBe('horizontal-line');
     chart.setActiveTool(null);
     expect(chart.getActiveTool()).toBeNull();
+  });
+
+  it('pick tool: custom cursor and cut preview follow the pointer', async () => {
+    const { chart } = await load(10);
+    const layer = (chart as unknown as { drawingLayer: { cutX: number | null } }).drawingLayer;
+    const mods = { shift: false, alt: false, mod: false };
+    // The harness has no layout: a stand-in pane is enough for the preview.
+    const target = {
+      pane: { id: 'main', top: 0, height: 300 },
+      drawing: null,
+    } as unknown as DrawingPointerTarget;
+    const input = chart.drawingInput;
+
+    chart.setActiveTool(PICK_TOOL);
+    expect(input.cursor(target)).toBe('crosshair');
+    input.hover(target, 100, 50, mods);
+    expect(layer.cutX).toBeNull();
+
+    chart.setActiveTool(PICK_TOOL, { cursor: 'url(x.svg) 4 4, crosshair', cutPreview: true });
+    expect(input.cursor(target)).toBe('url(x.svg) 4 4, crosshair');
+    expect(input.cursor(null)).toBeNull();
+    input.hover(target, 100, 50, mods);
+    expect(layer.cutX).toBeTypeOf('number');
+    input.hover(null, 0, 0, mods);
+    expect(layer.cutX).toBeNull();
+
+    input.hover(target, 100, 50, mods);
+    expect(layer.cutX).not.toBeNull();
+    chart.setActiveTool(null);
+    expect(layer.cutX).toBeNull();
+    expect(input.cursor(target)).toBeNull();
   });
 
   it('pastes pane-coordinate drawings in place (offset/at ignored)', async () => {

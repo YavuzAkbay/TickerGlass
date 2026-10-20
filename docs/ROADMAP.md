@@ -254,10 +254,19 @@ Phase 11 notes:
 
 ### Phase 13: Market replay
 
-- [ ] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
-- [ ] Indicators and alerts react incrementally; drawings stay usable
-- [ ] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
+- [x] Replay feed wrapper: pick start bar (scissors cursor), play/pause, step forward, speeds, jump to realtime, change interval during replay
+- [x] Indicators and alerts react incrementally; drawings stay usable
+- [x] Intrabar replay from a lower native interval where yfinance has the data (warn about intraday history limits)
 - [ ] Optional: replay paper trading (buy/sell, P&L panel)
+
+Phase 13 notes:
+
+- Design: [replay.md](replay.md) (written with the alerts step). `ReplayFeed` (`packages/engine/src/feed/replay-feed.ts`) is the outermost layer of the one shared feed (`apps/web/src/chart/feed.ts`, exported as `replayFeed`): live mode is a pure passthrough, replay mode clips `getBars` and drives subscriptions from a clock, so compares, higher-timeframe indicator series, external symbols and expressions are clipped without changes of their own. Data-dependent controllers take a `dataEpoch` option (`replayFeed.epoch`) and refetch when it changes.
+- Web: `apps/web/src/replay/` has `store.ts` (status, clock, speed and update picker; only speed and update persist, `investopen-replay`), `controller.ts` (start/seek, play loop, step, jump to realtime; the chart reloads after start/seek/stop, never per step), `commands.ts` (`replay.*`, Shift+Alt+R / Space / ArrowRight), `attach.ts` + `tool.ts` (scissors picker on the engine `pick-point` mode, with the new `DrawingToolOptions.cursor` and `cutPreview`), `ReplayBar.tsx` and `limits.ts` (API history limits, keep in sync with `api/src/investopen_api/intervals.py`). `window.replay` is exposed in dev and e2e builds.
+- Tick choice: the finest native interval below the chart interval that divides it, gives at most 120 ticks per bar and whose history reaches the start (a day of margin); otherwise whole bars and a warning badge. The Update picker overrides it (Auto, Bars or any valid interval). Without intrabar data the first step reveals a whole bar; with it, steps move the forming bar.
+- Request budget: forward buffers page in `limit: 2000` requests (`to`-bounded, halved when a page comes back full) and refill when fewer than 500 bars remain; buffers are shared by every subscription of a symbol and interval, so replay adds no `/ws` traffic (live subscriptions are muted and dropped from the inner feed).
+- Engine: Alt+arrow keys and Shift+Alt+R pass through to the app (the engine used to swallow them).
+- e2e: `e2e/replay.spec.ts` (`?feed=synthetic-multi`: pick, step, intrabar, play/pause, interval change, compare clipping, indicator, jump to realtime, exit). Synthetic intervals are independent random walks, so specs assert structure and times, not prices. Paper trading is not built yet.
 
 ### Phase 14: Multi-chart layouts
 
