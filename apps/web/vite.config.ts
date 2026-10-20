@@ -1,10 +1,106 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Connect, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const apiTarget = process.env.API_URL ?? 'http://localhost:8000';
 
+/**
+ * Response CSP of the user-script sandbox worker (docs/plans/user-scripts.md §2):
+ * the real network boundary for user code. The built worker is one self-contained
+ * file (sandboxWorkerSelfContained), so production allows no script loads at all,
+ * not even same-origin `import()`. Keep in sync with docker/nginx.conf.
+ */
+const SANDBOX_CSP =
+  "default-src 'none'; script-src 'unsafe-eval'; connect-src 'none'; worker-src 'none'";
+/** Dev: Vite serves the worker as separate same-origin modules, so it needs 'self'. */
+const SANDBOX_CSP_DEV =
+  "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'; worker-src 'none'";
+/** Dev module (served with a `?worker_file&type=module` query). */
+const SANDBOX_WORKER_DEV_PATH = /^\/src\/indicators\/sandbox\/sandbox-worker\.ts$/;
+/** Built asset; same pattern as the nginx location. */
+const SANDBOX_WORKER_ASSET_PATH = /^\/assets\/sandbox-worker-[^/]+\.js$/;
+const SANDBOX_WORKER_ENTRY = /[\\/]indicators[\\/]sandbox[\\/]sandbox-worker\.ts$/;
+
+function cspMiddleware(path: RegExp, csp: string): Connect.NextHandleFunction {
+  return (req, res, next) => {
+    if (path.test((req.url ?? '').split('?')[0] ?? '')) {
+      res.setHeader('Content-Security-Policy', csp);
+    }
+    next();
+  };
+}
+
+/** Adds the sandbox CSP to the sandbox worker script in `vite dev` and `vite preview`. */
+function sandboxCsp(): Plugin {
+  return {
+    name: 'investopen:sandbox-csp',
+    // Registered before Vite's own middlewares, which send the response.
+    configureServer: (server) =>
+      void server.middlewares.use(cspMiddleware(SANDBOX_WORKER_DEV_PATH, SANDBOX_CSP_DEV)),
+    configurePreviewServer: (server) =>
+      void server.middlewares.use(cspMiddleware(SANDBOX_WORKER_ASSET_PATH, SANDBOX_CSP)),
+  };
+}
+
+/**
+ * Worker-build guard: the sandbox worker bundle must be exactly one chunk with no
+ * static or dynamic imports, since its production CSP blocks every script load.
+ * Fails the build otherwise.
+ */
+function sandboxWorkerSelfContained(): Plugin {
+  return {
+    name: 'investopen:sandbox-worker-self-contained',
+    generateBundle(_options, bundle) {
+      const files = Object.values(bundle);
+      const entry = files.find(
+        (f) => f.type === 'chunk' && f.isEntry && SANDBOX_WORKER_ENTRY.test(f.facadeModuleId ?? ''),
+      );
+      if (!entry || entry.type !== 'chunk') return; // another worker
+      const deps = [...entry.imports, ...entry.dynamicImports];
+      const others = files.filter((f) => f !== entry && !f.fileName.endsWith('.map'));
+      if (deps.length > 0 || others.length > 0) {
+        this.error(
+          `sandbox worker must be a single self-contained file (CSP script-src has no 'self'); ` +
+            `it references or emits: ${[...deps, ...others.map((f) => f.fileName)].join(', ')}`,
+        );
+      }
+    },
+  };
+}
+
+/**
+ * App-build guard: the emitted sandbox worker file must not mention any other
+ * emitted file (asset URLs, chunks), since its production CSP loads nothing.
+ */
+function sandboxWorkerNoAssetRefs(): Plugin {
+  return {
+    name: 'investopen:sandbox-worker-no-asset-refs',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const files = Object.values(bundle);
+      for (const worker of files) {
+        if (!SANDBOX_WORKER_ASSET_PATH.test(`/${worker.fileName}`)) continue;
+        const code = worker.type === 'chunk' ? worker.code : String(worker.source);
+        const refs = files
+          .map((f) => f.fileName.slice(f.fileName.lastIndexOf('/') + 1))
+          .filter((name) => name !== worker.fileName.slice(worker.fileName.lastIndexOf('/') + 1))
+          .filter((name) => code.includes(name));
+        if (refs.length > 0) {
+          this.error(
+            `${worker.fileName} must be self-contained; it references: ${refs.join(', ')}`,
+          );
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), sandboxCsp(), sandboxWorkerNoAssetRefs()],
+  worker: {
+    // One classic-script file per worker: no chunk imports (sandboxWorkerSelfContained).
+    format: 'iife',
+    plugins: () => [sandboxWorkerSelfContained()],
+  },
   build: {
     rolldownOptions: {
       output: {
