@@ -20,7 +20,7 @@ import { isCompareId } from '../compare/model';
 import { findCompare } from '../compare/actions';
 import { compareMenuItems } from '../compare/menu';
 import { currentDrawings, removeDrawings } from '../drawings/actions';
-import { useDrawingRuntime } from '../drawings/store';
+import { useDrawingClipboard } from '../drawings/store';
 import { findIndicator } from '../indicators/actions';
 import { indicatorMenuItems } from '../indicators/menu';
 import { useUiStore } from '../store/ui';
@@ -199,7 +199,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       label: 'Paste',
       icon: ClipboardPaste,
       shortcut: 'Mod+v',
-      disabled: !useDrawingRuntime.getState().clipboard,
+      disabled: !useDrawingClipboard.getState().clipboard,
       onSelect: () => commands.execute('drawings.paste'),
     },
     {

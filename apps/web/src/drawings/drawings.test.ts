@@ -5,6 +5,7 @@ import { useChartStore } from '../store/chart';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
+import { useLayoutGrid } from '../layout/store';
 import { useUiStore } from '../store/ui';
 import { isToolAvailable } from '../toolbar/tools';
 import { attachDrawings, engineTool, keepPerDrawingStyle } from './attach';
@@ -39,10 +40,12 @@ import {
   STORAGE_KEY,
   applyToBuckets,
   backupKey,
+  createDrawingRuntimeStore,
   drawingsFor,
   loadDrawings,
   mergeBuckets,
   parseDrawings,
+  sanitizeDrawing,
   serializeDrawings,
   setLoadState,
   startDrawingPersistence,
@@ -106,6 +109,24 @@ function memStorage(init: Record<string, string> = {}) {
 }
 
 describe('store and persistence', () => {
+  it('drawingsFor hides drawings bound to another chart of the same symbol', () => {
+    const free = drw();
+    const boundA = drw({ chartId: 'a' });
+    const boundB = drw({ chartId: 'b', scope: 'all' });
+    const s = applyToBuckets({ bySymbol: {}, synced: [] }, [free, boundA, boundB]);
+    const ids = (chart: string) => drawingsFor(s, 'AAPL', chart).map((d) => d.id);
+    expect(ids('a').sort()).toEqual([free.id, boundA.id].sort());
+    expect(ids('b').sort()).toEqual([free.id, boundB.id].sort());
+    expect(ids('c')).toEqual([free.id]);
+    // Bound synced-scope drawings stay bound; other symbols never show them.
+    expect(drawingsFor(s, 'MSFT', 'a').map((d) => d.id)).toEqual([]);
+    expect(drawingsFor(s, 'MSFT', 'b').map((d) => d.id)).toEqual([boundB.id]);
+  });
+
+  it('sanitizeDrawing keeps chartId', () => {
+    expect(sanitizeDrawing(drw({ chartId: 'a' }))?.chartId).toBe('a');
+  });
+
   it('routes drawings to symbol buckets or the synced bucket and moves them on scope change', () => {
     const a = drw();
     const b = drw({ symbol: 'MSFT' });
@@ -114,7 +135,7 @@ describe('store and persistence', () => {
     expect(s.bySymbol.AAPL!.map((d) => d.id)).toEqual([a.id]);
     expect(s.bySymbol.MSFT!.map((d) => d.id)).toEqual([b.id]);
     expect(s.synced.map((d) => d.id)).toEqual([c.id]);
-    expect(drawingsFor(s, 'AAPL').map((d) => d.id)).toEqual([a.id, c.id]);
+    expect(drawingsFor(s, 'AAPL', 'c1').map((d) => d.id)).toEqual([a.id, c.id]);
 
     s = applyToBuckets(s, [{ ...a, scope: 'all' }], [b.id]);
     expect(s.bySymbol).toEqual({});
@@ -270,7 +291,7 @@ describe('undo/redo', () => {
     expect(findDrawing(a.id)!.locked).toBe(true);
     setScope([a.id], 'all');
     expect(useDrawingStore.getState().synced.map((d) => d.id)).toEqual([a.id]);
-    expect(drawingsFor(useDrawingStore.getState(), 'MSFT').map((d) => d.id)).toEqual([a.id]);
+    expect(drawingsFor(useDrawingStore.getState(), 'MSFT', 'c1').map((d) => d.id)).toEqual([a.id]);
     undo();
     expect(useDrawingStore.getState().bySymbol.AAPL!.map((d) => d.id)).toEqual([a.id]);
     undo();
@@ -623,7 +644,13 @@ describe('attach (engine events and sync)', () => {
     vi.stubGlobal('window', { addEventListener: () => {}, removeEventListener: () => {} });
     const f = fakeChart();
     const detach = attachDrawings(
-      { id: 'c1', chart: f.chart, view: useChartView, history: useHistory },
+      {
+        id: 'c1',
+        chart: f.chart,
+        view: useChartView,
+        history: useHistory,
+        drawingRuntime: useDrawingRuntime,
+      },
       {} as HTMLElement,
     );
     return {
@@ -768,6 +795,36 @@ describe('attach (engine events and sync)', () => {
     expect(findDrawing(c.id)).toBeUndefined();
     useUiStore.setState({ syncNewDrawings: false });
     f.detach();
+  });
+
+  it('binds new drawings to their chart only while drawing sync is off', async () => {
+    const f = attach();
+    const grid = useLayoutGrid.getState().sync;
+    const created = async (d: Drawing) => {
+      f.chart.addDrawing(d);
+      f.emit('drawingCreated', { drawing: d });
+      await Promise.resolve();
+      return findDrawing(d.id)!;
+    };
+    useLayoutGrid.setState({ sync: { ...grid, drawings: true } });
+    expect((await created(drw())).chartId).toBeUndefined();
+    // A paste of a drawing bound elsewhere becomes unbound again.
+    expect((await created(drw({ chartId: 'other' }))).chartId).toBeUndefined();
+    useLayoutGrid.setState({ sync: { ...grid, drawings: false } });
+    const bound = await created(drw());
+    expect(bound.chartId).toBe('c1');
+    expect(f.chart.getDrawing(bound.id)!.chartId).toBe('c1');
+    expect((await created(drw({ chartId: 'other' }))).chartId).toBe('c1');
+    useLayoutGrid.setState({ sync: grid });
+    f.detach();
+  });
+
+  it('keeps selection and drag state per chart', () => {
+    const a = createDrawingRuntimeStore();
+    const b = createDrawingRuntimeStore();
+    a.setState({ selection: ['x'], dragging: true });
+    expect(b.getState().selection).toEqual([]);
+    expect(b.getState().dragging).toBe(false);
   });
 
   it('folds pane removal across symbols into one step; skips it during undo/redo', async () => {

@@ -130,6 +130,7 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
 /** Panes with their series, studies and drawings, kept in sync with the chart. */
 export function ObjectTree() {
   const chart = useChartStore((s) => s.chart);
+  const chartId = useChartStore((s) => s.activeId) ?? '';
   const symbol = useChartView((s) => s.symbol);
   const interval = useChartView((s) => s.interval);
   // Re-render on drawing store changes (paneStack reads it). Select the
@@ -138,8 +139,8 @@ export function ObjectTree() {
   const own = useDrawingStore((s) => s.bySymbol[symbol]);
   const synced = useDrawingStore((s) => s.synced);
   const drawings = useMemo(
-    () => drawingsFor({ bySymbol: own ? { [symbol]: own } : {}, synced }, symbol),
-    [own, synced, symbol],
+    () => drawingsFor({ bySymbol: own ? { [symbol]: own } : {}, synced }, symbol, chartId),
+    [own, synced, symbol, chartId],
   );
   useChartTick(chart, ['stateChange', 'dataLoaded']);
 

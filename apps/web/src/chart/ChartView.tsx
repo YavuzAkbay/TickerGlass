@@ -24,6 +24,7 @@ import {
   unregisterSession,
   useChartStore,
 } from '../store/chart';
+import { attachSync } from '../layout/sync';
 import { takeSeed } from '../layout/seeds';
 import { pickChartView } from '../store/chartView';
 
@@ -109,6 +110,7 @@ export function ChartView({ id }: { id: string }) {
       attachCompares(s, feed),
       attachAlerts(s),
       attachReplay(s),
+      attachSync(s),
     ];
     return () => {
       offs.forEach((off) => off());

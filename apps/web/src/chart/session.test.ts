@@ -18,6 +18,7 @@ import {
   unregisterSession,
   useChartStore,
 } from '../store/chart';
+import { createDrawingRuntimeStore } from '../drawings/store';
 import type { ChartSession } from './session';
 import { createStore } from 'zustand/vanilla';
 
@@ -33,6 +34,7 @@ function fakeSession(id: string): ChartSession {
     compares: createCompareStore(),
     compareRuntime: createCompareRuntimeStore(),
     history: createHistoryStore(),
+    drawingRuntime: createDrawingRuntimeStore(),
     info: createStore(() => ({ symbolInfo: null, crosshair: null, loading: false })),
     destroy: () => {},
   };

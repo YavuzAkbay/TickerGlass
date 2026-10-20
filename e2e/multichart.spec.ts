@@ -229,3 +229,207 @@ test('a 16-chart layout loads without page errors', async ({ page }) => {
     .toBe(true);
   expect(errors).toEqual([]);
 });
+
+// ------------------------------------------------------------ sync
+
+type SyncLabel = 'Symbol' | 'Interval' | 'Crosshair' | 'Time' | 'Date range' | 'Drawings';
+
+async function setSync(page: Page, label: SyncLabel, on: boolean) {
+  await page.getByRole('button', { name: 'Chart layout', exact: true }).click();
+  const box = page.getByRole('dialog', { name: 'Chart layout' }).getByLabel(label, { exact: true });
+  await box.setChecked(on);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Chart layout' })).toHaveCount(0);
+}
+
+async function searchSymbol(page: Page, symbol: string) {
+  await page.getByRole('button', { name: /^Symbol search/ }).click();
+  const input = page.getByLabel('Search symbols');
+  await input.fill(symbol);
+  await input.press('Enter');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+/** Chart ids in cell order. */
+const chartIds = (page: Page) =>
+  cells(page).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.chartId!));
+
+const symbols = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('.chart-cell')].map((el) =>
+      window.charts[el.dataset.chartId!]!.getSymbol(),
+    ),
+  );
+
+/** Logical index of the crosshair mirrored from another chart (NaN: none). */
+const syncedIndex = (page: Page, n: number) =>
+  page.evaluate((i) => {
+    const id = document.querySelectorAll<HTMLElement>('.chart-cell')[i]!.dataset.chartId!;
+    return (window.charts[id] as unknown as { syncedIndex(): number }).syncedIndex();
+  }, n);
+
+const visibleRange = (page: Page, n: number) =>
+  page.evaluate((i) => {
+    const id = document.querySelectorAll<HTMLElement>('.chart-cell')[i]!.dataset.chartId!;
+    return window.charts[id]!.getVisibleTimeRange();
+  }, n);
+
+async function twoCharts(page: Page) {
+  await open(page);
+  await chooseTemplate(page, '2c');
+  await expect(cells(page)).toHaveCount(2);
+  await expect
+    .poll(() => page.evaluate(() => Object.values(window.charts).every((c) => c.store.length > 0)))
+    .toBe(true);
+}
+
+test('symbol sync: off changes one chart, on changes both', async ({ page }) => {
+  await twoCharts(page);
+  await focusCell(page, 1);
+  await searchSymbol(page, 'MSFT');
+  await expect.poll(() => symbols(page)).toEqual(['AAPL', 'MSFT']);
+
+  await setSync(page, 'Symbol', true);
+  await focusCell(page, 0);
+  await searchSymbol(page, 'NVDA');
+  await expect.poll(() => symbols(page)).toEqual(['NVDA', 'NVDA']);
+});
+
+test('the crosshair of one chart shows on the other, across intervals (1D and 5m)', async ({
+  page,
+}) => {
+  await twoCharts(page);
+  await focusCell(page, 1);
+  await page.keyboard.type('5m');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await intervals(page)).sort()).toEqual(['1D', '5m']);
+  await expect
+    .poll(() => page.evaluate(() => Object.values(window.charts).every((c) => c.store.length > 0)))
+    .toBe(true);
+
+  const host0 = cells(page).nth(0).locator('.chart-host');
+  const box = (await host0.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 5);
+  await expect.poll(() => syncedIndex(page, 1)).not.toBeNaN();
+  expect(await syncedIndex(page, 0)).toBeNaN();
+
+  // Pointer leaves the chart: the mirrored crosshair goes.
+  await page.mouse.move(box.x + box.width + 400, 5);
+  await expect.poll(() => syncedIndex(page, 1)).toBeNaN();
+
+  // The other direction (5m -> 1D) and the flag.
+  await setSync(page, 'Crosshair', false);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 5);
+  await page.waitForTimeout(150);
+  expect(await syncedIndex(page, 1)).toBeNaN();
+  await setSync(page, 'Crosshair', true);
+  const box1 = (await cells(page).nth(1).locator('.chart-host').boundingBox())!;
+  await page.mouse.move(box1.x + box1.width / 2, box1.y + box1.height / 2);
+  await page.mouse.move(box1.x + box1.width / 2 + 20, box1.y + box1.height / 2 + 5);
+  await expect.poll(() => syncedIndex(page, 0)).not.toBeNaN();
+});
+
+test('panning follows on the other chart only with time sync', async ({ page }) => {
+  await twoCharts(page);
+  const host0 = cells(page).nth(0).locator('.chart-host');
+  const box = (await host0.boundingBox())!;
+  const pan = async (dx: number) => {
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx / 2, y, { steps: 5 });
+    await page.mouse.move(x + dx, y, { steps: 5 });
+    await page.mouse.up();
+  };
+
+  const before = await visibleRange(page, 1);
+  await pan(120);
+  await page.waitForTimeout(300);
+  expect(await visibleRange(page, 1)).toEqual(before);
+
+  await setSync(page, 'Time', true);
+  const a0 = (await visibleRange(page, 0))!;
+  await pan(-80);
+  await expect.poll(async () => (await visibleRange(page, 0))!.to).not.toBe(a0.to);
+  await expect
+    .poll(async () => (await visibleRange(page, 1))!.to)
+    .toBe((await visibleRange(page, 0))!.to);
+});
+
+test('a range preset applies to every chart only with date-range sync', async ({ page }) => {
+  await twoCharts(page);
+  const preset = (label: string) =>
+    page
+      .getByRole('group', { name: 'Range presets' })
+      .locator('.strip-seg-btn', { hasText: new RegExp(`^${label}$`) });
+  const DAY = 86_400;
+
+  await focusCell(page, 0);
+  const initial = (await visibleRange(page, 1))!;
+  await preset('1M').click();
+  await expect.poll(async () => (await intervals(page))[0]).toBe('1h');
+  await page.waitForTimeout(300);
+  expect(await visibleRange(page, 1)).toEqual(initial);
+
+  await setSync(page, 'Date range', true);
+  await focusCell(page, 0);
+  await preset('3M').click();
+  await expect.poll(async () => (await intervals(page))[0]).toBe('4h');
+  // Both charts now start about three months before the last bar.
+  await expect
+    .poll(async () => {
+      const [a, b] = [(await visibleRange(page, 0))!, (await visibleRange(page, 1))!];
+      return Math.abs(a.from - b.from) < 4 * DAY && b.from !== initial.from;
+    })
+    .toBe(true);
+});
+
+test('drawing sync off: a drawing stays on its chart; selection is per chart', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('mc-drw')) return;
+    sessionStorage.setItem('mc-drw', '1');
+    localStorage.removeItem('investopen-drawings');
+  });
+  await twoCharts(page);
+  await setSync(page, 'Drawings', false);
+  // Charts with legacy ids are re-created under fresh ids; wait for the grid to settle.
+  await expect(cells(page)).toHaveCount(2);
+  await expect
+    .poll(() => page.evaluate(() => Object.values(window.charts).every((c) => c.store.length > 0)))
+    .toBe(true);
+  const [idA, idB] = await chartIds(page);
+  expect(idA).toMatch(/^[0-9a-f-]{36}$/);
+
+  const drawn = (id: string) => page.evaluate((i) => window.charts[i]!.getDrawings().length, id);
+  const hostB = cells(page).nth(1).locator('.chart-host');
+  const box = (await hostB.boundingBox())!;
+  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await page.mouse.click(box.x + 80, box.y + 120);
+  await page.mouse.click(box.x + 260, box.y + 200);
+  await expect.poll(() => drawn(idB!)).toBe(1);
+  await page.waitForTimeout(300);
+  expect(await drawn(idA!)).toBe(0);
+  // The new drawing is bound to chart B.
+  expect(await page.evaluate((i) => window.charts[i]!.getDrawings()[0]!.chartId, idB!)).toBe(idB);
+
+  // Selecting it on B leaves A without a selection.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(box.x + 170, box.y + 160);
+  await expect
+    .poll(() => page.evaluate((i) => window.charts[i]!.getSelection().length, idB!))
+    .toBe(1);
+  expect(await page.evaluate((i) => window.charts[i]!.getSelection().length, idA!)).toBe(0);
+  // Focusing A hides B's drawing toolbar (state is per chart).
+  await focusCell(page, 0);
+  await expect(page.getByRole('toolbar', { name: 'Drawing toolbar' })).toHaveCount(0);
+  await page.keyboard.press('Alt+]');
+  await expect(cells(page).nth(1)).toHaveClass(/\bactive\b/);
+  await expect(page.getByRole('toolbar', { name: 'Drawing toolbar' })).toBeVisible();
+
+  // Switching drawing sync back on does not move it: still only on B.
+  await setSync(page, 'Drawings', true);
+  expect(await drawn(idA!)).toBe(0);
+});

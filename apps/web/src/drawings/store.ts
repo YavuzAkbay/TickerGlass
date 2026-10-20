@@ -1,6 +1,8 @@
 import { resolveDrawingType, type Drawing, type DrawingStyle } from '@investopen/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createStore, type StoreApi } from 'zustand/vanilla';
+import { createActiveFacade } from '../chart/facade';
 import { stripPerDrawingStyle } from './per-drawing';
 
 /**
@@ -238,9 +240,15 @@ export const useDrawingStore = create<DrawingStore>()((set) => ({
   replaceAll: (data) => set({ bySymbol: data.bySymbol, synced: data.synced }),
 }));
 
-/** Drawings shown on `symbol`: its own plus the synced ones. */
-export function drawingsFor(s: DrawingBuckets, symbol: string): Drawing[] {
-  return [...(s.bySymbol[symbol] ?? []), ...s.synced];
+/**
+ * Drawings shown on chart `chartId` for `symbol`: its own plus the synced
+ * ones, minus those bound to another chart (`Drawing.chartId`, set when
+ * drawing sync is off). Unbound drawings show on every chart.
+ */
+export function drawingsFor(s: DrawingBuckets, symbol: string, chartId: string): Drawing[] {
+  return [...(s.bySymbol[symbol] ?? []), ...s.synced].filter(
+    (d) => d.chartId === undefined || d.chartId === chartId,
+  );
 }
 
 export function findStoredDrawing(id: string): Drawing | undefined {
@@ -361,8 +369,8 @@ export interface TextEdit {
   created: boolean;
 }
 
-/** Live UI state of the drawing layer (not persisted). */
-interface DrawingRuntime {
+/** Live UI state of one chart's drawing layer (not persisted). */
+export interface DrawingRuntime {
   /** Engine selection. */
   selection: string[];
   /** A drawing drag is in progress (the mini-toolbar hides). */
@@ -370,15 +378,28 @@ interface DrawingRuntime {
   /** Last pointer release over the chart (viewport px): mini-toolbar anchor. */
   pointer: { x: number; y: number } | null;
   textEdit: TextEdit | null;
-  /** Copied drawings (Ctrl+C), as JSON. */
-  clipboard: string | null;
 }
 
-export const useDrawingRuntime = create<DrawingRuntime>()(() => ({
-  selection: [],
-  dragging: false,
-  pointer: null,
-  textEdit: null,
+export const createDrawingRuntimeStore = (): StoreApi<DrawingRuntime> =>
+  createStore<DrawingRuntime>()(() => ({
+    selection: [],
+    dragging: false,
+    pointer: null,
+    textEdit: null,
+  }));
+
+/**
+ * The active chart's drawing runtime (selection, drag, text editor). Each
+ * chart has its own, so a gesture on one never leaks to another. Per-chart
+ * code uses `session.drawingRuntime` instead.
+ */
+export const useDrawingRuntime = createActiveFacade(
+  (s) => s.drawingRuntime,
+  createDrawingRuntimeStore,
+);
+
+/** Copied drawings (Ctrl+C), as JSON: shared by all charts. */
+export const useDrawingClipboard = create<{ clipboard: string | null }>()(() => ({
   clipboard: null,
 }));
 

@@ -4,8 +4,10 @@ import {
   PICK_TOOL,
   ZOOM_TOOL,
   getDrawingTool,
+  type Drawing,
   type DrawingStyle,
 } from '@investopen/engine';
+import { useLayoutGrid } from '../layout/store';
 import { addIndicator } from '../indicators/actions';
 import type { ChartSession } from '../chart/session';
 import { runInSession, scopedOn } from '../store/chart';
@@ -38,11 +40,21 @@ export { keepPerDrawingStyle };
 import {
   drawingsFor,
   startDrawingPersistence,
-  useDrawingRuntime,
   useDrawingStore,
   useDrawingTemplates,
 } from './store';
 import { reconcileDrawings, replaceDrawings, type SyncedDrawings } from './sync';
+
+/**
+ * With drawing sync off a new drawing belongs to the chart it was made on
+ * (also a paste of another chart's drawing); with it on, to no chart.
+ */
+function bindToChart(d: Drawing, chartId: string): Drawing {
+  const want = useLayoutGrid.getState().sync.drawings ? undefined : chartId;
+  if (d.chartId === want) return d;
+  const { chartId: _old, ...rest } = d;
+  return want === undefined ? rest : { ...rest, chartId: want };
+}
 
 type UiSnapshot = ReturnType<typeof useUiStore.getState>;
 
@@ -81,10 +93,10 @@ export function engineTool(id: string): EngineTool | null {
  * Attach before the indicators so a pane removal folds both into one step.
  */
 export function attachDrawings(
-  session: Pick<ChartSession, 'id' | 'chart' | 'view' | 'history'>,
+  session: Pick<ChartSession, 'id' | 'chart' | 'view' | 'history' | 'drawingRuntime'>,
   host: HTMLElement,
 ): () => void {
-  const { chart } = session;
+  const { chart, drawingRuntime: runtime } = session;
   const on = scopedOn(session);
   const persistence = startDrawingPersistence(undefined, 300, (m) => toast(m, 'error'));
   const symbol = () => session.view.getState().symbol;
@@ -99,7 +111,7 @@ export function attachDrawings(
 
   const syncOnce = () => {
     const sym = symbol();
-    const wanted = drawingsFor(useDrawingStore.getState(), sym);
+    const wanted = drawingsFor(useDrawingStore.getState(), sym, session.id);
     if (sym !== shownSymbol) {
       shownSymbol = sym;
       replaceDrawings(chart, wanted, synced);
@@ -115,7 +127,7 @@ export function attachDrawings(
   };
 
   const sync = () => {
-    if (useDrawingRuntime.getState().dragging) {
+    if (runtime.getState().dragging) {
       dirty = true;
       return;
     }
@@ -180,7 +192,7 @@ export function attachDrawings(
 
   const onPointerUp = (e: PointerEvent) => {
     if (host.contains(e.target as Node))
-      useDrawingRuntime.setState({ pointer: { x: e.clientX, y: e.clientY } });
+      runtime.setState({ pointer: { x: e.clientX, y: e.clientY } });
   };
   const onPageHide = () => persistence.flush();
   window.addEventListener('pointerup', onPointerUp, true);
@@ -213,13 +225,14 @@ export function attachDrawings(
       // the create with its final scope; the store -> engine sync then updates
       // the engine copy, so persistence (which follows the store) never sees
       // a symbol-scoped intermediate.
-      const after =
+      const synced =
         !clone &&
         !inLabelledGesture() &&
         drawing.scope === 'symbol' &&
         useUiStore.getState().syncNewDrawings
           ? { ...drawing, scope: 'all' as const }
           : drawing;
+      const after = bindToChart(synced, session.id);
       recordGesture(label, [{ before: null, after }]);
     }),
     on('drawingChanged', ({ changes }) =>
@@ -235,14 +248,14 @@ export function attachDrawings(
       ),
     ),
     on('selectionChanged', ({ ids }) => {
-      const textEdit = useDrawingRuntime.getState().textEdit;
-      useDrawingRuntime.setState({
+      const textEdit = runtime.getState().textEdit;
+      runtime.setState({
         selection: ids,
         ...(textEdit && !ids.includes(textEdit.id) ? { textEdit: null } : {}),
       });
     }),
     on('drawingDrag', ({ ids, phase }) => {
-      useDrawingRuntime.setState({ dragging: phase === 'start' });
+      runtime.setState({ dragging: phase === 'start' });
       if (phase === 'end') {
         dragEnded = new Set(ids);
         queueMicrotask(() => (dragEnded = null));
@@ -268,7 +281,7 @@ export function attachDrawings(
         // A saved icon default must not replace the sticker that was just placed,
         // nor a saved path-sketch default the random seed of this drawing.
         if (style) amendGesture(drawingId, { style: keepPerDrawingStyle(type, style, d?.style) });
-        const at = useDrawingRuntime.getState().pointer;
+        const at = runtime.getState().pointer;
         if (def?.text && def.group === 'annotation' && d && !d.text && at)
           openTextEditor(drawingId, at.x, at.y, true);
       }
@@ -300,6 +313,6 @@ export function attachDrawings(
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onPageHide);
     persistence.stop();
-    useDrawingRuntime.setState({ selection: [], dragging: false, textEdit: null });
+    runtime.setState({ selection: [], dragging: false, textEdit: null });
   };
 }
