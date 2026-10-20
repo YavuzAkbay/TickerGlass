@@ -5,6 +5,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart } from './persistence';
 
 declare global {
   interface Window {
@@ -261,7 +262,7 @@ test.describe('user scripts', () => {
     await expect
       .poll(() => {
         const l = [...server.layouts.values()][0];
-        return ((l?.state.indicators ?? []) as { type: string }[]).map((i) => i.type);
+        return ((firstChart(l?.state)?.indicators ?? []) as { type: string }[]).map((i) => i.type);
       })
       .toContain(`user:${id}`);
     await expect(page.getByRole('button', { name: /^Layout:/ })).not.toHaveAttribute(

@@ -7,7 +7,7 @@ import { isOutputRef } from '@investopen/indicators';
 import { useHistory } from '../commands/history';
 import { newInstanceId, validateInstances, type IndicatorState } from '../indicators/model';
 import { useIndicatorStore } from '../indicators/store';
-import { parseLayoutState } from './layoutState';
+import { parseIndicatorList } from './layoutState';
 
 export const INDICATOR_TEMPLATE_SCHEMA_VERSION = 1;
 
@@ -26,7 +26,7 @@ export function instantiateTemplate(list: readonly IndicatorState[]): IndicatorS
 
 /** Validate untrusted template contents (from the API or an import). */
 export function parseTemplateInstances(raw: unknown): IndicatorState[] {
-  return parseLayoutState({ indicators: raw })?.indicators ?? [];
+  return parseIndicatorList(raw);
 }
 
 /**

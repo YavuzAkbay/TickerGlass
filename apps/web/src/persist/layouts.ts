@@ -18,10 +18,10 @@ import {
 } from './layoutState';
 import { isNotFound, isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
-/** The state key without the time scale (view position/zoom). */
+/** The state key without any chart's time scale (view position/zoom). */
 function viewKey(key: string): string {
-  const s = JSON.parse(key) as { chart?: { timeScale?: unknown } | null };
-  if (s.chart) delete s.chart.timeScale;
+  const s = JSON.parse(key) as { charts?: { chart?: { timeScale?: unknown } | null }[] };
+  for (const c of s.charts ?? []) if (c.chart) delete c.chart.timeScale;
   return JSON.stringify(s);
 }
 

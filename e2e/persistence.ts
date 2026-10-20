@@ -86,6 +86,12 @@ interface AlertLogRow extends Json {
   read: boolean;
 }
 
+/** First chart of a saved layout state (schema v5: `{ grid, charts: [...] }`). */
+export function firstChart(state: Json | undefined): Json | undefined {
+  const charts = state?.charts;
+  return Array.isArray(charts) ? (charts[0] as Json | undefined) : undefined;
+}
+
 /** Routes that may reach the real backend (read-only market data). */
 const MARKET =
   /^\/api\/(bars|quotes|quotes\/extended|health|news)$|^\/api\/(symbols|events|news|fundamentals|performance)\//;

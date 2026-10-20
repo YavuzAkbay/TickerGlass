@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart } from './persistence';
 
 declare global {
   interface Window {
@@ -109,9 +110,9 @@ test('new charts show Volume as an indicator: click, menus, hide, remove, undo, 
   await expect
     .poll(() => {
       const l = [...server.layouts.values()][0]!;
-      return [l.schemaVersion, (l.state.indicators as unknown[]).length];
+      return [l.schemaVersion, (firstChart(l.state)!.indicators as unknown[]).length];
     })
-    .toEqual([4, 0]);
+    .toEqual([5, 0]);
   await saved(page);
   await page.evaluate(() => localStorage.clear());
   await page.reload();

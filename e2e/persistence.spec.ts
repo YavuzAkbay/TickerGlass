@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart } from './persistence';
 
 declare global {
   interface Window {
@@ -61,7 +62,7 @@ test('draw + add indicator, reload: restored from the server (not the browser ca
   await expect
     .poll(() => {
       const l = [...server.layouts.values()][0]!;
-      return (l.state.indicators as { type: string }[]).map((i) => i.type);
+      return (firstChart(l.state)!.indicators as { type: string }[]).map((i) => i.type);
     })
     .toEqual(['volume', 'sma']);
   await saved(page);
