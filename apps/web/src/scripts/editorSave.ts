@@ -1,5 +1,5 @@
 /**
- * Save flow of the script editor (docs/plans/user-scripts.md sections 4, 7):
+ * Save flow of the script editor (docs/user-scripts.md):
  * acorn parse, a throwaway sandbox `load` for the manifest (or compile
  * error), the live-consistency `check` on the chart's bars, then persist.
  * Problems never throw: they come back as diagnostics. A failing Check only

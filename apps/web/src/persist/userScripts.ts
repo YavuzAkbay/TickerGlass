@@ -1,5 +1,5 @@
 /**
- * User scripts <-> `/user-scripts*` (docs/plans/user-scripts.md section 5).
+ * User scripts <-> `/user-scripts*` (docs/persistence.md).
  * The server is the source of truth; localStorage holds a read-only copy that
  * is shown while the API is down. Mutations are explicit (save, delete) and
  * need the API, like alerts: no offline queue. A stale save rejects with

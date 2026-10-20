@@ -1,4 +1,4 @@
-// JS lockdown for the user-script sandbox worker (docs/plans/user-scripts.md §2).
+// JS lockdown for the user-script sandbox worker (docs/indicators.md §5a).
 // Second line of defence: the worker's response CSP is the real network
 // boundary; this removes the capabilities user code has no business with, so a
 // missing header (custom proxy, dev server) still leaves fetch & co. unreachable.

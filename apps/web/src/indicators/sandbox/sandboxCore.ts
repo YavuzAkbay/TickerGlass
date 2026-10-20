@@ -43,7 +43,7 @@ const CHECK_ID = 'check';
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /**
- * The sandbox worker's message handler (docs/plans/user-scripts.md §2-§4),
+ * The sandbox worker's message handler (docs/indicators.md §5a),
  * independent of the Worker global so tests can run it in-process. Compiles
  * one user script into a private registry (no built-ins) and delegates the
  * indicator messages to a WorkerCore over it. Every message is acknowledged

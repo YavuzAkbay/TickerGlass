@@ -1,4 +1,4 @@
-/** Most user-script instances one chart may run (docs/plans/user-scripts.md §3). */
+/** Most user-script instances one chart may run (docs/indicators.md §5a). */
 export const MAX_SCRIPT_INSTANCES_PER_CHART = 8;
 
 /** Legend error of a user-script instance over the per-chart cap. */

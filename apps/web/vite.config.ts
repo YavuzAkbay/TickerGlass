@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 const apiTarget = process.env.API_URL ?? 'http://localhost:8000';
 
 /**
- * Response CSP of the user-script sandbox worker (docs/plans/user-scripts.md §2):
+ * Response CSP of the user-script sandbox worker (docs/indicators.md §5a):
  * the real network boundary for user code. The built worker is one self-contained
  * file (sandboxWorkerSelfContained), so production allows no script loads at all,
  * not even same-origin `import()`. Keep in sync with docker/nginx.conf.
