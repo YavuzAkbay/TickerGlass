@@ -121,9 +121,12 @@ export interface CrosshairInfo {
   bar: Bar | null;
 }
 
-/** A point on the chart in chart terms (for context menus, drawings, alerts). */
-/** What moved the view: a pointer/keyboard gesture, an API call, or a data load. */
-export type ViewChangeCause = 'user' | 'api' | 'data';
+/**
+ * What moved the view: a pointer/keyboard gesture that moved the time axis
+ * ('user'), a price-scale-only gesture ('price'; the visible time range is
+ * unchanged), an API call, or a data load.
+ */
+export type ViewChangeCause = 'user' | 'price' | 'api' | 'data';
 
 /** Crosshair position from another chart of a layout (see `setSyncedCrosshair`). */
 export interface SyncedCrosshair {
@@ -137,6 +140,7 @@ export interface SyncedCrosshair {
   price: number | null;
 }
 
+/** A point on the chart in chart terms (for context menus, drawings, alerts). */
 export interface ChartPoint {
   clientX: number;
   clientY: number;
@@ -1708,7 +1712,7 @@ export class Chart implements StudyApi, DrawingApi {
   }
 
   /** Called by the controller after any view change (and by view API calls with 'api'). */
-  viewChanged(cause: ViewChangeCause = 'user'): void {
+  viewChanged(cause: ViewChangeCause): void {
     this.invalidate(INVALIDATE_MAIN);
     if (this.crosshair)
       this.setCrosshair(this.crosshair.pane, this.crosshair.x, this.crosshair.rawY);

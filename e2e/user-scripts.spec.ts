@@ -261,7 +261,7 @@ test.describe('user scripts', () => {
     const id = [...server.userScripts.keys()][0]!;
     await expect
       .poll(() => {
-        const l = [...server.layouts.values()][0];
+        const l = server.current();
         return ((firstChart(l?.state)?.indicators ?? []) as { type: string }[]).map((i) => i.type);
       })
       .toContain(`user:${id}`);

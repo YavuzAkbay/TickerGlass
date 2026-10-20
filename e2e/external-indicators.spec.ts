@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { firstChart } from './persistence';
+import { firstChart, freshBoot } from './persistence';
 
 declare global {
   interface Window {
@@ -32,10 +32,8 @@ async function openSettings(page: Page, short: string) {
   await row.getByRole('button', { name: 'Settings' }).click();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto(FEED);
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+test.beforeEach(async ({ page, server }) => {
+  await freshBoot(page, server, FEED);
   await ready(page);
 });
 
@@ -84,7 +82,7 @@ test('an SMA sourced from an overlay symbol survives a reload', async ({ page, s
   // Saved with the layout as a sym: source reference.
   await expect
     .poll(() => {
-      const l = [...server.layouts.values()][0];
+      const l = server.current();
       const list = (firstChart(l?.state)?.indicators ?? []) as {
         type: string;
         inputs: { source?: unknown };

@@ -156,6 +156,31 @@ describe('time', () => {
     off.frame();
     expect(off.sessions[1]!.chart.setRightEdgeTime).not.toHaveBeenCalled();
   });
+
+  it('keeps one setRightEdgeTime in flight per target and applies only the newest after it', async () => {
+    const r = setup({ time: true }, 2);
+    const target = r.sessions[1]!.chart;
+    const resolvers: (() => void)[] = [];
+    target.setRightEdgeTime.mockImplementation(
+      () => new Promise<void>((res) => void resolvers.push(res)),
+    );
+    r.bus.view('c1', 1000);
+    r.frame();
+    r.bus.view('c1', 2000);
+    r.frame();
+    r.bus.view('c1', 3000);
+    r.frame();
+    expect(target.setRightEdgeTime.mock.calls).toEqual([[1000]]);
+    resolvers[0]!();
+    await vi.waitFor(() => expect(target.setRightEdgeTime).toHaveBeenCalledTimes(2));
+    expect(target.setRightEdgeTime.mock.calls).toEqual([[1000], [3000]]);
+    resolvers[1]!();
+    await Promise.resolve();
+    await Promise.resolve();
+    r.bus.view('c1', 4000);
+    r.frame();
+    expect(target.setRightEdgeTime).toHaveBeenLastCalledWith(4000);
+  });
 });
 
 describe('date range', () => {

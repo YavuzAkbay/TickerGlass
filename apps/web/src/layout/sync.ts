@@ -44,6 +44,8 @@ export class SyncBus {
   private scheduled = false;
   private pendingCrosshair: { from: string; c: CrosshairInfo | null } | null = null;
   private pendingView: { from: string; rightEdge: number } | null = null;
+  /** In-flight setRightEdgeTime per target chart, with the newest time waiting behind it. */
+  private readonly edge = new Map<string, { latest: number | null }>();
 
   constructor(
     private readonly get: () => SyncState,
@@ -110,6 +112,7 @@ export class SyncBus {
   drop(id: string): void {
     if (this.pendingView?.from === id) this.pendingView = null;
     if (this.pendingCrosshair?.from === id) this.pendingCrosshair = null;
+    this.edge.delete(id);
     this.get().sessions.forEach((s) => {
       if (s.id !== id) s.chart.setSyncedCrosshair(null);
     });
@@ -130,10 +133,38 @@ export class SyncBus {
     const { sessions, flags } = this.get();
     if (ch && flags.crosshair) this.flushCrosshair(sessions, ch.from, ch.c);
     if (vw && flags.time) {
-      for (const s of sessions)
-        if (s.id !== vw.from)
-          void s.chart.setRightEdgeTime(vw.rightEdge).catch((e) => console.error(e));
+      for (const s of sessions) if (s.id !== vw.from) this.pushRightEdge(s, vw.rightEdge);
     }
+  }
+
+  /**
+   * setRightEdgeTime is async (it may load history), so calls could resolve out
+   * of order during a drag. Per target: one call at a time; while one runs only
+   * the newest requested time is kept and applied once it settles.
+   */
+  private pushRightEdge(s: SyncSession, rightEdge: number): void {
+    const slot = this.edge.get(s.id);
+    if (slot) {
+      slot.latest = rightEdge;
+      return;
+    }
+    const state: { latest: number | null } = { latest: null };
+    this.edge.set(s.id, state);
+    const run = (time: number): void => {
+      s.chart
+        .setRightEdgeTime(time)
+        .catch((e) => console.error(e))
+        .then(() => {
+          const next = state.latest;
+          state.latest = null;
+          if (next === null || this.edge.get(s.id) !== state) {
+            if (this.edge.get(s.id) === state) this.edge.delete(s.id);
+            return;
+          }
+          run(next);
+        });
+    };
+    run(rightEdge);
   }
 
   private flushCrosshair(sessions: SyncSession[], from: string, c: CrosshairInfo | null): void {

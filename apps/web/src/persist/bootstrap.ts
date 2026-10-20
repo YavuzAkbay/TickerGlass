@@ -180,7 +180,8 @@ export function startPersistence(): () => void {
     () => sessionOffs.forEach((off) => off()),
     useChartStore.subscribe((s, p) => {
       if (s.sessions !== p.sessions) watchSessions();
-      if (s.activeId !== p.activeId || s.sessions !== p.sessions) changed();
+      // Focus changes alone are view-only (see LayoutManager.onChange): not watched.
+      if (s.sessions !== p.sessions) changed();
     }),
     // Grid arrangement (splitter drags, template changes) and sync flags.
     useLayoutGrid.subscribe((s, p) => {

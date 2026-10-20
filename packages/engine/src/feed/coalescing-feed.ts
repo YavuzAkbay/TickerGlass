@@ -14,6 +14,13 @@ import { formatInterval } from './intervals';
 export interface CoalescingFeedOptions {
   /** How long a finished result is reused (ms). Default 10000. */
   ttlMs?: number;
+  /**
+   * How long a finished open-ended request (no `to`: the latest bars) is reused (ms).
+   * Default 1000. Kept short because subscribe() passes straight through and does not
+   * backfill bars that closed between a cached result and the subscription, so a
+   * long-lived "latest bars" result could leave a gap in a chart opened later.
+   */
+  openEndedTtlMs?: number;
   /** Most distinct requests remembered; least recently used are dropped. Default 64. */
   maxEntries?: number;
   /** Clock override for tests. */
@@ -24,6 +31,7 @@ interface Entry {
   promise: Promise<GetBarsResult>;
   /** Set when the request resolved; in-flight entries never expire. */
   doneAt: number | null;
+  ttlMs: number;
 }
 
 /**
@@ -36,6 +44,7 @@ interface Entry {
  */
 export class CoalescingFeed implements DataFeed {
   private readonly ttlMs: number;
+  private readonly openEndedTtlMs: number;
   private readonly maxEntries: number;
   private readonly now: () => number;
   /** Insertion order = recency (re-inserted on use). */
@@ -46,6 +55,7 @@ export class CoalescingFeed implements DataFeed {
     opts: CoalescingFeedOptions = {},
   ) {
     this.ttlMs = opts.ttlMs ?? 10_000;
+    this.openEndedTtlMs = Math.min(this.ttlMs, opts.openEndedTtlMs ?? 1000);
     this.maxEntries = opts.maxEntries ?? 64;
     this.now = opts.now ?? (() => Date.now());
   }
@@ -64,17 +74,22 @@ export class CoalescingFeed implements DataFeed {
       formatInterval(req.interval),
       req.limit,
       req.to ?? '',
-      req.adjusted ?? '',
-      req.prepost ?? '',
+      // Absent and false mean the same: one key.
+      req.adjusted ? 1 : 0,
+      req.prepost ? 1 : 0,
     ].join('|');
     const hit = this.entries.get(key);
-    if (hit && (hit.doneAt === null || this.now() - hit.doneAt < this.ttlMs)) {
+    if (hit && (hit.doneAt === null || this.now() - hit.doneAt < hit.ttlMs)) {
       this.entries.delete(key);
       this.entries.set(key, hit);
       return hit.promise;
     }
     this.entries.delete(key);
-    const entry: Entry = { promise: this.inner.getBars(req), doneAt: null };
+    const entry: Entry = {
+      promise: this.inner.getBars(req),
+      doneAt: null,
+      ttlMs: req.to === undefined ? this.openEndedTtlMs : this.ttlMs,
+    };
     this.entries.set(key, entry);
     entry.promise.then(
       () => {

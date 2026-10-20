@@ -477,6 +477,9 @@ describe('named layouts', () => {
     const b = useLayoutStatus.getState().current!.id!;
     expect(b).not.toBe(a);
     expect(server.layouts.get(b)!.name).toBe('B');
+    // Save as re-keys the charts so chart-bound drawings are not shared.
+    const idOf = (l: string) => server.layouts.get(l)!.state.charts[0]!.id;
+    expect(idOf(b)).not.toBe(idOf(a));
 
     await t.s.rename('B2');
     expect(useLayoutStatus.getState().current?.name).toBe('B2');
@@ -488,6 +491,11 @@ describe('named layouts', () => {
     // The copy has the saved state of B.
     expect(server.layouts.get(b)!.state.charts[0]!.indicators[0]!.id).toBe('b-edit');
     expect(server.layouts.get(c)!.state.charts[0]!.indicators[0]!.id).toBe('b-edit');
+    // Copy re-keys them too, in the grid and the active chart as well.
+    const copy = server.layouts.get(c)!.state;
+    expect(idOf(c)).not.toBe(idOf(b));
+    expect(copy.activeChartId).toBe(idOf(c));
+    expect(copy.grid).toEqual({ kind: 'leaf', chartId: idOf(c) });
 
     expect(await t.s.load(a)).toBe(true);
     expect(t.current().charts[0]!.indicators[0]!.id).toBe('a');
@@ -1958,6 +1966,24 @@ describe('layouts: offline caches and deleted layouts', () => {
     t.edit(state('a2', { chart: chart(9) }));
     await t.s.save();
     expect(server.fns.saveLayout).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('focus changes', () => {
+  it('are not edits, but ride along with the next save', async () => {
+    const server = fakeLayoutServer();
+    server.seed('A', state('a'));
+    const t = session(server, memStorage());
+    await t.s.start();
+    t.edit({ ...state('a'), activeChartId: 'c2' });
+    await t.s.save();
+    expect(server.fns.saveLayout).not.toHaveBeenCalled();
+    expect(useLayoutStatus.getState().dirty).toBe(false);
+    t.edit({ ...state('a2'), activeChartId: 'c2' });
+    await t.s.save();
+    expect(server.fns.saveLayout).toHaveBeenCalledOnce();
+    const saved = [...server.layouts.values()][0]!.state;
+    expect(saved.activeChartId).toBe('c2');
   });
 });
 

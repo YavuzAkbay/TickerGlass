@@ -246,7 +246,7 @@ symbol; a bound one shows only on the chart with that id (`drawingsFor(state, sy
 on (the default) new drawings are created unbound; with it off they get the active chart's id. Existing drawings
 never change binding. Clones and pastes keep the source's `chartId`. Chart ids are UUIDs; legacy ids (`c1`) are
 re-keyed to UUIDs when drawing sync is first turned off, before any drawing is bound, so layouts cannot collide.
-A duplicated layout copies the chart ids and therefore shares its bound drawings with the source. See
+Save as and Copy give every chart a fresh id, so a copied layout starts without the source's bound drawings. See
 `docs/multi-chart.md` §4.
 
 ## 7. Magnet and Shift constraints (B)
