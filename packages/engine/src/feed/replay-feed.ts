@@ -386,6 +386,7 @@ class ForwardBuffer {
       // are the newest ones before `to`, hence contiguous with it.
       const empty = this.bars.length === 0;
       const lastTime = this.bars[this.bars.length - 1]?.time ?? -Infinity;
+      const kept = this.bars.length;
       for (let i = 0; i < k; i++) {
         const time = t[i] as number;
         if (time >= to || time <= lastTime || (!empty && time < from)) continue;
@@ -393,8 +394,23 @@ class ForwardBuffer {
       }
       if (empty && !res.hasMore) this.head = true;
       if (k < PAGE_LIMIT / 2) this.span = Math.min(this.maxSpan, this.span * 2);
-      this.hi = to;
-      if (to > this.now()) this.ended = true;
+      const ended = to > this.now();
+      let hi = to;
+      if (!ended) {
+        // A bar running past `to` may be partial (ResamplingFeed builds the bucket
+        // crossing `to` from the base bars before it): drop it and page again from
+        // its start. Kept if that would not move forward.
+        let n = this.bars.length;
+        while (n > kept) {
+          const b = this.bars[n - 1] as Bar;
+          if (nominalEnd(b.time, this.series.interval) <= to || b.time <= from) break;
+          hi = b.time;
+          n--;
+        }
+        this.bars.length = n;
+      }
+      this.hi = hi;
+      if (ended) this.ended = true;
       return;
     }
     throw new Error(`replay: could not page ${this.key} forward from ${from}`);
@@ -465,6 +481,8 @@ interface ReplaySub {
   cur: Bar | null;
   /** Last bar handed to onBar (suppresses identical re-emits). */
   sent: Bar | null;
+  /** The last update failed and a warning was emitted (once until it recovers). */
+  errored: boolean;
   queue: Promise<void>;
 }
 
@@ -646,14 +664,17 @@ export class ReplayFeed implements DataFeed {
       const ticks = pick.ticks ?? bars;
       await ticks.ensureAfter(e, 1);
       await ticks.ensureBefore(e);
-      if (gen !== this.gen) return this.info;
-      this.chartBars = bars;
-      this.ticks = ticks;
-      this.info = { tick: pick.tick, warning: pick.warning };
       // E' = max{ tau in new ticks : tau <= E } (E itself if there is none).
       const atE = ticks.timeFrom(e) === e;
       const j = ticks.lastBefore(e);
       const snapped = atE ? e : j >= 0 ? (ticks.bars[j] as Bar).time : e;
+      // The forming chart bar at E' aggregates ticks from its start.
+      const forming = formingStart(bars, snapped);
+      if (forming !== null) await ticks.ensureBefore(forming);
+      if (gen !== this.gen) return this.info;
+      this.chartBars = bars;
+      this.ticks = ticks;
+      this.info = { tick: pick.tick, warning: pick.warning };
       if (snapped !== e) this.epoch++;
       const k = ticks.lastBefore(snapped);
       this.setClock(k >= 0 ? (ticks.bars[k] as Bar).time : this.lastTick, snapped, true);
@@ -675,6 +696,24 @@ export class ReplayFeed implements DataFeed {
     const p = this.stepQueue.then(() => this.doStep());
     this.stepQueue = p.catch(() => undefined);
     return p;
+  }
+
+  /**
+   * Newest revealed chart bar of `symbol` (raw, untransformed): the forming
+   * aggregate in intrabar mode, else the last closed native chart bar. Null unless
+   * replaying, settled, and `symbol` is the chart symbol.
+   */
+  revealedBar(symbol: string): Bar | null {
+    const primary = this.primary;
+    const bars = this.chartBars;
+    const ticks = this.ticks;
+    if (this._mode !== 'replay' || primary === null || bars === null || ticks === null) return null;
+    if (symbolKey(symbol) !== symbolKey(primary.symbol)) return null;
+    const e = this.e;
+    const forming = ticks !== bars ? formingBar(bars, ticks, e) : null;
+    if (forming !== null) return forming;
+    const i = lastClosed(bars, e);
+    return i >= 0 ? { ...(bars.bars[i] as Bar) } : null;
   }
 
   /** Leave replay: back to live passthrough. Callers reload and resubscribe. */
@@ -706,14 +745,24 @@ export class ReplayFeed implements DataFeed {
     await this.settled;
     // stop() may have run while waiting.
     if (this.mode === 'live') return this.inner.getBars(req);
-    const cutoff = await this.cutoff({
-      symbol: req.symbol,
-      interval: req.interval,
-      prepost: req.prepost ?? false,
-      adjusted: req.adjusted,
-    });
-    const to = req.to === undefined ? cutoff : Math.min(req.to, cutoff);
+    const gen = this.gen;
+    let to: number;
+    if (req.to !== undefined && nominalEnd(req.to, req.interval) <= this.e) {
+      // Scrolling back: every bar before `to` ended before E, no cutoff needed.
+      to = req.to;
+    } else {
+      const cutoff = await this.cutoff({
+        symbol: req.symbol,
+        interval: req.interval,
+        prepost: req.prepost ?? false,
+        adjusted: req.adjusted,
+      });
+      to = req.to === undefined ? cutoff : Math.min(req.to, cutoff);
+    }
+    if (gen !== this.gen) return this.getBars(req);
     const res = await this.inner.getBars({ ...req, to });
+    // A seek, interval change or stop meanwhile: answer for the new state.
+    if (gen !== this.gen) return this.getBars(req);
     // Inner wrappers may return bars at or after `to` (ExpressionFeed pads legs).
     return { bars: clipColumns(res.bars, to), hasMore: res.hasMore };
   }
@@ -740,13 +789,14 @@ export class ReplayFeed implements DataFeed {
       done: -Infinity,
       cur: null,
       sent: null,
+      errored: false,
       queue: Promise.resolve(),
     };
     this.subs.add(sub);
     queueMicrotask(() => {
-      this.runSub(sub).catch(() => {
-        // The subscription stays uninitialized; the next step() retries it and
-        // rejects with the error.
+      this.runSub(sub).catch((err: unknown) => {
+        // The subscription stays uninitialized and is retried on the next step().
+        this.subFailed(sub, err);
       });
     });
     return () => {
@@ -1000,8 +1050,41 @@ export class ReplayFeed implements DataFeed {
       );
     }
     this.setClock(u, next, true);
-    await Promise.all([...this.subs].map((s) => this.runSub(s)));
+    const subs = [...this.subs];
+    const results = await Promise.allSettled(subs.map((s) => this.runSub(s)));
+    let primaryError: unknown = null;
+    results.forEach((r, i) => {
+      const sub = subs[i] as ReplaySub;
+      if (r.status === 'fulfilled') {
+        sub.errored = false;
+        return;
+      }
+      this.subFailed(sub, r.reason);
+      if (primaryError === null && this.isPrimarySub(sub)) primaryError = r.reason;
+    });
+    // Only the chart's own series failing stops the replay; others just warn.
+    if (primaryError !== null) throw primaryError;
     return 'ok';
+  }
+
+  private isPrimarySub(sub: ReplaySub): boolean {
+    const primary = this.primary;
+    return (
+      primary !== null &&
+      symbolKey(sub.req.symbol) === symbolKey(primary.symbol) &&
+      intervalsEqual(sub.req.interval, primary.interval)
+    );
+  }
+
+  /** Warn once per failing subscription (until it recovers). */
+  private subFailed(sub: ReplaySub, err: unknown): void {
+    if (sub.errored || !sub.active) return;
+    sub.errored = true;
+    const message = err instanceof Error ? err.message : String(err);
+    this.emit(
+      'warning',
+      `Replay data for ${sub.req.symbol} ${formatInterval(sub.req.interval)} failed: ${message}`,
+    );
   }
 
   private runSub(sub: ReplaySub): Promise<void> {
