@@ -61,10 +61,36 @@ describe('load and cache', () => {
     expect(cached(data)).toHaveLength(2); // the cache file is left as it was
   });
 
-  it('treats a missing or corrupt cache as empty but loaded', () => {
+  it('an empty cache entry is a known (empty) list', () => {
     const { sync, data } = setup();
+    data.set(USER_SCRIPTS_CACHE_KEY, '[]');
+    sync.loadCache();
+    expect(useScriptsStore.getState()).toMatchObject({ scripts: [], loaded: true });
+  });
+
+  it('a missing or corrupt cache leaves the store unloaded until the API answers', async () => {
+    const { sync, api, data } = setup();
+    sync.loadCache();
+    expect(useScriptsStore.getState()).toMatchObject({ scripts: [], loaded: false });
     data.set(USER_SCRIPTS_CACHE_KEY, '{nope');
     sync.loadCache();
+    expect(useScriptsStore.getState().loaded).toBe(false);
+    api.listUserScripts.mockResolvedValue([script('a')]);
+    await sync.load();
+    expect(useScriptsStore.getState()).toMatchObject({ loaded: true });
+  });
+
+  it('a failed first load without a cache marks the store loaded (scripts show as missing)', async () => {
+    const { sync, api } = setup();
+    sync.loadCache();
+    api.listUserScripts.mockRejectedValue(new ApiError('down', 503, null));
+    await expect(sync.load()).rejects.toBeInstanceOf(ApiError);
+    expect(useScriptsStore.getState()).toMatchObject({ scripts: [], loaded: true });
+  });
+
+  it('settle marks the store loaded without touching scripts', () => {
+    const { sync } = setup();
+    sync.settle();
     expect(useScriptsStore.getState()).toMatchObject({ scripts: [], loaded: true });
   });
 });

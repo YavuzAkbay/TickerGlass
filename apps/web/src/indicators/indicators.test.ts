@@ -28,6 +28,7 @@ import {
   visibleOnInterval,
 } from './model';
 import { useCompareStore } from '../compare/store';
+import { useUiStore } from '../store/ui';
 import { indicatorMenuItems, overlayOption, overlaySymbols, sourceOptions } from './menu';
 import { firstOutputId } from '../alerts/dialog/sources';
 import {
@@ -292,6 +293,21 @@ describe('user script isolation', () => {
       expect(it).toMatchObject({ disabled: true });
       expect((it as { title?: string }).title).toBeTruthy();
     }
+  });
+
+  it('legend menu offers "Edit script…" for scripts only, opening the editor on it', () => {
+    const u = createInstance(getIndicator(UT)!, undefined);
+    const sma = createInstance(getIndicator('sma')!, undefined);
+    useIndicatorStore.setState({ instances: [u, sma] });
+    const label = (id: string) =>
+      indicatorMenuItems(id).find((i) => 'label' in i && i.label === 'Edit script…');
+    expect(label(sma.id)).toBeUndefined();
+    (label(u.id) as { onSelect: () => void }).onSelect();
+    expect(useUiStore.getState()).toMatchObject({
+      dialog: 'scriptEditor',
+      dialogArg: { scriptId: 'iso-test' },
+    });
+    useUiStore.getState().closeDialog();
   });
 
   it('alert sources skip scripts', () => {

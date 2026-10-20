@@ -189,6 +189,7 @@ export function startPersistence(): () => void {
     if (disposed) return;
     online = false;
     setOnline(false);
+    userScripts.settle();
     if (!offlineToast) {
       offlineToast = true;
       toast(

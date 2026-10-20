@@ -50,15 +50,32 @@ export class UserScriptsSync {
     this.storage = opts.storage ?? safeStorage();
   }
 
-  /** Show the offline copy (nothing if there is none). Marks the store loaded. */
+  /**
+   * Show the offline copy and mark the store loaded. With no (readable) copy
+   * nothing is shown and the store stays unloaded: restored script instances
+   * must not read "Script deleted" before the first API load answers
+   * (`load` sets it, or `settle` when the API cannot be reached).
+   */
   loadCache(): void {
     const raw = readJson<unknown>(this.storage.get(USER_SCRIPTS_CACHE_KEY));
-    useScriptsStore.getState().setScripts(Array.isArray(raw) ? raw.filter(isScript) : []);
+    if (Array.isArray(raw)) useScriptsStore.getState().setScripts(raw.filter(isScript));
+  }
+
+  /** No more scripts are coming (API unreachable, no offline copy): let missing scripts show as such. */
+  settle(): void {
+    const { loaded, setScripts, scripts } = useScriptsStore.getState();
+    if (!loaded) setScripts(scripts);
   }
 
   /** Adopt the server's scripts and refresh the offline copy. Throws if unreachable (the cached copy stays). */
   async load(): Promise<void> {
-    const scripts = await this.api.listUserScripts();
+    let scripts: UserScript[];
+    try {
+      scripts = await this.api.listUserScripts();
+    } catch (err) {
+      this.settle();
+      throw err;
+    }
     useScriptsStore.getState().setScripts(scripts);
     this.writeCache();
   }

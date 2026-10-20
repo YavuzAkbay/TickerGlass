@@ -120,7 +120,7 @@ const MAX_RESYNCS = 3;
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** Interval in seconds, 0 when the string does not parse. */
-function secondsOf(interval: string): number {
+export function secondsOf(interval: string): number {
   try {
     return intervalSeconds(parseInterval(interval));
   } catch {
@@ -129,14 +129,15 @@ function secondsOf(interval: string): number {
   }
 }
 
-function copyColumns(src: ChartHost['store'] | BarColumns, n: number): BarColumns {
+/** Copies of bars `[from, n)` of the columns (the script editor's Check uses the latest ones). */
+export function copyColumns(src: ChartHost['store'] | BarColumns, n: number, from = 0): BarColumns {
   return {
-    time: src.time.slice(0, n),
-    open: src.open.slice(0, n),
-    high: src.high.slice(0, n),
-    low: src.low.slice(0, n),
-    close: src.close.slice(0, n),
-    volume: src.volume.slice(0, n),
+    time: src.time.slice(from, n),
+    open: src.open.slice(from, n),
+    high: src.high.slice(from, n),
+    low: src.low.slice(from, n),
+    close: src.close.slice(from, n),
+    volume: src.volume.slice(from, n),
   };
 }
 
