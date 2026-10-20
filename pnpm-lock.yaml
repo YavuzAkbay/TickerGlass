@@ -50,6 +50,9 @@ importers:
       '@investopen/indicators':
         specifier: workspace:*
         version: link:../../packages/indicators
+      acorn:
+        specifier: ^8.19.0
+        version: 8.19.0
       lucide-react:
         specifier: ^1.55.0
         version: 1.55.0(@types/react@19.3.0)(react@19.3.0)

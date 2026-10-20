@@ -1,6 +1,9 @@
 import {
+  USER_SCRIPT_PREFIX,
+  getIndicator,
   isUserScriptType,
   listIndicators,
+  scriptIdOf,
   isOutputRef,
   type AnyIndicatorDefinition,
   type IndicatorCategory,
@@ -14,6 +17,8 @@ import {
   Code,
   Gauge,
   Landmark,
+  Pencil,
+  Plus,
   Search,
   Spline,
   Star,
@@ -25,7 +30,9 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { addIndicator } from '../indicators/actions';
 import { outputRefLabel, sourceInputKey } from '../indicators/model';
+import { openScriptEditor } from '../indicators/menu';
 import { useIndicatorPrefs, useIndicatorStore } from '../indicators/store';
+import { useScriptsStore } from '../scripts/store';
 import { Modal } from '../ui/Modal';
 import '../indicators/indicators.css';
 import './dialogs.css';
@@ -128,6 +135,8 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   const favorites = useIndicatorPrefs((s) => s.favorites);
   const toggleFavorite = useIndicatorPrefs((s) => s.toggleFavorite);
   const instances = useIndicatorStore((s) => s.instances);
+  // Scripts changing (saved, deleted) re-registers their definitions: list again.
+  const scripts = useScriptsStore((s) => s.scripts);
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState<CategoryId>('technicals');
   const [active, setActive] = useState(0);
@@ -143,8 +152,14 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   if (q) rows = all.filter((d) => matchesQuery(d, q));
   else if (cat === 'favorites') rows = all.filter((d) => favorites.includes(d.id));
   else if (cat === 'technicals') rows = all;
+  else if (cat === 'scripts') rows = all.filter((d) => isUserScriptType(d.id));
   else rows = all.filter((d) => d.category === cat);
   const idx = Math.max(0, Math.min(active, rows.length - 1));
+  // Scripts that cannot run (no valid manifest) have no definition, but must stay reachable for editing.
+  const broken =
+    cat === 'scripts' && !q && !sourceOf
+      ? scripts.filter((s) => !getIndicator(USER_SCRIPT_PREFIX + s.id))
+      : [];
 
   useEffect(() => {
     listRef.current
@@ -170,7 +185,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   };
 
   let body: ReactNode;
-  if (rows.length === 0) {
+  if (rows.length === 0 && broken.length === 0) {
     const Icon = current?.icon ?? ChartSpline;
     body = (
       <div className="dlg-emptystate">
@@ -209,9 +224,38 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
               </button>
               <span className="ind-row-name">{d.name}</span>
               <span className="ind-row-short">{d.shortName}</span>
+              {isUserScriptType(d.id) ? (
+                <button
+                  type="button"
+                  className="ind-edit"
+                  aria-label={`Edit script ${d.name}`}
+                  title="Edit script"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openScriptEditor(scriptIdOf(d.id));
+                  }}
+                >
+                  <Pencil size={15} />
+                </button>
+              ) : null}
             </div>
           );
         })}
+        {broken.map((s) => (
+          <div key={s.id} className="ind-row-broken">
+            <span className="ind-row-name">{s.name}</span>
+            <span className="ind-row-short">has errors</span>
+            <button
+              type="button"
+              className="ind-edit"
+              aria-label={`Edit script ${s.name}`}
+              title="Edit script"
+              onClick={() => openScriptEditor(s.id)}
+            >
+              <Pencil size={15} />
+            </button>
+          </div>
+        ))}
       </>
     );
   }
@@ -280,6 +324,14 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
           role="listbox"
           aria-label="Indicators"
         >
+          {cat === 'scripts' && !q && !sourceOf ? (
+            <div className="ind-scripts-head">
+              <button type="button" className="io-btn" onClick={() => openScriptEditor()}>
+                <Plus size={14} />
+                New script
+              </button>
+            </div>
+          ) : null}
           {body}
         </div>
       </div>

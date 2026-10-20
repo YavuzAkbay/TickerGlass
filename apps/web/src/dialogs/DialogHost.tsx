@@ -25,6 +25,7 @@ const DIALOGS: Record<DialogId, DialogComponent | RetryableLazy<DialogComponent>
   loadLayout: retryableLazy(() => import('./LoadLayoutDialog')),
   dataTransfer: retryableLazy(() => import('./DataTransferDialog')),
   alert: retryableLazy(() => import('./AlertDialog')),
+  scriptEditor: retryableLazy(() => import('./ScriptEditorDialog')),
 };
 
 /** What renders for each dialog now (a lazy one is replaced after a failed load). */

@@ -4,11 +4,22 @@ import {
   getIndicator,
   isOutputRef,
   isUserScriptType,
+  scriptIdOf,
   type OutputSourceRef,
   type PriceSource,
   type SourceValue,
 } from '@investopen/indicators';
-import { Bell, Copy, Eye, EyeOff, Layers, Settings, SquareFunction, Trash2 } from 'lucide-react';
+import {
+  Bell,
+  Code,
+  Copy,
+  Eye,
+  EyeOff,
+  Layers,
+  Settings,
+  SquareFunction,
+  Trash2,
+} from 'lucide-react';
 import { openAlertDialog } from '../alerts/dialog/open';
 import { useCompareStore } from '../compare/store';
 import { useUiStore } from '../store/ui';
@@ -34,6 +45,13 @@ export function openIndicatorSettings(id: string): void {
   useUiStore.getState().openDialog('indicatorSettings', { id });
 }
 
+/** Script editor on script `scriptId` (no id: a new script). */
+export function openScriptEditor(scriptId?: string): void {
+  useUiStore
+    .getState()
+    .openDialog('scriptEditor', scriptId === undefined ? { new: true } : { scriptId });
+}
+
 /** Indicators dialog in "add on top of this output" mode. */
 export function openAddIndicatorOn(sourceOf: OutputSourceRef): void {
   useUiStore.getState().openDialog('indicators', { sourceOf });
@@ -57,8 +75,12 @@ export function indicatorMenuItems(id: string): MenuItem[] {
     checked: inst.placement === p,
     onSelect: () => updateIndicator(id, { placement: p }, 'Move indicator'),
   });
+  const scriptId = scriptIdOf(inst.type);
   return [
     { label: 'Settings…', icon: Settings, onSelect: () => openIndicatorSettings(id) },
+    ...(scriptId === undefined
+      ? []
+      : [{ label: 'Edit script…', icon: Code, onSelect: () => openScriptEditor(scriptId) }]),
     {
       label: inst.visible ? 'Hide' : 'Show',
       icon: inst.visible ? EyeOff : Eye,
