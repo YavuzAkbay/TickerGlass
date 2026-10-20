@@ -58,15 +58,55 @@
 .chart-stack {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
+}
+
+/* Cells and splitters are positioned from the grid tree (layout/geometry.ts). */
+.grid-cell {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chart-cell {
-  position: relative;
-  flex: 1 1 0;
-  min-height: 0;
-  min-width: 0;
+  position: absolute;
+  inset: 0;
+}
+
+.grid-splitter {
+  position: absolute;
+  z-index: 6;
+  background: var(--border);
+  touch-action: none;
+}
+
+/* 8px hit area around the 4px line. */
+.grid-splitter::before {
+  content: '';
+  position: absolute;
+}
+
+.grid-splitter.vertical {
+  cursor: col-resize;
+}
+
+.grid-splitter.vertical::before {
+  inset: 0 -2px;
+}
+
+.grid-splitter.horizontal {
+  cursor: row-resize;
+}
+
+.grid-splitter.horizontal::before {
+  inset: -2px 0;
+}
+
+.grid-splitter:hover,
+.grid-splitter:focus-visible,
+.grid-splitter:active {
+  background: var(--accent);
+  outline: none;
 }
 
 .chart-cell.multi.active::after {

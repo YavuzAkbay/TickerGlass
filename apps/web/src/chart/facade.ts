@@ -1,5 +1,5 @@
 import { useStore, type StoreApi, type UseBoundStore } from 'zustand';
-import { useChartStore } from '../store/chart';
+import { getActiveSession, useChartStore } from '../store/chart';
 import type { ChartSession } from './session';
 
 /**
@@ -20,8 +20,7 @@ export function createActiveFacade<T>(
 ): UseBoundStore<StoreApi<T>> {
   let fallback: StoreApi<T> | null = null;
   const resolve = (): StoreApi<T> => {
-    const { sessions, activeId } = useChartStore.getState();
-    const session = activeId === null ? undefined : sessions.get(activeId);
+    const session = getActiveSession();
     return session ? pick(session) : (fallback ??= detached());
   };
   const api: StoreApi<T> = {

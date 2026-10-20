@@ -1,5 +1,6 @@
 import { isExpressionSymbol } from '@investopen/engine';
 import { commands, type Command } from '../commands/registry';
+import { addChartWithSymbol, canAddChart } from '../layout/actions';
 import { normalizeSymbol } from '../store/app';
 import { useChartView } from '../store/chartView';
 import { useUiStore } from '../store/ui';
@@ -305,7 +306,13 @@ export function registerWatchlistCommands(): () => void {
       title: 'Open symbol in new chart',
       category,
       hidden: true,
-      run: () => toast('Multi-chart layouts arrive in Phase 14'),
+      enabled: canAddChart,
+      run: (arg) => {
+        const symbol = normalizeSymbol(
+          typeof arg === 'string' ? arg : useChartView.getState().symbol,
+        );
+        if (symbol) addChartWithSymbol(symbol);
+      },
     },
     { id: 'watchlist.next', title: 'Next symbol in watchlist', category, run: () => step(1) },
     { id: 'watchlist.prev', title: 'Previous symbol in watchlist', category, run: () => step(-1) },

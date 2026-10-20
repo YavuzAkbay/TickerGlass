@@ -30,10 +30,11 @@ import {
   type SyncFlags,
 } from '../layout/grid';
 import { useLayoutGrid } from '../layout/store';
-import { template as templateTree } from '../layout/templates';
+import { whenMounted } from '../layout/mounted';
+import { MAX_CHARTS, template as templateTree } from '../layout/templates';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartView, type ChartViewState } from '../store/chartView';
-import { useChartStore } from '../store/chart';
+import { setActiveChart, useChartStore } from '../store/chart';
 import { isObj } from './net';
 
 export const LAYOUT_SCHEMA_VERSION = 5;
@@ -295,6 +296,12 @@ export function parseLayoutState(raw: unknown, schemaVersion = 1): LayoutState |
     return [slot];
   });
   if (charts.length === 0) charts = [parseSlot({ id: PRIMARY_CHART_ID }, base)!];
+  // A layout holds at most MAX_CHARTS charts; later ones (and their cells) are dropped.
+  if (charts.length > MAX_CHARTS) {
+    charts = charts.slice(0, MAX_CHARTS);
+    seen.clear();
+    charts.forEach((c) => seen.add(c.id));
+  }
   let grid = normalise(state.grid, seen);
   if (!grid) {
     const ids = charts.map((c) => c.id);
@@ -415,8 +422,11 @@ export async function applyLayoutState(
     activeId: active.id,
     slots: Object.fromEntries(state.charts.map((c) => [c.id, c])),
   });
-  const { sessions } = useChartStore.getState();
   const ids = state.charts.map((c) => c.id);
+  // The grid mounts a cell per chart; their sessions must exist before slots apply.
+  await whenMounted(ids);
+  setActiveChart(active.id);
+  const { sessions } = useChartStore.getState();
   await Promise.all(
     state.charts.map((slot) => {
       const session = sessions.get(slot.id);

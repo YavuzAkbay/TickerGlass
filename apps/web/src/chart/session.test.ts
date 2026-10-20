@@ -10,7 +10,14 @@ import {
 } from '../indicators/store';
 import { createCompareRuntimeStore } from '../compare/store';
 import { createChartViewStore, useChartView } from '../store/chartView';
-import { registerSession, setActiveChart, unregisterSession, useChartStore } from '../store/chart';
+import {
+  getChart,
+  registerSession,
+  runInSession,
+  setActiveChart,
+  unregisterSession,
+  useChartStore,
+} from '../store/chart';
 import type { ChartSession } from './session';
 import { createStore } from 'zustand/vanilla';
 
@@ -130,5 +137,24 @@ describe('chart sessions', () => {
     unregisterSession('a');
     expect(useChartStore.getState().activeId).toBe('b');
     expect(useChartStore.getState().sessions.size).toBe(1);
+  });
+
+  it('runInSession points the facades at another chart for the duration of a callback', () => {
+    runInSession('b', () => {
+      addIndicator('sma');
+      expect(useChartView.getState()).toBe(b.view.getState());
+    });
+    expect(ids(a)).toEqual([]);
+    expect(ids(b)).toHaveLength(1);
+    expect(b.history.getState().past).toHaveLength(1);
+    expect(a.history.getState().past).toHaveLength(0);
+    // Back to the focused chart afterwards, also when the callback throws.
+    expect(() =>
+      runInSession('b', () => {
+        throw new Error('x');
+      }),
+    ).toThrow('x');
+    expect(useChartView.getState()).toBe(a.view.getState());
+    expect(getChart()).toBe(useChartStore.getState().chart);
   });
 });

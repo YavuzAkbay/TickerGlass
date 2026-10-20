@@ -297,3 +297,63 @@
     display: none;
   }
 }
+
+/* ---- chart layout picker ---- */
+.lp-panel {
+  padding: 10px 12px;
+  width: 292px;
+}
+.lp-group + .lp-group {
+  margin-top: 10px;
+}
+.lp-heading {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.lp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lp-item {
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  cursor: pointer;
+}
+.lp-item:hover {
+  background: var(--hover);
+}
+.lp-item.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.lp-thumb {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 26px;
+}
+.lp-thumb-cell {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--muted);
+  background: var(--raised);
+}
+.lp-sync {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 8px;
+}
+.lp-sync .lp-heading {
+  grid-column: 1 / -1;
+}
+.lp-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  cursor: pointer;
+}

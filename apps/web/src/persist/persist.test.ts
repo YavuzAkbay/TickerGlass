@@ -535,6 +535,28 @@ describe('layout state parsing', () => {
     expect(parseLayoutState({}, 99)).toBeNull();
   });
 
+  it('keeps at most 16 charts', () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `k${i}`);
+    const s = parseLayoutState(
+      {
+        template: null,
+        grid: {
+          kind: 'split',
+          dir: 'row',
+          sizes: ids.map(() => 1 / 20),
+          children: ids.map((chartId) => ({ kind: 'leaf', chartId })),
+        },
+        charts: ids.map((id) => ({ id })),
+        activeChartId: 'k19',
+        sync: {},
+      },
+      5,
+    )!;
+    expect(s.charts).toHaveLength(16);
+    expect(leaves(s.grid)).toEqual(ids.slice(0, 16));
+    expect(s.activeChartId).toBe('k0');
+  });
+
   const legacyChart = (volume: string, panes: { id: string; ratio: number }[] = []) => ({
     version: 1,
     symbol: 'AAPL',

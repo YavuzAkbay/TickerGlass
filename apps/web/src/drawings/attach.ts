@@ -8,6 +8,7 @@ import {
 } from '@investopen/engine';
 import { addIndicator } from '../indicators/actions';
 import type { ChartSession } from '../chart/session';
+import { runInSession, scopedOn } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
 import {
@@ -80,10 +81,11 @@ export function engineTool(id: string): EngineTool | null {
  * Attach before the indicators so a pane removal folds both into one step.
  */
 export function attachDrawings(
-  session: Pick<ChartSession, 'chart' | 'view' | 'history'>,
+  session: Pick<ChartSession, 'id' | 'chart' | 'view' | 'history'>,
   host: HTMLElement,
 ): () => void {
   const { chart } = session;
+  const on = scopedOn(session);
   const persistence = startDrawingPersistence(undefined, 300, (m) => toast(m, 'error'));
   const symbol = () => session.view.getState().symbol;
   let shownSymbol: string | null = null;
@@ -198,7 +200,7 @@ export function attachDrawings(
       syncOptions();
     }),
 
-    chart.on('drawingCreated', ({ drawing }) => {
+    on('drawingCreated', ({ drawing }) => {
       const name = toolName(drawing.type);
       const clone = !!dragEnded?.has(drawing.id);
       const label = !clone
@@ -220,26 +222,26 @@ export function attachDrawings(
           : drawing;
       recordGesture(label, [{ before: null, after }]);
     }),
-    chart.on('drawingChanged', ({ changes }) =>
+    on('drawingChanged', ({ changes }) =>
       recordGesture(
         changes.length === 1 ? `Move ${toolName(changes[0]!.after.type)}` : 'Move drawings',
         changes as Change[],
       ),
     ),
-    chart.on('drawingsRemoved', ({ drawings }) =>
+    on('drawingsRemoved', ({ drawings }) =>
       recordGesture(
         drawings.length === 1 ? `Remove ${toolName(drawings[0]!.type)}` : 'Remove drawings',
         drawings.map((d) => ({ before: d, after: null })),
       ),
     ),
-    chart.on('selectionChanged', ({ ids }) => {
+    on('selectionChanged', ({ ids }) => {
       const textEdit = useDrawingRuntime.getState().textEdit;
       useDrawingRuntime.setState({
         selection: ids,
         ...(textEdit && !ids.includes(textEdit.id) ? { textEdit: null } : {}),
       });
     }),
-    chart.on('drawingDrag', ({ ids, phase }) => {
+    on('drawingDrag', ({ ids, phase }) => {
       useDrawingRuntime.setState({ dragging: phase === 'start' });
       if (phase === 'end') {
         dragEnded = new Set(ids);
@@ -247,17 +249,17 @@ export function attachDrawings(
         if (dirty) sync();
       }
     }),
-    chart.on('drawingContextMenu', (e) =>
+    on('drawingContextMenu', (e) =>
       openContextMenu(e.clientX, e.clientY, drawingMenuItems(chart.getSelection())),
     ),
-    chart.on('drawingDoubleClick', (e) => {
+    on('drawingDoubleClick', (e) => {
       const d = chart.getDrawing(e.id);
       const def = d && getDrawingTool(d.type);
       if (def?.text && (e.part.kind === 'text' || def.group === 'annotation'))
         openTextEditor(e.id, e.clientX, e.clientY, false);
       else openDrawingSettings(e.id);
     }),
-    chart.on('toolFinished', ({ type, drawingId, active }) => {
+    on('toolFinished', ({ type, drawingId, active }) => {
       if (drawingId) {
         // The user's saved default style applies to drawings made with the tool.
         const style = useDrawingTemplates.getState().defaults[type];
@@ -272,21 +274,23 @@ export function attachDrawings(
       }
       if (!active && !isCursorTool(useUiStore.getState().activeTool)) resetToCursor();
     }),
-    chart.on('pointPicked', ({ time }) => {
+    on('pointPicked', ({ time }) => {
       // Anchored VWAP entry: the clicked bar is the anchor.
       if (useUiStore.getState().activeTool === ANCHORED_VWAP_ID)
         addIndicator(ANCHORED_VWAP_ID, { inputs: { anchor: time } });
     }),
-    chart.on('paneRemoved', ({ paneId }) => {
+    on('paneRemoved', ({ paneId }) => {
       // An undo/redo removed the pane: its entry restores everything itself.
       if (session.history.getState().applying) return;
       // The indicator controller pushes its own step for the pane's studies
       // in this same dispatch; fold it and the drawings into one step.
       const mark = historyMark();
-      queueMicrotask(() => {
-        removePaneDrawings(paneId);
-        foldHistorySince(mark, 'Remove pane');
-      });
+      queueMicrotask(() =>
+        runInSession(session.id, () => {
+          removePaneDrawings(paneId);
+          foldHistorySince(mark, 'Remove pane');
+        }),
+      );
     }),
   ];
 

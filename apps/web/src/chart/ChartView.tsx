@@ -24,6 +24,7 @@ import {
   unregisterSession,
   useChartStore,
 } from '../store/chart';
+import { takeSeed } from '../layout/seeds';
 import { pickChartView } from '../store/chartView';
 
 /**
@@ -79,17 +80,21 @@ export function ChartView({ id }: { id: string }) {
   useEffect(() => {
     // The first chart starts from the pre-v4 app store values (if any), others from the active chart.
     const current = getActiveSession();
-    const initial = current
+    const base = current
       ? pickChartView(current.view.getState())
       : id === PRIMARY_CHART_ID
         ? legacyChartView()
         : null;
+    const seed = takeSeed(id);
+    const initial = seed ? { ...base, ...seed } : base;
     const s = createChartSession(id, hostRef.current!, initial);
     const { chart } = s;
     registerSession(s);
     setSession(s);
     // Expose for debugging and e2e tests (the active chart; see the focus handler).
     (window as unknown as { chart?: unknown }).chart = chart;
+    const charts = ((window as unknown as { charts?: Record<string, unknown> }).charts ??= {});
+    charts[id] = chart;
     if (import.meta.env.DEV || import.meta.env.VITE_E2E === '1') {
       (window as unknown as { sandboxProbe?: typeof sandboxProbe }).sandboxProbe = sandboxProbe;
     }
@@ -107,6 +112,7 @@ export function ChartView({ id }: { id: string }) {
     ];
     return () => {
       offs.forEach((off) => off());
+      delete charts[id];
       unregisterSession(id);
       setSession(null);
       s.destroy();

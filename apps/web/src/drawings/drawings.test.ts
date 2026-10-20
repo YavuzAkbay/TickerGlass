@@ -623,7 +623,7 @@ describe('attach (engine events and sync)', () => {
     vi.stubGlobal('window', { addEventListener: () => {}, removeEventListener: () => {} });
     const f = fakeChart();
     const detach = attachDrawings(
-      { chart: f.chart, view: useChartView, history: useHistory },
+      { id: 'c1', chart: f.chart, view: useChartView, history: useHistory },
       {} as HTMLElement,
     );
     return {
