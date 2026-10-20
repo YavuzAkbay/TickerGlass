@@ -1,14 +1,9 @@
 /** Fired-alert markers and price-alert lines on the chart (docs/alerts.md §5.5). */
 import type { Alert, AlertLogEntry } from '@investopen/alerts';
-import {
-  canonicalSymbol,
-  type Chart,
-  type ChartMarker,
-  type ChartPriceLine,
-} from '@investopen/engine';
+import { canonicalSymbol, type ChartMarker, type ChartPriceLine } from '@investopen/engine';
 import { commands } from '../commands/registry';
 import { useReplayStore } from '../replay/store';
-import { useAppStore } from '../store/app';
+import type { ChartSession } from '../chart/session';
 import { useAlertPrefs } from './prefs';
 import { openAlertLog, useAlerts } from './store';
 
@@ -88,11 +83,12 @@ export function buildLines(
 }
 
 /** Keep `chart`'s alert markers and lines in sync with the stores; wire the "+" button and clicks. */
-export function attachAlerts(chart: Chart): () => void {
+export function attachAlerts(session: Pick<ChartSession, 'chart' | 'view'>): () => void {
+  const { chart } = session;
   const apply = () => {
     const prefs = useAlertPrefs.getState();
     const { log, alerts } = useAlerts.getState();
-    const symbol = canon(useAppStore.getState().symbol);
+    const symbol = canon(session.view.getState().symbol);
     const replay = useReplayStore.getState();
     // During replay, only fires the replay clock has passed.
     const before = replay.status !== 'off' && Number.isFinite(replay.next) ? replay.next : Infinity;
@@ -107,7 +103,7 @@ export function attachAlerts(chart: Chart): () => void {
     useAlertPrefs.subscribe((s, p) => {
       if (s.lines !== p.lines || s.markers !== p.markers) apply();
     }),
-    useAppStore.subscribe((s, p) => {
+    session.view.subscribe((s, p) => {
       if (s.symbol !== p.symbol) apply();
     }),
     useReplayStore.subscribe((s, p) => {
@@ -118,7 +114,7 @@ export function attachAlerts(chart: Chart): () => void {
       if (!Number.isFinite(s.next) || !Number.isFinite(p.next)) return apply();
       const lo = Math.min(s.next, p.next);
       const hi = Math.max(s.next, p.next);
-      const symbol = canon(useAppStore.getState().symbol);
+      const symbol = canon(session.view.getState().symbol);
       if (
         useAlerts
           .getState()

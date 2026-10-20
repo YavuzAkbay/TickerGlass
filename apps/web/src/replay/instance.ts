@@ -1,7 +1,7 @@
 import type { ChartMarker, ChartPriceLine } from '@investopen/engine';
 import { useAlerts } from '../alerts/store';
 import { getChart } from '../store/chart';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { replayFeed } from '../chart/feed';
 import { toast } from '../ui/Toast';
 import { ReplayAlerts } from './alerts';
@@ -10,11 +10,11 @@ import { useReplayStore } from './store';
 import { ReplayTrading, useTrading } from './trading';
 
 /** Raw (untransformed) last revealed bar of the chart symbol, or null. */
-const lastBar = () => replayFeed.revealedBar(useAppStore.getState().symbol);
+const lastBar = () => replayFeed.revealedBar(useChartView.getState().symbol);
 
 const alerts = new ReplayAlerts({
   alerts: () => useAlerts.getState().alerts,
-  symbol: () => useAppStore.getState().symbol,
+  symbol: () => useChartView.getState().symbol,
   lastBar,
   setMarkers: (group: string, markers: readonly ChartMarker[]) =>
     getChart()?.setMarkers(group, markers),
@@ -22,7 +22,7 @@ const alerts = new ReplayAlerts({
 });
 
 export const trading = new ReplayTrading({
-  symbol: () => useAppStore.getState().symbol,
+  symbol: () => useChartView.getState().symbol,
   lastBar,
   clock: () => useReplayStore.getState().last,
   ready: () => ['paused', 'playing', 'ended'].includes(useReplayStore.getState().status),
@@ -36,7 +36,7 @@ export const trading = new ReplayTrading({
 export const replay = new ReplayController({
   feed: replayFeed,
   getChart,
-  prepost: () => useAppStore.getState().prepost,
+  prepost: () => useChartView.getState().prepost,
   onError: (message) => toast(message, 'error'),
   sessions: [alerts, trading],
 });

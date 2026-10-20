@@ -1,8 +1,8 @@
-import type { Chart, DataFeed } from '@investopen/engine';
+import type { DataFeed } from '@investopen/engine';
 import { replayFeed } from '../chart/feed';
 import { syncScriptDefinitions } from '../scripts/definitions';
 import { useScriptsStore } from '../scripts/store';
-import { useAppStore } from '../store/app';
+import type { ChartSession } from '../chart/session';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
 import { toast } from '../ui/Toast';
@@ -10,7 +10,7 @@ import { findIndicator, removeIndicators } from './actions';
 import { IndicatorController, createIndicatorWorker } from './controller';
 import { openIndicatorSettings } from './menu';
 import { ScriptRouterPort } from './sandbox/port';
-import { effectiveInstances, useIndicatorPreview, useIndicatorStore } from './store';
+import { effectiveInstancesOf } from './store';
 
 type UiSnapshot = ReturnType<typeof useUiStore.getState>;
 
@@ -19,7 +19,8 @@ const indicatorsHidden = (s: UiSnapshot) =>
   s.hideAll && ['indicators', 'all'].includes(toHideMode(s.groupTools.hide));
 
 /** Run the indicator worker for `chart` and keep it in sync with the app stores. */
-export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
+export function attachIndicators(session: ChartSession, feed: DataFeed): () => void {
+  const { chart } = session;
   // User scripts run in their own sandboxes behind this port.
   const port = new ScriptRouterPort(createIndicatorWorker(), {
     getScript: (id) => useScriptsStore.getState().scripts.find((s) => s.id === id),
@@ -31,13 +32,14 @@ export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
     schedule: (fn) => requestAnimationFrame(fn),
     onError: (message) => toast(message, 'error'),
     onStudiesLost: removeIndicators,
-    prepost: () => useAppStore.getState().prepost,
-    chartType: () => useAppStore.getState().chartType,
+    runtime: session.indicatorRuntime,
+    prepost: () => session.view.getState().prepost,
+    chartType: () => session.view.getState().chartType,
     dataEpoch: () => replayFeed.epoch,
   });
   ctl.setHidden(indicatorsHidden(useUiStore.getState()));
   // The chart shows settings-dialog previews too (they are not persisted).
-  const sync = () => ctl.sync(effectiveInstances());
+  const sync = () => ctl.sync(effectiveInstancesOf(session.indicators, session.preview));
   // Script stubs first (the controller looks definitions up), then the new
   // definitions applied (outputs, titles), then the sandboxes restarted.
   const syncScripts = () => {
@@ -48,8 +50,8 @@ export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
   syncScripts();
   const offs = [
     useScriptsStore.subscribe(syncScripts),
-    useIndicatorStore.subscribe(sync),
-    useIndicatorPreview.subscribe(sync),
+    session.indicators.subscribe(sync),
+    session.preview.subscribe(sync),
     useUiStore.subscribe((s) => ctl.setHidden(indicatorsHidden(s))),
     chart.on('studyDoubleClick', (e) => {
       // Compare overlays are studies too: they have no indicator settings.

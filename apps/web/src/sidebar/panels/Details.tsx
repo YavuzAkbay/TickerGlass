@@ -4,7 +4,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import type { Fundamentals, FundamentalsInfo, Performance, SymbolMeta } from '../../api/types';
 import { useLiveQuote, useQuoteMissing } from '../../quotes/hooks';
 import { useQuoteStore } from '../../quotes/store';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import {
   changeClass,
   decimalsForTick,
@@ -192,7 +192,7 @@ function hostOf(url: string): string {
 }
 
 export function Details() {
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
   // No quote, fundamentals or events exist for an expression: mount nothing that fetches.
   if (isExpressionSymbol(symbol))
     return (

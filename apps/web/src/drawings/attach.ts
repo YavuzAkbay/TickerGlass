@@ -4,12 +4,10 @@ import {
   PICK_TOOL,
   ZOOM_TOOL,
   getDrawingTool,
-  type Chart,
   type DrawingStyle,
 } from '@investopen/engine';
-import { useHistory } from '../commands/history';
 import { addIndicator } from '../indicators/actions';
-import { useAppStore } from '../store/app';
+import type { ChartSession } from '../chart/session';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
 import {
@@ -81,9 +79,13 @@ export function engineTool(id: string): EngineTool | null {
  * toolbar, turn engine events into undo steps, and persist the store.
  * Attach before the indicators so a pane removal folds both into one step.
  */
-export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
+export function attachDrawings(
+  session: Pick<ChartSession, 'chart' | 'view' | 'history'>,
+  host: HTMLElement,
+): () => void {
+  const { chart } = session;
   const persistence = startDrawingPersistence(undefined, 300, (m) => toast(m, 'error'));
-  const symbol = () => useAppStore.getState().symbol;
+  const symbol = () => session.view.getState().symbol;
   let shownSymbol: string | null = null;
   let dirty = false;
   const synced: SyncedDrawings = new Map();
@@ -188,7 +190,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
 
   const offs = [
     useDrawingStore.subscribe(sync),
-    useAppStore.subscribe((s, prev) => {
+    session.view.subscribe((s, prev) => {
       if (s.symbol !== prev.symbol) sync();
     }),
     useUiStore.subscribe(() => {
@@ -277,7 +279,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
     }),
     chart.on('paneRemoved', ({ paneId }) => {
       // An undo/redo removed the pane: its entry restores everything itself.
-      if (useHistory.getState().applying) return;
+      if (session.history.getState().applying) return;
       // The indicator controller pushes its own step for the pane's studies
       // in this same dispatch; fold it and the drawings into one step.
       const mark = historyMark();

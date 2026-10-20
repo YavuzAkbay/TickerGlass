@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { RangeStrip } from './bottombar/RangeStrip';
 import { ChartView } from './chart/ChartView';
+import { PRIMARY_CHART_ID } from './chart/session';
 import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
 import { registerIndicatorCommands } from './indicators/commands';
@@ -21,9 +22,20 @@ import { ToastHost } from './ui/Toast';
 import './ui/ui.css';
 import './App.css';
 
+/**
+ * Chart ids to mount. One chart; `?charts=N` (dev/e2e, 2..4) stacks N sessions
+ * until the grid layouts exist.
+ */
+function chartIds(): string[] {
+  const n = Number(new URLSearchParams(location.search).get('charts'));
+  const count = Number.isInteger(n) && n >= 2 ? Math.min(n, 4) : 1;
+  return Array.from({ length: count }, (_, i) => (i === 0 ? PRIMARY_CHART_ID : `c${i + 1}`));
+}
+
 export function App() {
   const theme = useAppStore((s) => s.theme);
   const railHidden = useUiStore((s) => s.toolRailHidden);
+  const [ids] = useState(chartIds);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -64,7 +76,11 @@ export function App() {
       <main className="center">
         <div className="chart-pane">
           <div className="chart-area">
-            <ChartView />
+            <div className="chart-stack">
+              {ids.map((id) => (
+                <ChartView key={id} id={id} />
+              ))}
+            </div>
           </div>
           <RangeStrip />
         </div>

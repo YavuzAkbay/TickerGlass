@@ -1,4 +1,5 @@
-import type { Chart } from '@investopen/engine';
+import type { ChartSession } from '../chart/session';
+import { getActiveSession } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { resetToCursor } from '../toolbar/tools';
 import { replay } from './instance';
@@ -9,7 +10,8 @@ import { REPLAY_PICK_ID, barAtOrBefore } from './tool';
  * Scissors bar picker: the replay store's 'picking' status arms the pick tool,
  * the picked bar starts (or moves) the replay, and leaving the tool cancels.
  */
-export function attachReplay(chart: Chart): () => void {
+export function attachReplay(session: Pick<ChartSession, 'id' | 'chart'>): () => void {
+  const { chart } = session;
   const ui = () => useUiStore.getState();
   const armed = () => ui().activeTool === REPLAY_PICK_ID;
   const offs = [
@@ -25,6 +27,8 @@ export function attachReplay(chart: Chart): () => void {
         replay.cancelPick();
     }),
     chart.on('pointPicked', ({ time }) => {
+      // The pick tool is armed on the active chart only.
+      if (getActiveSession()?.id !== session.id) return;
       if (!armed() || useReplayStore.getState().status !== 'picking') return;
       const bar = barAtOrBefore(chart.store.time, chart.store.length, time);
       if (bar === null) {

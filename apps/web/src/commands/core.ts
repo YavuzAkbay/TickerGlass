@@ -11,10 +11,11 @@ import {
 } from 'lucide-react';
 import { useAlerts } from '../alerts/store';
 import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
-import { changeScale, toggleScaleMode } from '../chart/scaleActions';
+import { changeScale, toggleScaleMode } from './scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
 import { getChart } from '../store/chart';
 import { normalizeSymbol, useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useUiStore, type RightPanel } from '../store/ui';
 import { toast } from '../ui/Toast';
 import { useHistory } from './history';
@@ -84,7 +85,7 @@ export function registerCoreCommands(): () => void {
           toast(TOO_LONG_FOR_CHART, 'error');
           return;
         }
-        useAppStore.getState().setSymbol(symbol);
+        useChartView.getState().setSymbol(symbol);
       },
     },
     {
@@ -92,7 +93,7 @@ export function registerCoreCommands(): () => void {
       title: 'Set interval',
       hidden: true,
       run: (arg) => {
-        if (typeof arg === 'string' && arg) useAppStore.getState().setInterval(arg);
+        if (typeof arg === 'string' && arg) useChartView.getState().setInterval(arg);
       },
     },
     {
@@ -252,7 +253,7 @@ export function registerCoreCommands(): () => void {
       title: 'Toggle extended trading hours',
       category: 'Chart',
       shortcut: 'Alt+E',
-      run: () => useAppStore.setState((s) => ({ prepost: !s.prepost })),
+      run: () => useChartView.setState((s) => ({ prepost: !s.prepost })),
     },
     {
       id: 'alert.create',

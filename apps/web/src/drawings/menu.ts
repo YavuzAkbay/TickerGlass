@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { openAlertDialog } from '../alerts/dialog/open';
 import { isBrickType } from '../alerts/dialog/sources';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { getChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import type { MenuItem } from '../ui/Menu';
@@ -129,7 +129,7 @@ export function drawingMenuItems(ids: readonly string[]): MenuItem[] {
   const locked = list.every((d) => d.locked);
   const hidden = list.every((d) => d.hidden);
   const synced = list.every((d) => d.scope === 'all');
-  const interval = useAppStore.getState().interval;
+  const interval = useChartView.getState().interval;
   const preset = currentPreset(first.visibility, interval);
   const items: MenuItem[] = [];
   if (single)
@@ -140,7 +140,7 @@ export function drawingMenuItems(ids: readonly string[]): MenuItem[] {
       onSelect: () => openDrawingSettings(first.id),
     });
   if (single && (LINE_TOOLS.includes(first.type) || CHANNEL_TOOLS.includes(first.type))) {
-    const brick = isBrickType(useAppStore.getState().chartType);
+    const brick = isBrickType(useChartView.getState().chartType);
     items.push({
       label: 'Add alert…',
       icon: Bell,

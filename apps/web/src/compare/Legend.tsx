@@ -2,13 +2,14 @@ import { Ellipsis, Eye, EyeOff, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Chart } from '@investopen/engine';
-import { useChartStore } from '../store/chart';
+import { useStore } from 'zustand';
+import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';
 import { DropdownMenu } from '../ui/Menu';
 import { removeCompare, toggleCompareVisible } from './actions';
 import { compareMenuItems } from './menu';
 import { comparePaneId, type CompareState } from './model';
-import { useCompareRuntime, useCompareStore, type CompareStatus } from './store';
+import type { CompareStatus } from './store';
 import './compare.css';
 
 type LegendChart = Pick<Chart, 'getLegendSlot' | 'getStudyValues' | 'store'>;
@@ -39,13 +40,13 @@ function shieldFromChart(el: HTMLDivElement | null) {
 }
 
 /** Compare legend rows, rendered into each pane's engine compare slot. */
-export function CompareLegends({ chart }: { chart: LegendChart | null }) {
-  const items = useCompareStore((s) => s.items);
-  const status = useCompareRuntime((s) => s.status);
+export function CompareLegends({ session }: { session: ChartSession }) {
+  const { chart } = session;
+  const items = useStore(session.compares, (s) => s.items);
+  const status = useStore(session.compareRuntime, (s) => s.status);
   // Re-read last-bar values when overlay data changes.
-  useCompareRuntime((s) => s.tick);
-  const crossIndex = useChartStore((s) => s.crosshair?.index ?? null);
-  if (!chart) return null;
+  useStore(session.compareRuntime, (s) => s.tick);
+  const crossIndex = useStore(session.info, (s) => s.crosshair?.index ?? null);
   const index = crossIndex ?? chart.store.length - 1;
   // A 'pane' overlay without its pane (e.g. unavailable on this chart type) lists on the main pane.
   const byPane = new Map<string, CompareState[]>();

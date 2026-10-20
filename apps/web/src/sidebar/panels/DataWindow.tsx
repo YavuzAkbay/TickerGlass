@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import { useChartStore } from '../../store/chart';
 import {
   changeClass,
@@ -28,8 +28,8 @@ export function DataWindow() {
   const chart = useChartStore((s) => s.chart);
   const symbolInfo = useChartStore((s) => s.symbolInfo);
   const crosshair = useChartStore((s) => s.crosshair);
-  const tzSetting = useAppStore((s) => s.timezone);
-  const interval = useAppStore((s) => s.interval);
+  const tzSetting = useChartView((s) => s.timezone);
+  const interval = useChartView((s) => s.interval);
   useChartTick(chart, ['dataLoaded', 'stateChange', 'barUpdate']);
 
   const intraday = !/[DWM]$/.test(interval);

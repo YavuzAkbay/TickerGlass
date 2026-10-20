@@ -6,7 +6,7 @@
 import type { Drawing, DrawingPatch, DrawingStyle } from '@investopen/engine';
 import { useHistory, type UndoEntry } from '../commands/history';
 import { useIndicatorStore } from '../indicators/store';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { getChart } from '../store/chart';
 import { toast } from '../ui/Toast';
 import { deepEqual, patchDrawing, toolName } from './model';
@@ -23,7 +23,7 @@ const idOf = (c: Change) => (c.after ?? c.before)!.id;
 
 /** Drawings of the current chart (current symbol + synced). */
 export function currentDrawings(): Drawing[] {
-  return drawingsFor(store(), useAppStore.getState().symbol);
+  return drawingsFor(store(), useChartView.getState().symbol);
 }
 
 export function findDrawing(id: string): Drawing | undefined {
@@ -288,7 +288,7 @@ export function toggleHidden(ids: readonly string[]): void {
 
 /** Patch moving `d` to `scope`: a per-symbol drawing without a symbol takes the current one. */
 export function scopePatch(d: Drawing, scope: Drawing['scope']): Pick<Drawing, 'scope' | 'symbol'> {
-  const symbol = useAppStore.getState().symbol;
+  const symbol = useChartView.getState().symbol;
   return { scope, symbol: scope === 'symbol' && !d.symbol ? symbol : d.symbol };
 }
 

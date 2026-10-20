@@ -1,7 +1,7 @@
 import { CalendarSearch } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { commands } from '../commands/registry';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useChartStore } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { IconButton } from '../ui/IconButton';
@@ -20,7 +20,7 @@ function useNow(): Date {
 
 function Clock() {
   const now = useNow();
-  const timezone = useAppStore((s) => s.timezone);
+  const timezone = useChartView((s) => s.timezone);
   const exchangeTz = useChartStore((s) => s.symbolInfo?.timezone);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const tz = resolveTimezone(timezone, exchangeTz);
@@ -36,7 +36,7 @@ function Clock() {
     return {
       label: `${z.label}${suffix}  ·  ${utcOffsetLabel(zoneTz, now)}`,
       checked: timezone === z.id,
-      onSelect: () => useAppStore.getState().set({ timezone: z.id }),
+      onSelect: () => useChartView.getState().set({ timezone: z.id }),
     };
   });
   return (
@@ -95,8 +95,8 @@ function ScaleToggles() {
 
 /** Slim strip under the time axis: range presets, go to date, scale, session and time zone. */
 export function RangeStrip() {
-  const interval = useAppStore((s) => s.interval);
-  const prepost = useAppStore((s) => s.prepost);
+  const interval = useChartView((s) => s.interval);
+  const prepost = useChartView((s) => s.prepost);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const chart = useChartStore((s) => s.chart);
   const applying = useRef(false);

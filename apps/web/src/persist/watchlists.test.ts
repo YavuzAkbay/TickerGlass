@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import type { Flag, Watchlist } from '../api/types';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useWatchlistStore } from '../watchlist/store';
 import type { FlagColor, WatchlistEntry, WatchlistItem } from '../watchlist/types';
 import { WatchlistSync, type WatchlistsApi } from './watchlists';
@@ -130,7 +131,8 @@ beforeEach(() => {
     seeded: false,
     pendingSeed: null,
   });
-  useAppStore.setState({ symbol: 'AAPL', recentSymbols: ['MSFT', 'AAPL'] });
+  useChartView.setState({ symbol: 'AAPL' });
+  useAppStore.setState({ recentSymbols: ['MSFT', 'AAPL'] });
 });
 
 describe('WatchlistSync.load', () => {
@@ -217,7 +219,8 @@ describe('WatchlistSync.load', () => {
     server.lists.set('a', wl('a', 'A', 1));
     await sync.load();
     expect(st().seeded).toBe(true);
-    useAppStore.setState({ symbol: 'AAPL/MSFT', recentSymbols: ['A B', 'msft', 'AAPL'] });
+    useChartView.setState({ symbol: 'AAPL/MSFT' });
+    useAppStore.setState({ recentSymbols: ['A B', 'msft', 'AAPL'] });
     useWatchlistStore.setState({ lists: {}, seeded: false });
     server.lists.clear();
     await sync.load();

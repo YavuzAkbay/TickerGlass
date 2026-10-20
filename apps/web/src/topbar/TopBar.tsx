@@ -21,6 +21,7 @@ import { useState, useSyncExternalStore, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useReplayStore } from '../replay/store';
 import { useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
@@ -96,7 +97,7 @@ function ToolRailToggle() {
 }
 
 function SymbolButton() {
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
   return (
     <button
       type="button"
@@ -173,7 +174,7 @@ function UndoRedo() {
 }
 
 function ChartTypeButton() {
-  const chartType = useAppStore((s) => s.chartType);
+  const chartType = useChartView((s) => s.chartType);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const current = chartTypeDef(chartType);
@@ -185,7 +186,7 @@ function ChartTypeButton() {
           label: t.label,
           icon: t.icon,
           checked: t.id === chartType,
-          onSelect: () => useAppStore.getState().set({ chartType: t.id }),
+          onSelect: () => useChartView.getState().set({ chartType: t.id }),
         }
       : { type: 'separator' },
   );

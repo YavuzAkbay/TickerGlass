@@ -4,15 +4,13 @@
  * and notes from the API, change tracking, and offline fallback with
  * reconnect. localStorage stays the offline cache throughout.
  */
-import type { Chart } from '@investopen/engine';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import { startAlertNotifications } from '../alerts/notify';
 import { startAlertsSync } from '../alerts/sync';
-import { useCompareStore } from '../compare/store';
-import { useIndicatorStore } from '../indicators/store';
-import { useAppStore } from '../store/app';
-import { useChartStore } from '../store/chart';
+import { DEFAULT_CHART_VIEW } from '../store/chartView';
+import type { ChartSession } from '../chart/session';
+import { getActiveSession, useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { actionToast, toast } from '../ui/Toast';
 import { DrawingSync } from './drawingSync';
@@ -60,6 +58,8 @@ export const getPersistence = (): Persistence | null => active;
 const RECONNECT_MS = 15_000;
 /** Layout capture throttle: pans and zooms fire many events. */
 const CHANGE_MS = 300;
+
+const activeSymbol = () => getActiveSession()?.view.getState().symbol ?? DEFAULT_CHART_VIEW.symbol;
 
 const LAYOUT_FIELDS = [
   'symbol',
@@ -152,29 +152,34 @@ export function startPersistence(): () => void {
   const changed = () => {
     if (!changeTimer) changeTimer = setTimeout(flushChange, CHANGE_MS);
   };
-  let chartOffs: (() => void)[] = [];
-  const watchChart = (chart: Chart | null) => {
-    chartOffs.forEach((off) => off());
-    chartOffs = chart
-      ? [chart.on('stateChange', changed), chart.on('visibleRangeChange', changed)]
+  // The layout is the active chart's: follow the active session's stores.
+  let sessionOffs: (() => void)[] = [];
+  const watchSession = (session: ChartSession | null) => {
+    sessionOffs.forEach((off) => off());
+    sessionOffs = session
+      ? [
+          session.chart.on('stateChange', changed),
+          session.chart.on('visibleRangeChange', changed),
+          session.indicators.subscribe((s, p) => {
+            if (s.instances !== p.instances) changed();
+          }),
+          session.compares.subscribe((s, p) => {
+            if (s.items !== p.items || s.scaleRestore !== p.scaleRestore) changed();
+          }),
+          session.view.subscribe((s, p) => {
+            if (LAYOUT_FIELDS.some((k) => s[k] !== p[k])) changed();
+            if (s.symbol !== p.symbol && online)
+              drawings.pull(s.symbol).catch((err) => report(err, 'Drawings could not be loaded'));
+          }),
+        ]
       : [];
   };
-  watchChart(useChartStore.getState().chart);
+  watchSession(getActiveSession());
 
   const offs = [
-    useIndicatorStore.subscribe((s, p) => {
-      if (s.instances !== p.instances) changed();
-    }),
-    useCompareStore.subscribe((s, p) => {
-      if (s.items !== p.items || s.scaleRestore !== p.scaleRestore) changed();
-    }),
-    useAppStore.subscribe((s, p) => {
-      if (LAYOUT_FIELDS.some((k) => s[k] !== p[k])) changed();
-      if (s.symbol !== p.symbol && online)
-        drawings.pull(s.symbol).catch((err) => report(err, 'Drawings could not be loaded'));
-    }),
+    () => sessionOffs.forEach((off) => off()),
     useChartStore.subscribe((s, p) => {
-      if (s.chart !== p.chart) watchChart(s.chart);
+      if (s.activeId !== p.activeId || s.sessions !== p.sessions) watchSession(getActiveSession());
     }),
   ];
 
@@ -319,9 +324,7 @@ export function startPersistence(): () => void {
     }
     if (!online) void connect();
     else {
-      drawings
-        .pull(useAppStore.getState().symbol)
-        .catch((err) => report(err, 'Drawings could not be loaded'));
+      drawings.pull(activeSymbol()).catch((err) => report(err, 'Drawings could not be loaded'));
       // Cheap; picks up changes made on other devices.
       watchlists.load().catch((err) => report(err, 'Watchlists could not be loaded'));
     }
@@ -352,7 +355,7 @@ export function startPersistence(): () => void {
     if (send) flushChange();
     else if (changeTimer) clearTimeout(changeTimer);
     offs.forEach((off) => off());
-    watchChart(null);
+    watchSession(null);
     stopAlerts();
     stopAlertNotify();
     window.removeEventListener('pagehide', onPageHide);

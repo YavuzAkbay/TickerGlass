@@ -1,4 +1,4 @@
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useChartStore } from '../store/chart';
 import {
   changeClass,
@@ -36,9 +36,9 @@ function Row({
 export function ReplayTrading() {
   const paper = useTrading((s) => s.paper);
   const marks = useTrading((s) => s.marks);
-  const symbol = useAppStore((s) => s.symbol);
-  const interval = useAppStore((s) => s.interval);
-  const tzSetting = useAppStore((s) => s.timezone);
+  const symbol = useChartView((s) => s.symbol);
+  const interval = useChartView((s) => s.interval);
+  const tzSetting = useChartView((s) => s.timezone);
   const info = useChartStore((s) => s.symbolInfo);
   const d = decimalsForTick(info?.minTick);
   const fmtTime = makeDateFormatter(

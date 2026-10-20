@@ -2,7 +2,7 @@ import { formatInterval, parseInterval, tickIntervals } from '@investopen/engine
 import { FastForward, Pause, Play, Scissors, StepForward, TriangleAlert, X } from 'lucide-react';
 import { useMemo } from 'react';
 import { commands } from '../commands/registry';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useChartStore } from '../store/chart';
 import { IconButton } from '../ui/IconButton';
 import { useCommand, firstShortcut } from '../topbar/useCommand';
@@ -60,12 +60,12 @@ export function ReplayBar() {
   const warning = useReplayStore((s) => s.warning);
   const speed = useReplayStore((s) => s.speed);
   const update = useReplayStore((s) => s.update);
-  const interval = useAppStore((s) => s.interval);
-  const timezone = useAppStore((s) => s.timezone);
+  const interval = useChartView((s) => s.interval);
+  const timezone = useChartView((s) => s.timezone);
   const exchange = useChartStore((s) => s.symbolInfo?.timezone);
   const qty = useTrading((s) => s.qty);
   const total = useTrading(selectTotal);
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
   const open = useTrading((s) => (s.paper.positions[symbol]?.qty ?? 0) !== 0);
   const hasTrades = useTrading((s) => s.paper.trades.length > 0);
   const playPause = firstShortcut(useCommand('replay.playPause'));

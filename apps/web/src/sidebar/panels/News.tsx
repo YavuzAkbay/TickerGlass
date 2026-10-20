@@ -3,7 +3,7 @@ import { Newspaper } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { NewsItem } from '../../api/types';
 import { commands } from '../../commands/registry';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import { isFlagRef, resolveActive } from '../../watchlist/model';
 import { useWatchlistPrefs } from '../../watchlist/prefs';
 import { useWatchlistStore } from '../../watchlist/store';
@@ -34,7 +34,7 @@ function useListSymbols(): string[] {
 }
 
 export function News() {
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
   // Session-only choice.
   const [mode, setMode] = useState<Mode>('symbol');
   const listSymbols = useListSymbols();

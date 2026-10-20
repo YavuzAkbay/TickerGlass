@@ -315,6 +315,7 @@ function setup(
   let chartType: ChartType = opts.chartType ?? 'candles';
   const ctl = new CompareController({
     chart,
+    runtime: useCompareRuntime,
     feed: f.feed,
     schedule: (fn) => frames.push(fn),
     onError,
