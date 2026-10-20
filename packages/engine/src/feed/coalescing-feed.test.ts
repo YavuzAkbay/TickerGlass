@@ -73,6 +73,25 @@ describe('CoalescingFeed', () => {
     expect(s.getBars).toHaveBeenCalledTimes(2);
   });
 
+  it('treats absent and false adjusted/prepost as the same request', async () => {
+    const s = setup();
+    await s.feed.getBars(s.req());
+    await s.feed.getBars({ ...s.req(), adjusted: false, prepost: false });
+    expect(s.getBars).toHaveBeenCalledTimes(1);
+    await s.feed.getBars({ ...s.req(), adjusted: true });
+    expect(s.getBars).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses open-ended results only briefly, bounded requests for the full ttl', async () => {
+    const s = setup({ ttlMs: 10_000 });
+    await s.feed.getBars(s.req());
+    await s.feed.getBars(s.req('AAPL', 1000));
+    s.advance(1001);
+    await s.feed.getBars(s.req());
+    await s.feed.getBars(s.req('AAPL', 1000));
+    expect(s.getBars).toHaveBeenCalledTimes(3); // only the open-ended one refetched
+  });
+
   it('does not cache errors', async () => {
     const s = setup();
     s.setFail(true);

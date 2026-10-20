@@ -180,7 +180,7 @@ export class InteractionController {
         const dy = p.y - d.lastY;
         d.lastY = p.y;
         d.pane.priceScale.scaleBy(Math.exp(dy * 0.005));
-        chart.viewChanged('user');
+        chart.viewChanged('price');
         break;
       }
       case 'plus':
@@ -296,7 +296,7 @@ export class InteractionController {
     } else {
       ts.zoom(hit.kind === 'pane' ? p.x : this.chart.paneWidth, Math.exp(-dy * 0.0015));
     }
-    this.chart.viewChanged('user');
+    this.chart.viewChanged(hit.kind === 'priceAxis' ? 'price' : 'user');
     if (hit.kind === 'pane') this.chart.setCrosshair(hit.pane, p.x, hit.y);
     clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => this.chart.viewSettled(), 250);

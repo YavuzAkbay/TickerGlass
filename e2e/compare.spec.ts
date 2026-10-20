@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { firstChart } from './persistence';
+import { firstChart, freshBoot } from './persistence';
 
 declare global {
   interface Window {
@@ -56,9 +56,7 @@ test('compare: add on same scale and new pane, remove + undo, restore after relo
   page,
   server,
 }) => {
-  await page.goto(FEED);
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await freshBoot(page, server, FEED);
   await restored(page);
   expect(await mainMode(page)).toBe('linear');
 
@@ -89,7 +87,7 @@ test('compare: add on same scale and new pane, remove + undo, restore after relo
   // 4) Reload from the server copy: both overlays are back, saved as layout schema v5.
   await expect
     .poll(() => {
-      const l = [...server.layouts.values()][0];
+      const l = server.current();
       const c = firstChart(l?.state)?.compares as { items: unknown[] } | undefined;
       return [l?.schemaVersion, c?.items.length];
     })

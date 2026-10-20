@@ -93,8 +93,7 @@ export function ChartView({ id }: { id: string }) {
     const { chart } = s;
     registerSession(s);
     setSession(s);
-    // Expose for debugging and e2e tests (the active chart; see the focus handler).
-    (window as unknown as { chart?: unknown }).chart = chart;
+    // Expose for debugging and e2e tests (`window.chart` is mirrored by the chart store).
     const charts = ((window as unknown as { charts?: Record<string, unknown> }).charts ??= {});
     charts[id] = chart;
     if (import.meta.env.DEV || import.meta.env.VITE_E2E === '1') {
@@ -121,11 +120,6 @@ export function ChartView({ id }: { id: string }) {
       s.destroy();
     };
   }, [id]);
-
-  // `window.chart` follows the active chart.
-  useEffect(() => {
-    if (active && session) (window as unknown as { chart?: unknown }).chart = session.chart;
-  }, [active, session]);
 
   useEffect(() => {
     if (!session) return;

@@ -362,6 +362,30 @@ export function ensureUniqueChartIds(
   };
 }
 
+/**
+ * `state` with a fresh id for every chart (grid and active chart too). For
+ * "Save as" and "Copy": chart-bound drawings reference chart ids, so the copy
+ * must not share ids with the layout it came from. The copy starts without the
+ * source's chart-bound drawings (shared drawings are unaffected).
+ */
+export function rekeyChartIds(
+  state: LayoutState,
+  newId: () => string = () => crypto.randomUUID(),
+): LayoutState {
+  const renamed = new Map<string, string>();
+  const charts = state.charts.map((c) => {
+    const id = newId();
+    renamed.set(c.id, id);
+    return { ...c, id };
+  });
+  return {
+    ...state,
+    grid: mapLeaves(state.grid, (id) => renamed.get(id) ?? id),
+    charts,
+    activeChartId: renamed.get(state.activeChartId) ?? state.activeChartId,
+  };
+}
+
 /** Stable comparison key (JSON) of a state, for "did anything change". */
 export const stateKey = (s: LayoutState): string => JSON.stringify(s);
 

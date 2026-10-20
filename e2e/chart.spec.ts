@@ -36,7 +36,26 @@ test('panning into history lazy-loads older bars without moving the view', async
       const c = window.chart;
       return c.store.time[c.timeScale.xToIndex(700)];
     });
-  await page.waitForTimeout(300); // let kinetic scrolling stop
+  // Let kinetic scrolling stop: the time under x stays the same for 10 frames in a row.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const at = () => {
+          const c = window.chart;
+          return c.store.time[c.timeScale.xToIndex(700)];
+        };
+        let last = at();
+        let stable = 0;
+        const frame = () => {
+          const now = at();
+          stable = now === last ? stable + 1 : 0;
+          last = now;
+          if (stable >= 10) resolve();
+          else requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      }),
+  );
   const t0 = await timeAt();
   await page.waitForFunction((n) => window.chart.store.length > n, before);
   expect(await timeAt()).toBe(t0);

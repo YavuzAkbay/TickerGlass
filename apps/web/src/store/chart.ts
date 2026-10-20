@@ -117,3 +117,10 @@ export const getChart = (): Chart | null =>
 export function scopedOn(session: { id: string; chart: Chart }): Chart['on'] {
   return (event, fn) => session.chart.on(event, (p) => runInSession(session.id, () => fn(p)));
 }
+
+// Debug/e2e global: `window.chart` always follows the active chart.
+if (typeof window !== 'undefined') {
+  useChartStore.subscribe((s) => {
+    (window as unknown as { chart?: unknown }).chart = s.chart ?? undefined;
+  });
+}

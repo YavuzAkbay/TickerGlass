@@ -58,6 +58,29 @@ test('2x2 layout shows four charts with a canvas each', async ({ page }) => {
   expect(new Set(symbols).size).toBe(1);
 });
 
+test('window.chart follows the active chart across template changes and focus', async ({
+  page,
+}) => {
+  await open(page);
+  const matchesActive = () =>
+    page.evaluate(() => {
+      const id = document.querySelector('.chart-cell.active')?.getAttribute('data-chart-id');
+      const cell = id ?? document.querySelector('.chart-cell')!.getAttribute('data-chart-id')!;
+      return window.chart === window.charts[cell];
+    });
+  await chooseTemplate(page, '2x2');
+  await expect(cells(page)).toHaveCount(4);
+  expect(await matchesActive()).toBe(true);
+  await chooseTemplate(page, '2c');
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(cells(page)).toHaveCount(2);
+  await expect.poll(matchesActive).toBe(true);
+  await focusCell(page, 1);
+  await expect.poll(matchesActive).toBe(true);
+  await focusCell(page, 0);
+  await expect.poll(matchesActive).toBe(true);
+});
+
 test('dragging a splitter resizes the cells and the fractions survive a reload', async ({
   page,
 }) => {

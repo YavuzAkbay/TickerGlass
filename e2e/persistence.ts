@@ -7,7 +7,7 @@
  * survives page reloads within a test. e2e never reaches a real user-data
  * database: only market-data routes pass through; anything else fails the test.
  */
-import type { Page, Route } from '@playwright/test';
+import { expect, type Page, type Route } from '@playwright/test';
 
 type Json = Record<string, unknown>;
 type Reply = [number, unknown];
@@ -108,6 +108,10 @@ const detail = (status: number, message: string): Reply => [status, { detail: me
 export class MockServer {
   layouts = new Map<string, Layout>();
   lastUsed: string | null = null;
+  /** The layout the app has open (the last-used one); undefined before the first boot has created it. */
+  current(): Layout | undefined {
+    return this.lastUsed ? this.layouts.get(this.lastUsed) : undefined;
+  }
   drawings = new Map<string, DrawingRow>();
   settings = new Map<string, unknown>();
   notes = new Map<string, Note>();
@@ -1048,4 +1052,17 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
     return route.fulfill({ status, json: out });
   });
   return server;
+}
+
+/**
+ * Open `url` with empty browser storage. The first boot creates the layout and
+ * then marks it last-used; clearing storage and reloading before that finished
+ * would make the second boot create another layout. So wait for the first boot
+ * to settle on the server, then clear and reload.
+ */
+export async function freshBoot(page: Page, server: MockServer, url: string): Promise<void> {
+  await page.goto(url);
+  await expect.poll(() => server.lastUsed).not.toBeNull();
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
 }
