@@ -307,3 +307,61 @@ test('a price alert fires locally during replay: toast and replay marker, cleare
   await expect.poll(() => status(page)).toBe('off');
   expect(await groups()).toBe(0);
 });
+
+test('paper trading: buy, step, sell shows realized P&L and two trades in the panel', async ({
+  page,
+}) => {
+  const picked = await startReplay(page);
+  await setUpdate(page, 'Bars');
+  await expect.poll(() => barCount(page)).toBe(picked.length);
+  await page.getByLabel('Order quantity').fill('2');
+  await page.getByRole('button', { name: 'Buy', exact: true }).click();
+  // The long is marked on the chart and the position line is drawn.
+  const group = (name: string) =>
+    page.evaluate(
+      (g) =>
+        (window.chart as unknown as Record<string, Map<string, unknown[]>>)[
+          g === 'replay-trades' ? 'markerGroups' : 'lineGroups'
+        ]?.get(g)?.length ?? 0,
+      name,
+    );
+  await expect.poll(() => group('replay-trades')).toBe(1);
+  await expect.poll(() => group('replay-position')).toBe(1);
+
+  await page.getByRole('button', { name: 'Step forward' }).click();
+  await expect.poll(() => barCount(page)).toBe(picked.length + 1);
+  await page.getByRole('button', { name: 'Sell', exact: true }).click();
+  await expect.poll(() => group('replay-trades')).toBe(2);
+  await expect.poll(() => group('replay-position')).toBe(0);
+
+  await page.locator('[data-panel="replayTrading"]').click();
+  const panel = page.getByRole('region', { name: 'Replay trading' });
+  await expect(panel.getByRole('table', { name: 'Replay trades' }).locator('tbody tr')).toHaveCount(
+    2,
+  );
+  await expect(panel.getByTestId('rt-position')).toHaveText('Flat');
+  // Realized equals (sell - buy) * 2 from the two fills, whatever the synthetic prices are.
+  const { realized, expected } = await page.evaluate(() => {
+    const s = (
+      window as unknown as {
+        replay: {
+          tradingStore: {
+            getState(): { paper: { realized: number; trades: { side: string; price: number }[] } };
+          };
+        };
+      }
+    ).replay.tradingStore.getState().paper;
+    const [a, b] = s.trades;
+    return { realized: s.realized, expected: (b!.price - a!.price) * 2 };
+  });
+  expect(realized).toBeCloseTo(expected, 8);
+  const shown = (await panel.getByTestId('rt-realized').innerText()).replace('−', '-');
+  expect(Number(shown.replace(/[+,]/g, ''))).toBeCloseTo(realized, 1);
+  await expect(page.getByTestId('replay-pnl')).toBeVisible();
+
+  // Exit: summary toast, panel and markers gone.
+  await page.getByRole('button', { name: 'Exit replay' }).click();
+  await expect(page.getByText(/Replay finished: 2 trades/)).toBeVisible();
+  await expect(page.locator('[data-panel="replayTrading"]')).toHaveCount(0);
+  await expect.poll(() => group('replay-trades')).toBe(0);
+});

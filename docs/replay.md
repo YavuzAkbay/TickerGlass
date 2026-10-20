@@ -9,7 +9,7 @@ Code:
 - `packages/engine/src/feed/replay-feed.ts`: `ReplayFeed`, `chooseTick`, `tickIntervals`.
 - `apps/web/src/chart/feed.ts`: builds the feed stack and exports `replayFeed`.
 - `apps/web/src/replay/`: `store.ts`, `controller.ts`, `commands.ts`, `attach.ts` + `tool.ts` (scissors picker),
-  `ReplayBar.tsx`, `limits.ts`, `alerts.ts`, `instance.ts` (singleton and the `window.replay` hook in dev/e2e).
+  `ReplayBar.tsx`, `limits.ts`, `alerts.ts`, `paper.ts`, `trading.ts`, `ReplayTrading.tsx`, `instance.ts` (singleton and the `window.replay` hook in dev/e2e).
 - Engine additions: `DrawingToolOptions.cursor` and `cutPreview` for the pick tool.
 
 Limitations and their status: [LIMITATIONS.md](LIMITATIONS.md#replay).
@@ -125,23 +125,45 @@ Replay is never part of a layout or `getState()`. Saving a layout during replay 
 keeps the replay clock (the symbol and interval change reach `setPrimary`). Replay actions are not undoable.
 Drawings made during replay persist normally. Reloading the page leaves replay.
 
-## 6. Request budget
+## 6. Paper trading
+
+A practice account inside replay (`replay/paper.ts` pure, `trading.ts` store and chart drawing, `ReplayTrading.tsx`
+panel). Nothing is stored or sent anywhere.
+
+- Market orders only, with a quantity input (default 1). Buy, Sell and Close are in the ReplayBar. An order fills at
+  the close of the last revealed bar of the chart symbol, and the fill time is the replay clock (`last`). No
+  commissions, slippage, margin or limits; shorting is allowed.
+- One net position per symbol with an average cost `avg`, `q` the signed quantity, `p` the fill price, `n` the order
+  size:
+  - same direction: `avg = (avg*|q| + p*n) / (|q| + n)`
+  - opposite direction: `closed = min(n, |q|)`, `realized += (p - avg) * closed * sign(q)`; a remainder flips the
+    position and its average is `p`; no remainder leaves it flat
+  - `unrealized = (last - avg) * q`; total = realized + unrealized (marks: the last revealed close of each symbol)
+- Chart: marker group `replay-trades` (arrow up below the bar for buys, arrow down above for sells) and price line
+  group `replay-position` (average price, "Long 2 @ 100.50").
+- The **Replay trading** panel (right icon bar, only while replaying; never saved or synced) shows position, average,
+  last, unrealized, realized and total P&L and the trade list. The ReplayBar shows the total as a compact readout.
+- Start and seek reset the account; exit shows a summary toast ("Replay finished: N trades, realized ..., total
+  ...") and clears everything.
+
+## 7. Request budget
 
 Replay adds no `/ws` traffic and no polling. History comes from the same `/api/bars` endpoint in `limit: 2000`
 pages bounded by `to`, one buffer per series in use (chart symbol, tick interval, each compare overlay), refilled
 when fewer than 500 bars remain. Buffers are not trimmed while replay runs.
 
-## 7. Testing
+## 8. Testing
 
 - Engine: `replay-feed.test.ts` (clipping, paging, rules P/A, muting, epoch, the "nothing at or after `E`"
   property, tick choice and aggregation), `interaction/controller.test.ts` (keys), `chart-drawings.test.ts` (cut
   preview and cursor).
 - Web: `replay/controller.test.ts` (fake timers, backpressure, transitions, end), `replay/store.test.ts`,
-  `replay/alerts.test.ts`, epoch refetch cases in the compare and indicator controller tests.
+  `replay/alerts.test.ts`, `replay/paper.test.ts` (average cost, reduce, flip, close, short, P&L),
+  `replay/trading.test.ts`, epoch refetch cases in the compare and indicator controller tests.
 - e2e: `e2e/replay.spec.ts` on the synthetic feed (independent random walks per interval, so it asserts structure
   and times, not prices).
 
-## 8. Non-goals
+## 9. Non-goals
 
 Backward stepping, invented intrabar paths, replay prices in the watchlist or quotes, indicator/drawing/channel
 alerts in replay, cross-chart replay sync (Phase 14), server-side replay.

@@ -6,7 +6,10 @@ import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
 import { IconButton } from '../ui/IconButton';
 import { useCommand, firstShortcut } from '../topbar/useCommand';
-import { replay } from './instance';
+import { replay, trading } from './instance';
+import { selectTotal, useTrading } from './trading';
+import { toast } from '../ui/Toast';
+import { fmtSigned } from '../sidebar/format';
 import { REPLAY_SPEEDS, useReplayStore } from './store';
 import './replay.css';
 
@@ -45,6 +48,11 @@ export function formatReplayTime(
   }
 }
 
+/** Show an order error (null = filled). */
+const order = (error: string | null) => {
+  if (error) toast(error, 'error');
+};
+
 /** Replay controls, docked at the bottom of the chart while replay is on. */
 export function ReplayBar() {
   const status = useReplayStore((s) => s.status);
@@ -55,6 +63,11 @@ export function ReplayBar() {
   const interval = useAppStore((s) => s.interval);
   const timezone = useAppStore((s) => s.timezone);
   const exchange = useChartStore((s) => s.symbolInfo?.timezone);
+  const qty = useTrading((s) => s.qty);
+  const total = useTrading(selectTotal);
+  const symbol = useAppStore((s) => s.symbol);
+  const open = useTrading((s) => (s.paper.positions[symbol]?.qty ?? 0) !== 0);
+  const hasTrades = useTrading((s) => s.paper.trades.length > 0);
   const playPause = firstShortcut(useCommand('replay.playPause'));
   const step = firstShortcut(useCommand('replay.step'));
 
@@ -137,6 +150,49 @@ export function ReplayBar() {
       <span className="rb-time" data-testid="replay-time">
         {status === 'picking' ? 'Click a bar to start' : time}
       </span>
+      <div className="rb-sep" />
+      <input
+        className="io-input rb-qty"
+        type="number"
+        min="0"
+        step="any"
+        aria-label="Order quantity"
+        value={qty}
+        onChange={(e) => useTrading.getState().set({ qty: Number(e.target.value) })}
+      />
+      <button
+        type="button"
+        className="rb-order rb-buy"
+        disabled={!loaded}
+        onClick={() => order(trading.order('buy', qty))}
+      >
+        Buy
+      </button>
+      <button
+        type="button"
+        className="rb-order rb-sell"
+        disabled={!loaded}
+        onClick={() => order(trading.order('sell', qty))}
+      >
+        Sell
+      </button>
+      <button
+        type="button"
+        className="rb-order"
+        disabled={!loaded || !open}
+        onClick={() => order(trading.close())}
+      >
+        Close
+      </button>
+      {hasTrades ? (
+        <span
+          className={`rb-pnl ${total > 0 ? 'up' : total < 0 ? 'down' : ''}`}
+          title="Total P&L of replay trades"
+          data-testid="replay-pnl"
+        >
+          {fmtSigned(total)}
+        </span>
+      ) : null}
       <div className="rb-sep" />
       <IconButton
         icon={FastForward}
