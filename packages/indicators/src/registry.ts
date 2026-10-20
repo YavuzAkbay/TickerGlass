@@ -23,6 +23,11 @@ export class IndicatorRegistry {
     this.defs.set(def.id, def);
   }
 
+  /** Removes a definition (user script deleted or replaced). False if it was not registered. */
+  unregister(id: string): boolean {
+    return this.defs.delete(id);
+  }
+
   get(id: string): AnyIndicatorDefinition | undefined {
     return this.defs.get(id);
   }

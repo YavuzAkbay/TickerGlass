@@ -14,6 +14,7 @@ import {
   type ResolvedOutput,
   type SourceValue,
 } from './types';
+import { isSafeColor, isUserScriptType } from './user-script';
 
 export function isOutputRef(v: unknown): v is OutputSourceRef {
   return (
@@ -82,6 +83,40 @@ export function resolveInputs(
         out[key] = v;
         break;
     }
+  }
+  return out;
+}
+
+/**
+ * Like `resolveInputs` but never throws: a missing or invalid value falls back
+ * to the input's default; valid values are kept (clamped/rounded the same
+ * way); unknown keys are dropped. For user script types (`user:`) `source`
+ * inputs accept only price sources and `color` inputs only safe colours. For
+ * stored inputs of definitions that may have changed since (user scripts).
+ */
+export function coerceInputs(
+  def: AnyIndicatorDefinition,
+  given: InputValueMap = {},
+): InputValueMap {
+  const user = isUserScriptType(def.id);
+  const out: InputValueMap = {};
+  for (const [key, d] of Object.entries(def.inputs)) {
+    const v = Object.hasOwn(given, key) ? given[key] : undefined;
+    let ok = v !== undefined;
+    if (ok && user && d.kind === 'source') ok = isPriceSource(v);
+    if (ok && user && d.kind === 'color') ok = isSafeColor(v);
+    if (ok) {
+      try {
+        const r = resolveInputs(def, { [key]: v } as InputValueMap)[key];
+        if (r !== undefined) {
+          out[key] = r;
+          continue;
+        }
+      } catch {
+        // Wrong type for this input: use the default below.
+      }
+    }
+    out[key] = d.default;
   }
   return out;
 }
