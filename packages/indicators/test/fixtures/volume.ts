@@ -6,5 +6,5 @@ import type { GroupFixtures } from './types';
  */
 export const VOLUME_GROUP_FIXTURES: GroupFixtures = {
   // The default 400 15m bars span ~4 sessions: compare with the previous 2.
-  'relative-volume': { context: { intervalSeconds: 900 }, inputs: { length: 2 } },
+  'tod-relative-volume': { context: { intervalSeconds: 900 }, inputs: { length: 2 } },
 };

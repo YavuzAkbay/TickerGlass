@@ -71,7 +71,7 @@ test('an SMA sourced from an overlay symbol survives a reload', async ({ page, s
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  await addIndicator(page, 'Moving Average Simple');
+  await addIndicator(page, 'Simple Moving Average');
   const row = legendRow(page, 'SMA');
   await expect(row).toHaveCount(1);
   await openSettings(page, 'SMA');

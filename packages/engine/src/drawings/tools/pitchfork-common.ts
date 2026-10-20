@@ -1,5 +1,5 @@
 // Shared geometry, levels and rendering for the pitchfork family (Andrews,
-// Schiff, Modified Schiff, Inside) and the pitchfan. Pixel space (CSS px,
+// Schiff, Modified Schiff, Inside) and the fork fan. Pixel space (CSS px,
 // pane-local), like the parallel channel: lines stay parallel on screen on
 // every price scale.
 import {
@@ -23,7 +23,7 @@ import { levelsOf } from './fib-common';
 
 export type PitchforkVariant = 'original' | 'schiff' | 'modified-schiff' | 'inside';
 
-/** default pitchfork/pitchfan levels: [value, colour, visible]. */
+/** default pitchfork/fork fan levels: [value, colour, visible]. */
 const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [0.25, '#ffb74d', false],
   [0.382, '#81c784', false],
@@ -41,7 +41,7 @@ export function defaultPitchforkLevels(): DrawingLevel[] {
   return TV_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
 }
 
-/** Style keys shared by the pitchforks and the pitchfan. */
+/** Style keys shared by the pitchforks and the fork fan. */
 export const PITCHFORK_COMMON_DEFAULTS = {
   /** Median line; also the handle colour. */
   lineColor: '#f23645',
@@ -339,10 +339,10 @@ export function pitchforkInView(
   return pointInPolygon(setQuad(segA, segB), W / 2, H / 2);
 }
 
-// ------------------------------------------------------------ pitchfan
+// ------------------------------------------------------------ fork fan
 
 /**
- * Pitchfan ray of level `c` (signed; 0 = median): from p1 through the point
+ * Fork fan ray of level `c` (signed; 0 = median): from p1 through the point
  * mid + c * half on line p2-p3, long enough to cross the pane. Null when the
  * point coincides with p1.
  */
@@ -377,11 +377,11 @@ function fanTriangle(ctx: CanvasRenderingContext2D, a: Seg, b: Seg): void {
 }
 
 /**
- * Draw a pitchfan: rays from p1 through the median point and the level
+ * Draw a fork fan: rays from p1 through the median point and the level
  * points on p2-p3, fills between consecutive rays, and the p2-p3 segment.
  * With two anchors (draft) only p1-p2.
  */
-export function renderPitchfan(
+export function renderForkFan(
   ctx: CanvasRenderingContext2D,
   g: DrawingGeometry,
   s: PitchforkCommonStyle,
@@ -432,7 +432,7 @@ const tri: PixelPoint[] = [
 ];
 
 /** Rays and p2-p3 are strong hits; the wedge between the outer rays is weak. */
-export function hitPitchfan(
+export function hitForkFan(
   g: DrawingGeometry,
   s: PitchforkCommonStyle,
   x: number,
@@ -469,7 +469,7 @@ export function hitPitchfan(
 }
 
 /** Culling: a ray crosses the pane, p2-p3 is in view, or the wedge covers it. */
-export function pitchfanInView(g: DrawingGeometry, s: PitchforkCommonStyle): boolean {
+export function forkFanInView(g: DrawingGeometry, s: PitchforkCommonStyle): boolean {
   const [p1, p2, p3] = g.points;
   const f = forkOf(g, 'original');
   if (!f || !p1 || !p2 || !p3) return anchorsInView(g);

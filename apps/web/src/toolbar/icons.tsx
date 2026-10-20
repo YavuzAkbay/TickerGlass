@@ -114,7 +114,7 @@ export const IconRay = mk(
     {seg(13.5, 13.5, 24, 3, 2.5, 0)}
   </>,
 );
-export const IconInfoLine = mk(
+export const IconMeasuredLine = mk(
   <>
     {A(5.5, 22.5)}
     {A(17.5, 10.5)}
@@ -186,7 +186,7 @@ export const IconRegressionTrend = mk(
     {D('M4 12.5l20-8.2M4 24.2l20-8.2')}
   </>,
 );
-export const IconFlatTopBottom = mk(
+export const IconFlatChannel = mk(
   <>
     {A(5.5, 22.5)}
     {A(21.5, 14.5)}
@@ -195,7 +195,7 @@ export const IconFlatTopBottom = mk(
     {P('M3 6.5h9M17 6.5h9')}
   </>,
 );
-export const IconDisjointChannel = mk(
+export const IconSplitChannel = mk(
   <>
     {A(5.5, 9.5)}
     {A(21.5, 4.5)}
@@ -249,7 +249,7 @@ export const IconModifiedSchiffPitchfork = mk(
     {seg(14.5, 22.5, 25, 18.5, 2.5, 0)}
   </>,
 );
-export const IconInsidePitchfork = pitchfork(4.5, 14.5, true);
+export const IconInnerPitchfork = pitchfork(4.5, 14.5, true);
 
 // ---------------------------------------------------------------- fibonacci
 
@@ -288,7 +288,7 @@ export const IconFibTimeZone = mk(
     {P('M3 24.5h22')}
   </>,
 );
-export const IconFibSpeedFan = mk(
+export const IconFibFan = mk(
   <>
     {A(5.5, 22.5)}
     {seg(5.5, 22.5, 24, 4, 2.5, 0)}
@@ -298,7 +298,7 @@ export const IconFibSpeedFan = mk(
     {D('M24 4v18.5M8 22.5h16')}
   </>,
 );
-export const IconFibTrendTime = mk(
+export const IconFibTimeExtension = mk(
   <>
     {P('M17.5 4v20M21.5 4v20M24.5 4v20')}
     {zig(
@@ -324,7 +324,7 @@ export const IconFibSpiral = mk(
     'M15.5 15a1.5 1.5 0 0 1-2-1a2.5 2.5 0 0 1 2.5-2.5a4 4 0 0 1 4 4a6.5 6.5 0 0 1-6.5 6.5a10 10 0 0 1-10-10a14 14 0 0 1 9-13',
   ),
 );
-export const IconFibSpeedArcs = mk(
+export const IconFibArcs = mk(
   <>
     {A(5.5, 22.5)}
     {P(
@@ -333,7 +333,7 @@ export const IconFibSpeedArcs = mk(
     {D('M8 22.5h16')}
   </>,
 );
-export const IconFibWedge = mk(
+export const IconFibSector = mk(
   <>
     {A(4.5, 14.5)}
     {seg(4.5, 14.5, 24, 5, 2.5, 0)}
@@ -341,7 +341,7 @@ export const IconFibWedge = mk(
     {P('M12.5 10.6a9 9 0 0 1 0 7.8M17.5 8.2a14.5 14.5 0 0 1 0 12.6M22.5 5.8a20 20 0 0 1 0 17.4')}
   </>,
 );
-export const IconPitchfan = mk(
+export const IconForkFan = mk(
   <>
     {A(4.5, 14.5)}
     {A(16.5, 6.5)}
@@ -361,7 +361,7 @@ export const IconGannBox = mk(
     {D('M9.5 6.5v15M14.5 6.5v15M18.5 6.5v15M4.5 11.5h19M4.5 16.5h19')}
   </>,
 );
-export const IconGannSquareFixed = mk(
+export const IconGannGrid = mk(
   <>
     {P('M5.5 5.5h17v17h-17z')}
     {P('M5.5 22.5l17-17M5.5 5.5l17 17')}
@@ -506,7 +506,7 @@ export const IconElliottTripleCombo = elliott(
 
 // ---------------------------------------------------------------- cycles
 
-export const IconCyclicLines = mk(
+export const IconCycleLines = mk(
   <>
     {A(5.5, 14.5)}
     {A(11.5, 14.5)}
@@ -514,7 +514,7 @@ export const IconCyclicLines = mk(
     {seg(5.5, 14.5, 11.5, 14.5)}
   </>,
 );
-export const IconTimeCycles = mk(
+export const IconCycleArcs = mk(
   <>
     {P('M3 20.5h22')}
     {P('M4.5 20.5a5 5 0 0 1 10 0a5 5 0 0 1 10 0')}
@@ -522,7 +522,7 @@ export const IconTimeCycles = mk(
     {A(14.5, 20.5)}
   </>,
 );
-export const IconSineLine = mk(P('M2.5 14.5c2.5-9.5 5.5-9.5 8 0s5.5 9.5 8 0 4-6.5 7-5'));
+export const IconSineWave = mk(P('M2.5 14.5c2.5-9.5 5.5-9.5 8 0s5.5 9.5 8 0 4-6.5 7-5'));
 
 // ---------------------------------------------------------------- forecasting
 
@@ -542,7 +542,7 @@ export const IconShortPosition = mk(
     {P('M14.5 15v5M12 17.5l2.5 2.5 2.5-2.5')}
   </>,
 );
-export const IconForecast = mk(
+export const IconPriceTarget = mk(
   <>
     {A(5.5, 20.5)}
     {A(14.5, 12.5)}
@@ -552,14 +552,14 @@ export const IconForecast = mk(
     {D('M16.5 13.5h7')}
   </>,
 );
-export const IconBarsPattern = mk(
+export const IconBarReplica = mk(
   <>
     {P('M6.5 9v12M4.5 12.5h2M6.5 17.5h2M12.5 6v11M10.5 8.5h2M12.5 14.5h2')}
     {D('M17.5 5.5h8v17h-8z')}
     {P('M21.5 9v10')}
   </>,
 );
-export const IconGhostFeed = mk(
+export const IconPathSketch = mk(
   <>
     {P('M5.5 9.5h3v9h-3zM7 7v2.5M7 18.5v3')}
     <g strokeDasharray="1.5 1.5">
@@ -567,7 +567,7 @@ export const IconGhostFeed = mk(
     </g>
   </>,
 );
-export const IconProjection = mk(
+export const IconSwingProjection = mk(
   <>
     {A(5.5, 21.5)}
     {A(19.5, 8.5)}
@@ -586,7 +586,7 @@ export const IconAnchoredVwap = mk(
     {D('M5.5 4v15')}
   </>,
 );
-export const IconFixedRangeVp = mk(
+export const IconRangeVp = mk(
   <>
     {P('M4.5 4v21M23.5 4v21')}
     {P('M4.5 7.5h6M4.5 10.5h10M4.5 13.5h15M4.5 16.5h11M4.5 19.5h7M4.5 22.5h4')}
@@ -602,19 +602,19 @@ export const IconAnchoredVp = mk(
 
 // ---------------------------------------------------------------- measurers
 
-export const IconPriceRange = mk(
+export const IconPriceMeasure = mk(
   <>
     {P('M6 5.5h16M6 22.5h16M14.5 7v14')}
     {P('M12 9.5l2.5-2.5 2.5 2.5M12 18.5l2.5 2.5 2.5-2.5')}
   </>,
 );
-export const IconDateRange = mk(
+export const IconTimeMeasure = mk(
   <>
     {P('M5.5 6v16M22.5 6v16M7 14.5h14')}
     {P('M9.5 12l-2.5 2.5 2.5 2.5M18.5 12l2.5 2.5-2.5 2.5')}
   </>,
 );
-export const IconDatePriceRange = mk(
+export const IconPriceTimeMeasure = mk(
   <>
     {P('M5.5 5.5h17v17h-17z')}
     {P('M14.5 8v13M8 14.5h13')}
@@ -637,7 +637,7 @@ export const IconHighlighter = mk(
     {P('M8.5 19.5l-4 4h6')}
   </>,
 );
-export const IconArrowMarker = mk(P('M5.5 18.5l9-9-2.5-2.5h10v10l-2.5-2.5-9 9z'));
+export const IconArrowPointer = mk(P('M5.5 18.5l9-9-2.5-2.5h10v10l-2.5-2.5-9 9z'));
 export const IconArrowLine = mk(
   <>
     {A(5.5, 22.5)}
@@ -645,8 +645,8 @@ export const IconArrowLine = mk(
     {P('M15.5 6h7v7')}
   </>,
 );
-export const IconArrowMarkUp = mk(P('M14.5 5.5l7 8h-4v9h-6v-9h-4z'));
-export const IconArrowMarkDown = mk(P('M14.5 22.5l7-8h-4v-9h-6v9h-4z'));
+export const IconUpMarker = mk(P('M14.5 5.5l7 8h-4v9h-6v-9h-4z'));
+export const IconDownMarker = mk(P('M14.5 22.5l7-8h-4v-9h-6v9h-4z'));
 
 // ---------------------------------------------------------------- shapes
 
@@ -687,7 +687,7 @@ export const IconCurve = mk(
     {P('M6.3 20C10 4 18 4 21.7 20')}
   </>,
 );
-export const IconDoubleCurve = mk(
+export const IconSCurve = mk(
   <>
     {A(4.5, 14.5)}
     {A(23.5, 14.5)}
@@ -698,7 +698,7 @@ export const IconDoubleCurve = mk(
 // ---------------------------------------------------------------- annotation
 
 export const IconText = mk(P('M7.5 7.5v-2h13v2M14 5.5v17M11 22.5h6'));
-export const IconAnchoredText = mk(
+export const IconPinnedText = mk(
   <>
     {P('M9.5 6.5v-1.5h11v1.5M15 5v12M12.5 17h5')}
     {A(7.5, 22.5)}
@@ -712,7 +712,7 @@ export const IconNote = mk(
     {P('M9 10h10M9 13.5h7')}
   </>,
 );
-export const IconAnchoredNote = mk(
+export const IconPinnedNote = mk(
   <>
     {P('M8.5 4.5h15v10l-4 4h-11z')}
     {P('M19.5 18.5v-4h4M11.5 8.5h8M11.5 11.5h5')}
@@ -731,20 +731,20 @@ export const IconPriceLabel = mk(
     <circle cx={18.5} cy={14.5} r={1} fill="currentColor" stroke="none" />
   </>,
 );
-export const IconPriceNote = mk(
+export const IconPriceTag = mk(
   <>
     {A(5.5, 21.5)}
     {seg(5.5, 21.5, 13.5, 12.5, 2.5, 0)}
     {P('M13.5 8.5h11v8h-11z')}
   </>,
 );
-export const IconSignpost = mk(
+export const IconPin = mk(
   <>
     {P('M14.5 3.5v21M10.5 24.5h8')}
     {P('M8.5 6.5h12l3 3-3 3h-12z')}
   </>,
 );
-export const IconFlagMark = mk(
+export const IconFlag = mk(
   <>
     {P('M7.5 24.5v-20')}
     {P('M7.5 5.5c4-2 7 2 13 0v9c-6 2-9-2-13 0')}

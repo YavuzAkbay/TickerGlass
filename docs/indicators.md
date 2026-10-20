@@ -15,7 +15,7 @@ array per Phase 12 group in `src/builtins/groups/{trend-ma,momentum,volume,volat
 ```ts
 export const SMA = defineIndicator({
   id: 'sma',
-  name: 'Moving Average Simple',
+  name: 'Simple Moving Average',
   shortName: 'SMA',
   category: 'movingAverage',
   overlay: true,

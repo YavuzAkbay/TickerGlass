@@ -9,9 +9,9 @@ import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { Settings } from '../api/types';
 import { parseAlertPrefs, readAlertPrefs, useAlertPrefs } from '../alerts/prefs';
-import { useIndicatorPrefs } from '../indicators/store';
+import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
-import { useUiStore, type RightPanel } from '../store/ui';
+import { migrateToolIds, useUiStore, type RightPanel } from '../store/ui';
 import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
 const PANELS: (RightPanel | null)[] = [
@@ -104,7 +104,9 @@ export const SETTING_DEFS: SettingDef[] = [
     },
     write: (v) => {
       const { rightPanel: _p, ...cur } = pickKeys(useUiStore.getState(), UI_PREFS);
-      const patch: Partial<ReturnType<typeof useUiStore.getState>> = pickTyped(cur, v);
+      const patch: Partial<ReturnType<typeof useUiStore.getState>> = migrateToolIds(
+        pickTyped(cur, v),
+      );
       // Nullable: validated against the known panels.
       if (isObj(v) && (v.rightPanel === null || typeof v.rightPanel === 'string'))
         patch.rightPanel = PANELS.includes(v.rightPanel as RightPanel)
@@ -119,7 +121,7 @@ export const SETTING_DEFS: SettingDef[] = [
     read: () => useIndicatorPrefs.getState().favorites,
     write: (v) => {
       if (Array.isArray(v))
-        useIndicatorPrefs.setState({ favorites: v.filter((x) => typeof x === 'string') });
+        useIndicatorPrefs.setState({ favorites: migrateRenamedPrefs({ favorites: v }).favorites });
     },
     subscribe: (fn) => useIndicatorPrefs.subscribe(fn),
   },
@@ -128,9 +130,7 @@ export const SETTING_DEFS: SettingDef[] = [
     read: () => useIndicatorPrefs.getState().defaults,
     write: (v) => {
       if (isObj(v))
-        useIndicatorPrefs.setState({
-          defaults: v as ReturnType<typeof useIndicatorPrefs.getState>['defaults'],
-        });
+        useIndicatorPrefs.setState({ defaults: migrateRenamedPrefs({ defaults: v }).defaults });
     },
     subscribe: (fn) => useIndicatorPrefs.subscribe(fn),
   },

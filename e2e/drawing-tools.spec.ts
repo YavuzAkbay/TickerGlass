@@ -55,8 +55,8 @@ const FOUR = zigzag(4);
 const FIVE = zigzag(5);
 const SIX = zigzag(6);
 const SEVEN = zigzag(7);
-const LINES = 'Trend line tools';
-const FIB = 'Gann and Fibonacci tools';
+const LINES = 'Lines';
+const FIB = 'Fibonacci & Gann';
 const PATTERNS = 'Patterns';
 
 /** Flyout (toolbar group label), tool name, engine type, clicks (viewport px), stored anchors. */
@@ -69,8 +69,8 @@ const LINE_TOOL_CASES: {
 }[] = [
   { group: LINES, name: 'Trend angle', type: 'trend-angle', clicks: TWO, count: 2 },
   { group: LINES, name: 'Regression trend', type: 'regression-trend', clicks: TWO, count: 2 },
-  { group: LINES, name: 'Flat top/bottom', type: 'flat-top-bottom', clicks: THREE, count: 3 },
-  { group: LINES, name: 'Disjoint channel', type: 'disjoint-channel', clicks: THREE, count: 4 },
+  { group: LINES, name: 'Flat-edge channel', type: 'flat-channel', clicks: THREE, count: 3 },
+  { group: LINES, name: 'Split channel', type: 'split-channel', clicks: THREE, count: 4 },
   { group: LINES, name: 'Pitchfork', type: 'pitchfork', clicks: THREE, count: 3 },
   { group: LINES, name: 'Schiff pitchfork', type: 'schiff-pitchfork', clicks: THREE, count: 3 },
   {
@@ -80,11 +80,11 @@ const LINE_TOOL_CASES: {
     clicks: THREE,
     count: 3,
   },
-  { group: LINES, name: 'Inside pitchfork', type: 'inside-pitchfork', clicks: THREE, count: 3 },
+  { group: LINES, name: 'Inner pitchfork', type: 'inner-pitchfork', clicks: THREE, count: 3 },
   {
     group: FIB,
-    name: 'Pitchfan',
-    type: 'pitchfan',
+    name: 'Fork fan',
+    type: 'fork-fan',
     clicks: THREE,
     count: 3,
   },
@@ -92,24 +92,24 @@ const LINE_TOOL_CASES: {
   { group: FIB, name: 'Fib time zone', type: 'fib-time-zone', clicks: TWO, count: 2 },
   {
     group: FIB,
-    name: 'Fib speed resistance fan',
-    type: 'fib-speed-fan',
+    name: 'Fib fan',
+    type: 'fib-fan',
     clicks: TWO,
     count: 2,
   },
-  { group: FIB, name: 'Trend-based fib time', type: 'fib-trend-time', clicks: THREE, count: 3 },
+  { group: FIB, name: 'Fib time extension', type: 'fib-time-extension', clicks: THREE, count: 3 },
   { group: FIB, name: 'Fib circles', type: 'fib-circles', clicks: TWO, count: 2 },
   { group: FIB, name: 'Fib spiral', type: 'fib-spiral', clicks: TWO, count: 2 },
   {
     group: FIB,
-    name: 'Fib speed resistance arcs',
-    type: 'fib-speed-arcs',
+    name: 'Fib arcs',
+    type: 'fib-arcs',
     clicks: TWO,
     count: 2,
   },
-  { group: FIB, name: 'Fib wedge', type: 'fib-wedge', clicks: THREE, count: 3 },
+  { group: FIB, name: 'Fib sector', type: 'fib-sector', clicks: THREE, count: 3 },
   { group: FIB, name: 'Gann box', type: 'gann-box', clicks: TWO, count: 2 },
-  { group: FIB, name: 'Gann square fixed', type: 'gann-square-fixed', clicks: TWO, count: 2 },
+  { group: FIB, name: 'Gann grid', type: 'gann-grid', clicks: TWO, count: 2 },
   { group: FIB, name: 'Gann square', type: 'gann-square', clicks: TWO, count: 2 },
   { group: FIB, name: 'Gann fan', type: 'gann-fan', clicks: TWO, count: 2 },
   { group: PATTERNS, name: 'XABCD pattern', type: 'xabcd', clicks: FIVE, count: 5 },
@@ -120,42 +120,42 @@ const LINE_TOOL_CASES: {
   { group: PATTERNS, name: 'Three drives pattern', type: 'three-drives', clicks: SEVEN, count: 7 },
   {
     group: PATTERNS,
-    name: 'Elliott impulse wave (12345)',
+    name: 'Elliott impulse (5-wave)',
     type: 'elliott-impulse',
     clicks: SIX,
     count: 6,
   },
   {
     group: PATTERNS,
-    name: 'Elliott correction wave (ABC)',
+    name: 'Elliott correction (3-wave)',
     type: 'elliott-correction',
     clicks: FOUR,
     count: 4,
   },
   {
     group: PATTERNS,
-    name: 'Elliott triangle wave (ABCDE)',
+    name: 'Elliott triangle (5-wave)',
     type: 'elliott-triangle',
     clicks: SIX,
     count: 6,
   },
   {
     group: PATTERNS,
-    name: 'Elliott double combo wave (WXY)',
+    name: 'Elliott double combination',
     type: 'elliott-double-combo',
     clicks: FOUR,
     count: 4,
   },
   {
     group: PATTERNS,
-    name: 'Elliott triple combo wave (WXYXZ)',
+    name: 'Elliott triple combination',
     type: 'elliott-triple-combo',
     clicks: SIX,
     count: 6,
   },
-  { group: PATTERNS, name: 'Cyclic lines', type: 'cyclic-lines', clicks: TWO, count: 2 },
-  { group: PATTERNS, name: 'Time cycles', type: 'time-cycles', clicks: TWO, count: 2 },
-  { group: PATTERNS, name: 'Sine line', type: 'sine-line', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'Cycle lines', type: 'cycle-lines', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'Cycle arcs', type: 'cycle-arcs', clicks: TWO, count: 2 },
+  { group: PATTERNS, name: 'Sine wave', type: 'sine-wave', clicks: TWO, count: 2 },
 ];
 
 for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
@@ -188,7 +188,7 @@ for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
   });
 }
 
-const SHAPES = 'Geometric shapes';
+const SHAPES = 'Shapes';
 const PATH_CLICKS: [number, number][] = [
   [450, 400],
   [550, 300],
@@ -203,9 +203,9 @@ const SHAPE_TOOL_CASES: {
   finish?: 'enter' | 'dblclick' | 'close';
   count: number;
 }[] = [
-  { name: 'Arrow marker', type: 'arrow-marker', clicks: TWO, count: 2 },
-  { name: 'Arrow mark up', type: 'arrow-mark-up', clicks: [[600, 400]], count: 1 },
-  { name: 'Arrow mark down', type: 'arrow-mark-down', clicks: [[600, 300]], count: 1 },
+  { name: 'Arrow pointer', type: 'arrow-pointer', clicks: TWO, count: 2 },
+  { name: 'Up marker', type: 'up-marker', clicks: [[600, 400]], count: 1 },
+  { name: 'Down marker', type: 'down-marker', clicks: [[600, 300]], count: 1 },
   { name: 'Rotated rectangle', type: 'rotated-rectangle', clicks: THREE, count: 3 },
   { name: 'Path', type: 'path', clicks: PATH_CLICKS, finish: 'dblclick', count: 3 },
   { name: 'Circle', type: 'circle', clicks: TWO, count: 2 },
@@ -215,7 +215,7 @@ const SHAPE_TOOL_CASES: {
   { name: 'Triangle', type: 'triangle', clicks: THREE, count: 3 },
   { name: 'Arc', type: 'arc', clicks: THREE, count: 3 },
   { name: 'Curve', type: 'curve', clicks: TWO, count: 3 },
-  { name: 'Double curve', type: 'double-curve', clicks: TWO, count: 4 },
+  { name: 'S-curve', type: 's-curve', clicks: TWO, count: 4 },
 ];
 
 async function pickShapeTool(page: Page, name: string, type: string) {
@@ -293,7 +293,7 @@ test('finish a path with Enter', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-const ANNOTATION = 'Annotation tools';
+const ANNOTATION = 'Notes & labels';
 const ONE: [number, number][] = [[600, 350]];
 
 async function pickAnnotationTool(page: Page, name: string, type: string) {
@@ -307,15 +307,15 @@ async function pickAnnotationTool(page: Page, name: string, type: string) {
 }
 
 const ANNOTATION_CASES: { name: string; type: string; clicks: [number, number][] }[] = [
-  { name: 'Anchored text', type: 'anchored-text', clicks: ONE },
+  { name: 'Pinned text', type: 'pinned-text', clicks: ONE },
   { name: 'Note', type: 'note', clicks: ONE },
-  { name: 'Anchored note', type: 'anchored-note', clicks: ONE },
+  { name: 'Pinned note', type: 'pinned-note', clicks: ONE },
   { name: 'Callout', type: 'callout', clicks: TWO },
   { name: 'Comment', type: 'comment', clicks: ONE },
   { name: 'Price label', type: 'price-label', clicks: ONE },
-  { name: 'Price note', type: 'price-note', clicks: TWO },
-  { name: 'Signpost', type: 'signpost', clicks: ONE },
-  { name: 'Flag mark', type: 'flag-mark', clicks: ONE },
+  { name: 'Price tag', type: 'price-tag', clicks: TWO },
+  { name: 'Pin', type: 'pin', clicks: ONE },
+  { name: 'Flag', type: 'flag', clicks: ONE },
   { name: 'Table', type: 'table', clicks: ONE },
   { name: 'Image', type: 'image', clicks: TWO },
 ];
@@ -397,26 +397,26 @@ test('image: choose a file in the settings dialog', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-const FORECASTING = 'Forecasting and measurement tools';
+const FORECASTING = 'Projection & measure';
 
 /** Forecasting/volume tools: clicks, optional double-click finish, stored anchors. */
-const FORECAST_TOOL_CASES: {
+const PROJECTION_TOOL_CASES: {
   name: string;
   type: string;
   clicks: [number, number][];
   finish?: 'dblclick';
   count: number;
 }[] = [
-  { name: 'Forecast', type: 'forecast', clicks: TWO, count: 2 },
+  { name: 'Price target', type: 'price-target', clicks: TWO, count: 2 },
   // The copy origin is derived from the two clicks.
-  { name: 'Bars pattern', type: 'bars-pattern', clicks: TWO, count: 3 },
-  { name: 'Ghost feed', type: 'ghost-feed', clicks: PATH_CLICKS, finish: 'dblclick', count: 3 },
-  { name: 'Projection', type: 'projection', clicks: THREE, count: 3 },
-  { name: 'Fixed range volume profile', type: 'fixed-range-vp', clicks: TWO, count: 2 },
+  { name: 'Bar replica', type: 'bar-replica', clicks: TWO, count: 3 },
+  { name: 'Path sketch', type: 'path-sketch', clicks: PATH_CLICKS, finish: 'dblclick', count: 3 },
+  { name: 'Swing projection', type: 'swing-projection', clicks: THREE, count: 3 },
+  { name: 'Range volume profile', type: 'range-vp', clicks: TWO, count: 2 },
   { name: 'Anchored volume profile', type: 'anchored-vp', clicks: ONE, count: 1 },
 ];
 
-for (const { name, type, clicks, finish, count } of FORECAST_TOOL_CASES) {
+for (const { name, type, clicks, finish, count } of PROJECTION_TOOL_CASES) {
   test(`draw ${type} from the ${FORECASTING} flyout`, async ({ page }) => {
     const errors: Error[] = [];
     page.on('pageerror', (e) => errors.push(e));
@@ -437,7 +437,7 @@ for (const { name, type, clicks, finish, count } of FORECAST_TOOL_CASES) {
     const [d] = await drawings(page);
     expect(d!.type).toBe(type);
     expect(d!.points).toHaveLength(count);
-    if (type === 'ghost-feed') expect(d!.style.seed).toBeGreaterThan(0);
+    if (type === 'path-sketch') expect(d!.style.seed).toBeGreaterThan(0);
     expect(errors).toEqual([]);
   });
 }
@@ -537,9 +537,9 @@ test('anchored VWAP: a click adds the indicator anchored at that bar', async ({ 
   await openFresh(page);
   const studies = () => page.evaluate(() => window.chart.getStudies().length);
   const before = await studies();
-  await page.getByRole('button', { name: 'More forecasting and measurement tools' }).click();
+  await page.getByRole('button', { name: 'More projection & measure' }).click();
   await page
-    .getByRole('menu', { name: 'Forecasting and measurement tools' })
+    .getByRole('menu', { name: 'Projection & measure' })
     .getByRole('menuitem')
     .filter({ has: page.locator('.lt-fly-name').getByText('Anchored VWAP', { exact: true }) })
     .click();

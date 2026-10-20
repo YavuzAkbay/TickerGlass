@@ -106,7 +106,7 @@ function pivotLevels(type: PivotType, { o, h, l, c, oCur }: PeriodPrices): Level
 }
 
 /**
- * Pivot Points Standard (Traditional, Fibonacci, Woodie, Classic, DM,
+ * Pivot Points (Traditional, Fibonacci, Woodie, Classic, DM,
  * Camarilla). Runs on the `timeframe` series (the host resolves 'auto':
  * intraday -> 1D, 1D -> 1W, above -> 12M): each timeframe bar gets the levels
  * of the previous one, so every chart bar shows the pivots of the period
@@ -115,7 +115,7 @@ function pivotLevels(type: PivotType, { o, h, l, c, oCur }: PeriodPrices): Level
  */
 export const PIVOT_POINTS = defineIndicator({
   id: 'pivot-points',
-  name: 'Pivot Points Standard',
+  name: 'Pivot Points',
   shortName: 'Pivots',
   category: 'other',
   keywords: [

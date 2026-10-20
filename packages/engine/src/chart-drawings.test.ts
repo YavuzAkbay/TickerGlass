@@ -419,7 +419,7 @@ describe('Chart drawing API', () => {
       { time: 3, price: 4 },
     ];
     const layer = (chart as unknown as { drawingLayer: { measure: unknown } }).drawingLayer;
-    layer.measure = { type: 'date-price-range', points };
+    layer.measure = { type: 'price-time-measure', points };
     const m = chart.getMeasure()!;
     expect(m).toEqual(points);
     expect(m[0]).not.toBe(points[0]);

@@ -3,15 +3,15 @@ import { defineIndicator } from '../registry';
 import { profileOutput, VP_INPUTS } from './vp-visible';
 
 /**
- * Session Volume Profile: one profile per trading session, computed and drawn
+ * Volume Profile (Session): one profile per trading session, computed and drawn
  * by the engine from the chart's bars. The values array marks the first bar of
  * every session (1, else NaN) in the exchange calendar (overnight sessions
  * start on the previous date, see `calendarPeriod`).
  */
 export const VP_SESSION = defineIndicator({
   id: 'vp-session',
-  name: 'Session Volume Profile',
-  shortName: 'SVP',
+  name: 'Volume Profile (Session)',
+  shortName: 'VP Sess',
   category: 'volume',
   keywords: ['volume profile', 'svp', 'session', 'poc', 'value area', 'vp'],
   overlay: true,

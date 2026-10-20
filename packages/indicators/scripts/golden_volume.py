@@ -75,7 +75,7 @@ def volume_osc(short, long):
     return 100 * (s - lo) / lo
 
 
-def relative_volume(bars: Bars, n, cumulative, daily):
+def tod_relative_volume(bars: Bars, n, cumulative, daily):
     """Bar offset k within the UTC day (every bar on daily bars); previous
     sessions with fewer bars contribute their last bar."""
     t, v = bars.time, bars.volume
@@ -133,26 +133,26 @@ def cases() -> list[Case]:
     out.add("volume-osc-3-20", {"short": 3, "long": 20}, "numpy", {"osc": volume_osc(3, 20)})
 
     out.add(
-        "relative-volume",
+        "tod-relative-volume",
         {},
         "numpy",
-        {"rvol": relative_volume(HOURLY, 10, True, False)},
+        {"rvol": tod_relative_volume(HOURLY, 10, True, False)},
     )
     out.add(
-        "relative-volume-regular",
+        "tod-relative-volume-regular",
         {"length": 5, "mode": "Regular"},
         "numpy",
-        {"rvol": relative_volume(HOURLY, 5, False, False)},
+        {"rvol": tod_relative_volume(HOURLY, 5, False, False)},
     )
-    daily = relative_volume(DAILY, 10, True, True)
+    daily = tod_relative_volume(DAILY, 10, True, True)
     dv = DAILY.volume
     assert np.allclose(daily[10:], dv[10:] / sma(shift1(dv), 10)[10:], rtol=1e-12)
-    out.add("relative-volume-daily", {}, "numpy", {"rvol": daily}, bars=DAILY)
+    out.add("tod-relative-volume-daily", {}, "numpy", {"rvol": daily}, bars=DAILY)
     out.add(
-        "relative-volume-daily-regular",
+        "tod-relative-volume-daily-regular",
         {"length": 20, "mode": "Regular"},
         "numpy",
-        {"rvol": relative_volume(DAILY, 20, False, True)},
+        {"rvol": tod_relative_volume(DAILY, 20, False, True)},
         bars=DAILY,
     )
 

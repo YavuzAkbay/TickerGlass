@@ -105,7 +105,7 @@ export interface DrawingLineOperand {
 
 export type ChannelOperand =
   | { kind: 'bounds'; upper: ValueOperand; lower: ValueOperand } // e.g. Bollinger upper/lower, two numbers
-  | { kind: 'drawing'; drawingId: string; scale: 'linear' | 'log' }; // parallel-channel, rectangle, flat-top-bottom or disjoint-channel
+  | { kind: 'drawing'; drawingId: string; scale: 'linear' | 'log' }; // parallel-channel, rectangle, flat-channel or split-channel
 
 export type Condition =
   | { op: 'crossing' | 'crossingUp' | 'crossingDown' | 'greater' | 'less'; right: ValueOperand }
@@ -142,9 +142,9 @@ Validation (the Python pydantic models and TS `validateAlert` must agree; both r
   types exist in the registry, that `outputId` is a plot of the definition, and that the graph has no cycle.
   Python checks only the shape.
 - `drawing` operands: the drawing must exist in `drawings` (422 `drawing not saved`; the dialog flushes
-  `DrawingSync` first). Its type must support the part: line tools (`trend-line ray extended-line info-line
+  `DrawingSync` first). Its type must support the part: line tools (`trend-line ray extended-line measured-line
 arrow-line horizontal-line horizontal-ray`) take `part: 'line'`. Channels (`parallel-channel` with 3 points,
-  `rectangle`, `flat-top-bottom`, `disjoint-channel`) take `upper lower middle` as a `DrawingLineOperand`, or the whole channel as a `ChannelOperand`.
+  `rectangle`, `flat-channel`, `split-channel`) take `upper lower middle` as a `DrawingLineOperand`, or the whole channel as a `ChannelOperand`.
   The drawing's `scope` must be `all`, or its `symbol` must equal the alert's symbol. Python reads `type`,
   `points.length`, `scope` and `symbol` from the stored drawing JSON. That is the only place the server looks
   inside a drawing.
@@ -495,7 +495,7 @@ lineAt(L) with s = (L - l_A) / (l_B - l_A):
 
 | Tool                                              | Value at `L`                                                                                      |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `trend-line`, `ray`, `extended-line`, `info-line` | `lineAt(L)` with the drawing's own `extendLeft`/`extendRight` (ray/extended only change defaults) |
+| `trend-line`, `ray`, `extended-line`, `measured-line` | `lineAt(L)` with the drawing's own `extendLeft`/`extendRight` (ray/extended only change defaults) |
 | `arrow-line`                                      | `lineAt(L)` with no extension (segment)                                                           |
 | `horizontal-line`                                 | `p_0` for every `L`                                                                               |
 | `horizontal-ray`                                  | `L >= l_0 ? p_0 : NaN`                                                                            |
@@ -516,9 +516,9 @@ rectangle (2 anchors):
 ```
 
 ```
-flat-top-bottom (3 anchors) and disjoint-channel (3 or 4 anchors; fewer than 3 -> error "incomplete channel"):
+flat-channel (3 anchors) and split-channel (3 or 4 anchors; fewer than 3 -> error "incomplete channel"):
   a = f of line p_0-p_1 at L (extend flags as the parallel channel, else NaN outside l_0..l_1)
-  b = flat-top-bottom: g(f(p_2));  disjoint-channel: line p_2-p_3 at L (p_3 missing -> (t_1, price_2 - (price_1 - price_0)), as completePoints)
+  b = flat-channel: g(f(p_2));  split-channel: line p_2-p_3 at L (p_3 missing -> (t_1, price_2 - (price_1 - price_0)), as completePoints)
   upper = max(g(a), g(b)), lower = min(g(a), g(b)), middle = g((a + b)/2)   (a, b in f units; lines may cross, upper/lower then swap)
 ```
 

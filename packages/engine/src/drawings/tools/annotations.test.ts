@@ -49,16 +49,16 @@ describe('annotation helpers', () => {
   });
 });
 
-describe('anchored text', () => {
+describe('pinned text', () => {
   it('is pane-anchored and hits its text box from the anchor', () => {
-    const { def, at } = setup('anchored-text', [{ time: 0.25, price: 0.5 }], {}, 'hello');
+    const { def, at } = setup('pinned-text', [{ time: 0.25, price: 0.5 }], {}, 'hello');
     expect(def.coords).toBe('pane');
     expect(at(200 + 5, 200 + 5)).toEqual({ kind: 'text' });
     expect(at(100, 100)).toBeNull();
   });
 });
 
-describe('note / anchored note', () => {
+describe('note / pinned note', () => {
   it('hits the pin; tooltip only while hovered', () => {
     const { at, def, d, g } = setup('note', [pt(50, 50)], {}, 'my note');
     expect(at(X(50), Y(50) - 12)).toEqual({ kind: 'body' });
@@ -71,8 +71,8 @@ describe('note / anchored note', () => {
     expect(hover.texts).toEqual(['my note']);
   });
 
-  it('anchored note uses pane coordinates', () => {
-    const { def, at } = setup('anchored-note', [{ time: 0.5, price: 0.5 }]);
+  it('pinned note uses pane coordinates', () => {
+    const { def, at } = setup('pinned-note', [{ time: 0.5, price: 0.5 }]);
     expect(def.coords).toBe('pane');
     expect(at(400, 190)).toEqual({ kind: 'body' });
   });
@@ -130,10 +130,10 @@ describe('price label', () => {
   });
 });
 
-describe('price note', () => {
+describe('price tag', () => {
   const pts = [pt(40, 30), pt(60, 70)];
   it('renders price then text, hits box and connector', () => {
-    const { def, d, g, at } = setup('price-note', pts, {}, 'support');
+    const { def, d, g, at } = setup('price-tag', pts, {}, 'support');
     const r = recordingContext();
     def.render(r.rc, g, d.style, IDLE);
     expect(r.texts).toEqual(['30.00', 'support']);
@@ -143,21 +143,21 @@ describe('price note', () => {
   });
 });
 
-describe('signpost', () => {
+describe('pin', () => {
   it('pole is a body hit, plate a text hit', () => {
-    const { at } = setup('signpost', [pt(50, 20)], { poleHeight: 100 }, 'go');
+    const { at } = setup('pin', [pt(50, 20)], { poleHeight: 100 }, 'go');
     expect(at(X(50), Y(20) - 50)).toEqual({ kind: 'body' });
     expect(at(X(50) + 8, Y(20) - 100 - 10)).toEqual({ kind: 'text' });
     expect(at(X(50) + 80, Y(20))).toBeNull();
   });
   it('culls far-left posts', () => {
-    expect(setup('signpost', [pt(-500, 20)]).visible()).toBe(false);
+    expect(setup('pin', [pt(-500, 20)]).visible()).toBe(false);
   });
 });
 
-describe('flag mark', () => {
+describe('flag', () => {
   it('hits the pole and the pennant', () => {
-    const { at } = setup('flag-mark', [pt(50, 20)], { size: 30 });
+    const { at } = setup('flag', [pt(50, 20)], { size: 30 });
     expect(at(X(50), Y(20) - 15)).toEqual({ kind: 'body' });
     expect(at(X(50) + 8, Y(20) - 30 + 7)).toEqual({ kind: 'body' });
     expect(at(X(50) + 30, Y(20))).toBeNull();

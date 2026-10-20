@@ -8,7 +8,7 @@ Script contract version: **apiVersion 1**. Type declarations for editors: [user-
 
 ## 1. Quick start
 
-Open **Indicators → My scripts → New script**, paste this, click **Save**, then **Add to chart**:
+Open **Indicators → Custom → New script**, paste this, click **Save**, then **Add to chart**:
 
 ```js
 // SMA cross: two moving averages and a marker where the fast one crosses the slow one.
@@ -67,7 +67,7 @@ crosses the slow one. Change the lengths in the indicator's settings like any ot
 
 The editor (a plain text area with line numbers, Tab inserts two spaces):
 
-- **My scripts** (in the Indicators dialog) lists your scripts; **New script** starts from a template, and each row
+- **Custom** (in the Indicators dialog) lists your scripts; **New script** starts from a template, and each row
   has an edit icon. Rename, Duplicate and Delete are in the editor's script list.
 - **Save** (button or Ctrl/Cmd+S) checks the syntax, loads the script in a throwaway sandbox, runs the live
   **Check** (section 5) and stores the script. Problems are listed under the editor; click one to jump to its
@@ -303,7 +303,7 @@ it bounded in practice.
   chart" checkbox. Instances left in place, and those in other layouts, show `Script deleted`; if a script with that id appears again (for example from
   an import) they work again.
 - A script that has never compiled shows `Script has errors – open it in the editor`.
-- Favorites, templates and "Save as default" work unchanged (they key on the type).
+- Starred indicators, templates and "Save as default" work unchanged (they key on the type).
 - **Export / import** (the settings backup) carries scripts in an extra `userScripts` section. Importing merges by
   script id; replacing empties the scripts only when the file has that section. Older backups import as before.
 

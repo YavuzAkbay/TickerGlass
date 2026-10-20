@@ -2,7 +2,7 @@ import { defineIndicator } from '../registry';
 import type { VolumeProfileDef, VolumeProfileMode } from '../types';
 
 /**
- * Inputs shared by the Visible Range and Session Volume Profiles. The
+ * Inputs shared by the visible-bars and session volume profiles. The
  * "Ticks Per Row" setting needs the symbol's minimum tick, which indicators do not
  * get, so the row layout uses the engine's terms (as the volume profile
  * drawings do): a number of rows, or a row height in price units (ticks x
@@ -61,14 +61,14 @@ export function profileOutput(mode: VolumeProfileMode): VolumeProfileDef<'vp', t
 }
 
 /**
- * Visible Range Volume Profile: one profile of the bars in view, computed and
+ * Volume Profile (Visible Bars): one profile of the bars in view, computed and
  * drawn by the engine from the chart's bars. Nothing to compute per bar: the
  * values array stays NaN.
  */
 export const VP_VISIBLE = defineIndicator({
   id: 'vp-visible',
-  name: 'Visible Range Volume Profile',
-  shortName: 'VRVP',
+  name: 'Volume Profile (Visible Bars)',
+  shortName: 'VP Vis',
   category: 'volume',
   keywords: ['volume profile', 'vrvp', 'visible range', 'poc', 'value area', 'vp'],
   overlay: true,

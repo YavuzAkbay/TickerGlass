@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { DrawingPoint, HandleMoveArgs } from '../types';
 import { arcThrough } from './arc';
-import { arrowMarkPolygon, MARK_HEIGHT } from './arrow-mark-up';
-import { arrowMarkerPolygon } from './arrow-marker';
+import { arrowMarkPolygon, MARK_HEIGHT } from './up-marker';
+import { arrowPointerPolygon } from './arrow-pointer';
 import { quadControl } from './curve';
-import { cubicControls, defaultDoubleCurvePoints } from './double-curve';
+import { cubicControls, defaultSCurvePoints } from './s-curve';
 import { isClosedPolyline, polyline } from './polyline';
 import { rotatedRectCorners, rotatedRectFrame } from './rotated-rectangle';
 import {
@@ -85,9 +85,9 @@ describe('highlighter', () => {
   });
 });
 
-describe('arrow marker', () => {
+describe('arrow pointer', () => {
   it('thick arrow outline vs hand-computed corners', () => {
-    expect(round(arrowMarkerPolygon({ x: 0, y: 0 }, { x: 100, y: 0 })!)).toEqual([
+    expect(round(arrowPointerPolygon({ x: 0, y: 0 }, { x: 100, y: 0 })!)).toEqual([
       [0, -4],
       [80, -4],
       [80, -10],
@@ -97,22 +97,22 @@ describe('arrow marker', () => {
       [0, 4],
     ]);
     // Shorter than the head: the head starts at the tail.
-    expect(round(arrowMarkerPolygon({ x: 0, y: 0 }, { x: 0, y: 10 })!)[2]).toEqual([10, 0]);
-    expect(arrowMarkerPolygon({ x: 5, y: 5 }, { x: 5, y: 5 })).toBeNull();
+    expect(round(arrowPointerPolygon({ x: 0, y: 0 }, { x: 0, y: 10 })!)[2]).toEqual([10, 0]);
+    expect(arrowPointerPolygon({ x: 5, y: 5 }, { x: 5, y: 5 })).toBeNull();
   });
 
   it('hits the filled arrow (strong) and the text past the tail', () => {
-    const { at } = setup('arrow-marker', [pt(20, 50), pt(40, 50)], {}, 'buy');
+    const { at } = setup('arrow-pointer', [pt(20, 50), pt(40, 50)], {}, 'buy');
     expect(at(X(30), Y(50) + 3)).toEqual(BODY); // shaft interior
     expect(at(X(40) - 10, Y(50) + 9)).toEqual(BODY); // head interior
     expect(at(X(30), Y(50) + 15)).toBeNull();
     expect(at(X(20) - 15, Y(50))).toEqual(TEXT); // text left of the tail
-    const plain = setup('arrow-marker', [pt(20, 50), pt(40, 50)]);
+    const plain = setup('arrow-pointer', [pt(20, 50), pt(40, 50)]);
     expect(plain.at(X(20) - 15, Y(50))).toBeNull();
   });
 });
 
-describe('arrow marks', () => {
+describe('up and down markers', () => {
   it('up glyph hangs below its tip, down glyph above', () => {
     const up = arrowMarkPolygon(100, 100, -1);
     expect(round(up)).toEqual([
@@ -129,12 +129,12 @@ describe('arrow marks', () => {
   });
 
   it('single click; glyph strong hit, text beyond the tail', () => {
-    const up = setup('arrow-mark-up', [pt(30, 50)], {}, 'long');
+    const up = setup('up-marker', [pt(30, 50)], {}, 'long');
     expect(up.def.creation).toEqual({ kind: 'click' });
     expect(up.at(X(30), Y(50) + 15)).toEqual(BODY);
     expect(up.at(X(30), Y(50) - 10)).toBeNull();
     expect(up.at(X(30), Y(50) + 32)).toEqual(TEXT); // centre 20 + 4 + 8.4 below
-    const down = setup('arrow-mark-down', [pt(30, 50)], {}, 'short');
+    const down = setup('down-marker', [pt(30, 50)], {}, 'short');
     expect(down.at(X(30), Y(50) - 15)).toEqual(BODY);
     expect(down.at(X(30), Y(50) + 10)).toBeNull();
     expect(down.at(X(30), Y(50) - 32)).toEqual(TEXT);
@@ -400,13 +400,13 @@ describe('curve', () => {
   });
 });
 
-describe('double curve', () => {
+describe('s-curve', () => {
   const ends = [pt(20, 50), pt(40, 50)];
 
   it('cubic controls pass through the 1/3 and 2/3 points', () => {
     const a = { x: 0, y: 0 };
     const b = { x: 300, y: 0 };
-    const [q1, q2] = defaultDoubleCurvePoints(a, b);
+    const [q1, q2] = defaultSCurvePoints(a, b);
     expect(q1).toEqual({ x: 100, y: -45 }); // 0.15 x 300 above
     expect(q2).toEqual({ x: 200, y: 45 });
     const [c1, c2] = cubicControls(a, b, q1, q2);
@@ -424,16 +424,16 @@ describe('double curve', () => {
   });
 
   it('completes with an S of two on-curve anchors and hits along it', () => {
-    const { complete } = setup('double-curve', ends);
+    const { complete } = setup('s-curve', ends);
     const out = complete();
     expect(out).toHaveLength(4);
     // 200 px chord: 30 px = 7.5 price above / below at bars 26.67 -> 27 and 33.33 -> 33.
     expect(out[2]!.price).toBeCloseTo(57.5, 9);
     expect(out[3]!.price).toBeCloseTo(42.5, 9);
-    const { at } = setup('double-curve', out);
+    const { at } = setup('s-curve', out);
     expect(at(X(27), Y(57.5))).toEqual(BODY);
     expect(at(X(33), Y(42.5))).toEqual(BODY);
     expect(at(X(30), Y(65))).toBeNull();
-    expect(offscreen('double-curve')).toBe(false);
+    expect(offscreen('s-curve')).toBe(false);
   });
 });

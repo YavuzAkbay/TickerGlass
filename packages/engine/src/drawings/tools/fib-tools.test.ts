@@ -53,7 +53,7 @@ describe('fib helpers', () => {
   });
 
   it('rayToEdge: through the target and past the pane', () => {
-    const g = geometryOf(makeDrawing('fib-speed-fan', [pt(20, 20), pt(40, 60)]));
+    const g = geometryOf(makeDrawing('fib-fan', [pt(20, 20), pt(40, 60)]));
     const out: Seg = [0, 0, 0, 0];
     const r = rayToEdge(g, 100, 200, 110, 200, out)!;
     expect(r[0]).toBe(100);
@@ -131,12 +131,12 @@ describe('fib time zone', () => {
   });
 });
 
-describe('trend-based fib time', () => {
+describe('fib time extension', () => {
   // Move bars 20 -> 30 projected from bar 40: level v at bar 40 + 10 v.
   const pts = [pt(20, 50), pt(30, 60), pt(40, 40)];
 
   it('levels at anchor 3 + level * (anchor 2 - anchor 1) bars', () => {
-    const { at } = setup('fib-trend-time', pts);
+    const { at } = setup('fib-time-extension', pts);
     expect(at(X(40), Y(90))).toEqual(BODY); // 0
     expect(at(X(46.18), Y(90))).toEqual(BODY); // 0.618
     expect(at(X(56.18), Y(90))).toEqual(BODY); // 1.618
@@ -146,46 +146,46 @@ describe('trend-based fib time', () => {
   });
 
   it('two-anchor draft draws the trend line only', () => {
-    const r = setup('fib-trend-time', pts.slice(0, 2)).draw();
+    const r = setup('fib-time-extension', pts.slice(0, 2)).draw();
     expect(r.count('stroke')).toBe(1);
     expect(r.count('fillText')).toBe(0);
   });
 
   it('culling', () => {
-    expect(setup('fib-trend-time', pts).visible()).toBe(true);
-    expect(setup('fib-trend-time', [pt(-300, 50), pt(-290, 60), pt(-280, 40)]).visible()).toBe(
+    expect(setup('fib-time-extension', pts).visible()).toBe(true);
+    expect(setup('fib-time-extension', [pt(-300, 50), pt(-290, 60), pt(-280, 40)]).visible()).toBe(
       false,
     );
   });
 });
 
-describe('fib speed resistance fan', () => {
+describe('fib fan', () => {
   // Box (20, 20)-(40, 60): price ray v through (40, 20 + 40 v); time ray v through (20 + 20 v, 60).
   const pts = [pt(20, 20), pt(40, 60)];
 
   it('price rays, time rays, grid and weak bands', () => {
-    const { at } = setup('fib-speed-fan', pts);
+    const { at } = setup('fib-fan', pts);
     expect(at(X(30), Y(30))).toEqual(BODY); // price 0.5 halfway
     expect(at(X(60), Y(80))).toEqual(BODY); // price 1 (diagonal) extended
     expect(at(X(25), Y(40))).toEqual(BODY); // time 0.5 halfway
     expect(at(X(35), Y(30))).toEqual(BODY); // grid: price 0.25 horizontal
     expect(at(X(50), Y(72.5))).toEqual(WEAK); // between price 0.75 and 1
     expect(at(X(50), Y(10))).toBeNull(); // below price 0
-    const noGrid = setup('fib-speed-fan', pts, { showGrid: false });
+    const noGrid = setup('fib-fan', pts, { showGrid: false });
     expect(noGrid.at(X(35), Y(30))).toEqual(WEAK); // between price 0.25 and 0.382
   });
 
   it('renders grid, 14 rays, 12 bands and labels', () => {
-    const r = setup('fib-speed-fan', pts).draw();
+    const r = setup('fib-fan', pts).draw();
     expect(r.count('fill')).toBe(12);
     expect(r.count('stroke')).toBe(28); // 7 + 7 grid lines, 14 rays
     expect(r.texts.filter((t) => t === '0.382')).toHaveLength(2);
   });
 
   it('culling: rays pointing away from the pane', () => {
-    expect(setup('fib-speed-fan', pts).visible()).toBe(true);
+    expect(setup('fib-fan', pts).visible()).toBe(true);
     // Origin far left, box opening further left: every ray points away.
-    expect(setup('fib-speed-fan', [pt(-200, 50), pt(-220, 60)]).visible()).toBe(false);
+    expect(setup('fib-fan', [pt(-200, 50), pt(-220, 60)]).visible()).toBe(false);
   });
 });
 
@@ -216,41 +216,41 @@ describe('fib circles', () => {
   });
 });
 
-describe('fib speed resistance arcs', () => {
+describe('fib arcs', () => {
   // Centre (20, 50); anchor 2 (30, 60) above: radius 1 = hypot(100, 40) px; upper half.
   const pts = [pt(20, 50), pt(30, 60)];
   const R = Math.hypot(X(30) - X(20), Y(60) - Y(50));
 
   it('upper half circles around anchor 1', () => {
-    const { at } = setup('fib-speed-arcs', pts);
+    const { at } = setup('fib-arcs', pts);
     expect(at(X(20), Y(50) - R / 2)).toEqual(BODY); // 0.5 at the top
     expect(at(X(20) - R, Y(50))).toEqual(BODY); // 1 at its left end
     expect(at(X(20), Y(50) - R * 0.7)).toEqual(WEAK); // between 0.618 and 0.786
     expect(at(X(20), Y(50) + R / 2)).toBeNull(); // lower half not drawn
-    const full = setup('fib-speed-arcs', pts, { fullCircles: true });
+    const full = setup('fib-arcs', pts, { fullCircles: true });
     expect(full.at(X(20), Y(50) + R / 2)).toEqual(BODY);
   });
 
   it('flips below when anchor 2 is below', () => {
-    const { at } = setup('fib-speed-arcs', [pt(20, 50), pt(30, 40)]);
+    const { at } = setup('fib-arcs', [pt(20, 50), pt(30, 40)]);
     expect(at(X(20), Y(50) + R / 2)).toEqual(BODY);
     expect(at(X(20), Y(50) - R / 2)).toBeNull();
   });
 
   it('renders levels up to 1 by default', () => {
-    const r = setup('fib-speed-arcs', pts).draw();
+    const r = setup('fib-arcs', pts).draw();
     expect(r.count('fill')).toBe(5);
     expect(r.texts).toEqual(['0.236', '0.382', '0.5', '0.618', '0.786', '1']);
   });
 });
 
-describe('fib wedge', () => {
+describe('fib sector', () => {
   // Apex (20, 50); side to (40, 50) (0 rad, 200 px); side to (20, 70) (up, -pi/2).
   const pts = [pt(20, 50), pt(40, 50), pt(20, 70)];
   const d = (r: number) => r / Math.SQRT2;
 
   it('arcs inside the wedge, sides and weak sectors', () => {
-    const { at } = setup('fib-wedge', pts);
+    const { at } = setup('fib-sector', pts);
     expect(at(X(20) + d(100), Y(50) - d(100))).toEqual(BODY); // 0.5 at -45 deg
     expect(at(X(20) + d(100), Y(50) + d(100))).toBeNull(); // outside the wedge
     expect(at(X(20) + d(140), Y(50) - d(140))).toEqual(WEAK); // between 0.618 and 0.786
@@ -260,13 +260,13 @@ describe('fib wedge', () => {
   });
 
   it('two-anchor draft draws the first side', () => {
-    const { at, draw } = setup('fib-wedge', pts.slice(0, 2));
+    const { at, draw } = setup('fib-sector', pts.slice(0, 2));
     expect(draw().count('stroke')).toBe(1);
     expect(at(X(30), Y(50))).toEqual(BODY);
   });
 
   it('renders arcs and sector fills', () => {
-    const r = setup('fib-wedge', pts).draw();
+    const r = setup('fib-sector', pts).draw();
     expect(r.count('fill')).toBe(5);
     expect(r.count('arc')).toBe(6 + 5 * 2);
   });

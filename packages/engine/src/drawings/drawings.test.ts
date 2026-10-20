@@ -746,7 +746,7 @@ describe('measure mode', () => {
     down(X(10), Y(20));
     move(X(30), Y(60));
     up(X(30), Y(60));
-    expect(layer.measure?.type).toBe('date-price-range');
+    expect(layer.measure?.type).toBe('price-time-measure');
     expect(layer.measure?.points.map((p) => p.price)).toEqual([20, 60]);
     expect(layer.items.size).toBe(0);
     expect(layer.draft).toBeNull();
@@ -772,7 +772,7 @@ describe('measure mode', () => {
     const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
     input.pointerDown(target(X(10), Y(20)), X(10), Y(20), SH);
     input.pointerUp(X(10), Y(20), SH);
-    expect(layer.draft?.type).toBe('date-price-range');
+    expect(layer.draft?.type).toBe('price-time-measure');
     hover(X(25), Y(70));
     click(X(25), Y(70));
     expect(layer.measure?.points.map((p) => p.price)).toEqual([20, 70]);
@@ -827,7 +827,7 @@ describe('quick measure (Shift+click on empty space)', () => {
 
   it('starts only with an empty selection; Esc cancels without toolFinished', () => {
     shiftClick(X(5), Y(5));
-    expect(layer.draft?.type).toBe('date-price-range');
+    expect(layer.draft?.type).toBe('price-time-measure');
     expect(input.key('Escape')).toBe(true);
     expect(input.busy).toBe(false);
     expect(input.activeTool).toBeNull();

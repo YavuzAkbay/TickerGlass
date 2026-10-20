@@ -566,6 +566,17 @@ describe('IndicatorController', () => {
     expect(results[0]).toEqual({ ...ref.filter((m) => m.type === 'results').at(-1)!, revision: 2 });
   });
 
+  it('falls back to the current id for an instance typed with a renamed built-in', async () => {
+    const { chart, log, ctl } = setup();
+    const old = { ...inst('sma'), type: 'pivots-hl' };
+    ctl.sync([old]);
+    chart.load(makeBars(30));
+    await settle();
+    expect(useIndicatorRuntime.getState().status[old.id]?.state).not.toBe('error');
+    const added = log.find((m) => m.type === 'add') as { spec: { type: string } } | undefined;
+    expect(added?.spec.type).toBe('swing-hl');
+  });
+
   it('reports worker errors for an instance and resyncs bars after a bad tick', async () => {
     const { chart, log, ctl, frame, onError } = setup();
     const bad = { ...inst('sma'), inputs: { length: 'x' } as InputValueMap };

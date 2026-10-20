@@ -163,9 +163,9 @@ describe('validateAlert', () => {
       chan: { type: 'parallel-channel', points: [{}, {}, {}], scope: 'all', symbol: 'X' },
       chan2: { type: 'parallel-channel', points: [{}, {}], scope: 'all', symbol: 'X' },
       rect: { type: 'rectangle', points: [{}, {}], scope: 'all', symbol: 'X' },
-      flat: { type: 'flat-top-bottom', points: [{}, {}, {}], scope: 'all', symbol: 'X' },
-      disjoint: { type: 'disjoint-channel', points: [{}, {}, {}, {}], scope: 'all', symbol: 'X' },
-      disjoint2: { type: 'disjoint-channel', points: [{}, {}], scope: 'all', symbol: 'X' },
+      flat: { type: 'flat-channel', points: [{}, {}, {}], scope: 'all', symbol: 'X' },
+      disjoint: { type: 'split-channel', points: [{}, {}, {}, {}], scope: 'all', symbol: 'X' },
+      disjoint2: { type: 'split-channel', points: [{}, {}], scope: 'all', symbol: 'X' },
       fib: { type: 'fib-retracement', points: [{}, {}], scope: 'all', symbol: 'X' },
     };
     const opts = { drawing: (id: string) => drawings[id] };

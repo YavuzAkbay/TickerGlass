@@ -193,7 +193,7 @@ test('compare overlays are refetched through the clipped feed', async ({ page })
 test('an indicator follows the replay step by step', async ({ page }) => {
   await page.getByRole('button', { name: 'Indicators', exact: false }).first().click();
   const search = page.getByLabel('Search indicators');
-  await search.fill('Moving Average Simple');
+  await search.fill('Simple Moving Average');
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');

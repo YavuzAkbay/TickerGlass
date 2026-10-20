@@ -109,7 +109,7 @@ Phase 3 notes:
 
 ### Phase 4: Chart types
 
-- [x] Bars, Candles, Hollow candles, Volume candles, Line, Line with markers, Step line, Area, HLC area, Baseline, Columns, High-Low
+- [x] Bars, Candles, Hollow candles, Volume-width candles, Line, Line + dots, Step, Area, Range area, Baseline split, Histogram, High–low bars
 - [x] Heikin Ashi (transform)
 - [x] Brick-type transforms on a non-time index: Renko (box size: ATR/fixed, wicks), Line Break, Kagi, Point & Figure, Range bars
 - [x] Volume overlay/pane; extended-hours shading; price-line + bid/ask-style lines
@@ -127,7 +127,7 @@ Phase 4 notes:
 - [x] Indicator-on-indicator (source = other output); multi-timeframe inputs
 - [x] Indicators dialog (search, categories, favorites); legend row with eye/settings/source/remove/more menu
 - [x] Auto-generated settings dialog: Inputs / Style / Visibility (per-interval) tabs; defaults; "Save as default"
-- [x] Core 25 with golden tests vs a reference (TA-Lib / pandas-ta CSVs): SMA, EMA, WMA, VWMA, HMA, VWAP, Anchored VWAP, Bollinger, Keltner, Donchian, Ichimoku, Parabolic SAR, Supertrend, RSI, MACD, Stochastic, Stoch RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R, Volume, Pivot Points Standard
+- [x] Core 25 with golden tests vs a reference (TA-Lib / pandas-ta CSVs): SMA, EMA, WMA, VWMA, HMA, VWAP, Anchored VWAP, Bollinger, Keltner, Donchian, Ichimoku, Parabolic SAR, Supertrend, RSI, MACD, Stochastic, Stoch RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R, Volume, Pivot Points
 
 Phase 5 notes:
 
@@ -143,7 +143,7 @@ Phase 5 notes:
 - [x] Right-click menus for drawings (and the chart, scales, panes): settings, clone, copy, z-order, visibility per interval, lock, hide, remove, template
 - [x] Properties dialog generated from the schema: Style / Text / Coordinates / Visibility tabs; per-tool style templates ("Save as… / Apply default")
 - [x] Undo/redo via the command bus
-- [x] Core tools: Trend line, Ray, Extended line, Info line, Horizontal line/ray, Vertical line, Cross line, Parallel channel, Fib retracement, Trend-based fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price range, Date range, Date & price range (measure)
+- [x] Core tools: Trend line, Ray, Extended line, Measured line, Horizontal line/ray, Vertical line, Cross line, Parallel channel, Fib retracement, Fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price measure, Time measure, Price & time measure (measure)
 - [x] Object tree panel (list, reorder, hide/lock, delete)
 
 Phase 6 notes:
@@ -222,34 +222,34 @@ Phase 10 notes:
 
 ### Phase 11: Remaining drawing tools (bulk, on the framework)
 
-- [x] Lines: Trend angle, Regression trend, Flat top/bottom, Disjoint channel
-- [x] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Pitchfan
+- [x] Lines: Trend angle, Regression trend, Flat-edge channel, Split channel
+- [x] Pitchforks: Standard, Schiff, Modified Schiff, Inside; Fork fan
 - [x] Gann: Box, Square fixed, Square, Fan
-- [x] Fib: Channel, Time zone, Speed resistance fan, Trend-based time, Circles, Spiral, Speed resistance arcs, Wedge
-- [x] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cyclic lines, Time cycles, Sine line
-- [x] Forecasting/volume: Forecast, Bars pattern, Ghost feed, Projection, Fixed range volume profile, Anchored volume profile
-- [x] Shapes: Highlighter, Arrow marker, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double curve
-- [x] Annotations: Anchored text, Note, Anchored note, Callout, Comment, Price label, Price note, Signpost, Flag mark, Table, Image; icon/emoji/sticker picker
+- [x] Fib: Channel, Time zone, Fib fan, Fib time extension, Circles, Spiral, Fib arcs, Fib sector
+- [x] Patterns: XABCD, Cypher, Head & Shoulders, ABCD, Triangle pattern, Three drives; Elliott impulse/correction/triangle/double/triple combo; Cycle lines, Cycle arcs, Sine wave
+- [x] Projection/volume: Price target, Bar replica, Path sketch, Swing projection, Range volume profile, Anchored volume profile
+- [x] Shapes: Highlighter, Arrow pointer, Arrow up/down, Rotated rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, S-curve
+- [x] Annotations: Pinned text, Note, Pinned note, Callout, Comment, Price label, Price tag, Pin, Flag, Table, Image; icon/emoji/sticker picker
 - [x] Zoom-in tool, Measure tool polish; sync drawings across layouts
 
 Phase 11 notes:
 
 - Tools: `packages/engine/src/drawings/tools/*` (one file per tool, registered in `tools/index.ts` in toolbar order; 86 types). Shared helpers: `pitchfork-common`, `fan-common`, `fib-common` (time and arc levels added), `gann-common`, `pattern-common` (patterns and Elliott), `shape-common`, `annotation-common`, `volume-profile` / `vp-common`; engine-wide `drawings/shape-utils.ts` (polyline, polygon, Bezier, ellipse, arc, regression math) and `drawings/images.ts` (decode cache). Contract additions: `docs/drawings.md` §2/§4/§5; tool list and unverified semantics: §7c.
-- Framework additions (all additive): `creation: {kind:'multi'}` (path, polyline, ghost feed), `coords: 'pane'` (anchored text/note), `panes: 'main'` (bar-data tools), `string` / `image` property kinds, `setActiveTool(type, {style})` (stickers: web maps `emoji-*`, `sticker-*`, `icon-*` to the `icon` tool with a `glyph`), `rc.invalidate`, `chart.setVisibleLogicalRange`, `PriceScale.setManualRange`, the `zoom-in`, `measure` and `pick-point` modes with the `pointPicked` event, and optional `DrawingHost.zoomTo`.
+- Framework additions (all additive): `creation: {kind:'multi'}` (path, polyline, path sketch), `coords: 'pane'` (pinned text/note), `panes: 'main'` (bar-data tools), `string` / `image` property kinds, `setActiveTool(type, {style})` (stickers: web maps `emoji-*`, `sticker-*`, `icon-*` to the `icon` tool with a `glyph`), `rc.invalidate`, `chart.setVisibleLogicalRange`, `PriceScale.setManualRange`, the `zoom-in`, `measure` and `pick-point` modes with the `pointPicked` event, and optional `DrawingHost.zoomTo`.
 - Volume profiles are an approximation: each bar's volume is spread evenly over its high-low range (no intrabar data), up/down by close vs open; value area and POC tie rules are ours.
 - Images are stored as data URLs inside the drawing: the dialog downscales to 1024 px and encodes WebP/JPEG at <= 300 KB (API cap `MAX_DRAWING_BYTES` 512,000); only `data:image/` sources are rendered, so imported JSON cannot trigger a network fetch.
 - Cross-layout sync: drawings are already global (one row each, not keyed by layout, `docs/drawings.md` §6), so they appear in every layout; per-layout drawings are Phase 14.
 - Anchored VWAP: the toolbar entry uses the `pick-point` mode and adds the Anchored VWAP indicator at the clicked bar.
-- Alerts: Flat top/bottom and Disjoint channel are channel sources (`packages/alerts/src/drawing-levels.ts` and `api/src/investopen_api/routes/alerts.py`, `docs/alerts.md` §2.6).
+- Alerts: Flat-edge channel and Split channel are channel sources (`packages/alerts/src/drawing-levels.ts` and `api/src/investopen_api/routes/alerts.py`, `docs/alerts.md` §2.6).
 - e2e: `e2e/drawing-tools.spec.ts` (one case per tool family, stickers, callout persistence, image upload) and `e2e/drawing-sweep.spec.ts` (all 86 registered types through `chart.addDrawing`, no page errors). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#drawings).
 
 ### Phase 12: Remaining indicators (bulk)
 
 - [x] Trend/MA: DEMA, TEMA, ALMA, KAMA, LSMA, McGinley, SMMA, Moving Average Ribbon, Envelopes, Linear Regression channel, ZigZag, Williams Alligator, Fractals
 - [x] Momentum: Momentum, ROC, TRIX, TSI, Ultimate Oscillator, Awesome/Accelerator Oscillator, Coppock, KST, DPO, PPO, SMI Ergodic, Fisher Transform, Connors RSI, Chande MO, Aroon, Vortex, Choppiness, RVI, Elder Force, Balance of Power, Know Sure Thing
-- [x] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
+- [x] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible bars / session), Time-of-Day Relative Volume
 - [x] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
-- [x] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
+- [x] Other: Swing Highs/Lows, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Swing Fibonacci, 52-week range, Seasonality
 - [x] Optional extension: user JS indicators in a sandboxed Worker with a documented API (our own API). See [user-scripts.md](user-scripts.md)
 
 ### Phase 13: Market replay

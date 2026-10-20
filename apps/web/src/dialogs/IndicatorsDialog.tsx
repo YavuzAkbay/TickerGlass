@@ -23,7 +23,6 @@ import {
   Spline,
   Star,
   TrendingUp,
-  Users,
   Waves,
   type LucideIcon,
 } from 'lucide-react';
@@ -37,23 +36,21 @@ import { Modal } from '../ui/Modal';
 import '../indicators/indicators.css';
 import './dialogs.css';
 
-type CategoryId =
-  'favorites' | 'scripts' | 'technicals' | IndicatorCategory | 'fundamentals' | 'community';
+type CategoryId = 'starred' | 'custom' | 'builtin' | IndicatorCategory | 'financials';
 
 interface Category {
   id: CategoryId;
   label: string;
   icon: LucideIcon;
-  disabled?: boolean;
   empty: string;
 }
 
 const TECH_CATEGORIES: { id: IndicatorCategory; label: string; icon: LucideIcon }[] = [
   { id: 'movingAverage', label: 'Moving averages', icon: Spline },
   { id: 'trend', label: 'Trend', icon: TrendingUp },
-  { id: 'momentum', label: 'Oscillators', icon: Activity },
+  { id: 'momentum', label: 'Momentum', icon: Activity },
   { id: 'volatility', label: 'Volatility', icon: Gauge },
-  { id: 'bands', label: 'Bands & channels', icon: ArrowLeftRight },
+  { id: 'bands', label: 'Envelopes & channels', icon: ArrowLeftRight },
   { id: 'volume', label: 'Volume', icon: ChartColumn },
   { id: 'other', label: 'Other', icon: Waves },
 ];
@@ -65,14 +62,14 @@ function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Categor
       title: 'Personal',
       items: [
         {
-          id: 'favorites',
-          label: 'Favorites',
+          id: 'starred',
+          label: 'Starred',
           icon: Star,
           empty: 'Star an indicator to keep it here.',
         },
         {
-          id: 'scripts',
-          label: 'My scripts',
+          id: 'custom',
+          label: 'Custom',
           icon: Code,
           empty: 'Your own scripts will be listed here.',
         },
@@ -82,8 +79,8 @@ function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Categor
       title: 'Built-ins',
       items: [
         {
-          id: 'technicals',
-          label: 'Technicals',
+          id: 'builtin',
+          label: 'Built-in',
           icon: ChartSpline,
           empty: 'No indicators are registered.',
         },
@@ -92,22 +89,10 @@ function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Categor
           empty: 'No indicators in this category.',
         })),
         {
-          id: 'fundamentals',
-          label: 'Fundamentals',
+          id: 'financials',
+          label: 'Financials',
           icon: Landmark,
           empty: 'Income statement, balance sheet and valuation metrics.',
-        },
-      ],
-    },
-    {
-      title: 'Community',
-      items: [
-        {
-          id: 'community',
-          label: 'Community',
-          icon: Users,
-          disabled: true,
-          empty: 'Community scripts are not planned yet.',
         },
       ],
     },
@@ -138,7 +123,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   // Scripts changing (saved, deleted) re-registers their definitions: list again.
   const scripts = useScriptsStore((s) => s.scripts);
   const [query, setQuery] = useState('');
-  const [cat, setCat] = useState<CategoryId>('technicals');
+  const [cat, setCat] = useState<CategoryId>('builtin');
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -150,14 +135,14 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   const q = query.trim();
   let rows: AnyIndicatorDefinition[];
   if (q) rows = all.filter((d) => matchesQuery(d, q));
-  else if (cat === 'favorites') rows = all.filter((d) => favorites.includes(d.id));
-  else if (cat === 'technicals') rows = all;
-  else if (cat === 'scripts') rows = all.filter((d) => isUserScriptType(d.id));
+  else if (cat === 'starred') rows = all.filter((d) => favorites.includes(d.id));
+  else if (cat === 'builtin') rows = all;
+  else if (cat === 'custom') rows = all.filter((d) => isUserScriptType(d.id));
   else rows = all.filter((d) => d.category === cat);
   const idx = Math.max(0, Math.min(active, rows.length - 1));
   // Scripts that cannot run (no valid manifest) have no definition, but must stay reachable for editing.
   const broken =
-    cat === 'scripts' && !q && !sourceOf
+    cat === 'custom' && !q && !sourceOf
       ? scripts.filter((s) => !getIndicator(USER_SCRIPT_PREFIX + s.id))
       : [];
 
@@ -302,7 +287,6 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
                     type="button"
                     className={`dlg-side-item${cat === c.id && !q ? ' active' : ''}`}
                     aria-current={cat === c.id ? 'true' : undefined}
-                    disabled={c.disabled}
                     onClick={() => {
                       setCat(c.id);
                       setQuery('');
@@ -311,7 +295,6 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
                   >
                     <Icon size={18} strokeWidth={1.6} />
                     <span>{c.label}</span>
-                    {c.disabled ? <span className="dlg-soon">Soon</span> : null}
                   </button>
                 );
               })}
@@ -324,7 +307,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
           role="listbox"
           aria-label="Indicators"
         >
-          {cat === 'scripts' && !q && !sourceOf ? (
+          {cat === 'custom' && !q && !sourceOf ? (
             <div className="ind-scripts-head">
               <button type="button" className="io-btn" onClick={() => openScriptEditor()}>
                 <Plus size={14} />

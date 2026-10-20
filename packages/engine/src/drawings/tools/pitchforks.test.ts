@@ -106,7 +106,7 @@ describe('pitchfork tools', () => {
 
   it('inside: handle to P3, median from the mid point parallel to it', () => {
     // Origin (30, 65) -> P3 (40, 20): -45 per 10 bars. Median: (40, 50) -> (50, 5).
-    const { at } = setup('inside-pitchfork', pts);
+    const { at } = setup('inner-pitchfork', pts);
     expect(at(X(35), Y(42.5))).toEqual({ kind: 'body' }); // handle
     expect(at(X(45), Y(27.5))).toEqual({ kind: 'body' }); // median
     expect(at(X(45), Y(57.5))).toEqual({ kind: 'body' }); // level 1 from P2
@@ -139,12 +139,12 @@ describe('pitchfork tools', () => {
   });
 });
 
-describe('pitchfan', () => {
+describe('fork-fan', () => {
   // P1 (20, 50), P2 (40, 80), P3 (40, 20): rays from P1.
   const pts = [pt(20, 50), pt(40, 80), pt(40, 20)];
 
   it('hits the median ray, level rays, p2-p3 and the weak wedge', () => {
-    const { at, def } = setup('pitchfan', pts);
+    const { at, def } = setup('fork-fan', pts);
     expect(def.group).toBe('fib');
     expect(at(X(70), Y(50))).toEqual({ kind: 'body' }); // median ray
     expect(at(X(30), Y(65))).toEqual({ kind: 'body' }); // level 1 through P2: +30 per 20 bars
@@ -155,7 +155,7 @@ describe('pitchfan', () => {
   });
 
   it('renders rays and fills', () => {
-    const { def, g, d } = setup('pitchfan', pts);
+    const { def, g, d } = setup('fork-fan', pts);
     const { rc, calls } = recordingContext();
     def.render(rc, g, d.style, SELECTED);
     expect(calls.filter((c) => c === 'fill')).toHaveLength(4);
@@ -163,10 +163,10 @@ describe('pitchfan', () => {
   });
 
   it('culling: rays pointing away from the pane are not visible', () => {
-    const def = tool('pitchfan');
-    const away = setup('pitchfan', [pt(-200, 50), pt(-220, 80), pt(-220, 20)]);
+    const def = tool('fork-fan');
+    const away = setup('fork-fan', [pt(-200, 50), pt(-220, 80), pt(-220, 20)]);
     expect(def.isVisible!(away.g, away.d.style)).toBe(false);
-    const into = setup('pitchfan', [pt(-200, 50), pt(-180, 52), pt(-180, 48)]);
+    const into = setup('fork-fan', [pt(-200, 50), pt(-180, 52), pt(-180, 48)]);
     expect(def.isVisible!(into.g, into.d.style)).toBe(true);
   });
 });

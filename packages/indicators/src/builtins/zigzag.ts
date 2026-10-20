@@ -29,7 +29,7 @@ type Bars = Pick<StepContext, 'i' | 'high' | 'low'>;
  * last `d` is strictly beyond it and no older bar of the `d` before it is
  * beyond or equal (so among equal extremes the oldest is the pivot); NaN
  * otherwise or before bar 2d. Unlike `ta.pivotHigh`/`pivotLow` (strict on both
- * sides), which pivots-hl keeps.
+ * sides), which swing-hl keeps.
  */
 function findPivot(src: ArrayLike<number>, i: number, d: number, high: boolean): number {
   if (i < 2 * d) return NaN;

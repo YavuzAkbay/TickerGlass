@@ -59,7 +59,7 @@ volume }`; empty without data; measure tools sum `volume` over the measured bars
 priceToY yToPrice logicalToX xToLogical`. It is reused between frames: never keep references.
 Hit testing has no canvas: `approxTextWidth(text, size, bold, italic)` measures with a shared offscreen
 canvas in the font family of the last render (cached; 0.6 em per char only where no canvas exists, e.g.
-tests), and `hitLabelSize(lines)` sizes info labels with the last rendered theme, so labels (Info line stats,
+tests), and `hitLabelSize(lines)` sizes info labels with the last rendered theme, so labels (Measured line stats,
 position target/stop/stats boxes) are strong body hits. Line tools cull with `segmentInView` (the possibly
 extended segment clipped against the pane plus 50 px), not with the anchors' x span. Brush end handles
 stretch the stroke (samples move by the handle offset scaled by path length from the fixed end). The
@@ -68,7 +68,7 @@ Helpers for tools: `drawings/draw-utils.ts` (`setLineStyle extendSegment lineDis
 formatDuration hitRotatedText anchorsInView BODY_HIT WEAK_BODY_HIT TEXT_HIT`) and `drawings/shape-utils.ts`
 (additive: `polylineDistance pointInPolygon quadBezierPoint quadBezierDistance cubicBezierDistance
 ellipseDistance circleThrough3 arcDistance rotate linearRegression strokePolyline tracePolyline`; canvas
-angles, y down). Shared tool modules (`drawings/tools/`): `pitchfork-common` (pitchfork variants, pitchfan, rays to the pane
+angles, y down). Shared tool modules (`drawings/tools/`): `pitchfork-common` (pitchfork variants, fork-fan, rays to the pane
 edge), `fan-common` (fan rays and bands, box grids), `fib-common` (price, time and arc levels), `gann-common`,
 `pattern-common` (labelled zigzag patterns, Elliott degrees, ratio labels), `shape-common` (border/fill props,
 filled polygons), `annotation-common` (wrapped text, bubbles, boxes), `volume-profile` / `vp-common`. Reference tools:
@@ -137,7 +137,7 @@ when it declines. Coordinates are chart-root px; anchors snap to bar slots (`sna
   `toolFinished {drawingId:null, active:false}` when one finishes): `ZOOM_TOOL` (`'zoom-in'`) drags a box in a
   pane, then returns to the cursor; it sets the visible logical range (`setVisibleLogicalRange`) and, on the boxed pane, a manual price range
   (`PriceScale.setManualRange`; the app host may implement `DrawingHost.zoomTo`); bar-spacing limits clamp it.
-  `MEASURE_TOOL` (`'measure'`) shows a transient date-price-range (created like a two-point tool): it is
+  `MEASURE_TOOL` (`'measure'`) shows a transient price-time-measure (created like a two-point tool): it is
   never inserted, emits no drawing events, is not selectable or persisted, and clears on the next click or Esc. **Shift + click**
   on empty chart space starts the same quick measure (click, click; Shift + drag stays box select).
   `PICK_TOOL` (`'pick-point'`) emits `pointPicked {time, price, paneId}` for one click, then returns to the cursor; the
@@ -270,33 +270,35 @@ a drawing (API `hidden: true` or `hideAll`) drops it from the selection.
 Types = toolbar ids (`tools/index.ts` registers them in toolbar order). Added on top of the 20 core tools:
 
 - **Lines**: `trend-angle` (angle arc and label), `regression-trend` (close regression, +-k stdev bands, Pearson r),
-  `flat-top-bottom` (3 anchors), `disjoint-channel` (3 clicks, `completePoints` derives the 4th anchor)
-- **Pitchforks**: `pitchfork`, `schiff-pitchfork`, `modified-schiff-pitchfork`, `inside-pitchfork`, `pitchfan`
-- **Fib**: `fib-channel`, `fib-time-zone`, `fib-speed-fan`, `fib-trend-time`, `fib-circles`, `fib-spiral`,
-  `fib-speed-arcs`, `fib-wedge`
-- **Gann**: `gann-box`, `gann-square-fixed`, `gann-square`, `gann-fan`
+  `flat-channel` (3 anchors), `split-channel` (3 clicks, `completePoints` derives the 4th anchor)
+- **Pitchforks**: `pitchfork`, `schiff-pitchfork`, `modified-schiff-pitchfork`, `inner-pitchfork`, `fork-fan`
+- **Fib**: `fib-channel`, `fib-time-zone`, `fib-fan`, `fib-time-extension`, `fib-circles`, `fib-spiral`,
+  `fib-arcs`, `fib-sector`
+- **Gann**: `gann-box`, `gann-grid`, `gann-square`, `gann-fan`
 - **Patterns**: `xabcd`, `cypher`, `head-shoulders`, `abcd`, `triangle-pattern`, `three-drives`; Elliott
   `elliott-impulse`, `elliott-correction`, `elliott-triangle`, `elliott-double-combo`, `elliott-triple-combo`;
-  cycles `cyclic-lines`, `time-cycles`, `sine-line`
-- **Forecasting / volume** (`panes: 'main'`): `forecast`, `bars-pattern`, `ghost-feed` (multi), `projection`,
-  `fixed-range-vp`, `anchored-vp`
-- **Shapes**: `highlighter` (freehand), `arrow-marker`, `arrow-mark-up`, `arrow-mark-down`, `rotated-rectangle`,
-  `path` and `polyline` (multi), `circle`, `ellipse`, `triangle`, `arc`, `curve`, `double-curve`
-- **Annotations**: `anchored-text`, `anchored-note` (`coords: 'pane'`), `note` (pin, hover tooltip), `callout`,
-  `comment`, `price-label`, `price-note`, `signpost`, `flag-mark`, `table` (rows by newline, cells by tab or `|`),
+  cycles `cycle-lines`, `cycle-arcs`, `sine-wave`
+- **Projection / volume** (`panes: 'main'`): `price-target`, `bar-replica`, `path-sketch` (multi), `swing-projection`,
+  `range-vp`, `anchored-vp`
+- **Shapes**: `highlighter` (freehand), `arrow-pointer`, `up-marker`, `down-marker`, `rotated-rectangle`,
+  `path` and `polyline` (multi), `circle`, `ellipse`, `triangle`, `arc`, `curve`, `s-curve`
+- **Annotations**: `pinned-text`, `pinned-note` (`coords: 'pane'`), `note` (pin, hover tooltip), `callout`,
+  `comment`, `price-label`, `price-tag`, `pin`, `flag`, `table` (rows by newline, cells by tab or `|`),
   `image` (data URL only), `icon` (stickers: the web maps `emoji-*`, `sticker-*`, `icon-*` ids to it with a `glyph`)
 - **Modes**: `zoom-in`, `measure`, `pick-point` (Anchored VWAP); see §4.
 
-Pixel-space tools: circle/arc radii, fib circles, spiral and speed arcs, wedge, Gann and time-cycle arcs,
-trend-angle, projection, channel widths and curve bows are computed in screen px, so their shape changes with zoom
-(inherent to screen-space sizing). Flat top/bottom and Disjoint channel are alert channel sources (`docs/alerts.md` §2.6).
+Pixel-space tools: circle/arc radii, fib circles, spiral and fib arcs, fib sector, Gann and cycle arcs,
+trend-angle, swing-projection, channel widths and curve bows are computed in screen px, so their shape changes with zoom
+(inherent to screen-space sizing). Flat-edge channel and Split channel are alert channel sources (`docs/alerts.md` §2.6).
+
+Renamed tool ids: `LEGACY_DRAWING_TYPES` / `resolveDrawingType` (`drawings/legacy-ids.ts`) map old ids to the current ones. The web app applies the map when it reads saved drawings (local cache, API rows with `schemaVersion` 1 or 2, imports), per-tool templates and default styles, and the toolbar preferences; migrated API rows are saved back under the new id.
 
 Semantics not yet cross-checked against an independent reference (documented choices, revisit in the Phase 15 parity sweep):
 
-- Inside pitchfork: handle = midpoint(p1, p2) -> p3; the median is parallel to the line from midpoint(p2, p3).
-- Fib circles: centre = midpoint of the two anchors (level 1 has the anchors as diameter). Fib speed arcs:
+- Inner pitchfork: handle = midpoint(p1, p2) -> p3; the median is parallel to the line from midpoint(p2, p3).
+- Fib circles: centre = midpoint of the two anchors (level 1 has the anchors as diameter). Fib arcs:
   centre p0, half circle on p1's side (`fullCircles` option).
-- Gann square fixed: the price/bar ratio is carried by the anchors (`completePoints` squares it on screen, drags keep
+- Gann grid: the price/bar ratio is carried by the anchors (`completePoints` squares it on screen, drags keep
   |dprice|/|dbars|). Square arcs are quarter ellipses with radii .25..1; cycles repeat only in p1's direction.
 - Volume profile: each bar's volume is spread evenly over [low, high], up/down by close >= open. POC ties: nearest
   the middle of the range, then lower. Value area: from the POC add the larger of the next two rows above or below
@@ -311,11 +313,11 @@ Semantics not yet cross-checked against an independent reference (documented cho
 | **B** engine | rest of `packages/engine/**`: `layer.ts`, `interaction.ts`, `geometry.ts`, `mapping.ts`, `chart.ts`, `interaction/controller.ts`, engine tests; `types.ts` additive only        | `drawings/tools/**`, apps/web                                             |
 | **C** web    | `apps/web/**` + `e2e/**`                                                                                                                                                        | packages/**                                                               |
 
-**A**: Ray, Extended line, Info line, Horizontal ray, Vertical line, Cross line, Parallel channel, Fib
-retracement, Trend-based fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price range,
-Date range, Date & price range. Types = toolbar ids: `ray extended-line info-line horizontal-ray
+**A**: Ray, Extended line, Measured line, Horizontal ray, Vertical line, Cross line, Parallel channel, Fib
+retracement, Fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price measure,
+Time measure, Price & time measure. Types = toolbar ids: `ray extended-line measured-line horizontal-ray
 vertical-line cross-line parallel-channel fib-retracement fib-extension rectangle text arrow-line brush
-long-position short-position price-range date-range date-price-range`. Shape interiors you can grab
+long-position short-position price-measure time-measure price-time-measure`. Shape interiors you can grab
 (rectangle) are strong hits; decorative zones (fib backgrounds, position zones) are `WEAK_BODY_HIT`.
 Text tool: `click` creation; C opens the text editor on `drawingCreated` when `text` is empty.
 

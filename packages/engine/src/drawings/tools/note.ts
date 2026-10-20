@@ -101,4 +101,4 @@ function makeNote(type: string, name: string, coords: DrawingCoords) {
 /** Pin marker at the anchor; the note text is a tooltip shown on hover. */
 export const note = makeNote('note', 'Note', 'chart');
 /** Same as `note`, pinned to the pane. */
-export const anchoredNote = makeNote('anchored-note', 'Anchored note', 'pane');
+export const pinnedNote = makeNote('pinned-note', 'Pinned note', 'pane');

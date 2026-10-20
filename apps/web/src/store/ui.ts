@@ -1,3 +1,4 @@
+import { resolveDrawingType } from '@investopen/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -56,6 +57,34 @@ interface UiState {
   set: (patch: Partial<UiState>) => void;
 }
 
+/** Persisted `investopen-ui` version: 1 = renamed drawing tool ids. */
+export const UI_STORE_VERSION = 1;
+
+/** Map renamed tool ids in stored toolbar preferences to the current ones. */
+export function migrateToolIds<T extends object>(state: T): T {
+  const s = state as {
+    activeTool?: unknown;
+    groupTools?: unknown;
+    favoriteTools?: unknown;
+  };
+  const out: typeof s = { ...s };
+  if (typeof s.activeTool === 'string') out.activeTool = resolveDrawingType(s.activeTool);
+  if (typeof s.groupTools === 'object' && s.groupTools !== null && !Array.isArray(s.groupTools))
+    out.groupTools = Object.fromEntries(
+      Object.entries(s.groupTools).map(([group, tool]) => [
+        group,
+        typeof tool === 'string' ? resolveDrawingType(tool) : tool,
+      ]),
+    );
+  if (Array.isArray(s.favoriteTools))
+    out.favoriteTools = [
+      ...new Set(
+        s.favoriteTools.map((tool) => (typeof tool === 'string' ? resolveDrawingType(tool) : tool)),
+      ),
+    ];
+  return out as T;
+}
+
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
@@ -80,6 +109,9 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'investopen-ui',
+      version: UI_STORE_VERSION,
+      // The persisted shape is the `partialize` result; unknown fields pass through untouched.
+      migrate: (persisted) => migrateToolIds((persisted ?? {}) as object) as never,
       partialize: ({ dialog: _d, dialogArg: _a, ...rest }) => ({
         ...rest,
         // The trading panel only exists while replaying.

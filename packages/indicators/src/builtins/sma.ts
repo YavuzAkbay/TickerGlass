@@ -3,7 +3,7 @@ import { defineIndicator } from '../registry';
 /** Simple moving average. Reference example for the definition API. */
 export const SMA = defineIndicator({
   id: 'sma',
-  name: 'Moving Average Simple',
+  name: 'Simple Moving Average',
   shortName: 'SMA',
   category: 'movingAverage',
   keywords: ['ma', 'simple', 'average'],

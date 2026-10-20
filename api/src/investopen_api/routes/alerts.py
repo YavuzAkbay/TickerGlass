@@ -140,9 +140,9 @@ def _check_drawings(session: SessionDep, symbol: str, spec: al.AlertSpec) -> Non
         is_channel = (
             dtype == "rectangle"
             or (dtype == "parallel-channel" and n_points == 3)
-            or (dtype == "flat-top-bottom" and n_points == 3)
+            or (dtype == "flat-channel" and n_points == 3)
             # Stored with the 4th anchor; a 3-anchor draft derives it.
-            or (dtype == "disjoint-channel" and n_points in (3, 4))
+            or (dtype == "split-channel" and n_points in (3, 4))
         )
         if use.part == "line":
             if dtype not in al.LINE_TOOLS:
@@ -152,7 +152,7 @@ def _check_drawings(session: SessionDep, symbol: str, spec: al.AlertSpec) -> Non
             raise HTTPException(
                 422,
                 f"drawing {use.drawing_id} ({dtype}) is not {what}: needs a "
-                "rectangle, a 3-point parallel-channel, flat-top-bottom or disjoint-channel",
+                "rectangle, a 3-point parallel-channel, flat-channel or split-channel",
             )
         if row.symbol is not None and row.symbol != symbol.strip().upper():
             raise HTTPException(

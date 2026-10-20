@@ -262,7 +262,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
         const def = getDrawingTool(type);
         const d = chart.getDrawing(drawingId);
         // A saved icon default must not replace the sticker that was just placed,
-        // nor a saved ghost-feed default the random seed of this drawing.
+        // nor a saved path-sketch default the random seed of this drawing.
         if (style) amendGesture(drawingId, { style: keepPerDrawingStyle(type, style, d?.style) });
         const at = useDrawingRuntime.getState().pointer;
         if (def?.text && def.group === 'annotation' && d && !d.text && at)

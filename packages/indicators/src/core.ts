@@ -4,6 +4,7 @@
  * the runtime). `@investopen/indicators` = this + the built-ins.
  */
 export * from './types';
+export { LEGACY_INDICATOR_IDS, resolveIndicatorId } from './legacy-ids';
 export {
   IndicatorRegistry,
   defaultRegistry,

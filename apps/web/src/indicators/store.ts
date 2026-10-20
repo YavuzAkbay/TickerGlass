@@ -1,4 +1,4 @@
-import type { InstanceStatus } from '@investopen/indicators';
+import { resolveIndicatorId, type InstanceStatus } from '@investopen/indicators';
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -27,6 +27,41 @@ export function legacyAppVolume(raw = safeStorage().get('investopen-app')): unkn
   return isObj(app) && isObj(app.state) && 'volume' in app.state ? app.state.volume : 'overlay';
 }
 
+/** Instances whose type is a renamed built-in's old id, retyped to the new id. */
+export function migrateRenamedTypes(list: IndicatorState[]): IndicatorState[] {
+  return list.map((i) => {
+    const type = isObj(i) && typeof i.type === 'string' ? resolveIndicatorId(i.type) : i?.type;
+    return type === i?.type ? i : { ...i, type };
+  });
+}
+
+/** Picker prefs with renamed ids mapped; a favourite or default already on the new id wins. */
+export function migrateRenamedPrefs(persisted: unknown): IndicatorPrefsData {
+  const s = isObj(persisted) ? persisted : {};
+  const favorites: string[] = [];
+  for (const t of Array.isArray(s.favorites) ? s.favorites : []) {
+    if (typeof t !== 'string') continue;
+    const id = resolveIndicatorId(t);
+    if (!favorites.includes(id)) favorites.push(id);
+  }
+  const defaults: Record<string, IndicatorDefaults> = {};
+  const stored = isObj(s.defaults) ? (s.defaults as Record<string, IndicatorDefaults>) : {};
+  for (const [type, d] of Object.entries(stored)) {
+    const id = resolveIndicatorId(type);
+    if (id === type || !(id in stored)) defaults[id] = d;
+  }
+  return { favorites, defaults };
+}
+
+/** zustand `migrate` of `investopen-indicators`. */
+export function migrateIndicatorStore(persisted: unknown, version: number): IndicatorStore {
+  const s = isObj(persisted) ? persisted : {};
+  const stored = Array.isArray(s.instances) ? (s.instances as IndicatorState[]) : [];
+  const list = version < 3 ? migrateRenamedTypes(stored) : stored;
+  const instances = version < 2 ? withLegacyVolume(list, legacyAppVolume()) : list;
+  return { ...s, instances } as unknown as IndicatorStore;
+}
+
 export const useIndicatorStore = create<IndicatorStore>()(
   persist(
     (set) => ({
@@ -48,14 +83,10 @@ export const useIndicatorStore = create<IndicatorStore>()(
     }),
     {
       name: 'investopen-indicators',
-      version: 2,
+      version: 3,
       // v1 -> v2: the engine's built-in volume became the Volume indicator.
-      migrate: (persisted, version) => {
-        const s = isObj(persisted) ? persisted : {};
-        const list = Array.isArray(s.instances) ? (s.instances as IndicatorState[]) : [];
-        const instances = version < 2 ? withLegacyVolume(list, legacyAppVolume()) : list;
-        return { ...s, instances } as unknown as IndicatorStore;
-      },
+      // v2 -> v3: renamed built-ins get their current type id.
+      migrate: migrateIndicatorStore,
     },
   ),
 );
@@ -94,12 +125,21 @@ export function useEffectiveInstances(): IndicatorState[] {
 }
 
 /** Per-user picker favourites and "Save as default" settings. */
-interface IndicatorPrefs {
+interface IndicatorPrefsData {
   favorites: string[];
   defaults: Record<string, IndicatorDefaults>;
+}
+
+interface IndicatorPrefs extends IndicatorPrefsData {
   toggleFavorite: (type: string) => void;
   saveDefaults: (type: string, d: IndicatorDefaults) => void;
   clearDefaults: (type: string) => void;
+}
+
+/** zustand `migrate` of `investopen-indicator-prefs`. */
+export function migrateIndicatorPrefs(persisted: unknown, version: number): IndicatorPrefs {
+  const s = isObj(persisted) ? persisted : {};
+  return (version < 2 ? { ...s, ...migrateRenamedPrefs(s) } : s) as unknown as IndicatorPrefs;
 }
 
 export const useIndicatorPrefs = create<IndicatorPrefs>()(
@@ -120,7 +160,12 @@ export const useIndicatorPrefs = create<IndicatorPrefs>()(
           return { defaults: rest };
         }),
     }),
-    { name: 'investopen-indicator-prefs', version: 1 },
+    {
+      name: 'investopen-indicator-prefs',
+      version: 2,
+      // v1 -> v2: renamed built-ins get their current id.
+      migrate: migrateIndicatorPrefs,
+    },
   ),
 );
 

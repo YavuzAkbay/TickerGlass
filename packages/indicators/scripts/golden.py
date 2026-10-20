@@ -503,7 +503,7 @@ volume_case("volume", {}, 20, False)
 volume_case("volume-prev-close", {"maLength": 10, "prevClose": True}, 10, True)
 
 
-# Pivot Points Standard (Traditional) from the previous period's H/L/C.
+# Pivot Points (Traditional) from the previous period's H/L/C.
 def pivot_levels(h, l, c):
     p = (h + l + c) / 3
     return {

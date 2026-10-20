@@ -4,7 +4,7 @@ import { COLOR } from './common';
 const WEEK = 7 * 86_400;
 
 /**
- * 52 Week High/Low: highest high and lowest low of the bars that opened less
+ * 52-Week Range: highest high and lowest low of the bars that opened less
  * than `weeks` weeks before the current bar (partial windows from the first
  * bar). Computed on daily bars by default (the host runs it on chart bars at
  * 1D and above); with "Wait for timeframe closes" every chart bar shows the
@@ -17,7 +17,7 @@ const WEEK = 7 * 86_400;
  */
 export const HIGH_LOW_52W = defineIndicator({
   id: 'high-low-52w',
-  name: '52 Week High/Low',
+  name: '52-Week Range',
   shortName: '52W H/L',
   category: 'other',
   keywords: ['52 week', '52w', 'high', 'low', 'year', 'annual', 'range'],

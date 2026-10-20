@@ -20,11 +20,11 @@ export function ergodicOf(ta: Ta, long: number, short: number): Streaming {
   };
 }
 
-/** SMI Ergodic Indicator: unscaled TSI and its EMA signal. */
+/** SMI Ergodic: unscaled TSI and its EMA signal. */
 export const SMI_ERGODIC = defineIndicator({
   id: 'smi-ergodic',
-  name: 'SMI Ergodic Indicator',
-  shortName: 'SMII',
+  name: 'SMI Ergodic',
+  shortName: 'SMI Erg',
   category: 'momentum',
   keywords: ['smi', 'ergodic', 'tsi', 'blau', 'oscillator'],
   overlay: false,

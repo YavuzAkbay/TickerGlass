@@ -6,7 +6,7 @@ import { EOM } from '../eom';
 import { KLINGER } from '../klinger';
 import { NET_VOLUME } from '../net-volume';
 import { PVT } from '../pvt';
-import { RELATIVE_VOLUME } from '../relative-volume';
+import { TOD_RELATIVE_VOLUME } from '../tod-relative-volume';
 import { VOLUME_OSC } from '../volume-osc';
 
 /**
@@ -22,8 +22,18 @@ export const VOLUME_GROUP: readonly AnyIndicatorDefinition[] = [
   KLINGER,
   NET_VOLUME,
   PVT,
-  RELATIVE_VOLUME,
+  TOD_RELATIVE_VOLUME,
   VOLUME_OSC,
 ];
 
-export { ACCDIST, CHAIKIN_OSC, CMF, EOM, KLINGER, NET_VOLUME, PVT, RELATIVE_VOLUME, VOLUME_OSC };
+export {
+  ACCDIST,
+  CHAIKIN_OSC,
+  CMF,
+  EOM,
+  KLINGER,
+  NET_VOLUME,
+  PVT,
+  TOD_RELATIVE_VOLUME,
+  VOLUME_OSC,
+};
