@@ -246,9 +246,15 @@ export class IndicatorController {
     for (const inst of list) {
       const def = getIndicator(inst.type);
       if (!def) {
+        const problem = userScriptProblem(inst.type);
+        // A user script before the scripts are loaded: no error, the load syncs again.
+        if (problem === undefined && isUserScriptType(inst.type)) {
+          this.clearStatus(inst.id);
+          continue;
+        }
         this.setStatus(inst.id, {
           state: 'error',
-          message: userScriptProblem(inst.type) ?? `Unknown indicator "${inst.type}"`,
+          message: problem ?? `Unknown indicator "${inst.type}"`,
         });
         continue;
       }
@@ -379,6 +385,14 @@ export class IndicatorController {
 
   private setStatus(id: string, status: InstanceStatus): void {
     useIndicatorRuntime.setState((s) => ({ status: { ...s.status, [id]: status } }));
+  }
+
+  private clearStatus(id: string): void {
+    if (!(id in useIndicatorRuntime.getState().status)) return;
+    useIndicatorRuntime.setState((s) => {
+      const { [id]: _s, ...status } = s.status;
+      return { status };
+    });
   }
 
   private forget(id: string): void {

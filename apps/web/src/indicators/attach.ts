@@ -1,4 +1,6 @@
 import type { Chart, DataFeed } from '@investopen/engine';
+import { syncScriptDefinitions } from '../scripts/definitions';
+import { useScriptsStore } from '../scripts/store';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
@@ -6,6 +8,7 @@ import { toast } from '../ui/Toast';
 import { findIndicator, removeIndicators } from './actions';
 import { IndicatorController, createIndicatorWorker } from './controller';
 import { openIndicatorSettings } from './menu';
+import { ScriptRouterPort } from './sandbox/port';
 import { effectiveInstances, useIndicatorPreview, useIndicatorStore } from './store';
 
 type UiSnapshot = ReturnType<typeof useUiStore.getState>;
@@ -16,10 +19,14 @@ const indicatorsHidden = (s: UiSnapshot) =>
 
 /** Run the indicator worker for `chart` and keep it in sync with the app stores. */
 export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
+  // User scripts run in their own sandboxes behind this port.
+  const port = new ScriptRouterPort(createIndicatorWorker(), {
+    getScript: (id) => useScriptsStore.getState().scripts.find((s) => s.id === id),
+  });
   const ctl = new IndicatorController({
     chart,
     feed,
-    worker: createIndicatorWorker(),
+    worker: port,
     schedule: (fn) => requestAnimationFrame(fn),
     onError: (message) => toast(message, 'error'),
     onStudiesLost: removeIndicators,
@@ -29,8 +36,16 @@ export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
   ctl.setHidden(indicatorsHidden(useUiStore.getState()));
   // The chart shows settings-dialog previews too (they are not persisted).
   const sync = () => ctl.sync(effectiveInstances());
-  sync();
+  // Script stubs first (the controller looks definitions up), then the new
+  // definitions applied (outputs, titles), then the sandboxes restarted.
+  const syncScripts = () => {
+    const changed = syncScriptDefinitions(useScriptsStore.getState().scripts);
+    sync();
+    for (const id of changed) port.reloadScript(id);
+  };
+  syncScripts();
   const offs = [
+    useScriptsStore.subscribe(syncScripts),
     useIndicatorStore.subscribe(sync),
     useIndicatorPreview.subscribe(sync),
     useUiStore.subscribe((s) => ctl.setHidden(indicatorsHidden(s))),
