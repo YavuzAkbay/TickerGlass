@@ -49,34 +49,49 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * indicator messages to a WorkerCore over it. Every message is acknowledged
  * with `{type:'ack', seq}` after everything it caused has been posted.
  */
+export interface SandboxCoreOptions {
+  /**
+   * Accept `probe` messages (dev and e2e builds only: `window.sandboxProbe`).
+   * Off by default; a production sandbox answers a probe as an unknown message.
+   */
+  probes?: boolean;
+}
+
 export class SandboxCore {
   private readonly registry = new IndicatorRegistry();
   private readonly worker: WorkerCore;
+  private readonly probes: boolean;
   private definition: AnyIndicatorDefinition | null = null;
   /** Why the script could not be loaded: reported against every added instance. */
   private loadError: string | null = null;
+  /**
+   * A probe is running: acks of later messages wait here, so acks always go
+   * out in seq order (the router rejects anything else).
+   */
+  private heldAcks: number[] | null = null;
 
   constructor(
     private readonly post: SandboxPost,
     /** `probeLineOffset()` of this engine (undefined = no line numbers). */
     private readonly lineOffset: number | undefined,
+    options: SandboxCoreOptions = {},
   ) {
     this.worker = new WorkerCore(post, this.registry);
+    this.probes = options.probes === true;
   }
 
-  /** Never throws: failures are posted as `error` / `compileError` messages. */
+  /**
+   * Never throws: failures are posted as `error` / `compileError` messages.
+   * Reads `data` once, before any user code runs for it.
+   */
   handle(data: unknown): void {
     const { seq, msg } = (data ?? {}) as Partial<ToSandbox>;
     if (typeof seq !== 'number') {
       this.post({ type: 'error', message: 'Sandbox: message without seq' }, []);
       return;
     }
-    if (msg?.type === 'probe') {
-      // Async (awaits what the code returns): ack once it settled.
-      void this.probe(msg.code).then((result) => {
-        this.post({ type: 'probeResult', seq, ...result }, []);
-        this.post({ type: 'ack', seq }, []);
-      });
+    if (msg?.type === 'probe' && this.probes && !this.heldAcks) {
+      void this.runProbe(seq, msg.code);
       return;
     }
     try {
@@ -84,12 +99,54 @@ export class SandboxCore {
     } catch (err) {
       this.post({ type: 'error', message: `Sandbox: ${message(err)}` }, []);
     }
+    this.ack(seq);
+  }
+
+  private ack(seq: number): void {
+    if (this.heldAcks) this.heldAcks.push(seq);
+    else this.post({ type: 'ack', seq }, []);
+  }
+
+  /**
+   * Async (awaits what the code returns): posts the result, then the ack, then
+   * the acks held meanwhile. Uses `await`, never a promise's `then`: user code
+   * may have replaced `Promise.prototype.then` and must not get a callback
+   * that posts. The result is rebuilt field by field.
+   */
+  private async runProbe(seq: number, code: unknown): Promise<void> {
+    const held: number[] = [];
+    this.heldAcks = held;
+    const r = await this.probe(code);
+    const result: Extract<FromSandbox, { type: 'probeResult' }> = {
+      type: 'probeResult',
+      seq,
+      ok: r.ok === true,
+    };
+    if (typeof r.value === 'string') result.value = r.value;
+    if (typeof r.error === 'string') result.error = r.error;
+    if (typeof r.line === 'number') result.line = r.line;
+    if (typeof r.col === 'number') result.col = r.col;
+    this.post(result, []);
     this.post({ type: 'ack', seq }, []);
+    this.heldAcks = null;
+    for (let i = 0; i < held.length; i++) this.post({ type: 'ack', seq: held[i]! }, []);
   }
 
   private dispatch(msg: SandboxMessage | undefined): void {
     switch (msg?.type) {
       case 'ping':
+        return;
+      case 'probe':
+        // Only reached when probes are off, or while another probe runs.
+        this.post(
+          {
+            type: 'error',
+            message: this.probes
+              ? 'Sandbox: a probe is already running'
+              : 'Sandbox: unknown message',
+          },
+          [],
+        );
         return;
       case 'load':
         this.load(msg.source, msg.apiVersion, msg.scriptId);

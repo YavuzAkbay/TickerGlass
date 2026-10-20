@@ -248,6 +248,8 @@ stopped and the legend shows `Stopped: no response for N s (endless loop?)`. A w
 behind (500 messages waiting, or one waiting for over **30 s**) is stopped with
 `Stopped: the script cannot keep up with the chart`. It is not restarted automatically: change a setting, save the
 script again or reload the page. A heavy but legitimate script on a very long history can hit these limits.
+Rapid changes (holding a number spinner, switching symbols quickly) do not pile up: while the worker is busy, only
+the latest inputs and the latest bars are sent once it is done.
 
 A script that loops forever while loading (at the top level) cannot be compiled: Save waits 10 s, then stores it
 without a definition and reports `Script did not finish loading within 10 s (endless loop?)`.
@@ -256,7 +258,8 @@ without a definition and reports `Script did not finish loading within 10 s (end
 `Response`, ...), storage (`indexedDB`, `caches`), other workers and channels, timers and schedulers (`setTimeout`,
 `setInterval`, `queueMicrotask`, `requestAnimationFrame`, `scheduler`, `AbortSignal.timeout`, `Atomics.waitAsync`),
 asynchronous readers and decoders (`FileReader`, `Blob` `text`/`arrayBuffer`/`bytes`/`stream`, `crypto.subtle`,
-`createImageBitmap`, `OffscreenCanvas`, `fonts`/`FontFace`, `PerformanceObserver`, WebCodecs), `postMessage`,
+`createImageBitmap`, `OffscreenCanvas`, `fonts`/`FontFace`, `PerformanceObserver`, `FinalizationRegistry`,
+WebCodecs), `onunhandledrejection`/`onrejectionhandled`, `postMessage`,
 `WebAssembly`, `navigator`, notifications, and `Error.prepareStackTrace` (fixed to `undefined`). Reading any of
 them gives `undefined`, so calling one throws. A script is synchronous code: it cannot wait for anything.
 
@@ -320,7 +323,8 @@ What the sandbox **guarantees**:
   `Worker` and the other names in section 6 are removed before your code runs, and the sandbox refuses to start
   if any of them is still reachable.
 - **Narrow channel.** The worker only takes messages the browser delivered from the page (`isTrusted`; events a
-  script dispatches itself are ignored). The page only accepts numeric result arrays for the script's own
+  script dispatches itself are ignored), and handles each one before any listener your code adds could see or
+  change it. The page only accepts numeric result arrays for the script's own
   instance, sized to the chart's bars and keyed by the script's own output ids, and re-validates the definition
   (strict whitelist, no unknown keys, no `__proto__`, colours checked) before using it. Acknowledgements must match
   messages the page sent, and a worker posting more than its messages explain is stopped, so a script cannot
@@ -328,10 +332,11 @@ What the sandbox **guarantees**:
 
 What it does **not** guarantee:
 
-- **CPU and memory.** A script can burn CPU until the watchdog stops it (5 s / 10 s, 2 s for an idle ping) and can
-  allocate memory. Stopping background work is **best effort**: timers and other scheduling APIs are removed, but
-  a script can still alternate short busy spins with waits on things that cannot be removed (for example a failing
-  `import()`), keeping a CPU core busy until you remove the indicator. Spins longer than 2 s are caught.
+- **CPU and memory.** A script can allocate memory, and it **can keep a CPU core busy for as long as it is on the
+  chart** (one core per script indicator, up to 8). The watchdog only stops a worker that fails to answer (5 s /
+  10 s, 2 s for an idle ping). Timers and other scheduling APIs are removed, but a script can still alternate
+  short busy spins with waits on things that cannot be removed (for example a failing `import()`), answering every
+  check in between. Removing the indicator (or reloading the page) is the only remedy.
 - **Correct-looking output.** A script can draw whatever it likes, including misleading levels or marks.
 - **A page-wide CSP.** The app page itself has no CSP (a separate hardening item), so the guarantees above rest on the
   worker's own header. Only the nginx image in `docker/`, `vite dev` and `vite preview` set it. If you put another

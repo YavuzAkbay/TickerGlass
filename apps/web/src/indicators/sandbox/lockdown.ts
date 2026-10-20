@@ -2,8 +2,10 @@
 // Second line of defence: the worker's response CSP is the real network
 // boundary; this removes the capabilities user code has no business with, so a
 // missing header (custom proxy, dev server) still leaves fetch & co. unreachable.
-// It also removes the ways to schedule work in the background (timers, async
-// I/O callbacks): best effort, the watchdog's ping deadline is the backstop.
+// It also removes the ways to schedule work in the background that JS can
+// remove (timers, async I/O callbacks). That does not stop a script from
+// pinning a core: a rejected `import()` and some events cannot be removed, so
+// background work can continue between watchdog pings (docs/LIMITATIONS.md).
 
 /** Globals made unreachable before user code runs. */
 export const BLOCKED_GLOBALS = [
@@ -38,6 +40,9 @@ export const BLOCKED_GLOBALS = [
   'fonts',
   'FontFace',
   'PerformanceObserver',
+  'FinalizationRegistry',
+  'onunhandledrejection',
+  'onrejectionhandled',
   'ReportingObserver',
   'VideoDecoder',
   'VideoEncoder',
@@ -64,8 +69,8 @@ export const BLOCKED_MEMBERS = [
 
 /** The parts of a worker global scope lockdown uses (a fake one in tests). */
 export interface LockdownScope {
-  postMessage(message: unknown, options: { transfer: Transferable[] }): void;
-  addEventListener(type: 'message', fn: (e: MessageEvent) => void): void;
+  postMessage(message: unknown, options?: { transfer: Transferable[] }): void;
+  addEventListener(type: 'message', fn: (e: MessageEvent) => void, capture: boolean): void;
   Event: new (type: string) => Event;
   MessageEvent: { prototype: MessageEvent };
   Error: ErrorConstructor;
@@ -75,8 +80,9 @@ export type SandboxPost = (message: unknown, transfer?: Transferable[]) => void;
 
 /**
  * Captures `postMessage` and the `isTrusted` / `MessageEvent#data` getters,
- * registers `onMessage` as the message listener (trusted events only: a
- * script's `dispatchEvent` cannot forge one), pins `Error.prepareStackTrace`
+ * registers `onMessage` as the first capturing message listener (it runs
+ * before any listener user code adds, which could otherwise rewrite
+ * `e.data`; trusted events only: a script's `dispatchEvent` cannot forge one), pins `Error.prepareStackTrace`
  * to undefined, then removes every name in BLOCKED_GLOBALS from `scope` and
  * its prototype chain (DedicatedWorkerGlobalScope.prototype,
  * WorkerGlobalScope.prototype, ...) and every BLOCKED_MEMBERS entry. Throws if
@@ -85,16 +91,37 @@ export type SandboxPost = (message: unknown, transfer?: Transferable[]) => void;
  */
 export function lockdown(scope: LockdownScope, onMessage: (data: unknown) => void): SandboxPost {
   const apply = Reflect.apply;
+  const defineProperty = Object.defineProperty;
   const send = scope.postMessage.bind(scope);
-  const post: SandboxPost = (message, transfer = []) => send(message, { transfer });
+  const post: SandboxPost = (message, transfer = []) => {
+    // No transfer list: nothing to convert, so nothing user code replaced is called.
+    if (transfer.length === 0) {
+      send(message);
+      return;
+    }
+    // The list is read with the iteration protocol: give it its own iterator,
+    // so a replaced Array.prototype[Symbol.iterator] is never consulted.
+    const n = transfer.length;
+    let i = 0;
+    const iterator = {
+      next: () =>
+        i < n ? { value: transfer[i++], done: false } : { value: undefined, done: true },
+    };
+    defineProperty(transfer, Symbol.iterator, { value: () => iterator });
+    send(message, { transfer });
+  };
   const isTrusted = getterOf(new scope.Event('lockdown'), 'isTrusted');
   const dataOf = getterOf(scope.MessageEvent.prototype, 'data');
   if (!isTrusted || !dataOf) throw new Error('Sandbox lockdown failed: event getters not found');
-  scope.addEventListener('message', (e) => {
-    // Only the browser's own events (the main thread's postMessage) are messages.
-    if (apply(isTrusted, e, []) !== true) return;
-    onMessage(apply(dataOf, e, []));
-  });
+  scope.addEventListener(
+    'message',
+    (e) => {
+      // Only the browser's own events (the main thread's postMessage) are messages.
+      if (apply(isTrusted, e, []) !== true) return;
+      onMessage(apply(dataOf, e, []));
+    },
+    true,
+  );
   pinPrepareStackTrace(scope.Error);
 
   const target = scope as unknown as Record<string, unknown>;

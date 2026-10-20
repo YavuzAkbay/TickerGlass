@@ -155,6 +155,11 @@ class FakeSandbox implements SandboxPort {
     for (const p of this.posted)
       if (p.data.seq > this.acked) this.emit({ type: 'ack', seq: (this.acked = p.data.seq) });
   }
+  /** Ack the oldest message not acknowledged yet (a slow sandbox, one at a time). */
+  ackNext() {
+    const next = this.posted.find((p) => p.data.seq > this.acked);
+    if (next) this.emit({ type: 'ack', seq: (this.acked = next.data.seq) });
+  }
   msgs = (): SandboxMessage[] => this.posted.map((p) => p.data.msg);
   types = () => this.msgs().map((m) => m.type);
 }
@@ -356,6 +361,33 @@ describe('ScriptRouterPort routing', () => {
     expect(errors(out)).toEqual([
       { type: 'error', id: 'over', message: SCRIPT_INSTANCE_CAP_MESSAGE },
     ]);
+  });
+
+  it('keeps the cap when a broken script is fixed while others took the slots', () => {
+    const { port, sandboxes, out, scripts } = setup({
+      scripts: { a: script(smaSource(), 'a'), b: script(smaSource(), 'b') },
+    });
+    for (let i = 0; i < 7; i++) addUser(port, `b${i}`, {}, 'b');
+    const fixed = scripts.get('b')!;
+    scripts.set('b', { ...fixed, manifest: null });
+    port.reloadScript('b');
+    for (let i = 0; i < MAX_SCRIPT_INSTANCES_PER_CHART; i++) addUser(port, `a${i}`, {}, 'a');
+    expect(errors(out)).toEqual([]);
+    scripts.set('b', fixed);
+    port.reloadScript('b');
+    expect(sandboxes.filter((s) => !s.terminated)).toHaveLength(MAX_SCRIPT_INSTANCES_PER_CHART);
+    expect(errors(out)).toEqual(
+      Array.from({ length: 7 }, (_, i) => ({
+        type: 'error',
+        id: `b${i}`,
+        message: SCRIPT_INSTANCE_CAP_MESSAGE,
+      })),
+    );
+    // Room again: new inputs restart one.
+    port.post({ type: 'remove', id: 'a0' });
+    port.post({ type: 'setInputs', id: 'b0', inputs: { length: 4 } });
+    expect(sandboxes.filter((s) => !s.terminated)).toHaveLength(MAX_SCRIPT_INSTANCES_PER_CHART);
+    expect(sandboxes.at(-1)!.msgs()[0]).toMatchObject({ type: 'load' });
   });
 
   it('terminate kills every sandbox and the inner worker', () => {
@@ -632,6 +664,8 @@ describe('ScriptRouterPort messages from sandboxes', () => {
     sb.emit({ type: 'resync', revision: 0, bars: 1 });
     expect(barsPosted()).toBe(1);
     for (let i = 1; i <= MAX_SANDBOX_RESYNCS; i++) {
+      // A sandbox that reports `bars: i` has handled (and acked) the i-th bars.
+      sb.ackAll();
       sb.emit({ type: 'resync', revision: 1, bars: i });
       expect(barsPosted()).toBe(1 + i);
     }
@@ -642,7 +676,9 @@ describe('ScriptRouterPort messages from sandboxes', () => {
     expect(barsPosted()).toBe(1 + MAX_SANDBOX_RESYNCS);
     expect(out).toEqual([{ type: 'error', id: 'u1', message: OUT_OF_SYNC_MESSAGE }]);
     // A new revision resets the budget.
+    sb.ackAll();
     sendBars(port, 2, 4);
+    sb.ackAll();
     sb.emit({ type: 'resync', revision: 2, bars: 5 });
     expect(barsPosted()).toBe(3 + MAX_SANDBOX_RESYNCS);
   });
@@ -836,6 +872,74 @@ describe('ScriptRouterPort watchdog', () => {
       type: 'add',
       spec: { id: 'u1', type: 'user:s1', inputs: { length: 2 } },
     });
+  });
+});
+
+describe('ScriptRouterPort coalescing', () => {
+  it('a long burst of setInputs to a slow sandbox is coalesced and ends with the latest inputs', () => {
+    const { port, sandboxes, out } = setup();
+    sendBars(port, 1, 50);
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    sb.ackAll();
+    // A spinner held for 40 s: a change every 50 ms; the sandbox needs 300 ms each.
+    // Without coalescing the backlog passes the 30 s age limit.
+    for (let k = 1; k <= 800; k++) {
+      port.post({ type: 'setInputs', id: 'u1', inputs: { length: k } });
+      vi.advanceTimersByTime(50);
+      if (k % 6 === 0) sb.ackNext();
+    }
+    for (let i = 0; i < 10; i++) {
+      vi.advanceTimersByTime(300);
+      sb.ackNext();
+    }
+    expect(sb.terminated).toBe(false);
+    expect(errors(out)).toEqual([]);
+    const sent = sb.msgs().filter((m) => m.type === 'setInputs');
+    expect(sent.length).toBeLessThanOrEqual(800 / 6 + 2);
+    expect(sent.at(-1)).toEqual({ type: 'setInputs', id: 'u1', inputs: { length: 800 } });
+  });
+
+  it('a newer bars reset supersedes a queued one; the latest goes out on the ack', () => {
+    const { port, sandboxes } = setup();
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    sb.ackAll();
+    sendBars(port, 1, 3);
+    sendBars(port, 2, 4, CONTEXT);
+    sendBars(port, 3, 5);
+    port.post({ type: 'bar', revision: 3, index: 5, bar: barAt(bars(6), 5) });
+    expect(sb.types().filter((t) => t === 'bars')).toHaveLength(1);
+    sb.ackAll();
+    const resent = sb.msgs().filter((m) => m.type === 'bars');
+    expect(resent).toHaveLength(2);
+    const last = resent[1] as Extract<SandboxMessage, { type: 'bars' }>;
+    expect(last.revision).toBe(3);
+    expect(last.bars.close.length).toBe(6); // includes the live bar
+    expect(last.context).toEqual(CONTEXT); // a coalesced reset carried one
+    // A clear drops a queued reset: nothing to send after it.
+    sendBars(port, 4, 2);
+    port.post({ type: 'clear' });
+    sb.ackAll();
+    expect(sb.msgs().filter((m) => m.type === 'bars')).toHaveLength(3);
+    expect(sb.types().at(-1)).toBe('clear');
+  });
+
+  it('a live sandbox computes the latest inputs after a burst', () => {
+    const { port, sandboxes, out } = setup({ live: true });
+    sendBars(port, 1, 6, CONTEXT);
+    addUser(port, 'u1');
+    const sb = sandboxes[0]!;
+    for (let k = 1; k <= 30; k++) port.post({ type: 'setInputs', id: 'u1', inputs: { length: k } });
+    for (let i = 0; i < 5; i++) sb.flush();
+    expect(errors(out)).toEqual([]);
+    const last = out.filter((m) => m.type === 'results').at(-1) as Extract<
+      FromWorker,
+      { type: 'results' }
+    >;
+    // length 30 > 6 bars: all NaN
+    expect([...last.changes[0]!.values.ma!].every(Number.isNaN)).toBe(true);
+    expect(sb.msgs().filter((m) => m.type === 'setInputs').length).toBeLessThanOrEqual(3);
   });
 });
 

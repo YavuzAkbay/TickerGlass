@@ -151,6 +151,17 @@ interface Sandbox {
   stopped: boolean;
   /** `bars` messages posted (the sandbox echoes its count in resync). */
   barsSent: number;
+  /**
+   * Coalescing: seq of the unacknowledged `setInputs` / `bars` (0 = none).
+   * Newer ones wait (`*Queued`) and only the latest is sent on its ack, so a
+   * burst (a held number spinner, quick symbol changes) cannot pile up.
+   */
+  inputsSeq: number;
+  inputsQueued: boolean;
+  barsSeq: number;
+  barsQueued: boolean;
+  /** A queued reset carried a context: resend the current one with it. */
+  barsQueuedContext: boolean;
   resyncRevision: number;
   resyncs: number;
 }
@@ -231,7 +242,7 @@ export class ScriptRouterPort implements WorkerPort {
         if (msg.context) this.context = msg.context;
         this.inner.post(msg, transfer);
         for (const inst of this.instances.values())
-          if (inst.sandbox) this.sendBars(inst.sandbox, msg.context);
+          if (inst.sandbox) this.requestBars(inst.sandbox, msg.context);
         return;
       case 'bar':
         this.mirror.apply(msg.revision, msg.index, msg.bar);
@@ -311,10 +322,17 @@ export class ScriptRouterPort implements WorkerPort {
       this.start(inst);
       return;
     }
-    this.send(inst.sandbox, {
+    // One setInputs in flight at a time; the latest inputs follow on its ack.
+    if (inst.sandbox.inputsSeq) inst.sandbox.inputsQueued = true;
+    else this.sendInputs(inst, inst.sandbox);
+  }
+
+  private sendInputs(inst: Instance, sb: Sandbox): void {
+    sb.inputsQueued = false;
+    sb.inputsSeq = this.send(sb, {
       type: 'setInputs',
       id: inst.id,
-      inputs: coerceInputs(inst.sandbox.def, inputs),
+      inputs: coerceInputs(sb.def, inst.inputs),
     });
   }
 
@@ -328,6 +346,14 @@ export class ScriptRouterPort implements WorkerPort {
     const parsed = script && parsedManifest(script);
     // No stub is registered for it either: the controller reports it.
     if (!script || !parsed) return;
+    // The cap holds for restarts too (reloadScript after a broken script was
+    // fixed, new inputs after a stop): count the sandboxes running now.
+    let live = 0;
+    for (const i of this.instances.values()) if (i !== inst && i.sandbox) live++;
+    if (live >= MAX_SCRIPT_INSTANCES_PER_CHART) {
+      this.emit({ type: 'error', id: inst.id, message: SCRIPT_INSTANCE_CAP_MESSAGE });
+      return;
+    }
     const def: AnyIndicatorDefinition = { ...parsed.def, id: inst.type };
     const { manifestKey } = parsed;
     let port: SandboxPort;
@@ -354,6 +380,11 @@ export class ScriptRouterPort implements WorkerPort {
       received: 0,
       stopped: false,
       barsSent: 0,
+      inputsSeq: 0,
+      inputsQueued: false,
+      barsSeq: 0,
+      barsQueued: false,
+      barsQueuedContext: false,
       resyncRevision: -1,
       resyncs: 0,
     };
@@ -414,12 +445,24 @@ export class ScriptRouterPort implements WorkerPort {
     for (const inst of this.instances.values()) if (inst.sandbox) this.send(inst.sandbox, msg);
   }
 
+  /** `sendBars`, or (one already unacknowledged) send the mirror once it is acked. */
+  private requestBars(sb: Sandbox, context?: RuntimeContext): void {
+    if (!sb.barsSeq) {
+      this.sendBars(sb, context);
+      return;
+    }
+    sb.barsQueued = true;
+    if (context) sb.barsQueuedContext = true;
+  }
+
   /** The mirror's bars to one sandbox (a fresh copy each, transferred). */
   private sendBars(sb: Sandbox, context?: RuntimeContext): void {
+    sb.barsQueued = false;
+    sb.barsQueuedContext = false;
     if (!this.mirror.valid) return;
     const bars = this.mirror.copyColumns();
     sb.barsSent++;
-    this.send(
+    sb.barsSeq = this.send(
       sb,
       { type: 'bars', revision: this.mirror.revision, bars, ...(context ? { context } : {}) },
       [
@@ -433,11 +476,12 @@ export class ScriptRouterPort implements WorkerPort {
     );
   }
 
-  private send(sb: Sandbox, msg: SandboxMessage, transfer: Transferable[] = []): void {
-    if (sb.stopped) return;
+  /** Post `msg` under the watchdog; returns its seq (0: not sent, the sandbox is stopped). */
+  private send(sb: Sandbox, msg: SandboxMessage, transfer: Transferable[] = []): number {
+    if (sb.stopped) return 0;
     if (sb.pending.length >= MAX_PENDING_MESSAGES) {
       this.kill(sb, BACKLOG_MESSAGE);
-      return;
+      return 0;
     }
     const seq = ++sb.seq;
     const now = Date.now();
@@ -445,6 +489,7 @@ export class ScriptRouterPort implements WorkerPort {
     sb.pending.push({ seq, limit: limitOf(msg.type), posted: now });
     sb.port.post({ seq, msg }, transfer);
     this.arm(sb);
+    return seq;
   }
 
   // -------------------------------------------------------------- watchdog
@@ -481,7 +526,7 @@ export class ScriptRouterPort implements WorkerPort {
    * (`pending[0].seq <= seq <= sb.seq`); anything else is a protocol
    * violation and stops the sandbox.
    */
-  private onAck(sb: Sandbox, seq: unknown): void {
+  private onAck(inst: Instance, sb: Sandbox, seq: unknown): void {
     const first = sb.pending[0];
     if (
       typeof seq !== 'number' ||
@@ -497,6 +542,16 @@ export class ScriptRouterPort implements WorkerPort {
     sb.received = 0;
     // The next message's handling starts now.
     sb.since = Date.now();
+    // Coalesced messages: the latest goes out now that its predecessor is done.
+    if (sb.barsSeq && seq >= sb.barsSeq) {
+      sb.barsSeq = 0;
+      if (sb.barsQueued)
+        this.sendBars(sb, sb.barsQueuedContext ? (this.context ?? undefined) : undefined);
+    }
+    if (sb.inputsSeq && seq >= sb.inputsSeq) {
+      sb.inputsSeq = 0;
+      if (sb.inputsQueued) this.sendInputs(inst, sb);
+    }
     this.arm(sb);
   }
 
@@ -504,7 +559,7 @@ export class ScriptRouterPort implements WorkerPort {
 
   private onSandboxMessage(inst: Instance, sb: Sandbox, msg: FromSandbox): void {
     if (isObj(msg) && msg.type === 'ack') {
-      this.onAck(sb, msg.seq);
+      this.onAck(inst, sb, msg.seq);
       return;
     }
     // Rate cap: everything else must be caused by a message still outstanding.
@@ -564,7 +619,7 @@ export class ScriptRouterPort implements WorkerPort {
         this.emit({ type: 'error', id: inst.id, message: OUT_OF_SYNC_MESSAGE });
       return;
     }
-    this.sendBars(sb);
+    this.requestBars(sb);
   }
 
   private emit(msg: FromWorker): void {

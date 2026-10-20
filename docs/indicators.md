@@ -243,7 +243,10 @@ cannot tell the difference). Routing table:
 
 One sandbox per instance, at most 8 instances per chart (`MAX_SCRIPT_INSTANCES_PER_CHART`; the rest get an
 `error` with the cap message). Router and controller count the same instances: those whose script can run (a
-stopped instance of a deleted script, or one without a valid manifest, takes no slot). A script with no saved manifest, or a manifest that does not parse, starts no
+stopped instance of a deleted script, or one without a valid manifest, takes no slot). The cap also holds on
+restarts: the router's `start()` refuses (cap `error`, no spawn) when 8 other sandboxes are running, and the
+controller takes an instance whose definition came back off the chart (`remove`, cap status) when the running
+instances already fill the cap; it is added afresh once there is room. Running instances keep their slot. A script with no saved manifest, or a manifest that does not parse, starts no
 sandbox; the controller reports it. A stopped instance (watchdog, failure) stays known and restarts on
 `setInputs` or `reloadScript`.
 
@@ -276,6 +279,13 @@ Backlog: a sandbox with 500 messages outstanding (`MAX_PENDING_MESSAGES`), or wh
 message was posted more than 30 s ago (`MAX_MESSAGE_AGE_MS`, whatever the per-message deadlines say), is stopped
 with "the script cannot keep up with the chart".
 
+**Coalescing.** At most one `setInputs` and one `bars` per sandbox is unacknowledged at a time. Newer ones wait:
+on the ack, the router sends only the latest (the instance's current inputs; the mirror's current bars, with the
+current context if any coalesced reset carried one). A held number spinner (about 20 `setInputs`/s) or quick
+symbol changes therefore cost a slow script one recompute per ack instead of a growing backlog. Live `bar` ticks
+of a newer revision reach the sandbox before its delayed `bars` and are ignored there (revision mismatch); the
+mirror copy sent afterwards includes them. A `clear` drops a queued reset (the mirror is empty).
+
 **Internal resync.** A `resync` from a sandbox (same RangeError rule as §5, `bars` = count of `bars` it
 handled) is answered by the router from the mirror and never reaches the controller. Ignored when the router
 has sent more `bars` since, or the revision is not the mirror's; at most 3 resends per revision, then one
@@ -305,24 +315,40 @@ and `vite preview` send it with no `'self'`, so not even same-origin `import()` 
 `sandboxCsp()` serves the unbundled modules, so `script-src` adds `'self'`. Keep the three in sync. In JS,
 `lockdown()` runs first in the worker:
 
-- It captures `postMessage`, `Reflect.apply` and the original `isTrusted` and `MessageEvent.prototype.data`
-  getters, and registers the one message listener. The listener ignores events with `isTrusted !== true` and reads
-  `data` through the captured getter, so a script's `dispatchEvent(new MessageEvent(...))` or a redefined `data`
-  getter cannot feed `SandboxCore` (which would answer through the captured post).
+- It captures `postMessage`, `Reflect.apply`, `Object.defineProperty` and the original `isTrusted` and
+  `MessageEvent.prototype.data` getters, and registers the message listener as the first **capturing** listener:
+  at the target, capturing listeners run first and in registration order, so no listener user code adds can see
+  or rewrite `e.data` before it is handled. The listener ignores events with `isTrusted !== true` and reads `data`
+  through the captured getter, so a script's `dispatchEvent(new MessageEvent(...))` or a redefined `data` getter
+  cannot feed `SandboxCore` (which would answer through the captured post). `SandboxCore.handle` reads the message
+  once, before any user code runs for it.
+- The captured post calls `postMessage(message)` without options when there is nothing to transfer, and gives a
+  non-empty transfer list its own iterator, so a replaced `Array.prototype[Symbol.iterator]` cannot make posting
+  (an ack) fail.
 - It pins `Error.prepareStackTrace` to `undefined` (non-writable, non-configurable): V8 call sites expose
   sloppy-mode functions through `getFunction()`. The default stack format stays, which `annotateError` parses.
 - It removes `fetch`, XHR, sockets, `Request`/`Response`, `importScripts`, storage APIs, nested workers, message
   channels, timers, `WebAssembly`, `navigator` and others (`BLOCKED_GLOBALS`) from the scope and its prototype
   chain, plus the ways to schedule work in the background: `scheduler`, `AbortSignal.timeout`,
   `Atomics.waitAsync`, `FileReader(Sync)`, the `Blob` read methods, `crypto.subtle`, `createImageBitmap`,
-  `OffscreenCanvas`, `fonts`/`FontFace`, `PerformanceObserver`, `ReportingObserver` and WebCodecs
-  (`BLOCKED_MEMBERS` for members of objects that stay).
+  `OffscreenCanvas`, `fonts`/`FontFace`, `PerformanceObserver`, `ReportingObserver`, `FinalizationRegistry`,
+  WebCodecs and the `onunhandledrejection`/`onrejectionhandled` handlers (`BLOCKED_MEMBERS` for members of objects
+  that stay).
 - It throws (no user code runs) if any of these is still reachable.
 
-Background-CPU protection is **best effort**: some task sources cannot be removed in JS (a rejected `import()`, the
-`unhandledrejection` and `securitypolicyviolation` events), so a script can still alternate busy spins with short
-waits. The 2 s ping deadline catches any spin that is in progress when a ping arrives and longer than that; a
-script that spins in shorter slices can keep a core busy until the instance is removed.
+**Background CPU is not bounded.** Removing these APIs does not stop a script from pinning a core: some task
+sources cannot be removed in JS (a rejected `import()` under the CSP, `addEventListener('unhandledrejection')`,
+`securitypolicyviolation`). A loop like `const spin = () => { busy(1 ms); import('x:').catch(spin); }` yields to
+the task queue between iterations, so it answers every ping in time and keeps one core busy for as long as the
+instance exists, one core per instance (up to 8). The 2 s ping deadline only catches a single spin longer than
+that. Removing the indicator (or reloading the page) is the only remedy.
+
+**Probes.** `probe` messages (`window.sandboxProbe`, dev/e2e) are accepted only when the worker is built for dev
+or with `VITE_E2E=1` (`SandboxCore` option `probes`, a build-time constant in `sandbox-worker.ts`); a production
+sandbox answers them as an unknown message. A probe's async completion uses `await`, never a promise's `then`
+(user code may have replaced `Promise.prototype.then`), its result is rebuilt field by field, and only one probe
+runs at a time: acks of messages handled meanwhile are held and posted after the probe's own, so acks stay in seq
+order.
 
 Strict mode: user code is compiled with `"use strict"`, the worker is spawned with `type: 'module'` (always strict;
 `createSandboxWorker` must keep it), and the built file starts with a `"use strict";` prologue as well.

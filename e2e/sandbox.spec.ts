@@ -183,6 +183,28 @@ test.describe('user-script sandbox', () => {
     expect(await probe(page, code)).toEqual({ ok: true, value: 'sent' });
   });
 
+  test('a replaced Promise.prototype.then gets no callback from the sandbox', async ({ page }) => {
+    // The probe's completion must not go through a user-visible `then` (that callback
+    // posts). Checked two ticks later, after the sandbox attached whatever it attaches.
+    const code = `
+      const then0 = Promise.prototype.then;
+      Promise.prototype.then = function (f, r) {
+        if (!self.leak) self.leak = f;
+        return then0.call(this, f, r);
+      };
+      return (async () => { await null; await null; return typeof self.leak; })();`;
+    expect(await probe(page, code)).toEqual({ ok: true, value: 'undefined' });
+  });
+
+  test('a broken array iteration protocol cannot stop the sandbox from answering', async ({
+    page,
+  }) => {
+    const code = `
+      Array.prototype[Symbol.iterator] = () => { throw new Error('broken'); };
+      return 'still answers';`;
+    expect(await probe(page, code)).toEqual({ ok: true, value: 'still answers' });
+  });
+
   test('Error.prepareStackTrace is pinned (no call sites for user code)', async ({ page }) => {
     const code = `
       try { Error.prepareStackTrace = (e, sites) => sites; } catch (e) { return e.name; }

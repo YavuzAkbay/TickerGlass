@@ -55,9 +55,9 @@ function bars(n: number): BarColumns {
   };
 }
 
-function sandbox() {
+function sandbox(options: { probes?: boolean } = {}) {
   const out: FromSandbox[] = [];
-  const core = new SandboxCore((m) => out.push(m), LINE_OFFSET);
+  const core = new SandboxCore((m) => out.push(m), LINE_OFFSET, options);
   let seq = 0;
   const send = (msg: SandboxMessage) => {
     const from = out.length;
@@ -306,8 +306,55 @@ describe('SandboxCore', () => {
     });
   });
 
+  it('rejects probes unless enabled (production)', () => {
+    const { send } = sandbox();
+    expect(send({ type: 'probe', code: 'return 1;' })).toEqual([
+      { type: 'error', message: 'Sandbox: unknown message' },
+      { type: 'ack', seq: 1 },
+    ]);
+  });
+
+  it('keeps acks in seq order while a probe runs; one probe at a time', async () => {
+    const { send, out } = sandbox({ probes: true });
+    send({ type: 'probe', code: 'return Promise.resolve().then(() => 1);' });
+    send({ type: 'ping' });
+    send({ type: 'probe', code: 'return 2;' });
+    expect(out).toEqual([{ type: 'error', message: 'Sandbox: a probe is already running' }]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(out.slice(1)).toEqual([
+      { type: 'probeResult', seq: 1, ok: true, value: '1' },
+      { type: 'ack', seq: 1 },
+      { type: 'ack', seq: 2 },
+      { type: 'ack', seq: 3 },
+    ]);
+    send({ type: 'ping' });
+    expect(out.at(-1)).toEqual({ type: 'ack', seq: 4 });
+  });
+
+  it('never hands a replaced Promise.prototype.then a callback (probe path)', async () => {
+    const { send, out } = sandbox({ probes: true });
+    const then0 = Promise.prototype.then;
+    const leaked: unknown[] = [];
+    // User code: records every callback attached with `then`.
+    Promise.prototype.then = function (this: Promise<unknown>, f?: unknown, r?: unknown) {
+      leaked.push(f);
+      return Reflect.apply(then0, this, [f, r]) as Promise<never>;
+    };
+    try {
+      send({ type: 'probe', code: 'return 7;' });
+    } finally {
+      Promise.prototype.then = then0;
+    }
+    expect(leaked).toEqual([]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(out).toEqual([
+      { type: 'probeResult', seq: 1, ok: true, value: '7' },
+      { type: 'ack', seq: 1 },
+    ]);
+  });
+
   it('runs probes and acks after the result', async () => {
-    const { send, out } = sandbox();
+    const { send, out } = sandbox({ probes: true });
     send({ type: 'probe', code: 'return Promise.resolve(6 * 7);' });
     await new Promise((r) => setTimeout(r, 0));
     expect(out).toEqual([
