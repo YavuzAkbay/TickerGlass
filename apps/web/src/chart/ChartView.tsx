@@ -9,7 +9,7 @@ import { DrawingToolbar } from '../drawings/DrawingToolbar';
 import { DrawingTextEditor } from '../drawings/TextEditor';
 import { attachIndicators } from '../indicators/attach';
 import { IndicatorLegends } from '../indicators/Legend';
-import type { FromSandbox, ProbeResult, ToSandbox } from '../indicators/sandbox/sandbox-worker';
+import type { FromSandbox, ProbeResult, ToSandbox } from '../indicators/sandbox/protocol';
 import { openChartContextMenu } from './contextMenus';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
