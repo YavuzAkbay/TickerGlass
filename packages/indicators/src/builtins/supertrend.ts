@@ -4,8 +4,8 @@ import { trueRange } from './common';
 const nz = (x: number) => (Number.isNaN(x) ? 0 : x);
 
 /**
- * Supertrend (standard `ta.supertrend` on hl2 with `ta.atr`). The first bar is
- * hidden like the common built-in; the line is split into up/down plots.
+ * Supertrend (on hl2 with ATR). The first bar is
+ * hidden (no prior bar to trail); the line is split into up/down plots.
  */
 export const SUPERTREND = defineIndicator({
   id: 'supertrend',

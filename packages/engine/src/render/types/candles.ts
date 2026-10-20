@@ -6,7 +6,7 @@ export interface CandleOptions {
   /** Draw wicks (still subject to `style.drawWick`). */
   wicks: boolean;
   /**
-   * reference hollow candles: colour from close vs previous close, body hollow
+   * Hollow candles: colour from close vs previous close, body hollow
    * (border only) when close > open, filled otherwise.
    */
   hollow: boolean;

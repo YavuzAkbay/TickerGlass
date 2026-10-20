@@ -17,7 +17,7 @@ type Template = IndicatorTemplate<IndicatorState>;
 
 const fail = (what: string, err: unknown) => toast(`${what}: ${errorMessage(err)}`, 'error', 6000);
 
-/** the common "Indicator templates" dropdown: save the current set, apply, rename, delete. */
+/** "Indicator templates" dropdown: save the current set, apply, rename, delete. */
 export function IndicatorTemplatesButton() {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);

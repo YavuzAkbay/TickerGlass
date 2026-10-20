@@ -84,7 +84,7 @@ export function renderPolygon(
   ctx.stroke();
 }
 
-/** Border (strong) or filled interior (strong, grabbable by convention) of a closed polygon. */
+/** Border (strong) or filled interior (strong, grabbable) of a closed polygon. */
 export function hitPolygon(
   pts: readonly PixelPoint[],
   s: ShapeStyle,

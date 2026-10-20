@@ -13,7 +13,7 @@ export interface IntervalGroup {
   intervals: string[];
 }
 
-/** Built-in intervals offered in the interval menu, grouped like reference. */
+/** Built-in intervals offered in the interval menu, grouped by unit. */
 export const INTERVAL_GROUPS: IntervalGroup[] = [
   { unit: 'minute', title: 'Minutes', intervals: ['1m', '3m', '5m', '15m', '30m', '45m'] },
   { unit: 'hour', title: 'Hours', intervals: ['1h', '2h', '3h', '4h'] },

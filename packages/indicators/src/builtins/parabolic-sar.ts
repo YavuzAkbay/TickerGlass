@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
-/** Parabolic SAR, a bar-by-bar port of the standard `ta.sar` reference implementation. */
+/** Parabolic SAR, a bar-by-bar implementation of the standard recursion. */
 export const PARABOLIC_SAR = defineIndicator({
   id: 'parabolic-sar',
   name: 'Parabolic SAR',
@@ -21,7 +21,7 @@ export const PARABOLIC_SAR = defineIndicator({
     const st = ta.vars({ result: NaN, maxMin: NaN, acc: NaN, below: 0 });
     return (c) => {
       const i = c.i;
-      if (i === 0) return; // standard: na on the first bar, no state change.
+      if (i === 0) return; // NaN on the first bar, no state change.
       const high = c.high[i]!;
       const low = c.low[i]!;
       let first = false;

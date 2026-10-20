@@ -37,7 +37,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
   not compile; the server does not run or validate scripts). The client creates the id (UUID v4,
   `[A-Za-z0-9_-]{1,36}`) because indicator instances reference it (`user:<id>`). Names are not unique.
   See [user-scripts.md](user-scripts.md).
-- **Flags** are global like the common: at most one of `red orange yellow green cyan blue purple` per symbol.
+- **Flags** are global: at most one of `red orange yellow green cyan blue purple` per symbol.
   `created_at` is the time the current color was set (it resets on a color change, not on setting the same color).
 - **Alerts** (Phase 10) are one row per alert with revision checks like watchlists; the evaluation service owns
   `alert_states`, and the API owns the log and the delivery outbox. Tables, endpoints, firing and the `/ws` event

@@ -3,7 +3,7 @@ import { isValidBar } from './buffers';
 
 /**
  * Runs Wilder's ATR (RMA of true range, seeded with the SMA of the first `length` TRs,
- * matching the common ta.atr). Invalid (NaN) bars are skipped and do not advance state.
+ * standard definition). Invalid (NaN) bars are skipped and do not advance state.
  * Calls `emit(i, atr)` for every valid bar once warmed up.
  */
 function runAtr(src: OhlcvSource, length: number, emit: (i: number, atr: number) => void): void {

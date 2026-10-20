@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
-/** Least squares moving average (standard `ta.linreg(src, length, offset)`). */
+/** Least squares moving average. */
 export const LSMA = defineIndicator({
   id: 'lsma',
   name: 'Least Squares Moving Average',

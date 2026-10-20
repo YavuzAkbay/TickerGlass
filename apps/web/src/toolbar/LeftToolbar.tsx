@@ -430,7 +430,7 @@ function ToggleButton({
   );
 }
 
-/** standard vertical drawing toolbar. Tools without a registered
+/** Vertical drawing toolbar. Tools without a registered
  * drawing definition are dimmed and only show a hint (drawings/attach syncs
  * the active tool and options to the chart). */
 export function LeftToolbar() {

@@ -149,7 +149,7 @@ export interface ChartTypeDef {
   icon: ComponentType<IconProps>;
 }
 
-/** Chart styles in reference order. `null` marks a group separator. */
+/** Chart styles in menu order. `null` marks a group separator. */
 export const CHART_TYPE_MENU: (ChartTypeDef | null)[] = [
   { id: 'bars', label: 'Bars', icon: BarsIcon },
   { id: 'candles', label: 'Candles', icon: CandlesIcon },

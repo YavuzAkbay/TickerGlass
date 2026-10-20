@@ -45,7 +45,7 @@ function setup(type: string, points: DrawingPoint[], style = {}) {
 }
 
 describe('fib levels', () => {
-  it('reference default levels and visibility', () => {
+  it('default levels and visibility', () => {
     const lv = defaultFibLevels();
     const visible = lv.filter((l) => l.visible).map((l) => l.value);
     expect(visible).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236]);

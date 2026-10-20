@@ -5,7 +5,7 @@
 // low) (a bar with high === low puts all of it in the row holding that price).
 // Volume counts as "up" when close >= open, else "down".
 //
-// Value area (Market Profile / CBOT convention, as reference documents it):
+// Value area (Market Profile / CBOT convention):
 // start with the POC row; while the accumulated volume is below `valueArea`%
 // of the total, compare the sum of the next two rows above the area with the
 // sum of the next two rows below it and add the larger pair (ties add the

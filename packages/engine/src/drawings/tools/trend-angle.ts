@@ -13,7 +13,7 @@ type TrendAngleStyle = typeof TREND_ANGLE_DEFAULTS;
 
 /**
  * Screen angle of anchors 0 -> 1 in degrees, counter-clockwise from the +x
- * axis (up is positive), in (-180, 180]. Pixel space (reference convention): changes
+ * axis (up is positive), in (-180, 180]. Pixel space: changes
  * with zoom and price scaling. NaN with fewer than two anchors.
  */
 export function trendAngleDegrees(g: DrawingGeometry): number {

@@ -1,6 +1,6 @@
 # InvestOpen Roadmap
 
-Open-source (AGPL-3.0), self-hosted, single-user charting platform with reference-class features. Data source: yFinance. Tick items off as they land.
+Open-source (AGPL-3.0), self-hosted, single-user charting platform with full-featured charting. Data source: yFinance. Tick items off as they land.
 
 Known limitations (what you see, why, and Fixed / Planned / Inherent status): **[docs/LIMITATIONS.md](LIMITATIONS.md)**.
 
@@ -20,7 +20,7 @@ Decisions: AGPL-3.0 · custom Canvas2D chart engine · self-hosted single user (
 | Alerts service    | Small Node worker that reuses the TS indicator package, reads bars from the Data API, and evaluates server-side                    | Alerts fire with the browser closed, without re-implementing indicators in Python               |
 | Monorepo          | pnpm workspaces + uv (Python)                                                                                                      | Packages: engine, indicators, web app, alerts service, API                                      |
 | Tests             | Vitest (engine and indicators, golden values), Playwright (interaction and visual regression), pytest + recorded yfinance fixtures |                                                                                                 |
-| Icons/UI          | Own design system; Lucide/Tabler (MIT) icons. **No reference name, logos, or icon assets**                                       | Trademark safety                                                                                |
+| Icons/UI          | Own design system; Lucide/Tabler (MIT) icons. **No third-party brand names, logos, or icon assets**                                       | Trademark safety                                                                                |
 
 Key design rules that make later phases cheap:
 
@@ -43,7 +43,7 @@ yfinance constraints to design around:
 
 ### Phase 0: Foundations
 
-- [x] `git init`, AGPL-3.0 `LICENSE`, README (scope, disclaimer: not affiliated with reference/Yahoo, personal use)
+- [x] `git init`, AGPL-3.0 `LICENSE`, README (scope, disclaimer: not affiliated with any data provider or third-party platform, personal use)
 - [x] pnpm workspace + TS strict config, ESLint, Prettier; uv + ruff + mypy for Python
 - [x] Vite + React app skeleton, Zustand store skeleton, theme tokens (dark/light)
 - [x] FastAPI skeleton with `/health`; settings from env (`DATABASE_URL`, ports)
@@ -91,7 +91,7 @@ Phase 2 notes:
 - `?feed=synthetic` runs the app on an offline random-walk feed (used by e2e tests).
 - Pane resize/reorder/maximize/collapse exist in the engine API; UI controls arrive with Phase 3 context menus.
 
-### Phase 3: App shell (standard layout)
+### Phase 3: App shell (app shell layout)
 
 - [x] Top toolbar: symbol button/search dialog (keyboard-first, type anywhere to search), interval picker + favorites + custom intervals, chart type menu, indicators button, compare, alert, replay, layout menu, undo/redo, settings, screenshot, fullscreen
 - [x] Left drawing toolbar with grouped flyouts, favorites bar, magnet, stay-in-drawing-mode, lock all, hide all, remove all
@@ -131,7 +131,7 @@ Phase 4 notes:
 
 Phase 5 notes:
 
-- Design and worker protocol: `docs/indicators.md`. Golden references are regenerated with `uv run --no-project --python 3.11 --with ta-lib --with pandas --with numpy packages/indicators/scripts/golden.py` (synthetic 1000-bar input; TA-Lib where its warm-up matches standard, numpy otherwise).
+- Design and worker protocol: `docs/indicators.md`. Golden references are regenerated with `uv run --no-project --python 3.11 --with ta-lib --with pandas --with numpy packages/indicators/scripts/golden.py` (synthetic 1000-bar input; TA-Lib where its warm-up matches the reference conventions, numpy otherwise).
 - Indicator limitations (VWAP timezone/anchors, pivot types, MTF lookahead, ...): see [LIMITATIONS.md](LIMITATIONS.md#indicators). Bars context (exchange timezone, session, interval) and confirmed MTF alignment: `docs/indicators.md` §2/§4.
 - Studies are not part of `chart.getState()`; the app re-adds them on `studiesCleared`. Phase 7 moves indicator persistence from localStorage to the API.
 
@@ -174,7 +174,7 @@ Phase 7 notes:
 - [x] Multiple named watchlists; create/rename/delete/duplicate; sections/separators; drag reorder
 - [x] Columns: last, change, change %, volume, ext-hours; sort; customizable columns
 - [x] Live updates via `/ws`; price tick flash
-- [x] Color flags (standard flag lists); right-click row menu (add alert, flag, remove, move to list, open in new chart)
+- [x] Color flags (colour-coded flag lists); right-click row menu (add alert, flag, remove, move to list, open in new chart)
 - [x] Import/export `.txt`; add the current chart symbol; keyboard navigation (↑/↓ changes the chart symbol)
 - [x] Details panel (key stats, performance, earnings date), news panel
 
@@ -183,7 +183,7 @@ Phase 8 notes:
 - Server and wire format: `docs/persistence.md` (tables `watchlists` and `symbol_flags` in §1, endpoints in §2, conflicts in §3, bundle sections in §4, cache keys and the `watchlist.prefs` setting in §6). Market-data additions: `GET /api/quotes/extended`, `GET /api/performance/{symbol}`, `GET /api/news?symbols=`.
 - Live quotes: `apps/web/src/quotes/` is one shared `/ws` client per tab (reference-counted subscriptions, 200-symbol cap, backoff, fallback polling of `/api/quotes` every 15 s while the socket is down, extended quotes every 60 s). Watchlist and Details read the same `useLiveQuotes` / `useLiveQuote` store.
 - Watchlist data layer: `apps/web/src/watchlist/` (`store.ts` lists and flags, `prefs.ts` active list / columns / sort, `model.ts` rows, sorting, `.txt` parse and format, `commands.ts`); sync in `apps/web/src/persist/watchlists.ts`. A list is saved whole with a revision check (409 shows a toast with "Keep mine"); flags are global per symbol and last writer wins. The active list, columns and sort are the setting `watchlist.prefs`.
-- Lists can be created offline (client-chosen ids). Flag colors appear as virtual lists under "Flagged" in the list switcher. The `.txt` import maps reference prefixes to Yahoo symbols and reports the ones it can't map.
+- Lists can be created offline (client-chosen ids). Flag colors appear as virtual lists under "Flagged" in the list switcher. The plain-text watchlist import (EXCHANGE:TICKER, ### section headers) maps exchange prefixes to Yahoo symbols and reports the ones it can't map.
 - e2e: `e2e/persistence.ts` mocks the new endpoints; `e2e/market.ts` is an opt-in mock for quotes, performance and the `/ws` stream (`mockMarket`); `e2e/watchlist.spec.ts` covers the panel.
 - Deferred: "Open in new chart" (Phase 14: a second tab would clobber the shared last-used layout), drag between lists and multi-select (Phase 15). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#watchlists).
 
@@ -250,7 +250,7 @@ Phase 11 notes:
 - [x] Volume: A/D, Chaikin Money Flow, Chaikin Oscillator, Ease of Movement, Klinger, Net Volume, PVT, Volume Oscillator, Volume Profile (visible range / session), Relative Volume
 - [x] Volatility: Historical Volatility, Chaikin Volatility, Ulcer Index, Bollinger %B/Bandwidth, Standard Deviation, Mass Index
 - [x] Other: Pivot Points High/Low, Pivot types (Fibonacci, Woodie, Camarilla, DM), Correlation coefficient, Price oscillator, Median/Typical price, Auto fib, 52-week high/low, Seasonality
-- [x] Optional "more advanced than reference": user JS indicators in a sandboxed Worker with a documented API (not standard). See [user-scripts.md](user-scripts.md)
+- [x] Optional extension: user JS indicators in a sandboxed Worker with a documented API (our own API). See [user-scripts.md](user-scripts.md)
 
 ### Phase 13: Market replay
 

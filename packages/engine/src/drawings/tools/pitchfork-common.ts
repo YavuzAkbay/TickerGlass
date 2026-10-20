@@ -23,7 +23,7 @@ import { levelsOf } from './fib-common';
 
 export type PitchforkVariant = 'original' | 'schiff' | 'modified-schiff' | 'inside';
 
-/** reference default pitchfork/pitchfan levels: [value, colour, visible]. */
+/** default pitchfork/pitchfan levels: [value, colour, visible]. */
 const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [0.25, '#ffb74d', false],
   [0.382, '#81c784', false],
@@ -36,7 +36,7 @@ const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [2, '#f23645', false],
 ];
 
-/** Fresh copy of the reference default pitchfork levels (sorted by value). */
+/** Fresh copy of the default pitchfork levels (sorted by value). */
 export function defaultPitchforkLevels(): DrawingLevel[] {
   return TV_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
 }
@@ -83,7 +83,7 @@ export const PITCHFORK_COMMON_PROPERTIES: readonly DrawingProperty[] = [
  * - `handle0`-`handle1`: the handle segment drawn in the median style.
  *
  * Original: median from p1 through mid. Schiff: origin (p1.x, (p1.y + p2.y) / 2).
- * Modified Schiff: origin at the midpoint of p1-p2. Inside : origin at the
+ * Modified Schiff: origin at the midpoint of p1-p2. Inside: origin at the
  * midpoint m of p1-p2, the handle runs m -> p3 and the tines are parallel to it
  * (median from mid along p3 - m).
  */

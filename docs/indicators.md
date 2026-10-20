@@ -61,11 +61,10 @@ export const SMA = defineIndicator({
   size, static `text`); shapes and bgcolor take an `offset` like plots (additive; aboveBar/belowBar anchor to
   the bar at the drawn position). `color` is a string or a palette; with a palette the step picks an index per
   bar (`c.set(id, v, k)` / `c.setColor(id, k)`), e.g. MACD histogram, Supertrend, Ichimoku cloud. Index
-  `NO_COLOR` (255, = engine `STUDY_COLOR_NONE`) means "no colour" for that bar (standard `na` colour: the line
+  `NO_COLOR` (255, = engine `STUDY_COLOR_NONE`) means "no colour" for that bar (missing-value colour: the line
   segment ending there, the bar, mark, fill segment or background is not drawn); any other out-of-range index
   uses entry 0.
-- Additive output options (Phase 12): plot `connectGaps` (line/step drawn straight across NaN bars, standard
-  `style_line` vs `style_linebr`; default false); shape `textFromValue` (label text = the bar's value formatted
+- Additive output options (Phase 12): plot `connectGaps` (line/step drawn straight across NaN bars, line vs broken-line style; default false); shape `textFromValue` (label text = the bar's value formatted
   with the indicator's format; with aboveBar/belowBar the value marks presence and gives the text); new output
   type `volumeProfile` (`mode: 'visible' | 'session'`, `rowsLayout: 'count' | 'size'`, `rows`, `rowSize`,
   `valueArea` %, `widthPercent`, `placement: 'left' | 'right'` — each may be a function of inputs — and
@@ -90,7 +89,7 @@ indicators use `calendarPeriod(time, unit, tz, session)` (`session|week|month|qu
 18:00-17:00; weeks, months, quarters and years of such a session also start at the session open, so a Sunday
 18:00 open begins the new week; weeks start Monday). Zone offsets are cached per 15 UTC minutes (half-hour
 DST zones such as Australia/Lord_Howe). VWAP: anchors Session/Week/Month/Quarter/Year/Decade/Century in the
-exchange timezone and "Hide VWAP on 1D or Above" (`env.intervalSeconds >= 1D`). OBV: reference "Smoothing" (None,
+exchange timezone and "Hide VWAP on 1D or Above" (`env.intervalSeconds >= 1D`). OBV: "Smoothing" (None,
 SMA, SMA + Bollinger Bands, EMA, SMMA (RMA), WMA, VWMA; length, BB StdDev). Unset outputs are NaN for the bar. All running state lives in `ta` primitives created in
 `setup` (`sma ema rma wma vwma sum stdev dev highest lowest history vars series`; Phase 12 adds `cum()`,
 `highestBars(n)` / `lowestBars(n)` (offset <= 0 of the extreme within the last n values, ties = most recent),
@@ -112,7 +111,7 @@ must leave the same arrays as a full computation, e.g. clear what an earlier las
 range in `vars`): in a full compute only bar n-1 runs with `isLast`, live every bar did when it was last.
 
 Why per-bar: full compute and live update are the same code, so they cannot diverge; recursive indicators
-(SAR, Supertrend) are natural; a tick costs O(1) per indicator. Conventions (standard/TA-Lib): warm-up is NaN,
+(SAR, Supertrend) are natural; a tick costs O(1) per indicator. Conventions (TA-Lib): warm-up is NaN,
 `ema`/`rma` seed with the SMA of the first `length` values, `stdev` is population. NaN inputs: leading NaNs are
 skipped (warm-up starts at the first value), later NaNs return NaN without changing state.
 
@@ -143,7 +142,7 @@ remove them). The engine places the dependent on the source study's pane by defa
 ## 4. Multi-timeframe inputs
 
 A definition may declare one `timeframe` input; its value is the resolution of the **whole** indicator
-(the common indicator "Timeframe"). `''` = chart. The host's `resolveTimeframe(tf)` maps `'auto'` (Pivot Points:
+(the indicator "Timeframe" input). `''` = chart. The host's `resolveTimeframe(tf)` maps `'auto'` (Pivot Points:
 intraday -> 1D, 1D -> 1W, above -> 12M) and returns `''` when tf equals or is below the chart interval.
 
 1. The instance reports `waiting` and its tf appears in `requiredTimeframes()`.
@@ -157,7 +156,7 @@ intraday -> 1D, 1D -> 1W, above -> 12M) and returns `''` when tf equals or is be
    (e.g. a daily chart bar on Monday already shows the week's final value), while on the live edge the value
    moves until the timeframe bar closes. Backtests or alert replays over history therefore see values that
    were not knowable at the time; alerts evaluated live only fire on what was known.
-   **Confirmed alignment** (reference "Wait for timeframe closes"): a definition names a `bool` input in
+   **Confirmed alignment** ("Wait for timeframe closes"): a definition names a `bool` input in
    `TimeframeInputDef.waitForCloseInput` (conventionally default true). When it is on, chart bars inside
    timeframe bar k show bar k-1 (the last closed one), on history and live alike: no lookahead, no repainting,
    at the cost of one timeframe bar of lag; alerts on such values behave the same in replay and live. Pivot
@@ -416,7 +415,7 @@ transform's volume column. Timeframe alignment uses brick times (non-decreasing)
   `uv run --no-project --python 3.11 --with ta-lib --with pandas --with numpy packages/indicators/scripts/golden.py`.
   Checked: TA-Lib 0.8.2 installs from wheels (numpy 2.4, pandas 3); pandas-ta 0.4.71b0 needs Python >= 3.12
   (`--python 3.12 --with pandas-ta` works), so it is optional cross-checking only.
-- Target semantics are reference/standard. Use TA-Lib where its output matches standard including warm-up (SMA, EMA,
+- Target semantics are standard textbook conventions (Wilder RMA, SMA-seeded EMA). Use TA-Lib where its output matches them including warm-up (SMA, EMA,
   WMA, RSI, Bollinger, Williams %R, CCI, MFI); otherwise (VWAP, Anchored VWAP, VWMA, HMA, Keltner, Donchian,
   Ichimoku, Supertrend, SAR, MACD/Stoch/ADX/ATR/OBV seeding, pivots) write plain pandas/numpy versions of the
   textbook formulas and record `ref: numpy`. Where TA-Lib and the numpy reference differ only during warm-up,

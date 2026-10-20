@@ -213,7 +213,7 @@ function disjointLines(g: DrawingGeometry): TwoLines | null {
 /**
  * Disjoint channel: two independent lines over the same bars (anchors 0-1 and
  * 2-3), filled between. Three clicks; anchor 2 takes anchor 0's time and
- * anchor 3 mirrors line 0-1 , then all four ends move freely in price.
+ * anchor 3 mirrors line 0-1, then all four ends move freely in price.
  */
 export const disjointChannel = defineDrawingTool({
   type: 'disjoint-channel',

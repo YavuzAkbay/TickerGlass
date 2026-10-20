@@ -102,8 +102,8 @@ export interface EnumInputDef<O extends string = string> extends InputBase<O> {
 export interface TimeframeInputDef extends InputBase<string> {
   kind: 'timeframe';
   /**
-   * Key of a `bool` input in the same schema (the common "Wait for timeframe
-   * closes", conventionally default true) that selects confirmed alignment:
+   * Key of a `bool` input in the same schema (a "wait for timeframe
+   * close" switch, conventionally default true) that selects confirmed alignment:
    * every chart bar shows the last *closed* timeframe bar, so history matches
    * what was knowable in real time and live values never repaint. Without it
    * (or when false) chart bars show the timeframe bar containing them: on
@@ -208,7 +208,7 @@ export type ShapeSize = 'tiny' | 'small' | 'normal' | 'large' | 'huge';
  * A colour or a palette. With a palette the step picks an index per bar
  * (`ctx.set(id, v, colorIndex)`), e.g. MACD histogram rising/falling colours.
  * Users edit each palette entry in the Style tab. `NO_COLOR` as the index
- * hides that bar (standard `na` colour); other out-of-range indices use entry 0.
+ * hides that bar (missing-value colour); other out-of-range indices use entry 0.
  */
 export type ColorSpec = string | readonly string[];
 
@@ -247,7 +247,7 @@ export interface PlotDef<
   showLastValue?: boolean;
   /**
    * Line/step kinds: draw straight across NaN bars instead of breaking the
-   * line (standard `plot.style_line` vs `style_linebr`), e.g. ZigZag pivots
+   * line (line vs line-with-breaks style), e.g. ZigZag pivots
    * written sparsely. Default false.
    */
   connectGaps?: boolean;
@@ -634,7 +634,7 @@ export interface SeriesVar {
 /**
  * Factory for stateful primitives. Everything created here is snapshotted and
  * restored by the runtime. Only callable inside `setup`.
- * Conventions (standard / TA-Lib compatible): warm-up outputs are NaN; ema/rma
+ * Conventions (TA-Lib compatible): warm-up outputs are NaN; ema/rma
  * seed with the SMA of the first `length` values; stdev is population (biased).
  */
 export interface Ta {
@@ -642,58 +642,58 @@ export interface Ta {
   ema(length: number): Streaming;
   /** Wilder's moving average (alpha = 1/length), used by RSI/ATR/ADX. */
   rma(length: number): Streaming;
-  /** Linearly weighted moving average (standard `ta.wma`). */
+  /** Linearly weighted moving average. */
   wma(length: number): Streaming;
-  /** Volume-weighted moving average (standard `ta.vwma`): update(x, volume). */
+  /** Volume-weighted moving average: update(x, volume). */
   vwma(length: number): WeightedStreaming;
   /** Rolling sum over `length` values. */
   sum(length: number): Streaming;
   stdev(length: number): Streaming;
-  /** Mean absolute deviation from the window mean (standard `ta.dev`). */
+  /** Mean absolute deviation from the window mean. */
   dev(length: number): Streaming;
   highest(length: number): Streaming;
   lowest(length: number): Streaming;
   /**
    * Offset (<= 0, in values fed) of the highest of the last `length` values
-   * from the current one (standard `ta.highestbars`); ties pick the most recent.
+   * from the current one; ties pick the most recent.
    */
   highestBars(length: number): Streaming;
-  /** Like `highestBars` for the lowest value (standard `ta.lowestbars`). */
+  /** Like `highestBars` for the lowest value. */
   lowestBars(length: number): Streaming;
-  /** Running total of every value fed (standard `ta.cum`). */
+  /** Running total of every value fed. */
   cum(): Streaming;
-  /** `x - x[length]` (standard `ta.change(x, length)`), default length 1. */
+  /** `x - x[length]`, default length 1. */
   change(length?: number): Streaming;
   /**
    * Least-squares line over the last `length` values with x = 0..length-1
-   * oldest to newest: a + b * (length - 1 - offset) (standard `ta.linreg`;
+   * oldest to newest: a + b * (length - 1 - offset),
    * offset 0 = the fitted value at the current bar, TA-Lib LINEARREG).
    */
   linreg(length: number, offset?: number): Streaming;
   /**
    * Percentage (0..100) of the previous `length` values that are <= the
-   * current one (standard `ta.percentrank`; needs length + 1 values).
+   * current one (needs length + 1 values).
    */
   percentrank(length: number): Streaming;
-  /** Pearson correlation of x and y over `length` pairs (standard `ta.correlation`). */
+  /** Pearson correlation of x and y over `length` pairs. */
   correlation(length: number): PairStreaming;
-  /** Symmetrically weighted MA of 4 values: (x[3] + 2x[2] + 2x[1] + x) / 6 (standard `ta.swma`). */
+  /** Symmetrically weighted MA of 4 values: (x[3] + 2x[2] + 2x[1] + x) / 6. */
   swma(): Streaming;
   /**
-   * Arnaud Legoux MA (standard `ta.alma`): gaussian weights centred at
+   * Arnaud Legoux MA: gaussian weights centred at
    * offset * (length - 1) from the oldest value, width length / sigma.
    */
   alma(length: number, offset: number, sigma: number): Streaming;
   /**
-   * Pivot high (standard `ta.pivothigh(left, right)`): on the value that confirms
+   * Pivot high: on the value that confirms
    * it, the value `right` values back if it is strictly greater than the
    * `left` values before and `right` values after it; NaN otherwise.
    */
   pivotHigh(left: number, right: number): Streaming;
-  /** Pivot low: like `pivotHigh` with strictly lower (standard `ta.pivotlow`). */
+  /** Pivot low: like `pivotHigh` with strictly lower. */
   pivotLow(left: number, right: number): Streaming;
   history(length: number): History;
-  /** Record of numbers carried across bars (standard `var`), e.g. SAR state. */
+  /** Record of numbers carried across bars (persistent variable), e.g. SAR state. */
   vars<T extends Record<string, number>>(init: T): T;
   series(): SeriesVar;
 }

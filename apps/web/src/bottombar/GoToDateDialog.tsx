@@ -9,7 +9,7 @@ type Tab = 'date' | 'range';
 const today = () => new Date().toISOString().slice(0, 10);
 
 function toUnix(date: string, time: string): number {
-  // Interpreted in the browser's local zone, like the common picker.
+  // Interpreted in the browser's local zone.
   return new Date(`${date}T${time || '00:00'}`).getTime() / 1000;
 }
 

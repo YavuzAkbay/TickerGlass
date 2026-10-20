@@ -55,7 +55,7 @@ export function reportDialogError(id: DialogId, arg: unknown, error: Error): voi
   );
 }
 
-/** Renders the single open dialog (one at a time, like reference). */
+/** Renders the single open dialog (one at a time). */
 export function DialogHost() {
   const dialog = useUiStore((s) => s.dialog);
   const arg = useUiStore((s) => s.dialogArg);

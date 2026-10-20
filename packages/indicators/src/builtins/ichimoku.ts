@@ -4,7 +4,7 @@ import { COLOR } from './common';
 /**
  * Ichimoku Cloud. Values are unshifted; the leading spans are drawn
  * `displacement - 1` bars forward and the lagging span as many bars back
- * (reference convention), via plot offsets.
+ * (common charting convention), via plot offsets.
  */
 export const ICHIMOKU = defineIndicator({
   id: 'ichimoku',

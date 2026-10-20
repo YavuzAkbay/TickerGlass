@@ -331,7 +331,7 @@ class Vwma implements WeightedStreaming, Stateful {
   }
 }
 
-/** Mean absolute deviation from the window mean (standard `ta.dev`, CCI). */
+/** Mean absolute deviation from the window mean (CCI). */
 class Dev implements Streaming, Stateful {
   private ring: Ring;
 
@@ -362,7 +362,7 @@ class Dev implements Streaming, Stateful {
   }
 }
 
-/** Running total (standard `ta.cum`). */
+/** Running total. */
 class Cum implements Streaming, Stateful {
   private total = NaN;
   private savedTotal = NaN;

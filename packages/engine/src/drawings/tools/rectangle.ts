@@ -163,7 +163,7 @@ export const rectangle = defineDrawingTool({
       if (x >= x0 && x <= x0 + tp.w && y >= tp.y && y <= tp.y + tp.h) return TEXT_HIT;
     }
     if (boxEdgeDistance(x, y, bx.l, bx.t, bx.r, bx.b) <= tol + s.lineWidth / 2) return BODY_HIT;
-    // The interior is grabbable (strong) when filled, by convention.
+    // The interior is grabbable (strong) when filled,.
     return s.fillBackground && inBox(x, y, bx.l, bx.t, bx.r, bx.b) ? BODY_HIT : null;
   },
 

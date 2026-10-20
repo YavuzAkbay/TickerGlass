@@ -2,7 +2,7 @@ import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
 /**
- * Hull moving average (standard `ta.hma`):
+ * Hull moving average:
  * wma(2 * wma(src, floor(len / 2)) - wma(src, len), floor(sqrt(len))).
  */
 export const HMA = defineIndicator({

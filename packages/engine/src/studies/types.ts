@@ -38,8 +38,8 @@ export type StudyValueFormat = 'inherit' | 'price' | 'volume' | 'percent';
 /**
  * Colours: `colors` is a palette. Outputs with more than one entry receive a
  * per-bar palette index in `StudyData.colors[id]`; otherwise entry 0 is used.
- * Index `STUDY_COLOR_NONE` (255) means "no colour" for that bar (standard `na`
- * colour): the bar's segment/mark/fill/background is not drawn. Any other
+ * Index `STUDY_COLOR_NONE` (255) means "no colour" for that bar (missing value,
+ * NaN): the bar's segment/mark/fill/background is not drawn. Any other
  * out-of-range index falls back to entry 0.
  */
 export const STUDY_COLOR_NONE = 255;

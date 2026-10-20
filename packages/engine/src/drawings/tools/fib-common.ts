@@ -14,7 +14,7 @@ import type {
 
 const LABEL_GAP = 4;
 
-/** reference default fib levels: [value, colour, visible]. */
+/** default fib levels: [value, colour, visible]. */
 const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [0, '#787b86', true],
   [0.236, '#f23645', true],
@@ -37,7 +37,7 @@ const TV_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [4.618, '#ff9800', false],
 ];
 
-/** Fresh copy of the reference default levels (sorted by value). */
+/** Fresh copy of the default levels (sorted by value). */
 export function defaultFibLevels(): DrawingLevel[] {
   return TV_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
 }
@@ -268,7 +268,7 @@ export function visibleLevels(s: { levels: unknown }): readonly DrawingLevel[] {
 
 // ------------------------------------------------------------ time levels
 
-/** Fibonacci numbers for the fib time zone (reference defaults). */
+/** Fibonacci numbers for the fib time zone (defaults). */
 const TV_TIME_ZONE_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [0, '#787b86', true],
   [1, '#2962ff', true],
@@ -283,7 +283,7 @@ const TV_TIME_ZONE_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [89, '#2962ff', true],
 ];
 
-/** Fresh copy of the reference fib time zone levels (Fibonacci sequence 0..89). */
+/** Fresh copy of the fib time zone levels (Fibonacci sequence 0..89). */
 export function defaultTimeZoneLevels(): DrawingLevel[] {
   return TV_TIME_ZONE_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
 }
@@ -303,7 +303,7 @@ const TV_TREND_TIME_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [4.236, '#787b86', false],
 ];
 
-/** Fresh copy of the reference trend-based fib time levels. */
+/** Fresh copy of the trend-based fib time levels. */
 export function defaultTrendTimeLevels(): DrawingLevel[] {
   return TV_TREND_TIME_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
 }
@@ -473,7 +473,7 @@ export function timeLevelsInView(
 
 // ------------------------------------------------------------ arc levels (pixel space)
 
-/** reference default fib circle / speed arc / wedge levels. */
+/** default fib circle / speed arc / wedge levels. */
 const TV_ARC_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [0.236, '#f23645', true],
   [0.382, '#ff9800', true],
@@ -487,7 +487,7 @@ const TV_ARC_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [4.236, '#e91e63', true],
 ];
 
-/** Fresh copy of the reference arc levels; `upTo`: levels above it are hidden. */
+/** Fresh copy of the arc levels; `upTo`: levels above it are hidden. */
 export function defaultArcLevels(upTo = Infinity): DrawingLevel[] {
   return TV_ARC_LEVELS.map(([value, color, visible]) => ({
     value,

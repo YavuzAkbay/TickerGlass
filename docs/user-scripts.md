@@ -170,7 +170,7 @@ means "show a mark here"; `absolute` shapes use the value as the price.
 Create these in `setup` (creating one in `step` throws). Each call to `update` takes the value for the next
 bar and returns the result for it. Warm-up results are `NaN`. A leading `NaN` input is skipped; a later `NaN`
 returns `NaN` and leaves the state unchanged. `ema` and `rma` seed with the SMA of the first `length` values and
-`stdev` is the population standard deviation (standard and TA-Lib conventions).
+`stdev` is the population standard deviation (TA-Lib convention).
 
 | Call                                                | Returns / use                                                                                                                                             |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -189,7 +189,7 @@ returns `NaN` and leaves the state unchanged. `ema` and `rma` seed with the SMA 
 | `ta.alma(n, offset, sigma)`                         | Arnaud Legoux moving average                                                                                                                              |
 | `ta.pivotHigh(left, right)` `pivotLow(left, right)` | On the confirming value: the value `right` back if strictly higher (lower) than the `left` before and `right` after it, else `NaN`. Ties are never pivots |
 | `ta.history(n)`                                     | `.push(x)`, `.get(k)`: the last `n` pushed values, `k = 0` newest, `NaN` if not available                                                                 |
-| `ta.vars({ a: 0, b: NaN })`                         | Object of numbers carried across bars (standard `var`); read and write its fields                                                                             |
+| `ta.vars({ a: 0, b: NaN })`                         | Object of numbers carried across bars (persistent variable); read and write its fields                                                                             |
 | `ta.series()`                                       | Scratch series: `.get(i)`, `.set(i, v)`; re-running a bar overwrites its slot                                                                             |
 
 Lookbacks count values fed, not bars.
@@ -286,7 +286,7 @@ it bounded in practice.
 - Alerts on scripts: the alerts service runs on a Node server that has no sandbox. Script indicators are not offered
   as alert sources, and "Add alert..." on a script indicator is disabled (tooltip "Not available for scripts").
 - Output fields that depend on inputs (section 4).
-- TypeScript, script, strategies, backtesting, drawings or tables from scripts, `import`, version history,
+- TypeScript, other scripting languages, strategies, backtesting, drawings or tables from scripts, `import`, version history,
   sharing or a script library. See [LIMITATIONS.md](LIMITATIONS.md) for which of these are planned.
 
 ## 8. Saved charts
@@ -458,10 +458,10 @@ defineIndicator({
 Pivots over `depth / 2` bars on each side are confirmed that many bars late; a further extreme in the same
 direction moves the last pivot back in time with `c.setAt`, so the script declares `repaints: true`. All
 carried state is in `ta.vars`, so live ticks rewind correctly. The tie rules (the oldest of equal extremes wins)
-follow the reference ZigZag library and are not `ta.pivotHigh`'s.
+follow the ZigZag library semantics below and are not `ta.pivotHigh`'s.
 
 ```js
-// ZigZag (reference ZigZag library semantics): swing pivots over `legs` bars
+// ZigZag (library semantics): swing pivots over `legs` bars
 // on each side, confirmed `legs` bars late, joined by a line. A further
 // extreme in the same direction moves the last pivot back in time, so past
 // values repaint (setAt).

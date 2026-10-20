@@ -169,7 +169,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
 
   const add = (def: AnyIndicatorDefinition) => {
     const id = sourceOf ? addIndicator(def.id, { sourceOf }) : addIndicator(def.id);
-    // Indicator-on-indicator adds one; the plain picker stays open like reference.
+    // Indicator-on-indicator adds one; the plain picker stays open.
     if (id && sourceOf) onClose();
   };
 

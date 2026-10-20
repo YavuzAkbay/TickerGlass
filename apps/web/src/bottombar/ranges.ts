@@ -17,7 +17,7 @@ function monthsBack(last: number, months: number): number {
   return d.getTime() / 1000;
 }
 
-// Same interval pairing as the common bottom-bar ranges.
+// Interval pairing for each bottom-bar range.
 export const RANGE_PRESETS: RangePreset[] = [
   { label: '1D', title: '1 day in 1 minute intervals', interval: '1m', from: (l) => l - DAY },
   { label: '5D', title: '5 days in 5 minute intervals', interval: '5m', from: (l) => l - 5 * DAY },

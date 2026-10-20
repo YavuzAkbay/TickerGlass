@@ -323,7 +323,7 @@ test('keyboard: arrows move the selection and change the chart symbol', async ({
   await expect.poll(() => chartSymbol(page)).toBe('AAPL');
 });
 
-test('.txt import (reference export) and export round-trip', async ({ page, server }) => {
+test('.txt import and export round-trip', async ({ page, server }) => {
   await mockMarket(page);
   seed(server, 'w1', 'Main', ['AAPL']);
   await open(page);

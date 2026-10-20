@@ -7,7 +7,7 @@ type Hlcv = Pick<StepContext, 'i' | 'high' | 'low' | 'close' | 'volume'>;
 /**
  * Money flow volume of bar `c.i`: close location value
  * ((close - low) - (high - close)) / (high - low) times volume, 0 for a bar
- * without range (standard `ta.accdist` term; shared by CMF and Chaikin Oscillator).
+ * without range (shared by CMF and Chaikin Oscillator).
  */
 export function moneyFlowVolume(c: Hlcv): number {
   const h = c.high[c.i]!;

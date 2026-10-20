@@ -23,7 +23,7 @@ export const PVT = defineIndicator({
     return (c) => {
       const i = c.i;
       const prev = i > 0 ? c.src.source[i - 1]! : NaN;
-      // A zero previous source has no defined return (standard na): NaN, total unchanged.
+      // A zero previous source has no defined return (missing value): NaN, total unchanged.
       const ret = prev === 0 ? NaN : change(c.src.source, i) / prev;
       c.set('pvt', total.update(ret * c.volume[i]!));
     };

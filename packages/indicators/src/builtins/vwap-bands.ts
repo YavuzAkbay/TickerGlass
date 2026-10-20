@@ -15,7 +15,7 @@ export interface VwapSums extends Record<string, number> {
 export const VWAP_SUMS: VwapSums = { sv: NaN, v: NaN, ssv: NaN, sd: NaN };
 
 /**
- * standard `ta.vwap(src, anchor, 1)`: accumulate (resetting on a new period) and
+ * VWAP: accumulate (resetting on a new period) and
  * return the VWAP; `st.sd` gets sqrt(max(E[src^2] - vwap^2, 0)). NaN inputs
  * leave the sums unchanged.
  */
@@ -152,7 +152,7 @@ interface BandSettings {
   mult3: number;
 }
 
-/** standard VWAP bands: vwap +- mult * (stdev or 1% of vwap). Hidden bands stay NaN. */
+/** VWAP bands: vwap +- mult * (stdev or 1% of vwap). Hidden bands stay NaN. */
 export function setBands(
   c: Pick<StepContext<never, BandId>, 'set'>,
   s: BandSettings,

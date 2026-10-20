@@ -91,7 +91,7 @@ describe('fib channel', () => {
   it('renders the base for drafts, levels, fills and labels when complete', () => {
     expect(setup('fib-channel', pts.slice(0, 2)).draw().count('stroke')).toBe(1);
     const r = setup('fib-channel', pts).draw();
-    // 11 visible reference levels: 11 lines, 10 bands.
+    // 11 visible default levels: 11 lines, 10 bands.
     expect(r.count('stroke')).toBe(11);
     expect(r.count('fill')).toBe(10);
     expect(r.texts).toContain('0.618');

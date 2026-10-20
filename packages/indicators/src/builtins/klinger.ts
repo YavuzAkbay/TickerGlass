@@ -2,8 +2,8 @@ import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
 /**
- * Klinger Oscillator (reference form): signed volume sv = change(hlc3) >= 0 ? volume
- * : -volume (the first bar, without change, counts as -volume as in standard);
+ * Klinger Oscillator (standard form): signed volume sv = change(hlc3) >= 0 ? volume
+ * : -volume (the first bar, without change, counts as -volume);
  * kvo = ema(sv, fast) - ema(sv, slow), signal = ema(kvo, signal).
  */
 export const KLINGER = defineIndicator({
@@ -32,7 +32,7 @@ export const KLINGER = defineIndicator({
       const i = c.i;
       const v = c.volume[i]!;
       const hlc3 = (k: number) => (c.high[k]! + c.low[k]! + c.close[k]!) / 3;
-      // NaN >= 0 is false: the first bar is -volume (standard).
+      // NaN >= 0 is false: the first bar is -volume.
       const sv = i > 0 && hlc3(i) - hlc3(i - 1) >= 0 ? v : -v;
       const kvo = fast.update(sv) - slow.update(sv);
       c.set('kvo', kvo);

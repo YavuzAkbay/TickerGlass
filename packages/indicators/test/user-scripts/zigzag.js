@@ -1,5 +1,5 @@
 /* global defineIndicator */
-// ZigZag (reference ZigZag library semantics): swing pivots over `legs` bars
+// ZigZag (pivot test: no newer bar strictly beyond, no older bar beyond or equal): swing pivots over `legs` bars
 // on each side, confirmed `legs` bars late, joined by a line. A further
 // extreme in the same direction moves the last pivot back in time, so past
 // values repaint (setAt).

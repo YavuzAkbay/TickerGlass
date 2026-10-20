@@ -158,7 +158,7 @@ export interface AlertNotify {
   webhook: boolean;
   /** null = ALERTS_WEBHOOK_URL. */
   webhookUrl: string | null;
-  /** Body = rendered message (standard) instead of the JSON envelope. */
+  /** Body = rendered message instead of the JSON envelope. */
   webhookRaw: boolean;
   telegram: boolean;
   email: boolean;

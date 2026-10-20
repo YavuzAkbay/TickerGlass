@@ -109,7 +109,7 @@ def po_np(x, short, long, exp):
 def cases() -> list[Case]:
     out = Cases()
 
-    # Momentum / ROC: TA-Lib matches standard including warm-up.
+    # Momentum / ROC: TA-Lib matches including warm-up.
     out.add("momentum", {}, "talib", {"mom": talib.MOM(C, 10)})
     out.add("momentum-hlc3-20", {"length": 20, "source": "hlc3"}, "talib", {"mom": talib.MOM(HLC3, 20)})
     cross_check("momentum", C - shift(C, 10), talib.MOM(C, 10), 0)
@@ -117,7 +117,7 @@ def cases() -> list[Case]:
     out.add("roc-daily", {"length": 20}, "talib", {"roc": talib.ROC(DAILY.close, 20)}, bars=DAILY)
     cross_check("roc", roc_np(C, 9), talib.ROC(C, 9), 0)
 
-    # TRIX : 10000 * change of the triple EMA of ln(close). TA-Lib TRIX is
+    # TRIX: 10000 * change of the triple EMA of ln(close). TA-Lib TRIX is
     # the 1-bar ROC of the triple EMA of close (no log), so only the EMA chain
     # is cross-checked.
     for n, name in ((18, "trix"), (9, "trix-9")):
@@ -137,7 +137,7 @@ def cases() -> list[Case]:
         out.add(name, inputs, "numpy", {"tsi": t, "signal": ema(t, sg)}, **kw)
 
     # Ultimate Oscillator: TA-Lib ULTOSC matches warm-up (first value at bar
-    # slow) for ascending lengths; it sorts the lengths, standard does not, so the
+    # slow) for ascending lengths; it sorts the lengths, other platforms do not, so the
     # unsorted variant is numpy only.
     uo = talib.ULTOSC(H, L, C, 7, 14, 28)
     cross_check("ultimate-osc", ultosc_np(H, L, C, (7, 14, 28)), uo, 0)

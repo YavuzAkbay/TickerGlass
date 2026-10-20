@@ -4,7 +4,7 @@ import { zigZagPivots } from './zigzag';
 
 /**
  * Fibonacci levels: output id, bool input key, ratio, default on, colour
- * (reference defaults). Ids and keys never change.
+ * (conventional defaults). Ids and keys never change.
  */
 const LEVELS = [
   { id: 'l0', show: 'show0', ratio: 0, on: true, color: '#787b86' },

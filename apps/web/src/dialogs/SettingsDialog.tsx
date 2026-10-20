@@ -166,7 +166,7 @@ function applyDraft(d: Draft): void {
 const sameScale = (a: Draft['scale'], b: Draft['scale']) =>
   !!a && !!b && a.mode === b.mode && a.invert === b.invert && a.autoScale === b.autoScale;
 
-/** standard chart settings: tabs on the left, live preview, Ok applies, Cancel reverts. */
+/** Chart settings: tabs on the left, live preview, Ok applies, Cancel reverts. */
 export default function SettingsDialog({ onClose }: { onClose: () => void; arg?: unknown }) {
   const [initial] = useState(readDraft);
   const [draft, setDraft] = useState(initial);

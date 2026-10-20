@@ -843,7 +843,7 @@ describe('z-order', () => {
 });
 
 describe('visibility presets', () => {
-  it('builds reference interval presets', () => {
+  it('builds interval presets', () => {
     expect(visibilityPreset('1D', 'all')).toBeNull();
     const only = visibilityPreset('4h', 'only')!;
     expect(only.hours).toEqual({ enabled: true, min: 4, max: 4 });

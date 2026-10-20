@@ -337,7 +337,7 @@ export class IndicatorController {
   }
 
   /**
-   * 'none' (own scale at the bottom of the pane, like the common volume
+   * 'none' (own scale at the bottom of the pane, like a volume
    * overlay) for volume-scaled studies in the price pane and for studies that
    * plot them (e.g. an SMA on Volume), so they never squash the price scale.
    */

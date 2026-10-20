@@ -1,7 +1,7 @@
 import { makePitchfork } from './pitchfork';
 
 /**
- * Inside pitchfork : origin at the midpoint m of anchors 1-2; the handle
+ * Inside pitchfork: origin at the midpoint m of anchors 1-2; the handle
  * runs m -> anchor 3 and the median and tines are parallel to it, starting on
  * anchors 2-3.
  */

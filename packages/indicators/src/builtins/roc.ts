@@ -2,7 +2,7 @@ import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
 /**
- * standard `ta.roc(src, length)` at bar i: 100 * (src - src[length]) / src[length]
+ * ROC at bar i: 100 * (src - src[length]) / src[length]
  * (NaN before `length` bars or for a zero base). Used by Coppock and KST too.
  */
 export function rocAt(src: Float64Array, i: number, length: number): number {
