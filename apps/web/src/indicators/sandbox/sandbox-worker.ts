@@ -1,4 +1,4 @@
-// User-script sandbox worker entry (docs/plans/user-scripts.md §2), one per
+// User-script sandbox worker entry (docs/indicators.md §5a), one per
 // script instance. Served with a restrictive response CSP (vite.config.ts
 // sandboxCsp(), docker/nginx.conf) and locked down in JS before any user code.
 // Must bundle into one self-contained file (vite.config.ts build guards), and

@@ -205,7 +205,7 @@ export type { Flag, Watchlist } from '../watchlist/types';
 
 export type Settings = Record<string, unknown>;
 
-/** A user JS indicator (docs/plans/user-scripts.md section 5). `manifest` is null if the last save did not compile. */
+/** A user JS indicator (docs/persistence.md). `manifest` is null if the last save did not compile. */
 export interface UserScript {
   id: string;
   name: string;

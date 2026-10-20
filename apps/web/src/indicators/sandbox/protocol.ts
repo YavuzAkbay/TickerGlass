@@ -1,5 +1,5 @@
 // Messages between the main thread and a user-script sandbox worker
-// (docs/plans/user-scripts.md §3). The sandbox speaks the ToWorker subset an
+// (docs/indicators.md §5a). The sandbox speaks the ToWorker subset an
 // instance needs plus load/ping/check; it answers like the indicator worker
 // (FromWorker) plus ack/loaded/compileError/checkResult.
 import type { BarColumns } from '@investopen/engine';

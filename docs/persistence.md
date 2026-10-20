@@ -36,7 +36,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 - **User scripts** are one row per script, with the source and the compiled `manifest` (null if the last save did
   not compile; the server does not run or validate scripts). The client creates the id (UUID v4,
   `[A-Za-z0-9_-]{1,36}`) because indicator instances reference it (`user:<id>`). Names are not unique.
-  See [plans/user-scripts.md](plans/user-scripts.md) §5.
+  See [user-scripts.md](user-scripts.md).
 - **Flags** are global like the common: at most one of `red orange yellow green cyan blue purple` per symbol.
   `created_at` is the time the current color was set (it resets on a color change, not on setting the same color).
 - **Alerts** (Phase 10) are one row per alert with revision checks like watchlists; the evaluation service owns
@@ -66,7 +66,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 | `GET/PUT/DELETE /settings/{key}` (`{value}`)                                | `getSetting`/`putSetting`/`deleteSetting`                                     | GET 404 if unset; last writer wins per key                                                                                                                                |
 | `GET /notes?symbol=`, `POST`, `GET/PUT/DELETE /notes/{id}`                  | `listNotes/createNote/getNote/updateNote/deleteNote`                          | PUT with `revision` -> 409 if stale                                                                                                                                       |
 | `GET/POST /watchlists`, `GET/PUT/DELETE /watchlists/{id}`                   | `listWatchlists/createWatchlist/getWatchlist/updateWatchlist/deleteWatchlist` | list includes items, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,items,revision?}` -> 409 if stale; DELETE 404 if missing (treated as done) |
-| `GET/POST /user-scripts`, `GET/PUT/DELETE /user-scripts/{id}`               | `...UserScript(s)` (web data layer, planned)                                  | list includes sources, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,source,manifest,apiVersion,revision?}` -> 409 if stale; DELETE 404 if missing |
+| `GET/POST /user-scripts`, `GET/PUT/DELETE /user-scripts/{id}`               | `...UserScript(s)` (web data layer)                                  | list includes sources, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,source,manifest,apiVersion,revision?}` -> 409 if stale; DELETE 404 if missing |
 | `GET /flags`, `PATCH /flags` `{SYMBOL: color\|null}`                        | `getFlags`/`patchFlags`                                                       | PATCH sets or removes flags in one transaction (max 5000) and returns all flags                                                                                           |
 | `/alerts*` (CRUD, status, log, channels, service)                           | `apps/web/src/api/alerts.ts`                                                  | Phase 10: see [alerts.md](alerts.md) §1.4. Mutations are online-only (no localStorage queue)                                                                              |
 | `GET /export`                                                               | `exportAll`                                                                   | full bundle (§4)                                                                                                                                                          |

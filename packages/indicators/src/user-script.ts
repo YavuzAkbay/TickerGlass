@@ -1,6 +1,6 @@
 /**
  * User scripts: indicators written by the user in plain JS with the same
- * `defineIndicator({...})` API as the built-ins (docs/plans/user-scripts.md).
+ * `defineIndicator({...})` API as the built-ins (docs/user-scripts.md).
  *
  * Script code only ever runs in a sandbox (a locked-down worker; Node in
  * tests). Everywhere else a script is known by its manifest: a JSON copy of

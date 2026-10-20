@@ -545,7 +545,7 @@ class Bundle(ApiModel):
     flags: list[BundleFlag] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     #: Alerts without runtime states or log (docs/alerts.md §1.7).
     alerts: list[BundleAlert] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
-    #: User indicator scripts (docs/plans/user-scripts.md §5); additive, BUNDLE_VERSION stays 1.
+    #: User indicator scripts (docs/persistence.md); additive, BUNDLE_VERSION stays 1.
     user_scripts: list[BundleUserScript] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
 
 

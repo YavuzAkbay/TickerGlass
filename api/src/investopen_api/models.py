@@ -183,7 +183,7 @@ class Watchlist(Base):
 
 
 class UserScript(Base):
-    """A user-authored indicator script (docs/plans/user-scripts.md §5).
+    """A user-authored indicator script (docs/persistence.md).
 
     `manifest` = the compiled definition manifest, null if the last save did not compile.
     """

@@ -220,6 +220,82 @@ The settings dialog previews edits through a transient, non-persisted override s
 (`useIndicatorPreview`) merged over the persisted instances for the chart and legends; it never enters the
 undo history. Ok commits the override as one undo step, Cancel/close drops it.
 
+## 5a. User-script sandbox (apps/web, `indicators/sandbox/`)
+
+User scripts (see [user-scripts.md](user-scripts.md)) run in sandbox workers, never in the indicator worker
+or on the main thread. Registry type of a script instance is `user:<scriptId>` (`USER_SCRIPT_PREFIX`,
+`scriptIdOf`). **The format is persisted in saved chart layouts and must never change.**
+
+**Entry points.** `@investopen/indicators/core` exports everything except the built-in indicators (nothing is
+registered in `defaultRegistry`); `@investopen/indicators` is core plus the built-ins. `sandbox-worker.ts`
+and `SandboxCore` import only `/core`; the indicator `worker.ts` registers the built-ins explicitly with
+`import '@investopen/indicators'`, and `WorkerCore` takes an `IndicatorRegistry`.
+
+**Routing.** `attach.ts` wraps the indicator worker in a `ScriptRouterPort` (a `WorkerPort`; the controller
+cannot tell the difference). Routing table:
+
+| message                                                   | built-in (`inner` worker) | `user:` instance                                                    |
+| --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------- |
+| `add`                                                     | type without prefix       | spawn a sandbox; replay `load`, `context`, `bars`, `add`            |
+| `setInputs` / `remove`                                    | id not a script instance  | to its sandbox (inputs coerced by the manifest stub) / terminate it |
+| `bars` / `bar` / `context` / `clear`                      | always                    | also to every sandbox (`bars`: a fresh copy each)                   |
+| `timeframeMap`, `tfBars`, `tfBar`, `extBars`, `extUpdate` | always                    | never (scripts read chart bars only)                                |
+
+One sandbox per instance, at most 8 instances per chart (`MAX_SCRIPT_INSTANCES_PER_CHART`; the rest get an
+`error` with the cap message). A script with no saved manifest, or a manifest that does not parse, starts no
+sandbox; the controller reports it. A stopped instance (watchdog, failure) stays known and restarts on
+`setInputs` or `reloadScript`.
+
+**SeriesMirror.** `bars` buffers are transferred to the indicator worker, so the router keeps a main-thread
+copy (`SeriesMirror`: columns, series `revision`, `length`, growable capacity) taken before the transfer. It
+replays the series to sandboxes spawned later and answers resyncs. `bar` applies when the revision matches
+and the index is `<= length`; otherwise the mirror is `dirty` (not `valid`) until the next `bars`. `clear`
+empties it.
+
+**seq/ack and watchdog.** Each message to a sandbox is `{ seq, msg }`; the sandbox posts `{ type: 'ack', seq }`
+after handling it and everything it caused (`SandboxCore.handle` never throws; failures are posted as
+`error`/`compileError`). The router keeps the unacknowledged messages oldest first and one timer per sandbox.
+Limits: 5 s per message, 10 s for `load`, `bars`, `check`. **The deadline starts when a message becomes the
+oldest unacknowledged one** (its post when nothing was outstanding, otherwise the ack of its predecessor), so a
+queue of cheap messages behind a slow one is not charged for the wait. Missing the deadline terminates the
+sandbox and reports `Stopped: no response for N s (endless loop?)` on the instance. A sandbox with nothing
+outstanding is pinged every 10 s (`ping`: acked only), which catches a script that hangs between messages.
+`onerror`/`onmessageerror` of the worker stop the instance with an `error` too.
+
+**Internal resync.** A `resync` from a sandbox (same RangeError rule as §5, `bars` = count of `bars` it
+handled) is answered by the router from the mirror and never reaches the controller. Ignored when the router
+has sent more `bars` since, or the revision is not the mirror's; at most 3 resends per revision, then one
+"keeps falling out of sync" `error`.
+
+**Untrusted results.** Nothing a sandbox posts is trusted. `results` are rebuilt from validated fields and
+only the instance's own change survives: integer `revision`/`length`/`from` (`from <= length`), `Float64Array`
+values, `Uint8Array` colours, `status` reduced to a known state with message length capped (500). `error`
+without `id` is relabelled with the instance id (the sandbox only runs that instance). `timeframes`,
+`compileError` (reported by the `add` that follows) and `checkResult`/`probeResult` are dropped by the router.
+
+**Manifest check.** The sandbox answers `load` with the manifest of the compiled source. The router compares
+its canonical JSON (sorted keys) with the saved manifest the chart was set up with; a difference stops the
+instance with "Script changed since it was saved". The controller's definition (outputs, inputs) therefore
+always matches what the sandbox computes.
+
+**reloadScript.** `attach.ts` runs `syncScriptDefinitions` for the scripts store, then `ctl.sync`, then
+`port.reloadScript(id)` for each changed script. That restarts the script's instances unless their sandbox was
+loaded with the same source and manifest, and stops them when the script is gone or has no manifest.
+
+**Lockdown and CSP.** The real network boundary is the response CSP of the worker script
+(`default-src 'none'; script-src 'unsafe-eval'; connect-src 'none'; worker-src 'none'`). `'unsafe-eval'` is
+what compiling the script needs. Production: `docker/nginx.conf` (location `/assets/sandbox-worker-*.js`)
+and `vite preview` send it with no `'self'`, so not even same-origin `import()` loads. Dev: `vite.config.ts`
+`sandboxCsp()` serves the unbundled modules, so `script-src` adds `'self'`. Keep the three in sync. In JS,
+`lockdown()` runs first in the worker: it captures `postMessage`, then removes `fetch`, XHR, sockets,
+`importScripts`, storage APIs, nested workers, message channels, timers, `WebAssembly`, `navigator` and
+others from the scope and its prototype chain, and throws (no user code runs) if any is still reachable.
+
+**Single-file build guard.** Because the production CSP allows no script loads, `vite.config.ts` builds the
+worker as one IIFE and fails the build if the sandbox worker entry has imports, dynamic imports or emits any
+other file (`sandboxWorkerSelfContained`), or if the emitted worker file mentions another emitted file
+(`sandboxWorkerNoAssetRefs`).
+
 ## 6. Engine study API (`@investopen/engine`, `StudyApi`)
 
 `addStudy(spec)` -> paneId (`target: { paneId }` or `{ newPane: { id?, ratio? } }`; a `newPane.id` that

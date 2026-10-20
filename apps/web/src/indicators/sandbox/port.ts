@@ -1,5 +1,5 @@
 // The controller's worker port with user scripts routed to sandboxes
-// (docs/plans/user-scripts.md §2 Watchdog, §3). Built-in instances go to the
+// (docs/indicators.md §5a). Built-in instances go to the
 // indicator worker unchanged; every `user:` instance gets its own sandbox
 // worker, fed from a main-thread copy of the bars (SeriesMirror). Nothing a
 // sandbox sends is trusted: only its own instance's results (typed arrays),

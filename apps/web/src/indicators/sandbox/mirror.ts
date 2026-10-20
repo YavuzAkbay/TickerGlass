@@ -1,4 +1,4 @@
-// Main-thread copy of the bars the indicator worker has (docs/plans/user-scripts.md §3).
+// Main-thread copy of the bars the indicator worker has (docs/indicators.md §5a).
 // `bars` buffers are transferred to the indicator worker, so the router keeps
 // this mirror to replay the series to sandboxes it spawns later and to answer
 // their resyncs.

@@ -1,5 +1,5 @@
 /**
- * User scripts (docs/plans/user-scripts.md section 5): the list loaded from
+ * User scripts (docs/persistence.md): the list loaded from
  * the API at startup, or the read-only localStorage copy while it is down.
  * Not persisted here: `persist/userScripts.ts` owns loading and the cache.
  */

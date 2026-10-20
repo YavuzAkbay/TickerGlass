@@ -1,5 +1,5 @@
 /**
- * User-script sandbox worker (docs/plans/user-scripts.md §2): response CSP +
+ * User-script sandbox worker (docs/indicators.md §5a): response CSP +
  * JS lockdown. Probes run real code in the worker via the dev hook
  * `window.sandboxProbe(code)` (apps/web/src/chart/ChartView.tsx).
  */
