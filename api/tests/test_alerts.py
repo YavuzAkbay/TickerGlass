@@ -447,14 +447,25 @@ def test_fire_final_triggers_and_bumps_revision(client: TestClient) -> None:
 
 @pytest.mark.parametrize("why", ["stale", "paused", "expired", "gone"])
 def test_fire_conditional_update_conflicts(client: TestClient, why: str) -> None:
-    a = create(client, id="a1", expiresAt="2026-10-15T15:00:00Z" if why == "expired" else None)
+    # `expired`: active alerts cannot be created with a past expiry, so create it in the future
+    # and move expires_at into the past directly; the fire's firedAt is then after expiry.
+    expires = None if why != "expired" else datetime.now(UTC) + timedelta(hours=1)
+    a = create(client, id="a1", expiresAt=None if expires is None else expires.isoformat())
+    if why == "expired":
+        with engine_of(client).begin() as conn:
+            conn.execute(
+                update(m.Alert)
+                .where(m.Alert.id == "a1")
+                .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+            )
     if why == "stale":
         client.put("/api/alerts/a1", json=body(name="edited"))
     elif why == "paused":
         client.patch("/api/alerts/a1", json={"status": "paused"})
     elif why == "gone":
         client.delete("/api/alerts/a1")
-    kw = {"firedAt": "2026-10-15T15:00:00Z"} if why == "expired" else {}
+    fired_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    kw = {"firedAt": fired_at} if why == "expired" else {}
     res = fire(client, a, **kw)
     assert res.status_code == (404 if why == "gone" else 409), res.text
     if why != "gone":
