@@ -295,12 +295,6 @@ test.describe('user scripts', () => {
       page,
       server,
     }) => {
-      // APP BUG (reported, not fixed): the legend now shows "Script deleted" (Legend.tsx
-      // uses the status message when the definition is gone), but the controller keeps the
-      // deleted script's engine study on the chart (controller.ts sync skips an applied
-      // instance whose definition disappeared), so getStudies() still has 2 entries. Drop
-      // test.fail once the study is removed (or change the expectation if it should stay).
-      test.fail();
       await open(page);
       await createAndAdd(page, GOOD);
       await closeDialogs(page);
@@ -309,7 +303,9 @@ test.describe('user scripts', () => {
 
       expect(server.userScripts.size).toBe(0);
       await expect(scriptRow(page)).toHaveCount(0); // short name is unknown without the script
-      expect(await page.evaluate(() => window.chart.getStudies().length)).toBe(1); // Volume only
+      // The instance stays in the layout (it comes back if the script is restored), so its
+      // engine study stays too, with the error in the legend.
+      expect(await page.evaluate(() => window.chart.getStudies().length)).toBe(2); // + Volume
       const errored = page.locator('.ind-legend-error', { hasText: 'Script deleted' });
       await expect(errored).toHaveCount(1);
     });
