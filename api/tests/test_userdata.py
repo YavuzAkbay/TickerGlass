@@ -389,6 +389,127 @@ def test_notes(client: TestClient) -> None:
     assert client.get(f"/api/notes/{sym['id']}").status_code == 404
 
 
+def script_body(**kw: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "My RSI",
+        "source": "export default defineIndicator({})",
+        "manifest": {"id": "x", "outputs": []},
+        "apiVersion": 1,
+    }
+    return {**body, **kw}
+
+
+def test_user_scripts(client: TestClient) -> None:
+    res = client.post("/api/user-scripts", json=script_body(id="s-1_A"))
+    assert res.status_code == 201
+    one = res.json()
+    assert one["id"] == "s-1_A" and one["revision"] == 1 and one["apiVersion"] == 1
+    assert one["manifest"] == {"id": "x", "outputs": []} and "source" in one
+    gen = client.post("/api/user-scripts", json=script_body(manifest=None, name="  Broken  "))
+    assert gen.status_code == 201 and gen.json()["manifest"] is None
+    assert gen.json()["name"] == "Broken" and len(gen.json()["id"]) == 36
+    assert [x["id"] for x in client.get("/api/user-scripts").json()] == [
+        one["id"],
+        gen.json()["id"],
+    ]
+    assert client.get("/api/user-scripts").json()[0]["source"] == one["source"]
+
+    # Duplicate id -> 409 with the stored script (names are not unique).
+    dup = client.post("/api/user-scripts", json=script_body(id="s-1_A", source="other"))
+    assert dup.status_code == 409 and dup.json()["detail"]["current"]["source"] == one["source"]
+    assert client.post("/api/user-scripts", json=script_body(id="s-2")).status_code == 201
+
+    url = "/api/user-scripts/s-1_A"
+    res = client.put(url, json=script_body(source="v2", manifest=None, revision=1))
+    assert res.status_code == 200 and res.json()["revision"] == 2
+    assert res.json()["manifest"] is None and res.json()["source"] == "v2"
+    res = client.put(url, json=script_body(source="stale", revision=1))
+    assert res.status_code == 409 and res.json()["detail"]["current"]["source"] == "v2"
+    res = client.put(url, json=script_body(source="forced", apiVersion=2))
+    assert res.status_code == 200 and res.json()["revision"] == 3 and res.json()["apiVersion"] == 2
+    assert client.get(url).json()["source"] == "forced"
+    assert client.put("/api/user-scripts/nope", json=script_body()).status_code == 404
+    assert client.get("/api/user-scripts/nope").status_code == 404
+    assert client.delete(url).status_code == 204
+    assert client.get(url).status_code == 404
+    assert client.delete(url).status_code == 404
+
+
+def test_user_script_validation(client: TestClient) -> None:
+    def post(**kw: Any) -> int:
+        return client.post("/api/user-scripts", json=script_body(**kw)).status_code
+
+    assert post(id="a" * 36) == 201
+    assert post(id="a" * 37) == 422
+    for bad in ("", "has space", "a/b", "é", "a.b"):
+        assert post(id=bad) == 422, bad
+    assert post(name="") == 422 and post(name="   ") == 422
+    assert post(name="n" * 100) == 201 and post(name="n" * 101) == 422
+    assert post(apiVersion=0) == 422
+    assert post(source="x" * 200_000) == 201 and post(source="x" * 200_001) == 422
+    assert post(manifest={"k": "m" * 63_000}) == 201
+    assert post(manifest={"k": "m" * 64_001}) == 422
+    assert post(manifest=[1]) == 422
+    assert (
+        client.put("/api/user-scripts/x", json=script_body(source="x" * 200_001)).status_code == 422
+    )
+    body = script_body()
+    del body["source"]
+    assert client.post("/api/user-scripts", json=body).status_code == 422
+
+
+def test_user_scripts_bundle(client: TestClient, tmp_path: Path) -> None:
+    client.post("/api/user-scripts", json=script_body(id="a"))
+    client.post("/api/user-scripts", json=script_body(id="b", manifest=None))
+    bundle = client.get("/api/export").json()
+    assert bundle["version"] == 1
+    assert [u["id"] for u in bundle["userScripts"]] == ["a", "b"]
+    assert bundle["userScripts"][1]["manifest"] is None
+
+    app2 = create_app(provider=NullProvider(), database_url=f"sqlite:///{tmp_path}/o.db")
+    with TestClient(app2) as c2:
+        res = c2.post("/api/import", json=bundle).json()
+        assert res["userScripts"] == {"created": 2, "updated": 0, "deleted": 0}
+        assert [(u["id"], u["source"]) for u in c2.get("/api/user-scripts").json()] == [
+            (u["id"], u["source"]) for u in bundle["userScripts"]
+        ]
+
+    # Merge by id: matches updated (revision bumped), others created.
+    bundle["userScripts"][0]["source"] = "changed"
+    bundle["userScripts"].append({**bundle["userScripts"][0], "id": "c"})
+    res = client.post("/api/import", json=bundle).json()
+    assert res["userScripts"] == {"created": 1, "updated": 2, "deleted": 0}
+    got = {u["id"]: u for u in client.get("/api/user-scripts").json()}
+    assert got["a"]["source"] == "changed" and got["a"]["revision"] == 2 and "c" in got
+
+    # Absent key: untouched even in replace. Present and empty: wiped.
+    res = client.post(
+        "/api/import",
+        params={"mode": "replace", "confirm": True},
+        json={"version": 1, "app": "investopen"},
+    )
+    assert (
+        res.json()["userScripts"]["deleted"] == 0
+        and len(client.get("/api/user-scripts").json()) == 3
+    )
+    res = client.post(
+        "/api/import",
+        params={"mode": "replace", "confirm": True},
+        json={"version": 1, "app": "investopen", "userScripts": []},
+    )
+    assert res.json()["userScripts"]["deleted"] == 3 and res.json()["notes"]["deleted"] == 0
+    assert client.get("/api/user-scripts").json() == []
+
+    # Validation: duplicate ids and bad ids are 422; nothing is written.
+    one = bundle["userScripts"][0]
+    for scripts in ([one, one], [{**one, "id": "bad id"}]):
+        res = client.post(
+            "/api/import", json={"version": 1, "app": "investopen", "userScripts": scripts}
+        )
+        assert res.status_code == 422
+    assert client.get("/api/user-scripts").json() == []
+
+
 # ------------------------------------------------------------ import/export
 
 
@@ -404,13 +525,14 @@ def seed(client: TestClient) -> None:
     client.post("/api/chart-templates", json={"name": "C", "data": {"bg": "#111"}})
     client.patch("/api/settings", json={"favorites": ["sma"], "ui": {"x": 1}})
     client.post("/api/notes", json={"text": "note", "symbol": "AAPL"})
+    client.post("/api/user-scripts", json=script_body(id="us1"))
 
 
 def strip_volatile(bundle: dict[str, Any]) -> dict[str, Any]:
     out = dict(bundle)
     out.pop("exportedAt")
     for key in ("layouts", "drawings", "indicatorTemplates", "drawingTemplates",
-                "chartTemplates", "notes", "watchlists", "flags"):  # fmt: skip
+                "chartTemplates", "notes", "watchlists", "flags", "userScripts"):  # fmt: skip
         out[key] = [
             {k: v for k, v in x.items() if k not in ("updatedAt", "revision")} for x in out[key]
         ]
@@ -722,6 +844,7 @@ USER_TABLES = {
     "notes",
     "watchlists",
     "symbol_flags",
+    "user_scripts",
 }
 
 
@@ -741,4 +864,19 @@ def test_migration_upgrade_downgrade(tmp_path: Path) -> None:
     assert not tables & USER_TABLES and "bars" in tables
     command.upgrade(cfg, "head")
     assert set(inspect(engine).get_table_names()) >= USER_TABLES
+    engine.dispose()
+
+
+def test_migration_user_scripts_is_head(tmp_path: Path) -> None:
+    from alembic.script import ScriptDirectory
+
+    url = f"sqlite:///{tmp_path}/h.db"
+    cfg = alembic_config(url)
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["3f8a6c1d9e47"]
+    engine = create_engine(url)
+    command.upgrade(cfg, "head")
+    assert "user_scripts" in inspect(engine).get_table_names()
+    command.downgrade(cfg, "7c3e91d4a8b2")
+    assert "user_scripts" not in inspect(engine).get_table_names()
+    assert "alerts" in inspect(engine).get_table_names()
     engine.dispose()

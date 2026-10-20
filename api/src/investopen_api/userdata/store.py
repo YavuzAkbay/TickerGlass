@@ -103,6 +103,19 @@ def note(row: m.Note) -> s.Note:
     )
 
 
+def user_script(row: m.UserScript) -> s.UserScript:
+    return s.UserScript(
+        id=row.id,
+        name=row.name,
+        source=row.source,
+        manifest=row.manifest,
+        api_version=row.api_version,
+        revision=row.revision,
+        created_at=s.aware(row.created_at),
+        updated_at=s.aware(row.updated_at),
+    )
+
+
 def dump_items(items: list[s.WatchlistSymbolItem | s.WatchlistSectionItem]) -> list[Any]:
     """Validated watchlist items as the JSON stored in `watchlists.items`."""
     return [i.model_dump(mode="json", by_alias=True) for i in items]
@@ -222,6 +235,10 @@ def export_bundle(session: Session) -> s.Bundle:
             al.BundleAlert(**al.alert_out(r).model_dump(exclude={"drawing_id"}))
             for r in rows(m.Alert, m.Alert.created_at, m.Alert.id)
         ],
+        user_scripts=[
+            s.BundleUserScript(**user_script(r).model_dump())
+            for r in rows(m.UserScript, m.UserScript.created_at, m.UserScript.id)
+        ],
     )
 
 
@@ -252,6 +269,7 @@ SECTIONS: dict[str, Any] = {
     "watchlists": m.Watchlist,
     "flags": m.SymbolFlag,
     "alerts": m.Alert,
+    "user_scripts": m.UserScript,
 }
 
 _SAFE_LAYOUT_ID = re.compile(r"[A-Za-z0-9_-]{1,36}")
@@ -283,7 +301,7 @@ def import_bundle(
 ) -> s.ImportSummary:
     """Apply `bundle` in `session` (the caller commits or rolls back).
 
-    merge: layouts, drawings and notes match by id; templates by name
+    merge: layouts, drawings, notes and user scripts match by id; templates by name
     (drawing templates by tool type + name); settings by key. Matches are
     overwritten (revision bumped), the rest is created (watchlists match by id,
     flags by symbol). replace: the tables of
@@ -313,6 +331,7 @@ def import_bundle(
             raise BundleError(f"setting {key}: value must not be null (omit the key instead)")
 
     _dupes([x.id for x in bundle.alerts], "alert id")
+    _dupes([x.id for x in bundle.user_scripts], "user script id")
 
     summary = s.ImportSummary(mode=mode, dry_run=False)
     touched = touched if touched is not None else Touched()
@@ -515,6 +534,28 @@ def import_bundle(
                 frow.color, frow.created_at = f.color, t
             frow.updated_at = t
             summary.flags.updated += 1
+
+    for u in bundle.user_scripts:
+        urow = session.get(m.UserScript, u.id)
+        if urow is None:
+            session.add(
+                m.UserScript(
+                    id=u.id,
+                    name=u.name,
+                    source=u.source,
+                    manifest=u.manifest,
+                    api_version=u.api_version,
+                    revision=1,
+                    created_at=u.created_at or t,
+                    updated_at=t,
+                )
+            )
+            summary.user_scripts.created += 1
+        else:
+            urow.name, urow.source, urow.manifest = u.name, u.source, u.manifest
+            urow.api_version, urow.updated_at = u.api_version, t
+            urow.revision += 1
+            summary.user_scripts.updated += 1
 
     for a in bundle.alerts:
         _import_alert(session, a, t, summary, touched)

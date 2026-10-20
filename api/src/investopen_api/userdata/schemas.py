@@ -21,6 +21,8 @@ MAX_DRAWING_BYTES = 512_000
 MAX_TEMPLATE_BYTES = 256_000
 MAX_SETTING_BYTES = 512_000
 MAX_NOTE_CHARS = 200_000
+MAX_SCRIPT_CHARS = 200_000
+MAX_MANIFEST_BYTES = 64_000
 MAX_BATCH_OPS = 5_000
 MAX_BUNDLE_ITEMS = 100_000
 MAX_BUNDLE_SETTINGS = 10_000
@@ -71,6 +73,20 @@ ToolType = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 SchemaVersion = Annotated[int, Field(ge=1, le=1_000_000)]
 Revision = Annotated[int, Field(ge=1)]
 NoteText = Annotated[str, StringConstraints(max_length=MAX_NOTE_CHARS)]
+
+_SCRIPT_ID = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
+
+
+def _check_script_id(value: str) -> str:
+    if not _SCRIPT_ID.match(value):
+        raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
+    return value
+
+
+UserScriptId = Annotated[str, AfterValidator(_check_script_id)]
+ScriptName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+ScriptSource = Annotated[str, StringConstraints(max_length=MAX_SCRIPT_CHARS)]
+ScriptManifest = Annotated[dict[str, Any], AfterValidator(_max_size(MAX_MANIFEST_BYTES))]
 
 _SETTING_KEY = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 
@@ -290,6 +306,39 @@ class Note(ApiModel):
     updated_at: datetime
 
 
+# ------------------------------------------------------------- user scripts
+
+
+class UserScriptIn(ApiModel):
+    #: Client-chosen (UUID); generated when omitted. 409 if it already exists.
+    id: UserScriptId | None = None
+    name: ScriptName
+    source: ScriptSource
+    #: Null when the last save did not compile.
+    manifest: ScriptManifest | None = None
+    api_version: SchemaVersion
+
+
+class UserScriptUpdate(ApiModel):
+    name: ScriptName
+    source: ScriptSource
+    manifest: ScriptManifest | None = None
+    api_version: SchemaVersion
+    #: When given, 409 unless it matches the stored revision.
+    revision: Revision | None = None
+
+
+class UserScript(ApiModel):
+    id: str
+    name: str
+    source: str
+    manifest: dict[str, Any] | None
+    api_version: int
+    revision: int
+    created_at: datetime
+    updated_at: datetime
+
+
 # --------------------------------------------------------------- watchlists
 
 FLAG_COLORS = ("red", "orange", "yellow", "green", "cyan", "blue", "purple")
@@ -440,6 +489,17 @@ class BundleNote(ApiModel):
     updated_at: datetime | None = None
 
 
+class BundleUserScript(ApiModel):
+    id: UserScriptId
+    name: ScriptName
+    source: ScriptSource
+    manifest: ScriptManifest | None = None
+    api_version: SchemaVersion
+    revision: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class BundleWatchlist(ApiModel):
     id: Id
     name: Name
@@ -485,6 +545,8 @@ class Bundle(ApiModel):
     flags: list[BundleFlag] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     #: Alerts without runtime states or log (docs/alerts.md §1.7).
     alerts: list[BundleAlert] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    #: User indicator scripts (docs/plans/user-scripts.md §5); additive, BUNDLE_VERSION stays 1.
+    user_scripts: list[BundleUserScript] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
 
 
 class ImportCounts(ApiModel):
@@ -506,3 +568,4 @@ class ImportSummary(ApiModel):
     watchlists: ImportCounts = Field(default_factory=ImportCounts)
     flags: ImportCounts = Field(default_factory=ImportCounts)
     alerts: ImportCounts = Field(default_factory=ImportCounts)
+    user_scripts: ImportCounts = Field(default_factory=ImportCounts)

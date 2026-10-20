@@ -182,6 +182,24 @@ class Watchlist(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class UserScript(Base):
+    """A user-authored indicator script (docs/plans/user-scripts.md §5).
+
+    `manifest` = the compiled definition manifest, null if the last save did not compile.
+    """
+
+    __tablename__ = "user_scripts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    source: Mapped[str] = mapped_column(Text)
+    manifest: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    api_version: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SymbolFlag(Base):
     """Global color flag of a symbol (one color per symbol)."""
 

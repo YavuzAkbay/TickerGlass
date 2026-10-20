@@ -2,8 +2,8 @@
 
 User data lives in the API database (SQLite by default, Postgres via `DATABASE_URL`). The web app talks to it
 through `apps/web/src/api/persistence.ts` and `autosave.ts`. Server code: `api/src/investopen_api/userdata/`,
-`routes/{layouts,drawings,templates,user_settings,notes,watchlists,transfer}.py`. Migrations `bd686f7c13d4`
-(Phase 7) and `50fc9b162b6f` (watchlists, Phase 8).
+`routes/{layouts,drawings,templates,user_settings,notes,watchlists,user_scripts,transfer}.py`. Migrations
+`bd686f7c13d4` (Phase 7), `50fc9b162b6f` (watchlists, Phase 8) and `3f8a6c1d9e47` (user scripts).
 
 ## 1. Data model
 
@@ -20,6 +20,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 | `settings`            | `key` (`[A-Za-z0-9_.-]{1,64}`), `value` JSON (not null)                                                                                       | key               |
 | `notes`               | `id`, `symbol` (null = general), `text` (<= 200k chars), `revision`                                                                           | id                |
 | `watchlists`          | `id` (client-chosen), `name`, `items` JSON list, `revision`                                                                                   | id                |
+| `user_scripts`        | `id` (client-chosen), `name` (1-100), `source` (<= 200k chars), `manifest` JSON object or null (<= 64 KB), `api_version`, `revision`        | id                |
 | `symbol_flags`        | `symbol` (upper-case), `color` (one of 7)                                                                                                     | symbol            |
 | `alerts`              | `id`, `name`, `symbol`, `spec` JSON, `status`, `revision`, ... (+ `alert_states`, `alert_log`, `alert_deliveries`: alerts.md §1.1)            | id                |
 
@@ -32,6 +33,10 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
   trimmed and upper-cased (`[A-Z0-9.\-=^/&_]{1,32}`), unique within a list (case-insensitive), section ids unique,
   at most 1000 items. Names are not unique. The client creates the id (UUID v4, `[A-Za-z0-9_-]{1,36}`) so a list
   made offline keeps its identity. List order in the UI is alphabetical (no position column).
+- **User scripts** are one row per script, with the source and the compiled `manifest` (null if the last save did
+  not compile; the server does not run or validate scripts). The client creates the id (UUID v4,
+  `[A-Za-z0-9_-]{1,36}`) because indicator instances reference it (`user:<id>`). Names are not unique.
+  See [plans/user-scripts.md](plans/user-scripts.md) §5.
 - **Flags** are global like the common: at most one of `red orange yellow green cyan blue purple` per symbol.
   `created_at` is the time the current color was set (it resets on a color change, not on setting the same color).
 - **Alerts** (Phase 10) are one row per alert with revision checks like watchlists; the evaluation service owns
@@ -61,6 +66,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 | `GET/PUT/DELETE /settings/{key}` (`{value}`)                                | `getSetting`/`putSetting`/`deleteSetting`                                     | GET 404 if unset; last writer wins per key                                                                                                                                |
 | `GET /notes?symbol=`, `POST`, `GET/PUT/DELETE /notes/{id}`                  | `listNotes/createNote/getNote/updateNote/deleteNote`                          | PUT with `revision` -> 409 if stale                                                                                                                                       |
 | `GET/POST /watchlists`, `GET/PUT/DELETE /watchlists/{id}`                   | `listWatchlists/createWatchlist/getWatchlist/updateWatchlist/deleteWatchlist` | list includes items, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,items,revision?}` -> 409 if stale; DELETE 404 if missing (treated as done) |
+| `GET/POST /user-scripts`, `GET/PUT/DELETE /user-scripts/{id}`               | `...UserScript(s)` (web data layer, planned)                                  | list includes sources, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,source,manifest,apiVersion,revision?}` -> 409 if stale; DELETE 404 if missing |
 | `GET /flags`, `PATCH /flags` `{SYMBOL: color\|null}`                        | `getFlags`/`patchFlags`                                                       | PATCH sets or removes flags in one transaction (max 5000) and returns all flags                                                                                           |
 | `/alerts*` (CRUD, status, log, channels, service)                           | `apps/web/src/api/alerts.ts`                                                  | Phase 10: see [alerts.md](alerts.md) §1.4. Mutations are online-only (no localStorage queue)                                                                              |
 | `GET /export`                                                               | `exportAll`                                                                   | full bundle (§4)                                                                                                                                                          |
@@ -86,6 +92,8 @@ schemaVersion?, force?}`. Upsert with `baseRevision: null` = create (conflict if
 revision`; a stale `revision` -> 409 `{detail: {message, current}}`, a missing id -> 404, omitting `revision`
   overwrites. `POST` with an existing `id` -> 409 with `current` (the client then saves with `PUT` instead).
   The web side adopts `current` on a conflict and shows "Keep mine", which re-applies the local version.
+- **User scripts**: like watchlists (`POST` with an existing `id` -> 409 with `current`; `PUT` with a stale
+  `revision` -> 409 `{detail: {message, current}}`; omitting `revision` overwrites).
 - **Flags**: last writer wins; `PATCH /flags` has no revisions. Unflagging a missing symbol is a no-op.
 - **Templates, settings**: last writer wins. A name clash (PUT rename, or two POSTs creating the same name at the
   same time) is a 409 `{detail: string}`.
@@ -111,7 +119,8 @@ the batch for the rest, retry. Refetch (`getDrawings`, `getLayout`) on window fo
   "settings": { "<key>": <value> }, "notes": [{ "id", "symbol", "text", ... }],
   "watchlists": [{ "id", "name", "items": [...], ... }],   // added in Phase 8
   "flags": [{ "symbol", "color", ... }],                   // added in Phase 8
-  "alerts": [{ ...AlertIn, "status", "statusReason", "fireCount", "lastFiredAt" }] }   // added in Phase 10
+  "alerts": [{ ...AlertIn, "status", "statusReason", "fireCount", "lastFiredAt" }],   // added in Phase 10
+  "userScripts": [{ "id", "name", "source", "manifest", "apiVersion", ... }] }       // added with user scripts
 ```
 
 Export fields `revision`/`createdAt`/`updatedAt` are informational. Import validates everything first (`app:
@@ -130,6 +139,9 @@ replace everything. `dryRun=true` returns the same summary and rolls back.
   is not `[A-Za-z0-9_-]{1,36}` gets a fresh id on import.
 - `alerts` is additive too (no states, no log): `merge` matches by id, `replace` empties alerts and their states only
   when the key is present. Details: [alerts.md](alerts.md) §1.7.
+- `userScripts` is additive too: `merge` matches by id, `replace` empties the table only when the key is present.
+  Duplicate ids or an id that is not `[A-Za-z0-9_-]{1,36}` -> 422 (ids are referenced by indicator instances, so
+  they are never regenerated).
 - Layout ids that would shadow a fixed route (`last-used`, `import`, `export`) or are not `[A-Za-z0-9_-]{1,36}` get a
   fresh id on import (`isLastUsed` follows the new id); such layouts are always created, never matched.
 - Settings: `null` values are rejected (422), as with `PUT /settings/{key}`; to remove a key use `PATCH` / `DELETE`.

@@ -28,6 +28,7 @@ from .routes import (
     symbols,
     templates,
     transfer,
+    user_scripts,
     user_settings,
     watchlists,
 )
@@ -131,6 +132,7 @@ def create_app(
     api.include_router(templates.router)
     api.include_router(user_settings.router)
     api.include_router(notes.router)
+    api.include_router(user_scripts.router)
     api.include_router(watchlists.router)
     api.include_router(watchlists.flags_router)
     api.include_router(alerts.router)
