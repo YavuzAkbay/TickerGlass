@@ -15,7 +15,7 @@ const SORT_KEYS: readonly string[] = ['symbol', ...ALL_COLUMNS];
 
 export const DEFAULT_PREFS: WatchlistPrefs = {
   activeId: null,
-  columns: ['last', 'change', 'changePercent'],
+  columns: ['last', 'change', 'changePercent', 'volume'],
   sort: null,
 };
 

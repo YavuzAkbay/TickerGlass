@@ -1,46 +1,73 @@
+/* Chrome design tokens. Semantic names (--bg, --surface, --raised, ...) are the source of
+   truth; the older aliases (--panel, --panel-2, --popover, ...) point at them. */
 :root,
 [data-theme='dark'] {
-  --bg: #0f1115;
-  --panel: #131722;
-  --panel-2: #1e222d;
-  --popover: #1e222d;
-  --border: #2a2e39;
-  --hover: #2a2e39;
-  --active-bg: #2962ff26;
-  --text: #d1d4dc;
-  --text-strong: #ffffff;
-  --text-muted: #787b86;
-  --accent: #2962ff;
-  --accent-text: #5b8cff;
-  --up: #26a69a;
-  --down: #ef5350;
-  --star: #f7b500;
-  --input-bg: #0f1115;
-  --overlay: #00000080;
-  --shadow: 0 4px 24px #0009;
+  --bg: #0e1116;
+  --surface: #151a21;
+  --raised: #1c232c;
+  --border: #262e39;
+  --text: #e6eaf0;
+  --muted: #8b95a5;
+  --accent: #4f6bed;
+  --accent-hover: #6a82f2;
+  --accent-soft: rgba(79, 107, 237, 0.14);
+  --accent-text: #8fa2f5;
+  --on-accent: #ffffff;
+  --hover: rgba(255, 255, 255, 0.06);
+  --up: #18a383;
+  --down: #e5484d;
+  --star: #f2a93b;
+  --overlay: rgba(5, 8, 12, 0.6);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --tip-bg: #e6eaf0;
+  --tip-text: #0e1116;
   color-scheme: dark;
 }
 
 [data-theme='light'] {
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --panel-2: #f0f3fa;
-  --popover: #ffffff;
-  --border: #e0e3eb;
-  --hover: #f0f3fa;
-  --active-bg: #2962ff1a;
-  --text: #131722;
-  --text-strong: #000000;
-  --text-muted: #6a6d78;
-  --accent: #2962ff;
-  --accent-text: #2962ff;
-  --up: #089981;
-  --down: #f23645;
-  --star: #f5a623;
-  --input-bg: #ffffff;
-  --overlay: #0000004d;
-  --shadow: 0 4px 24px #0003;
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --raised: #f0f2f5;
+  --border: #dde2e8;
+  --text: #151a21;
+  --muted: #5d6878;
+  --accent: #3f5bdb;
+  --accent-hover: #3550c4;
+  --accent-soft: rgba(63, 91, 219, 0.14);
+  --accent-text: #3f5bdb;
+  --on-accent: #ffffff;
+  --hover: rgba(16, 24, 40, 0.06);
+  --up: #0b7a63;
+  --down: #d93a40;
+  --star: #c97f0a;
+  --overlay: rgba(16, 24, 40, 0.35);
+  --shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+  --grid-line: rgba(0, 0, 0, 0.05);
+  --tip-bg: #151a21;
+  --tip-text: #f7f8fa;
   color-scheme: light;
+}
+
+:root {
+  --radius-panel: 8px;
+  --radius-control: 6px;
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-size: 13px;
+
+  /* Aliases kept so existing component styles resolve to the new tokens. */
+  --panel: var(--surface);
+  --panel-2: var(--raised);
+  --popover: var(--raised);
+  --active-bg: var(--accent-soft);
+  --text-strong: var(--text);
+  --text-muted: var(--muted);
+  --input-bg: var(--bg);
+}
+
+[data-theme='light'] {
+  --popover: var(--surface);
+  --input-bg: var(--surface);
 }
 
 * {
@@ -58,13 +85,8 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font:
-    13px/1.4 -apple-system,
-    BlinkMacSystemFont,
-    'Trebuchet MS',
-    Roboto,
-    Ubuntu,
-    sans-serif;
+  font: var(--font-size) / 1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -83,4 +105,10 @@ textarea {
 ::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 4px;
+}
+
+/* Prices and quantities line up in columns. */
+.num,
+[data-num] {
+  font-variant-numeric: tabular-nums;
 }

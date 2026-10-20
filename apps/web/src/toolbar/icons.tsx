@@ -1,34 +1,73 @@
 import type { ReactElement, ReactNode } from 'react';
+import {
+  Eraser,
+  Eye,
+  EyeOff,
+  Image as ImageIcon,
+  Link2,
+  Lock,
+  LockOpen,
+  Magnet,
+  MessageSquare,
+  MousePointer2,
+  PenLine,
+  Ruler,
+  Smile,
+  Star,
+  Trash2,
+  Type,
+  ZoomIn,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
-/** Original line-art icon set for drawing tools: 28x28 grid, 1px strokes on
- * half-pixel coordinates (crisp), anchors drawn as hollow circles. */
+/** Drawing tool icons. Generic actions come from lucide; domain shapes are drawn here on a
+ * 20x20 canvas with 1.5px round strokes in currentColor. The shape bodies are authored on a
+ * 28-unit grid and scaled into the 20-unit canvas by a single group transform. */
 export type ToolIcon = (props: { size?: number }) => ReactElement;
+
+const SCALE = 20 / 28;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 function mk(body: ReactNode): ToolIcon {
-  return function Icon({ size = 28 }) {
+  return function Icon({ size = 20 }) {
     return (
       <svg
         width={size}
         height={size}
-        viewBox="0 0 28 28"
+        viewBox="0 0 20 20"
         fill="none"
         stroke="currentColor"
-        strokeWidth={1}
+        strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden="true"
         focusable="false"
       >
-        {body}
+        <g transform={`scale(${SCALE})`} strokeWidth={1.5 / SCALE}>
+          {body}
+        </g>
       </svg>
     );
   };
 }
 
-/** Hollow anchor point. */
-const A = (x: number, y: number) => <circle cx={x} cy={y} r={2} />;
+/** Wrap a lucide glyph as a tool icon (1.5px stroke, matches the drawn set). */
+function lu(Glyph: LucideIcon, fill = false): ToolIcon {
+  return function LucideTool({ size = 20 }) {
+    return (
+      <Glyph
+        size={size}
+        strokeWidth={1.5}
+        aria-hidden="true"
+        fill={fill ? 'currentColor' : 'none'}
+      />
+    );
+  };
+}
+
+/** Anchor point: 1.5px-radius ring once scaled. */
+const A = (x: number, y: number) => <circle cx={x} cy={y} r={2.1} />;
 /** Line segment trimmed at either end so it meets an anchor's outline. */
 function seg(x1: number, y1: number, x2: number, y2: number, t1 = 2.5, t2 = 2.5) {
   const dx = x2 - x1;
@@ -42,13 +81,13 @@ function seg(x1: number, y1: number, x2: number, y2: number, t1 = 2.5, t2 = 2.5)
 }
 const P = (d: string) => <path d={d} />;
 const D = (d: string) => <path d={d} strokeDasharray="2 2" />;
-const Fill = (d: string) => <path d={d} fill="currentColor" stroke="none" />;
-const Soft = (d: string) => <path d={d} fill="currentColor" fillOpacity={0.18} stroke="none" />;
+/** Soft fills are not part of the style; kept as a no-op so shape definitions stay readable. */
+const Soft = (_d: string) => null;
 const T = (x: number, y: number, s: string) => (
   <text
     x={x}
     y={y}
-    fontSize={6}
+    fontSize={8}
     fontFamily="inherit"
     fill="currentColor"
     stroke="none"
@@ -63,7 +102,7 @@ function zig(pts: [number, number][], dashedFrom?: number) {
   return (
     <>
       {pts.map(([x, y], i) => (
-        <circle key={`a${i}`} cx={x} cy={y} r={2} />
+        <circle key={`a${i}`} cx={x} cy={y} r={2.1} />
       ))}
       {pts.slice(1).map(([x, y], i) => {
         const [px, py] = pts[i]!;
@@ -89,13 +128,8 @@ export const IconDot = mk(
     <circle cx={14.5} cy={14.5} r={6.5} strokeOpacity={0.35} />
   </>,
 );
-export const IconArrowCursor = mk(P('M9.5 5.5v15l4-3.5 2.6 6 2.4-1-2.6-5.9 5.1-.6z'));
-export const IconEraser = mk(
-  <>
-    {P('M11.5 22.5l-5-5a1.4 1.4 0 0 1 0-2l9-9a1.4 1.4 0 0 1 2 0l5 5a1.4 1.4 0 0 1 0 2l-9 9z')}
-    {P('M9.5 12.5l7 7M11.5 22.5h11')}
-  </>,
-);
+export const IconArrowCursor = lu(MousePointer2);
+export const IconEraser = lu(Eraser);
 
 // ---------------------------------------------------------------- lines
 
@@ -624,12 +658,7 @@ export const IconPriceTimeMeasure = mk(
 
 // ---------------------------------------------------------------- brushes / arrows
 
-export const IconBrush = mk(
-  <>
-    {P('M21.5 4.5l2 2-9 10-2-2z')}
-    {P('M12.5 14.5c-3 0-4.5 2-4.5 4s-1 3.5-3.5 4c4 1.5 9 .5 10-3.5')}
-  </>,
-);
+export const IconBrush = lu(PenLine);
 export const IconHighlighter = mk(
   <>
     {P('M17.5 4.5l6 6-8 8-6-6z')}
@@ -697,7 +726,7 @@ export const IconSCurve = mk(
 
 // ---------------------------------------------------------------- annotation
 
-export const IconText = mk(P('M7.5 7.5v-2h13v2M14 5.5v17M11 22.5h6'));
+export const IconText = lu(Type);
 export const IconPinnedText = mk(
   <>
     {P('M9.5 6.5v-1.5h11v1.5M15 5v12M12.5 17h5')}
@@ -720,11 +749,7 @@ export const IconPinnedNote = mk(
   </>,
 );
 export const IconCallout = mk(P('M4.5 5.5h19v12h-11l-5 5v-5h-3z'));
-export const IconComment = mk(
-  P(
-    'M14.5 5.5c5.5 0 9.5 3.4 9.5 7.5s-4 7.5-9.5 7.5c-1.2 0-2.4-.2-3.5-.5l-5 2.5 1.5-4c-1.6-1.4-2.5-3.3-2.5-5.5 0-4.1 4-7.5 9.5-7.5z',
-  ),
-);
+export const IconComment = lu(MessageSquare);
 export const IconPriceLabel = mk(
   <>
     {P('M4.5 9.5h14l5 5-5 5h-14z')}
@@ -756,43 +781,15 @@ export const IconTable = mk(
     {P('M4.5 11.5h19M4.5 16.5h19M11.5 6.5v15M17.5 6.5v15')}
   </>,
 );
-export const IconImage = mk(
-  <>
-    {P('M4.5 6.5h19v15h-19z')}
-    {P('M4.5 19.5l6-6 4 4 3-3 6 6')}
-    <circle cx={18.5} cy={10.5} r={1.5} />
-  </>,
-);
+export const IconImage = lu(ImageIcon);
 
 // ---------------------------------------------------------------- misc / actions
 
-export const IconSmile = mk(
-  <>
-    <circle cx={14.5} cy={14.5} r={9} />
-    {P('M10.5 16.5c1 2 2.5 3 4 3s3-1 4-3')}
-    <circle cx={11.5} cy={12} r={1} fill="currentColor" stroke="none" />
-    <circle cx={17.5} cy={12} r={1} fill="currentColor" stroke="none" />
-  </>,
-);
-export const IconRuler = mk(
-  <>
-    {P('M3.5 18.5l15-15 6 6-15 15z')}
-    {P('M7.5 14.5l2 2M10.5 11.5l3 3M13.5 8.5l2 2M16.5 5.5l3 3')}
-  </>,
-);
-export const IconZoomIn = mk(
-  <>
-    <circle cx={12.5} cy={12.5} r={7} />
-    {P('M17.5 17.5l6 6M12.5 9.5v6M9.5 12.5h6')}
-  </>,
-);
+export const IconSmile = lu(Smile);
+export const IconRuler = lu(Ruler);
+export const IconZoomIn = lu(ZoomIn);
 const magnetBody = P('M7.5 5.5h4v9a3 3 0 0 0 6 0v-9h4v9a7 7 0 0 1-14 0z');
-export const IconMagnet = mk(
-  <>
-    {magnetBody}
-    {P('M7.5 9.5h4M17.5 9.5h4')}
-  </>,
-);
+export const IconMagnet = lu(Magnet);
 export const IconMagnetStrong = mk(
   <>
     {Soft('M7.5 5.5h4v4h-4zM17.5 5.5h4v4h-4z')}
@@ -809,48 +806,11 @@ export const IconStayDrawing = mk(
   </>,
 );
 /** Two linked chain rings: new drawings synced to all symbols. */
-export const IconSyncDrawings = mk(
-  <>
-    {P('M12.5 16.5l4-4')}
-    {P('M11 13.5l-2 2a3.5 3.5 0 0 0 5 5l2-2')}
-    {P('M18 15.5l2-2a3.5 3.5 0 0 0-5-5l-2 2')}
-  </>,
-);
-export const IconLock = mk(
-  <>
-    {P('M8.5 13.5h12v10h-12z')}
-    {P('M10.5 13.5v-3a4 4 0 0 1 8 0v3M14.5 17.5v2')}
-  </>,
-);
-export const IconUnlock = mk(
-  <>
-    {P('M8.5 13.5h12v10h-12z')}
-    {P('M10.5 13.5v-3a4 4 0 0 1 7.7-1.5M14.5 17.5v2')}
-  </>,
-);
-export const IconEye = mk(
-  <>
-    {P('M3.5 14.5c2.5-5 6.5-7.5 11-7.5s8.5 2.5 11 7.5c-2.5 5-6.5 7.5-11 7.5s-8.5-2.5-11-7.5z')}
-    <circle cx={14.5} cy={14.5} r={3.5} />
-  </>,
-);
-export const IconEyeOff = mk(
-  <>
-    {P('M7.3 9.4c-1.5 1.3-2.8 3-3.8 5.1 2.5 5 6.5 7.5 11 7.5 1.9 0 3.7-.5 5.3-1.4')}
-    {P('M11.5 7.5c1-.3 2-.5 3-.5 4.5 0 8.5 2.5 11 7.5-.7 1.4-1.6 2.7-2.6 3.8')}
-    {P('M12 12a3.5 3.5 0 0 0 5 5M5.5 5.5l18 18')}
-  </>,
-);
-export const IconTrash = mk(
-  <>
-    {P('M5.5 8.5h18M11.5 8.5v-3h6v3')}
-    {P('M7.5 8.5l1 15h12l1-15')}
-    {P('M12.5 12v8M16.5 12v8')}
-  </>,
-);
-export const IconStar = mk(
-  P('M14.5 4.5l2.9 6.2 6.6.8-4.9 4.5 1.3 6.5-5.9-3.3-5.9 3.3 1.3-6.5-4.9-4.5 6.6-.8z'),
-);
-export const IconStarFilled = mk(
-  Fill('M14.5 4.5l2.9 6.2 6.6.8-4.9 4.5 1.3 6.5-5.9-3.3-5.9 3.3 1.3-6.5-4.9-4.5 6.6-.8z'),
-);
+export const IconSyncDrawings = lu(Link2);
+export const IconLock = lu(Lock);
+export const IconUnlock = lu(LockOpen);
+export const IconEye = lu(Eye);
+export const IconEyeOff = lu(EyeOff);
+export const IconTrash = lu(Trash2);
+export const IconStar = lu(Star);
+export const IconStarFilled = lu(Star, true);
