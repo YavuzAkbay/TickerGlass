@@ -58,6 +58,8 @@ export interface CompareControllerOptions {
   prepost: () => boolean;
   /** Chart type the app shows (overlays are unavailable on brick types). */
   chartType: () => ChartType;
+  /** Bumps whenever fetched data must be refetched (replay start/seek/stop). Default: constant. */
+  dataEpoch?: () => number;
 }
 
 /** One fetched overlay series, shared by every overlay of that symbol. */
@@ -105,8 +107,8 @@ const UTC_CTX = createBucketContext({ timezone: null, session: null });
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-export const overlayKey = (symbol: string, interval: string, prepost: boolean) =>
-  `${symbol}|${interval}|${prepost ? 1 : 0}`;
+export const overlayKey = (symbol: string, interval: string, prepost: boolean, epoch = 0) =>
+  `${symbol}|${interval}|${prepost ? 1 : 0}${epoch ? `|e${epoch}` : ''}`;
 
 function outputs(item: CompareState): StudyOutputMeta[] {
   return [
@@ -153,6 +155,7 @@ export class CompareController {
   private unavailable: string | null = null;
   private interval: Interval | null = null;
   private intervalText = '';
+  private epoch = 0;
   private prepost = false;
   private mode: AlignMode = 'calendar';
   private stale = 0;
@@ -358,6 +361,7 @@ export class CompareController {
       if (!this.interval) this.unavailable = 'Compare is not available for this interval';
     }
     this.prepost = this.opts.prepost();
+    this.epoch = this.opts.dataEpoch?.() ?? 0;
     const store = this.chart.store;
     const n = this.unavailable ? 0 : store.length;
     if (this.interval) {
@@ -392,7 +396,7 @@ export class CompareController {
 
   private overlayOf(item: CompareState): Overlay | undefined {
     if (!this.interval) return undefined;
-    return this.overlays.get(overlayKey(item.symbol, this.intervalText, this.prepost));
+    return this.overlays.get(overlayKey(item.symbol, this.intervalText, this.prepost, this.epoch));
   }
 
   /** Fetch overlays the list needs on this interval; drop the ones nothing uses. */
@@ -400,7 +404,7 @@ export class CompareController {
     const want = new Set<string>();
     if (this.interval && !this.unavailable && this.mainKeys.length) {
       for (const item of this.list) {
-        const key = overlayKey(item.symbol, this.intervalText, this.prepost);
+        const key = overlayKey(item.symbol, this.intervalText, this.prepost, this.epoch);
         want.add(key);
         if (!this.overlays.has(key)) this.load(item.symbol, key);
       }

@@ -307,7 +307,7 @@ const cmp = (id: string, symbol: string, patch: Partial<CompareState> = {}): Com
 
 function setup(
   f = fakeFeed({ 'BTC-USD|1D': cols(BTC_T, BTC_C) }),
-  opts: { chartType?: ChartType; lost?: boolean } = {},
+  opts: { chartType?: ChartType; lost?: boolean; dataEpoch?: () => number } = {},
 ) {
   const chart = new FakeChart();
   const frames: (() => void)[] = [];
@@ -321,6 +321,7 @@ function setup(
     ...(opts.lost ? { onLost: removeCompares } : {}),
     prepost: () => false,
     chartType: () => chartType,
+    ...(opts.dataEpoch ? { dataEpoch: opts.dataEpoch } : {}),
   });
   const frame = () => frames.splice(0).forEach((fn) => fn());
   return { chart, ctl, frame, onError, ...f, setType: (t: ChartType) => (chartType = t) };
@@ -665,5 +666,25 @@ describe('CompareController', () => {
     expect(subs[0]!.closed).toBe(true);
     expect(useCompareRuntime.getState().status).toEqual({});
     ctl.destroy();
+  });
+
+  it('refetches overlays when the data epoch changes (replay start/seek/stop)', async () => {
+    let epoch = 0;
+    const { chart, ctl, requests, subs } = setup(undefined, { dataEpoch: () => epoch });
+    ctl.sync([cmp('cmp-a', 'BTC-USD')]);
+    chart.load(cols(AAPL_T, AAPL_C));
+    await settle();
+    expect(requests).toHaveLength(1);
+    // A plain reload keeps the cached overlay.
+    chart.load(cols(AAPL_T, AAPL_C));
+    await settle();
+    expect(requests).toHaveLength(1);
+    epoch = 1;
+    chart.load(cols(AAPL_T, AAPL_C));
+    await settle();
+    expect(requests).toHaveLength(2);
+    expect(subs[0]!.closed).toBe(true);
+    expect(subs[1]!.closed).toBe(false);
+    expect(chart.studies.get('cmp-a')!.values).toEqual([101, 102, 103, 104, 107]);
   });
 });

@@ -4,6 +4,7 @@ import { ChartView } from './chart/ChartView';
 import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
 import { registerIndicatorCommands } from './indicators/commands';
+import { registerReplayCommands } from './replay/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
@@ -33,6 +34,7 @@ export function App() {
     const unregisterDrawings = registerDrawingCommands();
     const unregisterLayouts = registerLayoutCommands();
     const unregisterWatchlist = registerWatchlistCommands();
+    const unregisterReplay = registerReplayCommands();
     // Digits open the interval input, anything else symbol search .
     const uninstall = installShortcuts((initial) =>
       useUiStore
@@ -45,6 +47,7 @@ export function App() {
       unregisterDrawings();
       unregisterLayouts();
       unregisterWatchlist();
+      unregisterReplay();
       uninstall();
     };
   }, []);

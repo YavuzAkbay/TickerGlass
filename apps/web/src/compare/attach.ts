@@ -1,4 +1,5 @@
 import type { Chart, ChartState, DataFeed, PriceScaleMode } from '@investopen/engine';
+import { replayFeed } from '../chart/feed';
 import { useAppStore } from '../store/app';
 import { toast } from '../ui/Toast';
 import { onMainScaleMode, removeCompares } from './actions';
@@ -18,6 +19,7 @@ export function attachCompares(chart: Chart, feed: DataFeed): () => void {
     onLost: removeCompares,
     prepost: () => useAppStore.getState().prepost,
     chartType: () => useAppStore.getState().chartType,
+    dataEpoch: () => replayFeed.epoch,
   });
   ctl.sync(useCompareStore.getState().items);
   let mode = mainMode(chart.getState());

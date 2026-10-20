@@ -90,6 +90,8 @@ export interface ControllerOptions {
   prepost?: () => boolean;
   /** Chart type the app shows (external symbols are unavailable on brick types). Default: candles. */
   chartType?: () => ChartType;
+  /** Bumps whenever fetched data must be refetched (replay start/seek/stop). Default: constant. */
+  dataEpoch?: () => number;
 }
 
 interface Applied {
@@ -175,6 +177,7 @@ export class IndicatorController {
   private required: string[] = [];
   private readonly tfSeries = new Map<string, TfSeries>();
   private readonly external: ExternalSymbols;
+  private dataEpoch = 0;
   /** External symbols that failed to load, with the message. */
   private readonly symbolProblems = new Map<string, string>();
   private pending = new Map<number, Bar>();
@@ -201,6 +204,7 @@ export class IndicatorController {
       schedule: this.schedule,
       chartType: opts.chartType ?? (() => 'candles'),
       prepost: () => this.opts.prepost?.() ?? false,
+      dataEpoch: () => this.opts.dataEpoch?.() ?? 0,
       onProblem: (symbol, message) => this.onSymbolProblem(symbol, message),
     });
     this.worker.listen((msg) => this.onMessage(msg));
@@ -498,6 +502,12 @@ export class IndicatorController {
     const interval = this.chart.getInterval();
     if (this.symbol !== null && symbol !== this.symbol) {
       this.worker.post({ type: 'clear' });
+      this.dropTimeframes();
+    }
+    const epoch = this.opts.dataEpoch?.() ?? 0;
+    if (epoch !== this.dataEpoch) {
+      // Replay started, seeked or stopped: timeframe series hold stale (or future) data.
+      this.dataEpoch = epoch;
       this.dropTimeframes();
     }
     this.symbol = symbol;

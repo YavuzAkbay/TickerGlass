@@ -307,6 +307,8 @@ export class InteractionController {
       e.preventDefault();
       return;
     }
+    // Alt+arrows belong to the app (e.g. replay shortcuts), not to panning/zooming.
+    if (e.altKey && e.key.startsWith('Arrow')) return;
     const ts = this.chart.timeScale;
     const step = ts.barSpacing * (e.shiftKey ? 10 : 1);
     switch (e.key) {
@@ -330,7 +332,8 @@ export class InteractionController {
         break;
       case 'r':
       case 'R':
-        if (!e.altKey) return;
+        // Shift+Alt+R is an app shortcut (replay): only plain Alt+R resets the view.
+        if (!e.altKey || e.shiftKey) return;
         this.chart.resetView();
         break;
       default:

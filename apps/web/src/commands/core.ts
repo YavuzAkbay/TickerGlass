@@ -281,13 +281,6 @@ export function registerCoreCommands(): () => void {
         else toast('Alert not found', 'error');
       },
     },
-    {
-      id: 'replay.toggle',
-      title: 'Bar replay',
-      category: 'Chart',
-      shortcut: 'Shift+Alt+r',
-      run: () => toast('Market replay arrives in Phase 13'),
-    },
     ...PANELS.map(([id, title]): Command => ({
       id: `view.panel.${id}`,
       title: `Toggle ${title} panel`,
