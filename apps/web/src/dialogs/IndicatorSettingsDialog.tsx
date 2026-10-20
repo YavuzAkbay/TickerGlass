@@ -1,8 +1,10 @@
 import {
+  coerceInputs,
   externalRefSymbol,
   getIndicator,
   isExternalRef,
   isOutputRef,
+  isUserScriptType,
   resolveInputs,
   resolveOutputs,
   type AnyIndicatorDefinition,
@@ -112,7 +114,9 @@ export default function IndicatorSettingsDialog({
   const resetTo = (d: Editable) => {
     try {
       apply({
-        inputs: resolveInputs(def, d.inputs),
+        inputs: isUserScriptType(def.id)
+          ? coerceInputs(def, d.inputs)
+          : resolveInputs(def, d.inputs),
         styles: structuredClone(d.styles),
         visibility: d.visibility ? structuredClone(d.visibility) : null,
       });

@@ -25,7 +25,7 @@ import {
   type ValueOperand,
 } from '@investopen/alerts';
 import { BRICK_TYPES, type ChartType } from '@investopen/engine';
-import { defaultRegistry } from '@investopen/indicators';
+import { defaultRegistry, isUserScriptType } from '@investopen/indicators';
 import { toolName } from '../../drawings/model';
 
 /** The fields of a stored drawing the dialog reads. */
@@ -111,6 +111,7 @@ export interface SourceOption<T = SeriesOperand> {
 export function indicatorOptions(ctx: AlertContext): SourceOption<SeriesOperand>[] {
   const out: SourceOption<SeriesOperand>[] = [];
   for (const inst of ctx.indicators) {
+    if (isUserScriptType(inst.type)) continue;
     const def = defaultRegistry.get(inst.type);
     if (!def) continue;
     for (const o of def.outputs) {
@@ -147,6 +148,7 @@ export function indicatorOperand(
 
 /** First plot output of a chart indicator. */
 export function firstOutputId(type: string): string | null {
+  if (isUserScriptType(type)) return null;
   return defaultRegistry.get(type)?.outputs.find((o) => o.type === 'plot')?.id ?? null;
 }
 

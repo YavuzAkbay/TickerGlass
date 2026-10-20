@@ -15,6 +15,7 @@ import {
 } from '@investopen/engine';
 import {
   IndicatorRuntime,
+  defaultRegistry,
   defineIndicator,
   getIndicator,
   registerIndicator,
@@ -28,6 +29,8 @@ import { createInstance, type IndicatorState } from './model';
 import type { FromWorker, ToWorker } from './protocol';
 import { useIndicatorRuntime, useIndicatorStore } from './store';
 import { WorkerCore } from './workerCore';
+import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './sandbox/limits';
+import { useScriptsStore } from '../scripts/store';
 
 // A whole-indicator timeframe test definition (Pivot Points style).
 if (!getIndicator('test_tf_close'))
@@ -909,5 +912,55 @@ describe('external symbols', () => {
     expect(chart.studies.get(ma.id)!.values['ma']).toEqual(
       reference('sma', { length: 3 }, other, 'ma'),
     );
+  });
+});
+
+describe('user script instances', () => {
+  const UT = 'user:ctl-test';
+  const stub = () =>
+    defineIndicator({
+      id: UT,
+      name: 'Ctl',
+      shortName: 'CTL',
+      category: 'other',
+      overlay: true,
+      inputs: {},
+      outputs: [{ type: 'plot', id: 'v', title: 'V', kind: 'line', color: '#fff' }],
+      setup: () => (c) => c.set('v', c.close[c.i]!),
+    });
+  const status = (id: string) => useIndicatorRuntime.getState().status[id];
+
+  it('uses the script problem message for a missing definition', () => {
+    defaultRegistry.unregister(UT);
+    const { ctl } = setup();
+    const a = { ...inst('sma'), id: 'u_gone', type: UT };
+    useScriptsStore.setState({ scripts: [], loaded: true });
+    ctl.sync([a]);
+    expect(status(a.id)).toEqual({ state: 'error', message: 'Script deleted' });
+    useScriptsStore.setState({ scripts: [], loaded: false });
+    ctl.sync([a]);
+    expect(status(a.id)).toEqual({ state: 'error', message: `Unknown indicator "${UT}"` });
+    const b = { ...a, id: 'u_gone2', type: 'nope' };
+    ctl.sync([b]);
+    expect(status(b.id)).toEqual({ state: 'error', message: 'Unknown indicator "nope"' });
+  });
+
+  it('refuses the instance over the per-chart cap', () => {
+    defaultRegistry.unregister(UT);
+    defaultRegistry.register(stub());
+    const { chart, ctl } = setup();
+    const list = Array.from({ length: MAX_SCRIPT_INSTANCES_PER_CHART + 1 }, () =>
+      createInstance(getIndicator(UT)!, undefined),
+    );
+    ctl.sync(list);
+    for (const i of list.slice(0, MAX_SCRIPT_INSTANCES_PER_CHART))
+      expect(chart.studies.has(i.id)).toBe(true);
+    const over = list[MAX_SCRIPT_INSTANCES_PER_CHART]!;
+    expect(chart.studies.has(over.id)).toBe(false);
+    expect(status(over.id)).toEqual({ state: 'error', message: SCRIPT_INSTANCE_CAP_MESSAGE });
+    // Room again after a removal.
+    ctl.sync(list.slice(1));
+    expect(chart.studies.has(over.id)).toBe(true);
+    defaultRegistry.unregister(UT);
   });
 });

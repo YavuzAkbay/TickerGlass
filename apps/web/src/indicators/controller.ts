@@ -20,6 +20,7 @@ import {
 import {
   externalSymbols,
   getIndicator,
+  isUserScriptType,
   resolveOutputs,
   type AnyIndicatorDefinition,
   type InstanceStatus,
@@ -33,6 +34,8 @@ import {
   type IndicatorState,
 } from './model';
 import { BRICK_MESSAGE, ExternalSymbols } from './external';
+import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './sandbox/limits';
+import { userScriptProblem } from '../scripts/definitions';
 import type { FromWorker, ToWorker } from './protocol';
 import { useIndicatorRuntime } from './store';
 
@@ -239,13 +242,21 @@ export class IndicatorController {
       this.forget(id);
     }
     this.sendTimeframeMap(false);
+    let scripts = 0;
     for (const inst of list) {
       const def = getIndicator(inst.type);
       if (!def) {
-        this.setStatus(inst.id, { state: 'error', message: `Unknown indicator "${inst.type}"` });
+        this.setStatus(inst.id, {
+          state: 'error',
+          message: userScriptProblem(inst.type) ?? `Unknown indicator "${inst.type}"`,
+        });
         continue;
       }
       const prev = this.applied.get(inst.id);
+      if (isUserScriptType(inst.type) && ++scripts > MAX_SCRIPT_INSTANCES_PER_CHART && !prev) {
+        this.setStatus(inst.id, { state: 'error', message: SCRIPT_INSTANCE_CAP_MESSAGE });
+        continue;
+      }
       const next = this.describe(inst, def);
       if (!prev) {
         this.add(inst, def, next);
