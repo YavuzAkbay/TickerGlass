@@ -32,7 +32,10 @@ export * from './expression';
 export { ResamplingFeed } from './resampling-feed';
 export { SyntheticFeed } from './synthetic-feed';
 export {
+  chooseTick,
   ReplayFeed,
+  tickIntervals,
+  type ChooseTickOptions,
   type ReplayClock,
   type ReplayFeedEvents,
   type ReplayFeedOptions,
@@ -40,4 +43,5 @@ export {
   type ReplayMode,
   type ReplayStartOptions,
   type ReplayUpdate,
+  type TickChoice,
 } from './replay-feed';

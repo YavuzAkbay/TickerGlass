@@ -85,6 +85,8 @@ export interface SubscribeRequest {
   timezone?: string | null;
   /** Session ("HHMM-HHMM") used to anchor intraday buckets, if known. */
   session?: string | null;
+  /** Dividend-adjusted prices, as in the matching getBars request (used by replay). */
+  adjusted?: boolean;
 }
 
 /**
