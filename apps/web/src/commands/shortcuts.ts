@@ -10,6 +10,7 @@ function comboFromEvent(e: KeyboardEvent): string {
   let key = e.key;
   if (e.code.startsWith('Key')) key = e.code.slice(3).toLowerCase();
   else if (e.code.startsWith('Digit')) key = e.code.slice(5);
+  else if (key === ' ') key = 'Space';
   else if (key.length === 1) key = key.toLowerCase();
   parts.push(key);
   return parts.join('+');

@@ -1,4 +1,5 @@
 import type { Chart, DataFeed } from '@investopen/engine';
+import { replayFeed } from '../chart/feed';
 import { syncScriptDefinitions } from '../scripts/definitions';
 import { useScriptsStore } from '../scripts/store';
 import { useAppStore } from '../store/app';
@@ -32,6 +33,7 @@ export function attachIndicators(chart: Chart, feed: DataFeed): () => void {
     onStudiesLost: removeIndicators,
     prepost: () => useAppStore.getState().prepost,
     chartType: () => useAppStore.getState().chartType,
+    dataEpoch: () => replayFeed.epoch,
   });
   ctl.setHidden(indicatorsHidden(useUiStore.getState()));
   // The chart shows settings-dialog previews too (they are not persisted).

@@ -301,6 +301,7 @@ function setup(
     worker?: (log: ToWorker[]) => WorkerPort;
     lost?: boolean;
     chartType?: () => ChartType;
+    dataEpoch?: () => number;
   } = {},
 ) {
   const chart = new FakeChart();
@@ -316,6 +317,7 @@ function setup(
     // As the app: lost studies are removed from the store (an undoable removal).
     ...(opts.lost ? { onStudiesLost: removeIndicators } : {}),
     ...(opts.chartType ? { chartType: opts.chartType } : {}),
+    ...(opts.dataEpoch ? { dataEpoch: opts.dataEpoch } : {}),
   });
   const frame = () => frames.splice(0).forEach((f) => f());
   return { chart, log, ctl, frame, onError };
@@ -450,6 +452,26 @@ describe('IndicatorController', () => {
     expect(chart.studies.get(sma.id)!.values.ma).toEqual(
       reference('sma', { length: 3 }, { ...src, time: bars.time.slice(0, n) }, 'ma'),
     );
+  });
+
+  it('refetches timeframe bars when the data epoch changes', async () => {
+    const feed = stubFeed(() => makeBars(20, 7 * DAY, START - 7 * DAY * 4, 3));
+    let epoch = 0;
+    const { chart, ctl } = setup({ feed, dataEpoch: () => epoch });
+    ctl.sync([inst('test_tf_close')]);
+    chart.load(makeBars(40));
+    await settle();
+    await settle();
+    expect(feed.requests).toHaveLength(1);
+    chart.load(makeBars(40));
+    await settle();
+    await settle();
+    expect(feed.requests).toHaveLength(1);
+    epoch = 1;
+    chart.load(makeBars(40));
+    await settle();
+    await settle();
+    expect(feed.requests).toHaveLength(2);
   });
 
   it('fetches higher-timeframe bars for timeframe inputs and aligns them', async () => {
@@ -781,6 +803,24 @@ describe('external symbols', () => {
     expect(useIndicatorRuntime.getState().status[cc.id]).toEqual({ state: 'ok' });
     expect(chart.studies.get(cc.id)!.values['cc']).toEqual(expected(main, other));
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('refetches external symbols when the data epoch changes', async () => {
+    const main = makeBars(60);
+    const { feed, requests } = symbolFeed({ GOOG: makeBars(60, DAY, START, 5) });
+    let epoch = 0;
+    const { chart, ctl } = setup({ feed, dataEpoch: () => epoch });
+    ctl.sync([corr()]);
+    chart.load(main);
+    for (let i = 0; i < 3; i++) await settle();
+    expect(requests).toHaveLength(1);
+    chart.load(main);
+    for (let i = 0; i < 3; i++) await settle();
+    expect(requests).toHaveLength(1);
+    epoch = 1;
+    chart.load(main);
+    for (let i = 0; i < 3; i++) await settle();
+    expect(requests).toHaveLength(2);
   });
 
   it('shows waiting with the symbol until its bars arrive', async () => {

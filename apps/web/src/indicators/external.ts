@@ -32,6 +32,8 @@ export interface ExternalOptions {
   schedule: (fn: () => void) => void;
   chartType: () => ChartType;
   prepost: () => boolean;
+  /** Bumps whenever fetched data must be refetched (replay start/seek/stop). Default: constant. */
+  dataEpoch?: () => number;
   /** A symbol could not be loaded (message) or loads again (null). */
   onProblem: (symbol: string, message: string | null) => void;
 }
@@ -71,6 +73,7 @@ export class ExternalSymbols {
   private interval: Interval | null = null;
   private intervalText = '';
   private prepost = false;
+  private epoch = 0;
   private revision = -1;
   /** Why symbols cannot be aligned to the current displayed series, or null. */
   private unavailable: string | null = null;
@@ -116,14 +119,16 @@ export class ExternalSymbols {
     }
     const prepost = this.opts.prepost();
     const text = chart.getInterval();
-    if (text !== this.intervalText || prepost !== this.prepost) {
-      // Fetched bars belong to one interval/session setting.
+    const epoch = this.opts.dataEpoch?.() ?? 0;
+    if (text !== this.intervalText || prepost !== this.prepost || epoch !== this.epoch) {
+      // Fetched bars belong to one interval/session setting and data epoch.
       for (const e of this.entries.values()) this.drop(e);
       this.entries.clear();
     }
     this.interval = interval;
     this.intervalText = text;
     this.prepost = prepost;
+    this.epoch = epoch;
     const n = chart.store.length;
     this.grid =
       interval && !this.unavailable && n
