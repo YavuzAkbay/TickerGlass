@@ -62,11 +62,14 @@ const money = (v: number) => `${v > 0 ? '+' : v < 0 ? '-' : ''}${Math.abs(v).toF
 export class ReplayTrading implements ReplaySession {
   /** Chart bar time of each fill (the marker sits on the bar, the trade keeps the tick time). */
   private barTimes = new Map<number, number>();
+  /** Chart symbol the markers and the position line were last drawn for. */
+  private drawnSymbol: string | null = null;
 
   constructor(private readonly deps: ReplayTradingDeps) {}
 
   reset(): void {
     this.barTimes.clear();
+    this.drawnSymbol = null;
     useTrading.setState({ paper: emptyPaper(), marks: {} });
     this.deps.setMarkers(TRADE_MARKER_GROUP, []);
     this.deps.setPriceLines(POSITION_LINE_GROUP, []);
@@ -112,16 +115,19 @@ export class ReplayTrading implements ReplaySession {
     return o ? this.order(o.side, o.qty) : 'No open position';
   }
 
+  /** Update the mark price (state only when it changed); redraw only if the chart symbol changed. */
   private mark(): void {
+    const symbol = this.deps.symbol();
     const bar = this.deps.lastBar();
-    if (bar && Number.isFinite(bar.close)) {
-      useTrading.setState((s) => ({ marks: { ...s.marks, [this.deps.symbol()]: bar.close } }));
+    if (bar && Number.isFinite(bar.close) && useTrading.getState().marks[symbol] !== bar.close) {
+      useTrading.setState((s) => ({ marks: { ...s.marks, [symbol]: bar.close } }));
     }
-    this.draw();
+    if (symbol !== this.drawnSymbol) this.draw();
   }
 
   private draw(): void {
     const symbol = this.deps.symbol();
+    this.drawnSymbol = symbol;
     const { paper } = useTrading.getState();
     const markers: ChartMarker[] = paper.trades
       .filter((t) => t.symbol === symbol)

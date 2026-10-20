@@ -102,6 +102,8 @@ uses whole bars (the synthetic dev feed's intervals are unrelated random walks, 
 - Commands: `replay.toggle` Shift+Alt+R, `replay.selectBar`, `replay.playPause` Shift+Alt+Space, `replay.step`
   Shift+Alt+ArrowRight, `replay.realtime`, `replay.speedUp`, `replay.speedDown`, `replay.exit`. The engine lets
   Alt+arrows and Shift+Alt+R through to the app.
+- A failing non-primary subscription (a compare overlay) during a step shows in the warning badge, not as a toast per
+  step.
 - Jump to realtime and Exit both call `ReplayFeed.stop()`: epoch bump, one chart reload, controllers refetch and
   resubscribe live.
 
@@ -113,7 +115,9 @@ Server alerts keep running in real time and are unaffected. While replay is on:
   lines stay.
 - `replay/alerts.ts` evaluates **price alerts** (`isPriceAlert`: a price operand against a constant) on the chart
   symbol locally. After each step the sample is `x = priceValue(field, forming bar)`, `y = the constant`, compared
-  with the previous sample using the shared `evaluateCondition`. A hit adds a marker to the `replay-alerts` group
+  with the previous sample using the shared `evaluateCondition`. The bar is `ReplayFeed.revealedBar(symbol)`: the
+  raw, untransformed last revealed bar of the chart symbol (the forming aggregate in intrabar mode), so Heikin Ashi
+  and brick charts do not change it. A hit adds a marker to the `replay-alerts` group
   and a toast "Replay: {name}". Nothing is delivered or written to the alert log.
 - At most one fire per alert and bar; `once` alerts fire once per replay session. The first sample after a start or
   seek is recorded without firing; start, seek and exit reset everything and clear the markers.
@@ -131,7 +135,8 @@ A practice account inside replay (`replay/paper.ts` pure, `trading.ts` store and
 panel). Nothing is stored or sent anywhere.
 
 - Market orders only, with a quantity input (default 1). Buy, Sell and Close are in the ReplayBar. An order fills at
-  the close of the last revealed bar of the chart symbol, and the fill time is the replay clock (`last`). No
+  the close of `revealedBar` (the raw last revealed bar of the chart symbol, whatever the chart type; without one the
+  order is refused with a toast), and the fill time is the replay clock (`last`). No
   commissions, slippage, margin or limits; shorting is allowed.
 - One net position per symbol with an average cost `avg`, `q` the signed quantity, `p` the fill price, `n` the order
   size:

@@ -34,5 +34,9 @@ export function attachReplay(chart: Chart): () => void {
       void replay.start(bar);
     }),
   ];
-  return () => offs.forEach((off) => off());
+  return () => {
+    offs.forEach((off) => off());
+    // The chart is going away: stop the play loop, drop the feed's replay state and listeners.
+    replay.detach();
+  };
 }

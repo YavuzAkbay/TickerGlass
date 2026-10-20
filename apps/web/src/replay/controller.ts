@@ -13,7 +13,7 @@ import { REPLAY_SPEEDS, useReplayStore } from './store';
 /** The part of ReplayFeed the controller drives. */
 export type ReplayFeedLike = Pick<
   ReplayFeed,
-  'start' | 'setPrimary' | 'step' | 'stop' | 'on' | 'mode' | 'clock'
+  'start' | 'setPrimary' | 'step' | 'stop' | 'on' | 'mode' | 'clock' | 'revealedBar'
 >;
 
 /** The part of Chart the controller needs. */
@@ -105,9 +105,10 @@ export class ReplayController {
     this.each((s) => s.reset());
     try {
       const interval = parseInterval(chart.getInterval());
+      // Before loading: a symbol or interval change while loading must reach setPrimary.
+      this.attach(chart);
       const info = await this.begin(chart, interval, lastVisible as UTCTimestamp);
       if (gen !== this.generation) return;
-      this.attach(chart);
       this.applyInfo(info);
       await chart.reload();
       if (gen !== this.generation) return;
@@ -175,9 +176,7 @@ export class ReplayController {
     const gen = this.generation;
     try {
       const r = await this.deps.feed.step();
-      if (gen !== this.generation) return;
-      if (r === 'end') this.onEnd();
-      else this.each((s) => s.step());
+      this.afterStep(r, gen);
     } catch (err) {
       if (gen !== this.generation) return;
       this.onError(`Replay: ${errText(err)}`);
@@ -188,12 +187,7 @@ export class ReplayController {
   private async tick(gen: number): Promise<void> {
     try {
       const r = await this.deps.feed.step();
-      if (gen !== this.generation) return;
-      if (r === 'end') {
-        this.onEnd();
-        return;
-      }
-      this.each((s) => s.step());
+      if (!this.afterStep(r, gen)) return;
     } catch (err) {
       if (gen !== this.generation) return;
       this.onError(`Replay: ${errText(err)}`);
@@ -205,6 +199,21 @@ export class ReplayController {
       this.timer = null;
       void this.tick(gen);
     }, useReplayStore.getState().speed);
+  }
+
+  /**
+   * A feed step completed: session add-ons see every completed step exactly once,
+   * even when pause/play/exit moved on meanwhile. Returns whether the caller's loop
+   * is still current and should continue.
+   */
+  private afterStep(r: 'ok' | 'end', gen: number): boolean {
+    if (r === 'ok' && this.deps.feed.mode === 'replay') this.each((s) => s.step());
+    if (gen !== this.generation) return false;
+    if (r === 'end') {
+      this.onEnd();
+      return false;
+    }
+    return true;
   }
 
   private onEnd(): void {
@@ -261,6 +270,12 @@ export class ReplayController {
 
   exit(): void {
     this.realtime();
+  }
+
+  /** The chart is going away: stop everything without touching it (no reload). */
+  detach(): void {
+    if (useReplayStore.getState().status === 'off' && this.offs.length === 0) return;
+    this.leave(null, false);
   }
 
   private leave(chart: ReplayChart | null, reload: boolean): void {

@@ -20,6 +20,8 @@ class FakeFeed implements ReplayFeedLike {
   inFlight = 0;
   maxInFlight = 0;
   rejectStart: Error | null = null;
+  /** Holds `start` open (loading) until resolved. */
+  gate: Promise<void> | null = null;
   info: ReplayInfo = { tick: { unit: 'minute', count: 1 }, warning: null };
   private handlers = new Map<string, Set<Handler>>();
 
@@ -27,6 +29,7 @@ class FakeFeed implements ReplayFeedLike {
     this.startCalls.push(opts);
     if (this.rejectStart && typeof opts.update === 'object') throw this.rejectStart;
     this.mode = 'replay';
+    if (this.gate) await this.gate;
     this.clock = { last: opts.lastVisible, next: opts.lastVisible + 60 } as typeof this.clock;
     return this.info;
   }
@@ -51,6 +54,9 @@ class FakeFeed implements ReplayFeedLike {
     };
     if (!this.manual) return Promise.resolve(finish());
     return new Promise((resolve) => this.pending.push(() => resolve(finish())));
+  }
+  revealedBar(): null {
+    return null;
   }
   stop(): void {
     this.stops++;
@@ -403,5 +409,72 @@ describe('ReplayController', () => {
     expect(calls.slice(2)).toEqual(['step', 'step']);
     ctl.exit();
     expect(calls.slice(-2)).toEqual(['end', 'reset']);
+  });
+
+  it('a symbol change while loading reaches setPrimary', async () => {
+    const { feed, chart, ctl } = setup();
+    let release!: () => void;
+    feed.gate = new Promise((r) => (release = r));
+    const p = ctl.start(1000);
+    await flush();
+    expect(status()).toBe('loading');
+    chart.symbol = 'MSFT';
+    chart.resolve();
+    expect(feed.primaryCalls).toEqual([['MSFT', '5minute']]);
+    release();
+    await p;
+    expect(status()).toBe('paused');
+  });
+
+  it('detach (chart unmount) stops the loop and listeners without reloading; replay can start again', async () => {
+    const { feed, chart, ctl } = setup();
+    await ctl.start(1000);
+    ctl.play();
+    await flush();
+    const reloads = chart.reloads;
+    const steps = feed.stepCalls;
+    ctl.detach();
+    expect(status()).toBe('off');
+    expect(feed.stops).toBe(1);
+    expect(chart.listeners()).toBe(0);
+    expect(feed.listenerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5 * DEFAULT_SPEED);
+    expect(feed.stepCalls).toBe(steps);
+    expect(chart.reloads).toBe(reloads);
+    // A remounted chart attaches again.
+    await ctl.start(1000);
+    expect(chart.listeners()).toBe(1);
+    expect(status()).toBe('paused');
+    ctl.detach();
+    ctl.detach(); // idempotent
+    expect(feed.stops).toBe(2);
+  });
+
+  it('every completed feed step reaches the sessions exactly once, also when play() interleaves', async () => {
+    const feed = new FakeFeed();
+    const chart = new FakeChart();
+    const step = vi.fn();
+    const ctl = new ReplayController({
+      feed,
+      getChart: () => chart,
+      prepost: () => false,
+      sessions: [{ reset: () => undefined, prime: () => undefined, step }],
+    });
+    await ctl.start(1000);
+    feed.manual = true;
+    const manual = ctl.step(); // in flight
+    await flush();
+    ctl.play(); // bumps the generation while the manual step is pending
+    await flush();
+    expect(feed.stepCalls).toBe(2);
+    feed.pending.shift()!(); // the manual step completes
+    await manual;
+    await flush();
+    expect(step).toHaveBeenCalledTimes(1);
+    feed.pending.shift()!(); // the loop's step completes
+    await flush();
+    expect(step).toHaveBeenCalledTimes(2);
+    ctl.pause();
+    expect(feed.stepCalls).toBe(2);
   });
 });

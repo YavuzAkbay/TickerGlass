@@ -116,4 +116,34 @@ describe('ReplayTrading', () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify.mock.calls[0]![0]).toContain('1 trades');
   });
+
+  it('steps only update state when the mark changed and never redraw the chart', () => {
+    let draws = 0;
+    let bar = { time: 1000, close: 100 };
+    const t = new ReplayTrading({
+      symbol: () => 'AAPL',
+      lastBar: () => bar,
+      clock: () => 0,
+      ready: () => true,
+      setMarkers: () => void draws++,
+      setPriceLines: () => void draws++,
+      notify: vi.fn(),
+    });
+    t.reset();
+    const afterReset = draws;
+    t.prime(); // first draw for this symbol
+    const afterPrime = draws;
+    const states: unknown[] = [];
+    const off = useTrading.subscribe((s) => states.push(s.marks));
+    t.step();
+    t.step(); // same close: no state change, no draw
+    expect(states).toHaveLength(0);
+    expect(draws).toBe(afterPrime);
+    bar = { time: 1060, close: 101 };
+    t.step();
+    expect(states).toHaveLength(1);
+    expect(draws).toBe(afterPrime);
+    off();
+    expect(afterPrime).toBeGreaterThan(afterReset);
+  });
 });
