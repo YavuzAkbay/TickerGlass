@@ -20,7 +20,7 @@ Decisions: AGPL-3.0 · custom Canvas2D chart engine · self-hosted single user (
 | Alerts service    | Small Node worker that reuses the TS indicator package, reads bars from the Data API, and evaluates server-side                    | Alerts fire with the browser closed, without re-implementing indicators in Python               |
 | Monorepo          | pnpm workspaces + uv (Python)                                                                                                      | Packages: engine, indicators, web app, alerts service, API                                      |
 | Tests             | Vitest (engine and indicators, golden values), Playwright (interaction and visual regression), pytest + recorded yfinance fixtures |                                                                                                 |
-| Icons/UI          | Own design system; Lucide/Tabler (MIT) icons. **No third-party brand names, logos, or icon assets**                                       | Trademark safety                                                                                |
+| Icons/UI          | Own design system; Lucide/Tabler (MIT) icons. **No third-party brand names, logos, or icon assets**                                | Trademark safety                                                                                |
 
 Key design rules that make later phases cheap:
 
@@ -185,7 +185,7 @@ Phase 8 notes:
 - Watchlist data layer: `apps/web/src/watchlist/` (`store.ts` lists and flags, `prefs.ts` active list / columns / sort, `model.ts` rows, sorting, `.txt` parse and format, `commands.ts`); sync in `apps/web/src/persist/watchlists.ts`. A list is saved whole with a revision check (409 shows a toast with "Keep mine"); flags are global per symbol and last writer wins. The active list, columns and sort are the setting `watchlist.prefs`.
 - Lists can be created offline (client-chosen ids). Flag colors appear as virtual lists under "Flagged" in the list switcher. The InvestOpen plain-text watchlist format (one EXCHANGE:TICKER per entry, comma or newline separated, optional `###Section` headers; see [watchlists.md](watchlists.md)) maps exchange prefixes to Yahoo symbols and reports the ones it can't map.
 - e2e: `e2e/persistence.ts` mocks the new endpoints; `e2e/market.ts` is an opt-in mock for quotes, performance and the `/ws` stream (`mockMarket`); `e2e/watchlist.spec.ts` covers the panel.
-- Deferred: "Open in new chart" (Phase 14: a second tab would clobber the shared last-used layout), drag between lists and multi-select (Phase 15). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#watchlists).
+- "Open in new chart" was deferred here and landed in Phase 14 (it adds a chart to the layout instead of opening a second tab, which would clobber the shared last-used layout). Deferred: drag between lists and multi-select (Phase 15). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#watchlists).
 
 ### Phase 9: Compare & symbol math
 
@@ -238,7 +238,7 @@ Phase 11 notes:
 - Framework additions (all additive): `creation: {kind:'multi'}` (path, polyline, path sketch), `coords: 'pane'` (pinned text/note), `panes: 'main'` (bar-data tools), `string` / `image` property kinds, `setActiveTool(type, {style})` (stickers: web maps `emoji-*`, `sticker-*`, `icon-*` to the `icon` tool with a `glyph`), `rc.invalidate`, `chart.setVisibleLogicalRange`, `PriceScale.setManualRange`, the `zoom-in`, `measure` and `pick-point` modes with the `pointPicked` event, and optional `DrawingHost.zoomTo`.
 - Volume profiles are an approximation: each bar's volume is spread evenly over its high-low range (no intrabar data), up/down by close vs open; value area and POC tie rules are ours.
 - Images are stored as data URLs inside the drawing: the dialog downscales to 1024 px and encodes WebP/JPEG at <= 300 KB (API cap `MAX_DRAWING_BYTES` 512,000); only `data:image/` sources are rendered, so imported JSON cannot trigger a network fetch.
-- Cross-layout sync: drawings are already global (one row each, not keyed by layout, `docs/drawings.md` §6), so they appear in every layout; per-layout drawings are Phase 14.
+- Cross-layout sync: drawings are already global (one row each, not keyed by layout, `docs/drawings.md` §6), so they appear in every layout. Phase 14 added optional chart-bound drawings (`Drawing.chartId`, `docs/drawings.md` §6); shared ones still appear everywhere.
 - Anchored VWAP: the toolbar entry uses the `pick-point` mode and adds the Anchored VWAP indicator at the clicked bar.
 - Alerts: Flat-edge channel and Split channel are channel sources (`packages/alerts/src/drawing-levels.ts` and `api/src/investopen_api/routes/alerts.py`, `docs/alerts.md` §2.6).
 - e2e: `e2e/drawing-tools.spec.ts` (one case per tool family, stickers, callout persistence, image upload) and `e2e/drawing-sweep.spec.ts` (all 86 registered types through `chart.addDrawing`, no page errors). Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#drawings).
@@ -272,9 +272,19 @@ Phase 13 notes:
 
 ### Phase 14: Multi-chart layouts
 
-- [ ] Grid layouts 1–16 charts; resizable splitters
-- [ ] Sync per layout: symbol, interval, crosshair, time, date range, drawings
-- [ ] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
+- [x] Grid layouts 1–16 charts; resizable splitters
+- [x] Sync per layout: symbol, interval, crosshair, time, date range, drawings
+- [x] Active-chart focus model (toolbar targets the active chart); a layout saves all charts
+
+Phase 14 notes:
+
+- Design, templates, splitter math, sync semantics, time mapping and request budget: `docs/multi-chart.md`. Code: `apps/web/src/chart/` (`session.ts`, `facade.ts`), `apps/web/src/layout/` (grid model, templates, splitter, sync bus, grid UI, focus), `packages/engine/src/sync/time-map.ts` and the sync additions to `Chart` (`setSyncedCrosshair`, `getVisibleTimeRange`, `setRightEdgeTime`, `viewChange`).
+- Every chart owns a `ChartSession` (engine chart plus its own indicator, compare, history and view stores). The old global stores became active-chart facades with the same API, so toolbar, dialogs and dock panels follow the focused chart unchanged.
+- Layout `state` is schema v5: a resolved grid tree, one slot per chart and the sync flags (`docs/persistence.md` §5). Drawings may carry `chartId` inside their JSON (`docs/drawings.md` §6); the API is unchanged.
+- `CoalescingFeed` (`packages/engine/src/feed/coalescing-feed.ts`) shares identical in-flight `getBars` calls and keeps the last result for 10 s, so a 16-chart layout of one symbol costs one request.
+- Replay stays one clock per layout: the chart focused at the start is the replay chart (`docs/replay.md` §3); the others are clipped by the same feed and reload with it.
+- "Open in new chart" in the watchlist adds a chart to the layout (disabled at 16).
+- e2e: `e2e/multichart.spec.ts` (templates, splitters, focus, per-chart state, sync flags, request budget) and a two-chart case in `e2e/replay.spec.ts`. Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#app--ui).
 
 ### Phase 15: Polish & parity sweep
 

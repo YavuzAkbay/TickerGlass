@@ -6,6 +6,7 @@ type ReplayStatus = 'off' | 'picking' | 'loading' | 'paused' | 'playing' | 'ende
 declare global {
   interface Window {
     chart: import('@investopen/engine').Chart;
+    charts: Record<string, import('@investopen/engine').Chart>;
     replay: {
       store: {
         getState(): { status: ReplayStatus; last: number; next: number; tick: string | null };
@@ -364,4 +365,48 @@ test('paper trading: buy, step, sell shows realized P&L and two trades in the pa
   await expect(page.getByText(/Replay finished: 2 trades/)).toBeVisible();
   await expect(page.locator('[data-panel="replayTrading"]')).toHaveCount(0);
   await expect.poll(() => group('replay-trades')).toBe(0);
+});
+
+test('a second chart is clipped to the replay clock; focus moves, the replay stays', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Chart layout', exact: true }).click();
+  await page.locator('[data-template="2c"]').click();
+  const cells = page.locator('.chart-cell');
+  await expect(cells).toHaveCount(2);
+  await page.waitForFunction(() => Object.values(window.charts).every((c) => c.store.length > 0));
+  const ids = await cells.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.chartId!));
+  const lastOf = (id: string) =>
+    page.evaluate((i) => {
+      const c = window.charts[i]!;
+      return c.store.time[c.store.length - 1]!;
+    }, id);
+  const fullLast = await lastOf(ids[1]!);
+
+  // Replay on the first chart (the layout change focused the new one).
+  await cells
+    .nth(0)
+    .locator('.chart-host')
+    .click({ position: { x: 120, y: 100 } });
+  await expect(cells.nth(0)).toHaveClass(/\bactive\b/);
+  // The helpers below drive `window.chart`: point it at the focused chart.
+  await page.evaluate((id) => (window.chart = window.charts[id]!), ids[0]!);
+  const picked = await startReplay(page);
+  expect(picked.time).toBeLessThan(fullLast);
+  // The other chart reloaded through the shared clipped feed.
+  await expect.poll(() => lastOf(ids[1]!)).toBeLessThanOrEqual(picked.time);
+  await expect(cells.nth(0).getByRole('toolbar', { name: 'Replay controls' })).toBeVisible();
+
+  // Focusing the other chart does not move the replay or its bar.
+  await cells
+    .nth(1)
+    .locator('.chart-host')
+    .click({ position: { x: 120, y: 100 } });
+  await expect(cells.nth(1)).toHaveClass(/\bactive\b/);
+  await expect(cells.nth(0).getByRole('toolbar', { name: 'Replay controls' })).toBeVisible();
+  expect(await status(page)).toBe('paused');
+
+  await cells.nth(0).getByRole('button', { name: 'Jump to realtime' }).click();
+  await expect.poll(() => status(page)).toBe('off');
+  await expect.poll(() => lastOf(ids[1]!)).toBe(fullLast);
 });

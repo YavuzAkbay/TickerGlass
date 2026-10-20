@@ -1,5 +1,3 @@
-import { useChartView } from '../store/chartView';
-import { useChartStore } from '../store/chart';
 import {
   changeClass,
   decimalsForTick,
@@ -8,6 +6,7 @@ import {
   makeDateFormatter,
   resolveTimezone,
 } from '../sidebar/format';
+import { useReplaySymbolInfo, useReplayView } from './instance';
 import { totalPnl, unrealized } from './paper';
 import { useTrading } from './trading';
 
@@ -36,10 +35,10 @@ function Row({
 export function ReplayTrading() {
   const paper = useTrading((s) => s.paper);
   const marks = useTrading((s) => s.marks);
-  const symbol = useChartView((s) => s.symbol);
-  const interval = useChartView((s) => s.interval);
-  const tzSetting = useChartView((s) => s.timezone);
-  const info = useChartStore((s) => s.symbolInfo);
+  const symbol = useReplayView((s) => s.symbol);
+  const interval = useReplayView((s) => s.interval);
+  const tzSetting = useReplayView((s) => s.timezone);
+  const info = useReplaySymbolInfo();
   const d = decimalsForTick(info?.minTick);
   const fmtTime = makeDateFormatter(
     resolveTimezone(tzSetting, info?.timezone),

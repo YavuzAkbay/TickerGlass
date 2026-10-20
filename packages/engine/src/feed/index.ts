@@ -45,3 +45,4 @@ export {
   type ReplayUpdate,
   type TickChoice,
 } from './replay-feed';
+export { CoalescingFeed, type CoalescingFeedOptions } from './coalescing-feed';

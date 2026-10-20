@@ -76,7 +76,8 @@ export function ChartView({ id }: { id: string }) {
   const magnet = useAppStore((s) => s.magnet);
   const active = useChartStore((s) => s.activeId === id);
   const multi = useChartStore((s) => s.sessions.size > 1);
-  const replaying = useReplayStore((s) => s.status !== 'off');
+  // The replay bar lives in the replay chart's cell, pinned while replay runs.
+  const replayHere = useReplayStore((s) => s.status !== 'off' && s.chartId === id);
 
   useEffect(() => {
     // The first chart starts from the pre-v4 app store values (if any), others from the active chart.
@@ -185,9 +186,9 @@ export function ChartView({ id }: { id: string }) {
         <>
           <DrawingToolbar />
           <DrawingTextEditor />
-          {replaying ? <ReplayBar /> : null}
         </>
       ) : null}
+      {replayHere ? <ReplayBar /> : null}
     </div>
   );
 }
