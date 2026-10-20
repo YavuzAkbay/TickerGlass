@@ -30,6 +30,7 @@ import {
 import { isObj, isTransient, readJson, safeStorage } from './net';
 import { GENERAL_NOTE, NotesSync, useNotesStore } from './notes';
 import { SettingsSync } from './settingsSync';
+import { UserScriptsSync } from './userScripts';
 import { WatchlistSync } from './watchlists';
 
 export interface Persistence {
@@ -39,6 +40,7 @@ export interface Persistence {
   drawingTemplates: DrawingTemplatesSync;
   notes: NotesSync;
   watchlists: WatchlistSync;
+  userScripts: UserScriptsSync;
   /** Try to reach the API now (no-op while connected). */
   reconnect: () => Promise<void>;
   /** Save everything pending now. */
@@ -129,6 +131,9 @@ export function startPersistence(): () => void {
         10_000,
       ),
   });
+  const userScripts = new UserScriptsSync();
+  // The offline copy first, so saved layouts find their scripts even without the API.
+  userScripts.loadCache();
   drawings.start();
   settings.start();
   drawingTemplates.start();
@@ -237,6 +242,7 @@ export function startPersistence(): () => void {
       drawingTemplates.load(),
       notes.load(),
       watchlists.load(),
+      userScripts.load(),
     ]);
     if (disposed) return;
     const failed = results.find((r) => r.status === 'rejected');
@@ -364,6 +370,7 @@ export function startPersistence(): () => void {
     drawingTemplates,
     notes,
     watchlists,
+    userScripts,
     reconnect: connect,
     flushAll,
     halt: () => stop(false).then(() => undefined),

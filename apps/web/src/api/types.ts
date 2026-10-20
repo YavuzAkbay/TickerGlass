@@ -205,6 +205,26 @@ export type { Flag, Watchlist } from '../watchlist/types';
 
 export type Settings = Record<string, unknown>;
 
+/** A user JS indicator (docs/plans/user-scripts.md section 5). `manifest` is null if the last save did not compile. */
+export interface UserScript {
+  id: string;
+  name: string;
+  source: string;
+  manifest: Record<string, unknown> | null;
+  apiVersion: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Editable fields of a user script. */
+export interface UserScriptIn {
+  name: string;
+  source: string;
+  manifest: Record<string, unknown> | null;
+  apiVersion: number;
+}
+
 export interface Note {
   id: string;
   /** null = general note. */

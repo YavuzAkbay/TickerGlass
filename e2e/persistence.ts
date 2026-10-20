@@ -52,6 +52,16 @@ interface WatchlistRow extends Json {
   createdAt: string;
   updatedAt: string;
 }
+interface UserScriptRow extends Json {
+  id: string;
+  name: string;
+  source: string;
+  manifest: Json | null;
+  apiVersion: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
 interface FlagRow extends Json {
   symbol: string;
   color: string;
@@ -80,7 +90,7 @@ interface AlertLogRow extends Json {
 const MARKET =
   /^\/api\/(bars|quotes|quotes\/extended|health|news)$|^\/api\/(symbols|events|news|fundamentals|performance)\//;
 const USER_DATA =
-  /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|alerts|export|import)(\/|$)/;
+  /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|alerts|user-scripts|export|import)(\/|$)/;
 const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
 const SAFE_ID = /^[A-Za-z0-9_-]{1,36}$/;
 const WL_SYMBOL = /^[A-Z0-9.\-=^/&_]{1,32}$/;
@@ -96,6 +106,7 @@ export class MockServer {
   settings = new Map<string, unknown>();
   notes = new Map<string, Note>();
   watchlists = new Map<string, WatchlistRow>();
+  userScripts = new Map<string, UserScriptRow>();
   /** Alerts (docs/alerts.md §1.4), the notification log and the service status. */
   alerts = new Map<string, AlertRow>();
   alertLog: AlertLogRow[] = [];
@@ -255,6 +266,7 @@ export class MockServer {
     copy.settings = structuredClone(this.settings);
     copy.notes = structuredClone(this.notes);
     copy.watchlists = structuredClone(this.watchlists);
+    copy.userScripts = structuredClone(this.userScripts);
     copy.flags = structuredClone(this.flags);
     copy.indicatorTemplates = structuredClone(this.indicatorTemplates);
     copy.drawingTemplates = structuredClone(this.drawingTemplates);
@@ -671,6 +683,66 @@ export class MockServer {
       }
     }
 
+    if (head === 'user-scripts') {
+      const conflict = (row: UserScriptRow): Reply => [
+        409,
+        { detail: { message: `user script ${row.id} changed elsewhere`, current: row } },
+      ];
+      const fields = (): string | { name: string; source: string; manifest: Json | null } => {
+        const name = typeof b.name === 'string' ? b.name.trim() : '';
+        if (!name || name.length > 100) return 'name required';
+        if (typeof b.source !== 'string' || b.source.length > 200_000) return 'invalid source';
+        const m = b.manifest;
+        if (m !== null && (typeof m !== 'object' || Array.isArray(m))) return 'invalid manifest';
+        return { name, source: b.source, manifest: (m ?? null) as Json | null };
+      };
+      if (!id && method === 'GET')
+        return [
+          200,
+          [...this.userScripts.values()].sort(
+            (x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id),
+          ),
+        ];
+      if (!id && method === 'POST') {
+        if (typeof b.id !== 'string' || !SAFE_ID.test(b.id))
+          return detail(422, 'invalid script id');
+        const f = fields();
+        if (typeof f === 'string') return detail(422, f);
+        const existing = this.userScripts.get(b.id);
+        if (existing) return conflict(existing);
+        const t = this.now();
+        const row: UserScriptRow = {
+          id: b.id,
+          ...f,
+          apiVersion: typeof b.apiVersion === 'number' ? b.apiVersion : 1,
+          revision: 1,
+          createdAt: t,
+          updatedAt: t,
+        };
+        this.userScripts.set(b.id, row);
+        return [201, row];
+      }
+      const row = this.userScripts.get(id!);
+      if (!row || sub) return notFound;
+      if (method === 'GET') return [200, row];
+      if (method === 'PUT') {
+        const f = fields();
+        if (typeof f === 'string') return detail(422, f);
+        if (b.revision !== undefined && b.revision !== null && b.revision !== row.revision)
+          return conflict(row);
+        Object.assign(row, f, {
+          apiVersion: typeof b.apiVersion === 'number' ? b.apiVersion : row.apiVersion,
+          revision: row.revision + 1,
+          updatedAt: this.now(),
+        });
+        return [200, row];
+      }
+      if (method === 'DELETE') {
+        this.userScripts.delete(row.id);
+        return [204, undefined];
+      }
+    }
+
     if (head === 'alerts') return this.handleAlerts(method, id, sub, query, b);
 
     if (head === 'flags' && !id) {
@@ -703,6 +775,7 @@ export class MockServer {
           settings: Object.fromEntries(this.settings),
           notes: [...this.notes.values()],
           watchlists: [...this.watchlists.values()],
+          userScripts: [...this.userScripts.values()],
           flags: this.flagList(),
         },
       ];

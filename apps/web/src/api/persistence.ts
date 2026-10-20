@@ -1,6 +1,6 @@
 /**
  * Typed calls for the user-data endpoints (docs/persistence.md): layouts,
- * drawings, templates, settings, notes, import/export, plus helpers that read
+ * drawings, templates, settings, notes, user scripts, import/export, plus helpers that read
  * 409 conflict bodies.
  */
 import { ApiError, requestJson, type RequestOptions } from './client';
@@ -24,6 +24,8 @@ import type {
   Note,
   Settings,
   StoredDrawing,
+  UserScript,
+  UserScriptIn,
   Watchlist,
 } from './types';
 import type { FlagColor, WatchlistItem } from '../watchlist/types';
@@ -167,6 +169,24 @@ export const updateNote = (
 export const deleteNote = (id: string, o?: Opts) =>
   requestJson<void>('DELETE', `/notes/${seg(id)}`, undefined, o);
 
+// ------------------------------------------------------------ user scripts
+
+export const listUserScripts = (o?: Opts) =>
+  requestJson<UserScript[]>('GET', '/user-scripts', undefined, o);
+export const getUserScript = (id: string, o?: Opts) =>
+  requestJson<UserScript>('GET', `/user-scripts/${seg(id)}`, undefined, o);
+/** Rejects with 409 (see `userScriptConflict`) if the client `id` exists. */
+export const createUserScript = (body: { id: string } & UserScriptIn, o?: Opts) =>
+  requestJson<UserScript>('POST', '/user-scripts', body, o);
+/** With `revision`, rejects with 409 (see `userScriptConflict`) if the script changed elsewhere. */
+export const updateUserScript = (
+  id: string,
+  body: UserScriptIn & { revision?: number },
+  o?: Opts,
+) => requestJson<UserScript>('PUT', `/user-scripts/${seg(id)}`, body, o);
+export const deleteUserScript = (id: string, o?: Opts) =>
+  requestJson<void>('DELETE', `/user-scripts/${seg(id)}`, undefined, o);
+
 // ------------------------------------------------------------ watchlists and flags
 
 export const listWatchlists = (o?: Opts) =>
@@ -249,4 +269,10 @@ export function noteConflict(e: unknown): Note | null {
 export function watchlistConflict(e: unknown): Watchlist | null {
   const cur = detailOf(e)?.current;
   return cur && typeof cur === 'object' ? (cur as Watchlist) : null;
+}
+
+/** The stored script from a create/update 409, else null. */
+export function userScriptConflict(e: unknown): UserScript | null {
+  const cur = detailOf(e)?.current;
+  return cur && typeof cur === 'object' ? (cur as UserScript) : null;
 }
