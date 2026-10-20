@@ -27,6 +27,7 @@ export {
 } from './trigger';
 export type { TriggerState } from './trigger';
 export { createAlertEvaluator } from './evaluator';
+export { upgradeAlertSpec } from './legacy';
 export type {
   AlertDecision,
   AlertEvaluator,

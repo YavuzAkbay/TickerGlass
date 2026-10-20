@@ -7,7 +7,7 @@ import type { GroupFixtures } from './types';
  */
 export const OTHER_FIXTURES: GroupFixtures = {
   // Pivot labels sit on the confirming bar only; the last bar is usually NaN.
-  'pivots-hl': { sparse: true },
+  'swing-hl': { sparse: true },
   // Price labels only at pivots (the line itself reaches the last bar).
   zigzag: { sparse: true },
   // Daily and longer bars only; ~4 years so the multi-year average exists.

@@ -44,10 +44,10 @@ async function open(page: Page) {
   await ready(page);
 }
 
-/** Indicators dialog → My scripts → New script: leaves the editor open with the template. */
+/** Indicators dialog → Custom → New script: leaves the editor open with the template. */
 async function openNewScriptEditor(page: Page) {
   await page.getByRole('button', { name: 'Indicators', exact: true }).click();
-  await page.locator('.dlg-side-item', { hasText: 'My scripts' }).click();
+  await page.locator('.dlg-side-item', { hasText: 'Custom' }).click();
   await page.getByRole('button', { name: 'New script' }).click();
   await expect(editor(page)).toBeVisible();
 }
@@ -77,7 +77,7 @@ async function closeDialogs(page: Page) {
 async function addSma(page: Page) {
   await page.getByRole('button', { name: 'Indicators', exact: true }).click();
   const search = page.getByLabel('Search indicators');
-  await search.fill('Moving Average Simple');
+  await search.fill('Simple Moving Average');
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');
@@ -279,7 +279,7 @@ test.describe('user scripts', () => {
   test.describe('delete from the editor', () => {
     async function deleteCurrent(page: Page, alsoRemove: boolean) {
       await page.getByRole('button', { name: 'Indicators', exact: true }).click();
-      await page.locator('.dlg-side-item', { hasText: 'My scripts' }).click();
+      await page.locator('.dlg-side-item', { hasText: 'Custom' }).click();
       await page.getByRole('button', { name: 'Edit script E2E Script' }).first().click();
       await expect(editor(page)).toBeVisible();
       await editor(page).getByRole('button', { name: 'Delete script' }).click();

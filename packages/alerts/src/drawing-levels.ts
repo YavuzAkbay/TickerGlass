@@ -27,7 +27,7 @@ export const LINE_TOOLS: readonly string[] = [
   'trend-line',
   'ray',
   'extended-line',
-  'info-line',
+  'measured-line',
   'arrow-line',
   'horizontal-line',
   'horizontal-ray',
@@ -37,8 +37,8 @@ export const LINE_TOOLS: readonly string[] = [
 export const CHANNEL_TOOLS: readonly string[] = [
   'parallel-channel',
   'rectangle',
-  'flat-top-bottom',
-  'disjoint-channel',
+  'flat-channel',
+  'split-channel',
 ];
 
 /** Anchors each tool needs. */
@@ -46,15 +46,15 @@ export const TOOL_POINTS: Readonly<Record<string, number>> = {
   'trend-line': 2,
   ray: 2,
   'extended-line': 2,
-  'info-line': 2,
+  'measured-line': 2,
   'arrow-line': 2,
   'horizontal-line': 1,
   'horizontal-ray': 1,
   'parallel-channel': 3,
   rectangle: 2,
-  // Disjoint channels are stored with a 4th anchor; a 3-anchor draft derives it.
-  'flat-top-bottom': 3,
-  'disjoint-channel': 3,
+  // Split channels are stored with a 4th anchor; a 3-anchor draft derives it.
+  'flat-channel': 3,
+  'split-channel': 3,
 };
 
 /** Tool default extensions (the engine's `defaults`), used when the style lacks the key. */
@@ -62,11 +62,11 @@ const EXTEND_DEFAULTS: Readonly<Record<string, readonly [boolean, boolean]>> = {
   'trend-line': [false, false],
   ray: [false, true],
   'extended-line': [true, true],
-  'info-line': [false, false],
+  'measured-line': [false, false],
   'parallel-channel': [false, false],
   rectangle: [false, false],
-  'flat-top-bottom': [false, false],
-  'disjoint-channel': [false, false],
+  'flat-channel': [false, false],
+  'split-channel': [false, false],
 };
 
 /** Whether a drawing type supports `part` as a `DrawingLineOperand`. */
@@ -216,9 +216,9 @@ function channelParts(
     const b = g(ym + delta);
     return { upper: Math.max(a, b), lower: Math.min(a, b), middle: g(ym + delta / 2) };
   }
-  if (drawing.type === 'flat-top-bottom' || drawing.type === 'disjoint-channel') {
+  if (drawing.type === 'flat-channel' || drawing.type === 'split-channel') {
     // Two lines over the same bars: the trend line 0-1 and either a flat line at
-    // anchor 2's price (flat top/bottom) or the line 2-3 (disjoint channel).
+    // anchor 2's price (flat-edge channel) or the line 2-3 (split channel).
     if (drawing.points.length < 3) throw new DrawingLevelError('incomplete channel');
     const p0 = point(drawing, 0);
     const p1 = point(drawing, 1);
@@ -230,7 +230,7 @@ function channelParts(
     const a = lineAt(l0, f(p0.price), l1, f(p1.price), L, left, right);
     if (Number.isNaN(a)) return NAN_PARTS;
     let b = f(p2.price);
-    if (drawing.type === 'disjoint-channel') {
+    if (drawing.type === 'split-channel') {
       // The engine's completePoints mirrors line 0-1's price change (in price) from anchor 2 at anchor 1's time.
       const p3 = drawing.points[3] ?? {
         time: p1.time,

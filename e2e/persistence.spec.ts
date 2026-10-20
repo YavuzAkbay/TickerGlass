@@ -19,7 +19,7 @@ async function restored(page: Page, name = 'Untitled') {
 async function addSma(page: Page) {
   await page.getByRole('button', { name: 'Indicators', exact: true }).click();
   const search = page.getByLabel('Search indicators');
-  await search.fill('Moving Average Simple');
+  await search.fill('Simple Moving Average');
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');

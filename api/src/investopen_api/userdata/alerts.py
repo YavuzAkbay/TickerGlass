@@ -41,7 +41,7 @@ LINE_TOOLS = frozenset(
         "trend-line",
         "ray",
         "extended-line",
-        "info-line",
+        "measured-line",
         "arrow-line",
         "horizontal-line",
         "horizontal-ray",

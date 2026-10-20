@@ -138,9 +138,9 @@ const DIALOG_SAMPLE = [
   'callout',
   'table',
   'image',
-  'ghost-feed',
-  'fixed-range-vp',
-  'anchored-text',
+  'path-sketch',
+  'range-vp',
+  'pinned-text',
   'icon',
 ];
 

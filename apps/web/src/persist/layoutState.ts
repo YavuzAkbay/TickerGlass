@@ -6,6 +6,7 @@
  * step when it changes.
  */
 import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@investopen/engine';
+import { resolveIndicatorId } from '@investopen/indicators';
 import { useHistory } from '../commands/history';
 import { comparePaneId, parseCompareLayout, type CompareLayout } from '../compare/model';
 import { currentCompareLayout, useCompareStore } from '../compare/store';
@@ -15,7 +16,7 @@ import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
 import { isObj } from './net';
 
-export const LAYOUT_SCHEMA_VERSION = 3;
+export const LAYOUT_SCHEMA_VERSION = 4;
 
 export interface ChartSettings {
   chartType: ChartType;
@@ -105,11 +106,24 @@ export function migrateLegacyVolume(state: Record<string, unknown>): Record<stri
   return out;
 }
 
+/** v3 -> v4: instances of renamed built-ins get their current type id. */
+export function migrateRenamedIndicators(s: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(s.indicators)) return s;
+  return {
+    ...s,
+    indicators: s.indicators.map((i) =>
+      isObj(i) && typeof i.type === 'string' ? { ...i, type: resolveIndicatorId(i.type) } : i,
+    ),
+  };
+}
+
 /** Upgrade steps: `UPGRADES[v]` turns a version-v state into version v + 1. */
 const UPGRADES: Record<number, (old: Record<string, unknown>) => Record<string, unknown>> = {
   1: migrateLegacyVolume,
   // v2 -> v3: compare overlays (none before). Content based like v1 -> v2.
   2: (s) => ('compares' in s ? s : { ...s, compares: { items: [], scaleRestore: null } }),
+  // v3 -> v4: some built-in indicators were renamed (see LEGACY_INDICATOR_IDS).
+  3: migrateRenamedIndicators,
 };
 
 /**

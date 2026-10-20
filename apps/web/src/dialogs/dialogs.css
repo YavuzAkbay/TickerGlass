@@ -398,14 +398,6 @@
   cursor: default;
   background: transparent;
 }
-.dlg-soon {
-  margin-left: auto;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--hover);
-  color: var(--text-muted);
-  font-size: 11px;
-}
 
 /* ---- settings ---- */
 .dlg-settings-body {

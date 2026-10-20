@@ -191,7 +191,7 @@ def cases() -> list[Case]:
         {"po": po_np(HL2, 12, 26, True)},
     )
 
-    # SMI Ergodic Indicator / Oscillator (unscaled TSI)
+    # SMI Ergodic / Histogram (unscaled TSI)
     erg = ergodic_np(C, 20, 5)
     sig = ema(erg, 5)
     out.add("smi-ergodic", {}, "numpy", {"smi": erg, "signal": sig})

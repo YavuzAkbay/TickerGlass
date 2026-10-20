@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lineStats } from './info-line';
+import { lineStats } from './measured-line';
 import {
   D,
   geometryOf,
@@ -72,9 +72,9 @@ describe('line culling (line-viewport intersection)', () => {
   });
 });
 
-describe('info line', () => {
+describe('measured line', () => {
   it('computes price change, %, bars, time, angle and distance', () => {
-    const { g } = hit('info-line', [pt(20, 20), pt(40, 60)]);
+    const { g } = hit('measured-line', [pt(20, 20), pt(40, 60)]);
     const s = lineStats(g)!;
     expect(s.priceChange).toBe(40);
     expect(s.percent).toBeCloseTo(200, 9);
@@ -86,7 +86,7 @@ describe('info line', () => {
   });
 
   it('percent is NaN from a zero price; negative moves are signed', () => {
-    const { g } = hit('info-line', [pt(40, 0), pt(20, 10)]);
+    const { g } = hit('measured-line', [pt(40, 0), pt(20, 10)]);
     const s = lineStats(g)!;
     expect(s.percent).toBeNaN();
     expect(s.bars).toBe(-20);
@@ -94,7 +94,7 @@ describe('info line', () => {
   });
 
   it('renders the stats label with the enabled lines only', () => {
-    const { d, g, def } = hit('info-line');
+    const { d, g, def } = hit('measured-line');
     const { rc, texts } = recordingContext();
     def.render(rc, g, d.style, IDLE);
     expect(texts).toEqual(['+40.00 (200.00%)', '20 bars, 2w 6d', 'Distance: 256 px, 38.66°']);
@@ -105,10 +105,10 @@ describe('info line', () => {
 
   it('hits the stats label as part of the drawing', () => {
     // Line rises (20 -> 60): the label sits below its midpoint (bar 30, price 40).
-    const { at } = hit('info-line');
+    const { at } = hit('measured-line');
     expect(at(X(30), Y(40) + 30)).toEqual({ kind: 'body' });
     expect(at(X(30), Y(40) + 200)).toBeNull();
-    const none = hit('info-line', undefined, {
+    const none = hit('measured-line', undefined, {
       showPriceRange: false,
       showPercentChange: false,
       showBarsRange: false,
@@ -120,7 +120,7 @@ describe('info line', () => {
   });
 
   it('hits the line', () => {
-    const { at } = hit('info-line');
+    const { at } = hit('measured-line');
     expect(at(X(30), Y(40))).toEqual({ kind: 'body' });
     expect(at(X(30), Y(60))).toBeNull();
   });

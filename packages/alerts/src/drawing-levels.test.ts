@@ -95,9 +95,11 @@ describe('trend line (daily Mon-Fri bars)', () => {
     expect(drawingLevel(noExt, 'line', 'linear', TL, at(6))).toBeNaN();
   });
 
-  it('info-line extends like a trend line; arrow-line never extends', () => {
+  it('measured-line extends like a trend line; arrow-line never extends', () => {
     const style = { extendLeft: true, extendRight: true };
-    expect(drawingLevel(line('info-line', [A, B], style), 'line', 'linear', TL, at(6))).toBe(106);
+    expect(drawingLevel(line('measured-line', [A, B], style), 'line', 'linear', TL, at(6))).toBe(
+      106,
+    );
     expect(drawingLevel(line('arrow-line', [A, B], style), 'line', 'linear', TL, at(6))).toBeNaN();
     expect(drawingLevel(line('arrow-line', [A, B], style), 'line', 'linear', TL, at(1))).toBe(101);
   });
@@ -286,9 +288,9 @@ describe('errors', () => {
   });
 });
 
-describe('flat top/bottom', () => {
+describe('flat-edge channel', () => {
   // Trend line (bar 0, 100) -> (bar 4, 104) and the flat line at 110.
-  const flat = line('flat-top-bottom', [
+  const flat = line('flat-channel', [
     [at(0), 100],
     [at(4), 104],
     [at(0), 110],
@@ -302,7 +304,7 @@ describe('flat top/bottom', () => {
   });
 
   it('orders upper/lower when the flat line is below the trend line', () => {
-    const below = line('flat-top-bottom', [
+    const below = line('flat-channel', [
       [at(0), 100],
       [at(4), 104],
       [at(0), 90],
@@ -311,7 +313,7 @@ describe('flat top/bottom', () => {
   });
 
   it('log: the middle is the geometric mean', () => {
-    const d = line('flat-top-bottom', [
+    const d = line('flat-channel', [
       [at(0), 100],
       [at(4), 100],
       [at(0), 400],
@@ -323,7 +325,7 @@ describe('flat top/bottom', () => {
     expect(drawingChannel(flat, 'linear', TL, at(6)).upper).toBeNaN();
     const ext = { ...flat, style: { extendRight: true } };
     expect(drawingChannel(ext, 'linear', TL, at(6))).toEqual({ upper: 110, lower: 106 });
-    const two = line('flat-top-bottom', [
+    const two = line('flat-channel', [
       [at(0), 100],
       [at(4), 104],
     ]);
@@ -335,9 +337,9 @@ describe('flat top/bottom', () => {
   });
 });
 
-describe('disjoint channel', () => {
+describe('split channel', () => {
   // Line 0-1: (0, 100) -> (4, 104); line 2-3: (0, 120) -> (4, 116) (mirrored slope).
-  const four = line('disjoint-channel', [
+  const four = line('split-channel', [
     [at(0), 100],
     [at(4), 104],
     [at(0), 120],
@@ -351,7 +353,7 @@ describe('disjoint channel', () => {
   });
 
   it('the lines may cross: upper and lower swap sides', () => {
-    const crossing = line('disjoint-channel', [
+    const crossing = line('split-channel', [
       [at(0), 100],
       [at(4), 110],
       [at(0), 105],
@@ -363,7 +365,7 @@ describe('disjoint channel', () => {
 
   it('derives the 4th anchor of a 3-anchor draft like the engine', () => {
     const three = line(
-      'disjoint-channel',
+      'split-channel',
       four.points.slice(0, 3).map((p) => [p.time, p.price]),
     );
     expect(drawingChannel(three, 'linear', TL, at(2))).toEqual({ upper: 118, lower: 102 });
@@ -373,7 +375,7 @@ describe('disjoint channel', () => {
     expect(drawingChannel(four, 'linear', TL, at(6)).lower).toBeNaN();
     const ext = { ...four, style: { extendRight: true } };
     expect(drawingChannel(ext, 'linear', TL, at(6))).toEqual({ upper: 114, lower: 106 });
-    const two = line('disjoint-channel', [
+    const two = line('split-channel', [
       [at(0), 100],
       [at(4), 104],
     ]);

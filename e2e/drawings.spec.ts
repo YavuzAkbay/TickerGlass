@@ -94,7 +94,7 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await page.getByRole('button', { name: 'Indicators', exact: false }).first().click();
   const search = page.getByLabel('Search indicators');
   await search.fill('Relative Strength Index');
-  if ((await page.locator('.ind-row').count()) === 0) await search.fill('Moving Average Simple');
+  if ((await page.locator('.ind-row').count()) === 0) await search.fill('Simple Moving Average');
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');

@@ -701,17 +701,17 @@ describe('attach (engine events and sync)', () => {
     f.detach();
   });
 
-  it('saved default styles keep the placed icon glyph and the ghost feed seed', () => {
+  it('saved default styles keep the placed icon glyph and the path sketch seed', () => {
     expect(keepPerDrawingStyle('icon', { glyph: 'A', size: 9 }, { glyph: 'B' })).toEqual({
       glyph: 'B',
       size: 9,
     });
-    expect(keepPerDrawingStyle('ghost-feed', { seed: 7, up: 'x' }, { seed: 42 })).toEqual({
+    expect(keepPerDrawingStyle('path-sketch', { seed: 7, up: 'x' }, { seed: 42 })).toEqual({
       up: 'x',
       seed: 42,
     });
     // The saved seed never leaks into a drawing that has none of its own.
-    expect(keepPerDrawingStyle('ghost-feed', { seed: 7, up: 'x' }, { up: 'y' })).toEqual({
+    expect(keepPerDrawingStyle('path-sketch', { seed: 7, up: 'x' }, { up: 'y' })).toEqual({
       up: 'x',
     });
     expect(keepPerDrawingStyle('trend-line', { lineWidth: 3 }, { lineWidth: 1 })).toEqual({

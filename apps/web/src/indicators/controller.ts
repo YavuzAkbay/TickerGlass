@@ -21,6 +21,7 @@ import {
   externalSymbols,
   getIndicator,
   isUserScriptType,
+  resolveIndicatorId,
   resolveOutputs,
   type AnyIndicatorDefinition,
   type InstanceStatus,
@@ -240,8 +241,12 @@ export class IndicatorController {
   }
 
   /** Mirror the store's instance list into the engine and the worker. */
-  sync(list: readonly IndicatorState[]): void {
+  sync(input: readonly IndicatorState[]): void {
     if (this.destroyed) return;
+    // Last resort: an instance that still carries a renamed built-in's old id.
+    const list = input.some((i) => resolveIndicatorId(i.type) !== i.type)
+      ? input.map((i) => ({ ...i, type: resolveIndicatorId(i.type) }))
+      : input;
     this.list = list;
     const ids = new Set(list.map((i) => i.id));
     for (const id of [...this.applied.keys()]) {

@@ -4,21 +4,21 @@ import { registerDrawingTool } from '../registry';
 import { abcd } from './abcd';
 import { anchoredVp } from './anchored-vp';
 import { arc } from './arc';
-import { barsPattern } from './bars-pattern';
+import { barReplica } from './bar-replica';
 import { arrowLine } from './arrow-line';
-import { arrowMarkDown } from './arrow-mark-down';
-import { arrowMarkUp } from './arrow-mark-up';
-import { arrowMarker } from './arrow-marker';
+import { downMarker } from './down-marker';
+import { upMarker } from './up-marker';
+import { arrowPointer } from './arrow-pointer';
 import { brush } from './brush';
 import { circle } from './circle';
 import { crossLine } from './cross-line';
 import { curve } from './curve';
-import { cyclicLines } from './cyclic-lines';
+import { cycleLines } from './cycle-lines';
 import { cypher } from './cypher';
-import { datePriceRange } from './date-price-range';
-import { dateRange } from './date-range';
-import { disjointChannel } from './disjoint-channel';
-import { doubleCurve } from './double-curve';
+import { priceTimeMeasure } from './price-time-measure';
+import { timeMeasure } from './time-measure';
+import { splitChannel } from './split-channel';
+import { sCurve } from './s-curve';
 import { elliottCorrection } from './elliott-correction';
 import { elliottDoubleCombo } from './elliott-double-combo';
 import { elliottImpulse } from './elliott-impulse';
@@ -26,60 +26,60 @@ import { elliottTriangle } from './elliott-triangle';
 import { elliottTripleCombo } from './elliott-triple-combo';
 import { ellipse } from './ellipse';
 import { extendedLine } from './extended-line';
-import { fixedRangeVp } from './fixed-range-vp';
-import { forecast } from './forecast';
+import { rangeVp } from './range-vp';
+import { priceTarget } from './price-target';
 import { fibChannel } from './fib-channel';
 import { fibCircles } from './fib-circles';
 import { fibExtension } from './fib-extension';
 import { fibRetracement } from './fib-retracement';
-import { fibSpeedArcs } from './fib-speed-arcs';
-import { fibSpeedFan } from './fib-speed-fan';
+import { fibArcs } from './fib-arcs';
+import { fibFan } from './fib-fan';
 import { fibSpiral } from './fib-spiral';
 import { fibTimeZone } from './fib-time-zone';
-import { fibTrendTime } from './fib-trend-time';
-import { fibWedge } from './fib-wedge';
-import { flatTopBottom } from './flat-top-bottom';
-import { ghostFeed } from './ghost-feed';
+import { fibTimeExtension } from './fib-time-extension';
+import { fibSector } from './fib-sector';
+import { flatChannel } from './flat-channel';
+import { pathSketch } from './path-sketch';
 import { gannBox } from './gann-box';
 import { gannFan } from './gann-fan';
 import { gannSquare } from './gann-square';
-import { gannSquareFixed } from './gann-square-fixed';
+import { gannGrid } from './gann-grid';
 import { headShoulders } from './head-shoulders';
 import { highlighter } from './highlighter';
 import { horizontalLine } from './horizontal-line';
 import { horizontalRay } from './horizontal-ray';
 import { icon } from './icon';
-import { anchoredText } from './anchored-text';
+import { pinnedText } from './pinned-text';
 import { callout } from './callout';
 import { comment } from './comment';
-import { flagMark } from './flag-mark';
+import { flag } from './flag';
 import { image } from './image';
-import { anchoredNote, note } from './note';
+import { pinnedNote, note } from './note';
 import { priceLabel } from './price-label';
-import { priceNote } from './price-note';
-import { signpost } from './signpost';
+import { priceTag } from './price-tag';
+import { pin } from './pin';
 import { table } from './table';
-import { infoLine } from './info-line';
-import { insidePitchfork } from './inside-pitchfork';
+import { measuredLine } from './measured-line';
+import { innerPitchfork } from './inner-pitchfork';
 import { longPosition } from './long-position';
 import { modifiedSchiffPitchfork } from './modified-schiff-pitchfork';
 import { parallelChannel } from './parallel-channel';
 import { path } from './path';
-import { pitchfan } from './pitchfan';
+import { forkFan } from './fork-fan';
 import { pitchfork } from './pitchfork';
 import { polyline } from './polyline';
-import { priceRange } from './price-range';
-import { projection } from './projection';
+import { priceMeasure } from './price-measure';
+import { swingProjection } from './swing-projection';
 import { ray } from './ray';
 import { rectangle } from './rectangle';
 import { regressionTrend } from './regression-trend';
 import { rotatedRectangle } from './rotated-rectangle';
 import { schiffPitchfork } from './schiff-pitchfork';
 import { shortPosition } from './short-position';
-import { sineLine } from './sine-line';
+import { sineWave } from './sine-wave';
 import { text } from './text';
 import { threeDrives } from './three-drives';
-import { timeCycles } from './time-cycles';
+import { cycleArcs } from './cycle-arcs';
 import { trendAngle } from './trend-angle';
 import { trendLine } from './trend-line';
 import { triangle } from './triangle';
@@ -90,7 +90,7 @@ import { xabcd } from './xabcd';
 // lines
 registerDrawingTool(trendLine);
 registerDrawingTool(ray);
-registerDrawingTool(infoLine);
+registerDrawingTool(measuredLine);
 registerDrawingTool(extendedLine);
 registerDrawingTool(trendAngle);
 registerDrawingTool(horizontalLine);
@@ -99,26 +99,26 @@ registerDrawingTool(verticalLine);
 registerDrawingTool(crossLine);
 registerDrawingTool(parallelChannel);
 registerDrawingTool(regressionTrend);
-registerDrawingTool(flatTopBottom);
-registerDrawingTool(disjointChannel);
+registerDrawingTool(flatChannel);
+registerDrawingTool(splitChannel);
 registerDrawingTool(pitchfork);
 registerDrawingTool(schiffPitchfork);
 registerDrawingTool(modifiedSchiffPitchfork);
-registerDrawingTool(insidePitchfork);
+registerDrawingTool(innerPitchfork);
 // fib
 registerDrawingTool(fibRetracement);
 registerDrawingTool(fibExtension);
 registerDrawingTool(fibChannel);
 registerDrawingTool(fibTimeZone);
-registerDrawingTool(fibSpeedFan);
-registerDrawingTool(fibTrendTime);
+registerDrawingTool(fibFan);
+registerDrawingTool(fibTimeExtension);
 registerDrawingTool(fibCircles);
 registerDrawingTool(fibSpiral);
-registerDrawingTool(fibSpeedArcs);
-registerDrawingTool(fibWedge);
-registerDrawingTool(pitchfan);
+registerDrawingTool(fibArcs);
+registerDrawingTool(fibSector);
+registerDrawingTool(forkFan);
 registerDrawingTool(gannBox);
-registerDrawingTool(gannSquareFixed);
+registerDrawingTool(gannGrid);
 registerDrawingTool(gannSquare);
 registerDrawingTool(gannFan);
 // patterns
@@ -134,28 +134,28 @@ registerDrawingTool(elliottTriangle);
 registerDrawingTool(elliottDoubleCombo);
 registerDrawingTool(elliottTripleCombo);
 // patterns (cycles)
-registerDrawingTool(cyclicLines);
-registerDrawingTool(timeCycles);
-registerDrawingTool(sineLine);
+registerDrawingTool(cycleLines);
+registerDrawingTool(cycleArcs);
+registerDrawingTool(sineWave);
 // forecasting
 registerDrawingTool(longPosition);
 registerDrawingTool(shortPosition);
-registerDrawingTool(forecast);
-registerDrawingTool(barsPattern);
-registerDrawingTool(ghostFeed);
-registerDrawingTool(projection);
-registerDrawingTool(fixedRangeVp);
+registerDrawingTool(priceTarget);
+registerDrawingTool(barReplica);
+registerDrawingTool(pathSketch);
+registerDrawingTool(swingProjection);
+registerDrawingTool(rangeVp);
 registerDrawingTool(anchoredVp);
-registerDrawingTool(priceRange);
-registerDrawingTool(dateRange);
-registerDrawingTool(datePriceRange);
+registerDrawingTool(priceMeasure);
+registerDrawingTool(timeMeasure);
+registerDrawingTool(priceTimeMeasure);
 // shapes
 registerDrawingTool(brush);
 registerDrawingTool(highlighter);
-registerDrawingTool(arrowMarker);
+registerDrawingTool(arrowPointer);
 registerDrawingTool(arrowLine);
-registerDrawingTool(arrowMarkUp);
-registerDrawingTool(arrowMarkDown);
+registerDrawingTool(upMarker);
+registerDrawingTool(downMarker);
 registerDrawingTool(rectangle);
 registerDrawingTool(rotatedRectangle);
 registerDrawingTool(path);
@@ -165,18 +165,18 @@ registerDrawingTool(polyline);
 registerDrawingTool(triangle);
 registerDrawingTool(arc);
 registerDrawingTool(curve);
-registerDrawingTool(doubleCurve);
+registerDrawingTool(sCurve);
 // annotation
 registerDrawingTool(text);
-registerDrawingTool(anchoredText);
+registerDrawingTool(pinnedText);
 registerDrawingTool(note);
-registerDrawingTool(anchoredNote);
+registerDrawingTool(pinnedNote);
 registerDrawingTool(callout);
 registerDrawingTool(comment);
 registerDrawingTool(priceLabel);
-registerDrawingTool(priceNote);
-registerDrawingTool(signpost);
-registerDrawingTool(flagMark);
+registerDrawingTool(priceTag);
+registerDrawingTool(pin);
+registerDrawingTool(flag);
 registerDrawingTool(table);
 registerDrawingTool(image);
 registerDrawingTool(icon);
@@ -184,37 +184,37 @@ registerDrawingTool(icon);
 export {
   abcd,
   anchoredVp,
-  barsPattern,
-  fixedRangeVp,
-  forecast,
-  ghostFeed,
-  projection,
-  anchoredNote,
-  anchoredText,
+  barReplica,
+  rangeVp,
+  priceTarget,
+  pathSketch,
+  swingProjection,
+  pinnedNote,
+  pinnedText,
   callout,
   comment,
-  flagMark,
+  flag,
   image,
   note,
   priceLabel,
-  priceNote,
-  signpost,
+  priceTag,
+  pin,
   table,
   arc,
   arrowLine,
-  arrowMarkDown,
-  arrowMarker,
-  arrowMarkUp,
+  downMarker,
+  arrowPointer,
+  upMarker,
   brush,
   circle,
   crossLine,
   curve,
-  cyclicLines,
+  cycleLines,
   cypher,
-  datePriceRange,
-  dateRange,
-  disjointChannel,
-  doubleCurve,
+  priceTimeMeasure,
+  timeMeasure,
+  splitChannel,
+  sCurve,
   elliottCorrection,
   elliottDoubleCombo,
   elliottImpulse,
@@ -226,42 +226,42 @@ export {
   fibCircles,
   fibExtension,
   fibRetracement,
-  fibSpeedArcs,
-  fibSpeedFan,
+  fibArcs,
+  fibFan,
   fibSpiral,
   fibTimeZone,
-  fibTrendTime,
-  fibWedge,
-  flatTopBottom,
+  fibTimeExtension,
+  fibSector,
+  flatChannel,
   gannBox,
   gannFan,
   gannSquare,
-  gannSquareFixed,
+  gannGrid,
   headShoulders,
   highlighter,
   horizontalLine,
   horizontalRay,
   icon,
-  infoLine,
-  insidePitchfork,
+  measuredLine,
+  innerPitchfork,
   longPosition,
   modifiedSchiffPitchfork,
   parallelChannel,
   path,
-  pitchfan,
+  forkFan,
   pitchfork,
   polyline,
-  priceRange,
+  priceMeasure,
   ray,
   rectangle,
   regressionTrend,
   rotatedRectangle,
   schiffPitchfork,
   shortPosition,
-  sineLine,
+  sineWave,
   text,
   threeDrives,
-  timeCycles,
+  cycleArcs,
   trendAngle,
   trendLine,
   triangle,

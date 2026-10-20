@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Geometry } from '../geometry';
 import type { DrawingBarData, DrawingPoint, HandleMoveArgs } from '../types';
-import { disjointFourth } from './disjoint-channel';
+import { splitFourth } from './split-channel';
 import { pearsonText, REGRESSION_TREND_DEFAULTS, regressionChannel } from './regression-trend';
 import {
   FORMAT,
@@ -171,33 +171,33 @@ describe('regression trend', () => {
   });
 });
 
-describe('flat top/bottom', () => {
+describe('flat-edge channel', () => {
   const pts = [pt(20, 20), pt(40, 40), pt(30, 60)];
 
   it('completes anchor 2 at anchor 0 time', () => {
-    const { def, g, d } = setup('flat-top-bottom', pts);
+    const { def, g, d } = setup('flat-channel', pts);
     const out = def.completePoints!(pts, g, d.style);
     expect(out.map(bar)).toEqual([20, 40, 20]);
     expect(out[2]!.price).toBe(60);
   });
 
   it('hits the trend line, the flat line and the weak fill', () => {
-    const { at } = setup('flat-top-bottom', pts);
+    const { at } = setup('flat-channel', pts);
     expect(at(X(30), Y(30))).toEqual({ kind: 'body' });
     expect(at(X(25), Y(60))).toEqual({ kind: 'body' });
     expect(at(X(30), Y(45))).toEqual({ kind: 'body', weak: true });
     expect(at(X(50), Y(60))).toBeNull();
-    expect(setup('flat-top-bottom', pts, { extendRight: true }).at(X(50), Y(60))).toEqual({
+    expect(setup('flat-channel', pts, { extendRight: true }).at(X(50), Y(60))).toEqual({
       kind: 'body',
     });
-    expect(setup('flat-top-bottom', pts, { fillBackground: false }).at(X(30), Y(45))).toBeNull();
+    expect(setup('flat-channel', pts, { fillBackground: false }).at(X(30), Y(45))).toBeNull();
     // Two-anchor draft: just the trend line.
-    expect(setup('flat-top-bottom', pts.slice(0, 2)).at(X(30), Y(30))).toEqual({ kind: 'body' });
+    expect(setup('flat-channel', pts.slice(0, 2)).at(X(30), Y(30))).toEqual({ kind: 'body' });
   });
 
   it('has flat-line handles mapped back to the anchors', () => {
     const done = [pt(20, 20), pt(40, 40), pt(20, 60)];
-    const { def, g, d, move } = setup('flat-top-bottom', done);
+    const { def, g, d, move } = setup('flat-channel', done);
     const hs = def.handles!(g, d.style);
     expect(hs).toHaveLength(4);
     expect(hs[2]).toMatchObject({ x: X(20), y: Y(60) });
@@ -214,24 +214,24 @@ describe('flat top/bottom', () => {
   });
 });
 
-describe('disjoint channel', () => {
+describe('split channel', () => {
   const pts = [pt(20, 20), pt(40, 40), pt(25, 70)];
 
   it('derives the mirrored fourth anchor', () => {
     // Line 0-1 rises 20: the second line falls 20 from 70.
-    const p3 = disjointFourth(pts)!;
+    const p3 = splitFourth(pts)!;
     expect(bar(p3)).toBe(40);
     expect(p3.price).toBe(50);
-    const { def, g, d } = setup('disjoint-channel', pts);
+    const { def, g, d } = setup('split-channel', pts);
     const out = def.completePoints!(pts, g, d.style);
     expect(out.map(bar)).toEqual([20, 40, 20, 40]);
     expect(out.map((p) => p.price)).toEqual([20, 40, 70, 50]);
-    expect(disjointFourth(pts.slice(0, 2))).toBeNull();
+    expect(splitFourth(pts.slice(0, 2))).toBeNull();
   });
 
   it('hits both lines (draft and complete) and the weak fill', () => {
     for (const p of [pts, [pt(20, 20), pt(40, 40), pt(20, 70), pt(40, 50)]]) {
-      const { at } = setup('disjoint-channel', p);
+      const { at } = setup('split-channel', p);
       expect(at(X(30), Y(30))).toEqual({ kind: 'body' });
       expect(at(X(30), Y(60))).toEqual({ kind: 'body' });
       expect(at(X(30), Y(45))).toEqual({ kind: 'body', weak: true });
@@ -241,7 +241,7 @@ describe('disjoint channel', () => {
 
   it('moves each end, keeping the vertical edges', () => {
     const done = [pt(20, 20), pt(40, 40), pt(20, 70), pt(40, 50)];
-    const { def, g, d, move } = setup('disjoint-channel', done);
+    const { def, g, d, move } = setup('split-channel', done);
     expect(def.handles!(g, d.style)).toHaveLength(4);
     const a = move(0, pt(15, 25));
     expect(a.map(bar)).toEqual([15, 40, 15, 40]);
@@ -252,15 +252,15 @@ describe('disjoint channel', () => {
   });
 
   it('is visible while the fill covers the pane, culled far away', () => {
-    const def = tool('disjoint-channel');
-    const big = makeDrawing('disjoint-channel', [
+    const def = tool('split-channel');
+    const big = makeDrawing('split-channel', [
       pt(-50, -50),
       pt(150, -50),
       pt(-50, 200),
       pt(150, 200),
     ]);
     expect(def.isVisible!(geometryOf(big), big.style)).toBe(true);
-    const far = makeDrawing('disjoint-channel', [pt(-90, 1), pt(-80, 2), pt(-90, 5), pt(-80, 4)]);
+    const far = makeDrawing('split-channel', [pt(-90, 1), pt(-80, 2), pt(-90, 5), pt(-80, 4)]);
     expect(def.isVisible!(geometryOf(far), far.style)).toBe(false);
   });
 });

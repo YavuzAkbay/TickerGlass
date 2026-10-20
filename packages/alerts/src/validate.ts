@@ -15,6 +15,7 @@ import {
   type InputValueMap,
 } from '@investopen/indicators';
 import { isChannelTool, supportsPart, TOOL_POINTS } from './drawing-levels';
+import { upgradeAlertSpec } from './legacy';
 import {
   CHANNEL_OPS,
   CROSS_OPS,
@@ -235,7 +236,8 @@ export function validateAlert(
   }
   const status = a['status'];
   if (status !== undefined && status !== null) c.oneOf(status, ['active', 'paused'], 'status');
-  checkSpec(c, a['spec']);
+  const spec = upgradeAlertSpec(a['spec']);
+  checkSpec(c, spec);
 
   if (c.errors.length) return { ok: false, errors: c.errors };
   const out = {
@@ -243,7 +245,7 @@ export function validateAlert(
     symbol: a['symbol'],
     interval: a['interval'],
     prepost: a['prepost'] ?? false,
-    spec: a['spec'],
+    spec,
     message: message ?? '',
     notify,
     expiresAt: exp ?? null,

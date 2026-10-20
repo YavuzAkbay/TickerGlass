@@ -227,7 +227,7 @@ export class DrawingInteraction {
       return true;
     }
     if (this.tool === MEASURE_TOOL)
-      return this.startCreate('date-price-range', target.pane, x, y, mods, true);
+      return this.startCreate('price-time-measure', target.pane, x, y, mods, true);
     if (this.tool) return this.startCreate(this.tool, target.pane, x, y, mods);
     const hit = target.drawing;
     if (!hit) {
@@ -319,7 +319,9 @@ export class DrawingInteraction {
     if (g?.kind === 'create' && !g.pressed) this.updateDraft(x, y, mods);
     // The eraser highlights what it would remove.
     if (this.cutPreview) {
-      const cutX = target ? this.snap(target.pane, x, y - target.pane.top, mods, null, false).x : null;
+      const cutX = target
+        ? this.snap(target.pane, x, y - target.pane.top, mods, null, false).x
+        : null;
       if (cutX !== this.layer.cutX) {
         this.layer.cutX = cutX;
         this.layer.host.invalidate();
@@ -368,7 +370,7 @@ export class DrawingInteraction {
         if (Math.hypot(x - g.downX, y - g.downY) <= DRAG_SLOP) {
           if (
             !this.layer.selection.size &&
-            this.startCreate('date-price-range', g.pane, g.downX, g.downY, mods, true)
+            this.startCreate('price-time-measure', g.pane, g.downX, g.downY, mods, true)
           ) {
             const c = this.gesture as Gesture | null;
             if (c?.kind === 'create') this.createUp(c, x, y, mods);

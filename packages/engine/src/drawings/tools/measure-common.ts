@@ -1,4 +1,4 @@
-// Measure tools: Price range, Date range, Date & price range (2 anchors, filled box + arrows + stats label).
+// Measure tools: Price measure, Time measure, Price & time measure (2 anchors, filled box + arrows + stats label).
 import {
   arrowHead,
   BODY_HIT,
@@ -93,9 +93,9 @@ export function measureLines(g: DrawingGeometry, kind: MeasureKind): string[] {
 }
 
 const NAMES: Record<MeasureKind, [string, string]> = {
-  price: ['price-range', 'Price range'],
-  date: ['date-range', 'Date range'],
-  'date-price': ['date-price-range', 'Date and price range'],
+  price: ['price-measure', 'Price measure'],
+  date: ['time-measure', 'Time measure'],
+  'date-price': ['price-time-measure', 'Price & time measure'],
 };
 
 /** Tool definition for one measure kind. */

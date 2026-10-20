@@ -1,5 +1,5 @@
 // Shared text props, word wrapping, speech-bubble geometry and hit boxes for the
-// annotation tools (callout, comment, note, price label/note, signpost, table).
+// annotation tools (callout, comment, note, price label/note, pin, table).
 import { approxTextWidth, setLineStyle, TEXT_HIT, textFont, BODY_HIT } from '../draw-utils';
 import { pointInPolygon } from '../shape-utils';
 import type {

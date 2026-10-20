@@ -2,12 +2,12 @@ import type { Drawing, DrawingStyle } from '@investopen/engine';
 
 /**
  * Style keys that belong to one drawing, never to a saved default or template:
- * the icon glyph, the ghost-feed random seed and the embedded image. Saving
+ * the icon glyph, the path-sketch random seed and the embedded image. Saving
  * strips them, applying a default/template keeps the drawing's own.
  */
 export const PER_DRAWING_KEYS: Readonly<Record<string, string>> = {
   icon: 'glyph',
-  'ghost-feed': 'seed',
+  'path-sketch': 'seed',
   image: 'src',
 };
 
@@ -21,7 +21,7 @@ export function stripPerDrawingStyle(type: string, style: DrawingStyle): Drawing
 
 /**
  * The saved default style `style` for a drawing of `type` just created with
- * `own` style: per-drawing keys (icon glyph, ghost-feed seed, image src) stay the drawing's.
+ * `own` style: per-drawing keys (icon glyph, path-sketch seed, image src) stay the drawing's.
  */
 export function keepPerDrawingStyle(
   type: string,

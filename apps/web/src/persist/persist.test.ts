@@ -12,7 +12,13 @@ import {
   withLegacyVolume,
   type IndicatorState,
 } from '../indicators/model';
-import { legacyAppVolume, useIndicatorPrefs, useIndicatorStore } from '../indicators/store';
+import {
+  legacyAppVolume,
+  migrateIndicatorPrefs,
+  migrateIndicatorStore,
+  useIndicatorPrefs,
+  useIndicatorStore,
+} from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { readChartTemplate } from './chartTemplates';
 import { DrawingSync, DRAWING_SYNC_KEY, type DrawingApi } from './drawingSync';
@@ -59,7 +65,7 @@ import {
 } from './migration';
 import type { SafeStorage } from './net';
 import { GENERAL_NOTE, NotesSync, useNotesStore, type NotesApi } from './notes';
-import { SettingsSync, type SettingDef, type SettingsApi } from './settingsSync';
+import { SETTING_DEFS, SettingsSync, type SettingDef, type SettingsApi } from './settingsSync';
 
 // ------------------------------------------------------------ helpers
 
@@ -585,14 +591,14 @@ describe('layout state: compare overlays (v3)', () => {
   beforeEach(() => useCompareStore.setState({ items: [], scaleRestore: null }));
 
   it('v2 layouts upgrade to no compares; newer versions are rejected', () => {
-    expect(LAYOUT_SCHEMA_VERSION).toBe(3);
+    expect(LAYOUT_SCHEMA_VERSION).toBe(4);
     const s = parseLayoutState({ indicators: [indicator('a')] }, 2)!;
     expect(s.compares).toEqual({ items: [], scaleRestore: null });
     expect(s.indicators).toEqual([indicator('a')]);
     // Unversioned (cached) states read as v1 keep their compares.
     const cached = parseLayoutState({ compares: { items: [cmp('cmp-a')], scaleRestore: 'log' } })!;
     expect(cached.compares).toEqual({ items: [cmp('cmp-a')], scaleRestore: 'log' });
-    expect(parseLayoutState({}, 4)).toBeNull();
+    expect(parseLayoutState({}, 5)).toBeNull();
   });
 
   it('drops invalid compare items and re-canonicalizes symbols', () => {
@@ -1950,5 +1956,65 @@ describe('ui: toasts and lazy dialogs', () => {
     expect(dlg.get()).not.toBe(before);
     await expect(dlg.load()).resolves.toHaveProperty('default');
     expect(importer).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('renamed indicator ids', () => {
+  const OLD = ['pivots-hl', 'auto-fib', 'relative-volume'];
+  const NEW = ['swing-hl', 'swing-fib', 'tod-relative-volume'];
+  const typed = (id: string, type: string) => ({ ...indicator(id), type });
+  const types = (s: { indicators: IndicatorState[] }) => s.indicators.map((i) => i.type);
+
+  it('layout upgrade (v3 -> v4) retypes old ids and is idempotent', () => {
+    const raw = { indicators: OLD.map((t, i) => typed(`i${i}`, t)).concat([typed('s', 'sma')]) };
+    const s = parseLayoutState(raw, 3)!;
+    expect(types(s)).toEqual([...NEW, 'sma']);
+    expect(parseLayoutState(s)!.indicators).toEqual(s.indicators);
+    expect(types(parseLayoutState(raw, 1)!)).toEqual([...NEW, 'sma']);
+  });
+
+  it('indicator templates retype old ids on apply', () => {
+    useIndicatorStore.setState({ instances: [] });
+    expect(
+      applyIndicatorTemplate(
+        OLD.map((t, i) => typed(`t${i}`, t)),
+        'add',
+        'T',
+      ),
+    ).toBeNull();
+    expect(useIndicatorStore.getState().instances.map((i) => i.type)).toEqual(NEW);
+  });
+
+  it('indicator store migrate retypes persisted instances', () => {
+    const migrate = migrateIndicatorStore;
+    const out = migrate({ instances: OLD.map((t, i) => typed(`i${i}`, t)) }, 2) as {
+      instances: IndicatorState[];
+    };
+    expect(out.instances.map((i) => i.type)).toEqual(NEW);
+    const cur = migrate({ instances: [typed('a', 'sma')] }, 3) as { instances: IndicatorState[] };
+    expect(cur.instances.map((i) => i.type)).toEqual(['sma']);
+  });
+
+  it('prefs migrate maps favorites (deduped) and defaults', () => {
+    const migrate = migrateIndicatorPrefs;
+    const out = migrate(
+      {
+        favorites: ['rsi', 'auto-fib', 'swing-fib', 'relative-volume', 7],
+        defaults: { 'pivots-hl': { inputs: { a: 1 } }, sma: { inputs: {} } },
+      },
+      1,
+    ) as { favorites: string[]; defaults: Record<string, unknown> };
+    expect(out.favorites).toEqual(['rsi', 'swing-fib', 'tod-relative-volume']);
+    expect(Object.keys(out.defaults).sort()).toEqual(['sma', 'swing-hl']);
+  });
+
+  it('synced favorites and defaults settings map old ids on write', () => {
+    const fav = SETTING_DEFS.find((d) => d.key === 'indicators.favorites')!;
+    const def = SETTING_DEFS.find((d) => d.key === 'indicators.defaults')!;
+    fav.write(['auto-fib', 'rsi']);
+    def.write({ 'relative-volume': { inputs: {} } });
+    expect(useIndicatorPrefs.getState().favorites).toEqual(['swing-fib', 'rsi']);
+    expect(Object.keys(useIndicatorPrefs.getState().defaults)).toEqual(['tod-relative-volume']);
+    useIndicatorPrefs.setState({ favorites: [], defaults: {} });
   });
 });

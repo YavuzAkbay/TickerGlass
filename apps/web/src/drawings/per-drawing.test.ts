@@ -19,7 +19,7 @@ describe('per-drawing style keys', () => {
       keepAspect: true,
     });
     expect(stripPerDrawingStyle('icon', { glyph: 'A', size: 1 })).toEqual({ size: 1 });
-    expect(stripPerDrawingStyle('ghost-feed', { seed: 3, up: 'x' })).toEqual({ up: 'x' });
+    expect(stripPerDrawingStyle('path-sketch', { seed: 3, up: 'x' })).toEqual({ up: 'x' });
     expect(stripPerDrawingStyle('trend-line', { src: 'keep' })).toEqual({ src: 'keep' });
   });
 

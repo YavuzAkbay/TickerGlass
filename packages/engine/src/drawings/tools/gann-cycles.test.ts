@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { DrawingPoint } from '../types';
-import { cycleRange } from './cyclic-lines';
+import { cycleRange } from './cycle-lines';
 import { defaultGannFanLevels, defaultGannLevels, gannRatioText } from './gann-common';
-import { priceBarRatio } from './gann-square-fixed';
-import { sinePrice } from './sine-line';
+import { priceBarRatio } from './gann-grid';
+import { sinePrice } from './sine-wave';
 import {
   geometryOf,
   makeDrawing,
@@ -139,24 +139,24 @@ describe('gann square', () => {
   });
 });
 
-describe('gann square fixed', () => {
+describe('gann grid', () => {
   it('creation makes the box square on screen; drags keep the price/bar ratio', () => {
-    const d = makeDrawing('gann-square-fixed', [pt(20, 40), pt(40, 50)]);
+    const d = makeDrawing('gann-grid', [pt(20, 40), pt(40, 50)]);
     const g = geometryOf(d);
     // 20 bars = 200 px wide -> 200 px = 50 price high, above.
-    const out = tool('gann-square-fixed').completePoints!(d.points, g, d.style);
+    const out = tool('gann-grid').completePoints!(d.points, g, d.style);
     expect(out[0]).toEqual(pt(20, 40));
     expect(out[1]!.time).toBe(pt(40, 0).time);
     expect(out[1]!.price).toBeCloseTo(90, 9);
     const sq = [pt(20, 40), pt(40, 90)];
     expect(priceBarRatio(sq[0]!, sq[1]!, g)).toBeCloseTo(2.5, 9);
     // Anchor 2 to bar 30 below anchor 1: 10 bars * 2.5 = 25 below.
-    const m1 = move('gann-square-fixed', sq, 1, pt(30, 10));
+    const m1 = move('gann-grid', sq, 1, pt(30, 10));
     expect(m1[0]).toEqual(sq[0]);
     expect(m1[1]!.time).toBe(pt(30, 0).time);
     expect(m1[1]!.price).toBeCloseTo(15, 9);
     // Anchor 1 to bar 30 above anchor 2: 10 bars -> 25 above 90.
-    const m0 = move('gann-square-fixed', sq, 0, pt(30, 95));
+    const m0 = move('gann-grid', sq, 0, pt(30, 95));
     expect(m0[0]!.price).toBeCloseTo(115, 9);
     expect(m0[1]).toEqual(sq[1]);
   });
@@ -178,7 +178,7 @@ describe('gann fan', () => {
   });
 });
 
-describe('cyclic lines', () => {
+describe('cycle lines', () => {
   it('cycleRange', () => {
     expect(cycleRange(100, 50, 0, 800)).toEqual({ from: 0, to: 14 });
     expect(cycleRange(100, 50, 300, 800)).toEqual({ from: 4, to: 14 });
@@ -188,7 +188,7 @@ describe('cyclic lines', () => {
   });
 
   it('vertical lines every cycle from anchor 1 onward', () => {
-    const { at, visible, draw } = setup('cyclic-lines', [pt(20, 50), pt(30, 50)]);
+    const { at, visible, draw } = setup('cycle-lines', [pt(20, 50), pt(30, 50)]);
     expect(at(X(50), 100)).toEqual(BODY);
     expect(at(X(20), 390)).toEqual(BODY);
     expect(at(X(55), 100)).toBeNull();
@@ -197,17 +197,17 @@ describe('cyclic lines', () => {
     let n = 0;
     for (let k = 0; X(20 + 10 * k) <= 801; k++) n++;
     expect(draw().count('moveTo')).toBe(n);
-    expect(setup('cyclic-lines', [pt(-500, 20), pt(-480, 30)]).visible()).toBe(true);
-    expect(setup('cyclic-lines', [pt(-500, 20), pt(-520, 30)]).visible()).toBe(false);
+    expect(setup('cycle-lines', [pt(-500, 20), pt(-480, 30)]).visible()).toBe(true);
+    expect(setup('cycle-lines', [pt(-500, 20), pt(-520, 30)]).visible()).toBe(false);
   });
 });
 
-describe('time cycles', () => {
+describe('cycle arcs', () => {
   // Cycle 100 px (10 bars), radius 50 px, baseline Y(50) = 200 px.
   const pts = [pt(20, 50), pt(30, 60)];
 
   it('semicircles repeating along the baseline', () => {
-    const { at, visible } = setup('time-cycles', pts);
+    const { at, visible } = setup('cycle-arcs', pts);
     expect(at(X(25), Y(62.5))).toEqual(BODY); // top of cycle 0
     expect(at(X(45), Y(62.5))).toEqual(BODY); // top of cycle 2
     expect(at(X(30), Y(50))).toEqual(BODY); // cycle point on the baseline
@@ -215,13 +215,13 @@ describe('time cycles', () => {
     expect(at(X(25), Y(40))).toBeNull(); // other side of the baseline
     expect(at(X(15), Y(55))).toBeNull(); // before anchor 1
     expect(visible()).toBe(true);
-    expect(setup('time-cycles', [pt(20, 50), pt(30, 40)]).at(X(25), Y(37.5))).toEqual(BODY);
-    expect(setup('time-cycles', [pt(-500, 20), pt(-520, 30)]).visible()).toBe(false);
-    expect(setup('time-cycles', [pt(20, 300), pt(30, 310)]).visible()).toBe(false);
+    expect(setup('cycle-arcs', [pt(20, 50), pt(30, 40)]).at(X(25), Y(37.5))).toEqual(BODY);
+    expect(setup('cycle-arcs', [pt(-500, 20), pt(-520, 30)]).visible()).toBe(false);
+    expect(setup('cycle-arcs', [pt(20, 300), pt(30, 310)]).visible()).toBe(false);
   });
 });
 
-describe('sine line', () => {
+describe('sine wave', () => {
   it('sinePrice through peak and trough', () => {
     expect(sinePrice(0, 80, 10, 20, 0)).toBeCloseTo(80, 9);
     expect(sinePrice(0, 80, 10, 20, 10)).toBeCloseTo(20, 9);
@@ -232,7 +232,7 @@ describe('sine line', () => {
 
   it('wave across the pane, polyline hits', () => {
     // Peak (20, 80), trough (30, 40): period 20 bars.
-    const { at, visible, d, g, def } = setup('sine-line', [pt(20, 80), pt(30, 40)]);
+    const { at, visible, d, g, def } = setup('sine-wave', [pt(20, 80), pt(30, 40)]);
     expect(at(X(25), Y(60))).toEqual(BODY);
     expect(at(X(40), Y(80))).toEqual(BODY);
     expect(at(X(50), Y(40))).toEqual(BODY);
@@ -240,7 +240,7 @@ describe('sine line', () => {
     expect(visible()).toBe(true);
     expect(def.handles).toBeUndefined();
     expect(def.hitTest(g, d.style, X(70), Y(40), TOL)).toEqual(BODY); // trough at bar 70
-    expect(setup('sine-line', [pt(20, 300), pt(30, 250)]).visible()).toBe(false);
-    expect(setup('sine-line', [pt(20, 80), pt(20, 40)]).visible()).toBe(false);
+    expect(setup('sine-wave', [pt(20, 300), pt(30, 250)]).visible()).toBe(false);
+    expect(setup('sine-wave', [pt(20, 80), pt(20, 40)]).visible()).toBe(false);
   });
 });

@@ -315,7 +315,7 @@ export type VolumeProfilePlacement = 'left' | 'right';
 
 /**
  * Volume profile computed and drawn by the engine from the chart's own bars
- * (Visible Range / Session Volume Profile). Its values array marks period
+ * (visible-bars / session volume profile). Its values array marks period
  * starts in 'session' mode (non-NaN = a new period begins at that bar) and is
  * unused (all NaN) in 'visible' mode. Not autoscaled, no legend value, not an
  * alert operand. Numeric settings may come from inputs (like hline values).

@@ -4,7 +4,7 @@
  * default is stored as the template named DEFAULT_TEMPLATE_NAME with
  * `isDefault: true` (docs/persistence.md §6).
  */
-import type { DrawingStyle } from '@investopen/engine';
+import { resolveDrawingType, type DrawingStyle } from '@investopen/engine';
 import { createAutosaver, type Autosaver } from '../api/autosave';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
@@ -130,16 +130,32 @@ export class DrawingTemplatesSync {
   private applyRows(rows: DrawingTemplate<DrawingStyle>[]): void {
     const byType: Record<string, { name: string; style: DrawingStyle }[]> = {};
     const defaults: Record<string, DrawingStyle> = {};
-    for (const r of rows) {
+    let renamed = false;
+    // Rows under the current id first: they win over rows under an old id.
+    const ordered = rows.filter((r) => resolveDrawingType(r.toolType) === r.toolType);
+    ordered.push(...rows.filter((r) => resolveDrawingType(r.toolType) !== r.toolType));
+    for (const r of ordered) {
       if (!isObj(r.style)) continue;
-      if (r.isDefault) defaults[r.toolType] = r.style;
-      else (byType[r.toolType] ??= []).push({ name: r.name, style: r.style });
+      const toolType = resolveDrawingType(r.toolType);
+      if (toolType !== r.toolType) renamed = true;
+      if (r.isDefault) {
+        if (toolType === r.toolType || !(toolType in defaults)) defaults[toolType] = r.style;
+      } else {
+        const list = (byType[toolType] ??= []);
+        if (toolType === r.toolType || !list.some((t) => t.name === r.name))
+          list.push({ name: r.name, style: r.style });
+      }
     }
     this.applying = true;
     try {
       useDrawingTemplates.setState({ byType, defaults });
     } finally {
       this.applying = false;
+    }
+    // Old rows are replaced by rows under the current ids.
+    if (renamed) {
+      this.setDirty(true);
+      this.saver.schedule();
     }
   }
 

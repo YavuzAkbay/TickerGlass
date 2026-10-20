@@ -1,6 +1,6 @@
 // Shared Gann code: default levels/fans/arcs, ratio labels, box corner
 // handles, box fills, fans and quarter arcs inside a box (Gann box, Gann
-// square, Gann square fixed) and the fan rays of the Gann fan. Pixel space
+// square, Gann grid) and the fan rays of the Gann fan. Pixel space
 // (CSS px, pane-local): the box levels divide the box on screen.
 import type { ChartTheme } from '../../options';
 import {

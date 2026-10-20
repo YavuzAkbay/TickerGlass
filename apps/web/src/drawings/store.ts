@@ -1,4 +1,4 @@
-import type { Drawing, DrawingStyle } from '@investopen/engine';
+import { resolveDrawingType, type Drawing, type DrawingStyle } from '@investopen/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { stripPerDrawingStyle } from './per-drawing';
@@ -42,10 +42,11 @@ function isDrawing(v: unknown): v is Drawing {
   );
 }
 
-/** Fill fields older or hand-edited data may lack. */
+/** Fill fields older or hand-edited data may lack; renamed tool ids map to the current one. */
 function normalize(d: Drawing): Drawing {
   return {
     ...d,
+    type: resolveDrawingType(d.type),
     text: typeof d.text === 'string' ? d.text : '',
     locked: !!d.locked,
     hidden: !!d.hidden,
@@ -398,6 +399,33 @@ interface DrawingTemplates {
   clearDefault: (type: string) => void;
 }
 
+/**
+ * Key tool-keyed records by current tool id: entries stored under a renamed id
+ * move to the new one (an entry already under the new id wins).
+ */
+export function mapToolKeys<V>(record: Record<string, V>): Record<string, V> {
+  const out: Record<string, V> = {};
+  for (const [type, v] of Object.entries(record)) {
+    const now = resolveDrawingType(type);
+    if (now === type || !(now in record)) out[now] = v;
+  }
+  return out;
+}
+
+/** Stored templates and default styles with their tool ids mapped to the current ones. */
+export function migrateTemplates(
+  persisted: unknown,
+): Pick<DrawingTemplates, 'byType' | 'defaults'> {
+  const p = isObj(persisted) ? persisted : {};
+  return {
+    byType: isObj(p.byType) ? mapToolKeys(p.byType as DrawingTemplates['byType']) : {},
+    defaults: isObj(p.defaults) ? mapToolKeys(p.defaults as DrawingTemplates['defaults']) : {},
+  };
+}
+
+/** Persisted `investopen-drawing-templates` version: 2 = renamed tool ids. */
+export const TEMPLATES_STORE_VERSION = 2;
+
 export const useDrawingTemplates = create<DrawingTemplates>()(
   persist(
     (set) => ({
@@ -425,6 +453,10 @@ export const useDrawingTemplates = create<DrawingTemplates>()(
           return { defaults: rest };
         }),
     }),
-    { name: 'investopen-drawing-templates', version: 1 },
+    {
+      name: 'investopen-drawing-templates',
+      version: TEMPLATES_STORE_VERSION,
+      migrate: (persisted) => migrateTemplates(persisted) as DrawingTemplates,
+    },
   ),
 );

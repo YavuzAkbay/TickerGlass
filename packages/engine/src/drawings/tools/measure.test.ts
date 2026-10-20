@@ -227,7 +227,7 @@ describe('measure tools', () => {
   const pts = [pt(20, 50), pt(30, 40)];
 
   it('stats: price change, %, bars, time', () => {
-    const { g } = setup('date-price-range', pts);
+    const { g } = setup('price-time-measure', pts);
     const s = measureStats(g)!;
     expect(s.priceChange).toBe(-10);
     expect(s.percent).toBeCloseTo(-20, 9);
@@ -237,9 +237,9 @@ describe('measure tools', () => {
 
   it('labels per kind', () => {
     const expected: Record<string, string[]> = {
-      'price-range': ['-10.00 (-20.00%)'],
-      'date-range': ['10 bars, 1w 3d'],
-      'date-price-range': ['-10.00 (-20.00%)', '10 bars, 1w 3d'],
+      'price-measure': ['-10.00 (-20.00%)'],
+      'time-measure': ['10 bars, 1w 3d'],
+      'price-time-measure': ['-10.00 (-20.00%)', '10 bars, 1w 3d'],
     };
     for (const [type, lines] of Object.entries(expected)) {
       const { def, g, d } = setup(type, pts);
@@ -261,7 +261,7 @@ describe('measure tools', () => {
       close: volume,
       volume,
     };
-    const d = makeDrawing('date-range', pts);
+    const d = makeDrawing('time-measure', pts);
     const g = new Geometry();
     g.update(
       d,
@@ -273,14 +273,14 @@ describe('measure tools', () => {
     for (let i = 20; i <= 30; i++) if (i !== 25) want += 1000 + i;
     expect(measureStats(g)!.volume).toBe(want);
     const { rc, texts } = recordingContext();
-    tool('date-range').render(rc, g, d.style, IDLE);
+    tool('time-measure').render(rc, g, d.style, IDLE);
     expect(texts).toEqual(['10 bars, 1w 3d', 'Vol 10.25K']);
     // No bar data (or a range outside it): no volume line.
     expect(measureStats(geometryOf(d))!.volume).toBeNaN();
   });
 
   it('the measured box is a strong hit', () => {
-    const { at } = setup('price-range', pts);
+    const { at } = setup('price-measure', pts);
     expect(at(X(25), Y(45))).toEqual({ kind: 'body' });
     expect(at(X(35), Y(45))).toBeNull();
   });

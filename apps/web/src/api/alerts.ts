@@ -1,5 +1,12 @@
 /** Typed calls for the alert endpoints (docs/alerts.md §1.4). */
-import type { Alert, AlertIn, AlertLogEntry, AlertStatus, DeliveryChannel } from '@investopen/alerts';
+import {
+  upgradeAlertSpec,
+  type Alert,
+  type AlertIn,
+  type AlertLogEntry,
+  type AlertStatus,
+  type DeliveryChannel,
+} from '@investopen/alerts';
 import { ApiError, requestJson, type RequestOptions } from './client';
 
 type Opts = Pick<RequestOptions, 'signal'>;
@@ -45,10 +52,15 @@ export interface AlertPatch {
   revision?: number;
 }
 
+/** Alerts saved before an indicator was renamed come back with its current id. */
+const upgraded = (a: Alert): Alert => ({ ...a, spec: upgradeAlertSpec(a.spec) });
+
 export const listAlerts = (q: { status?: AlertStatus; symbol?: string } = {}, o?: Opts) =>
-  requestJson<Alert[]>('GET', '/alerts', undefined, { ...o, query: q });
+  requestJson<Alert[]>('GET', '/alerts', undefined, { ...o, query: q }).then((l) =>
+    l.map(upgraded),
+  );
 export const getAlert = (id: string, o?: Opts) =>
-  requestJson<Alert>('GET', `/alerts/${seg(id)}`, undefined, o);
+  requestJson<Alert>('GET', `/alerts/${seg(id)}`, undefined, o).then(upgraded);
 /** With an existing `id`, rejects with 409 (see `alertConflict`). */
 export const createAlert = (body: AlertIn, o?: Opts) =>
   requestJson<Alert>('POST', '/alerts', body, o);

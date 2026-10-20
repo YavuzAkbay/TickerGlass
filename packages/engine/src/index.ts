@@ -31,6 +31,7 @@ export {
   listDrawingTools,
   registerDrawingTool,
 } from './drawings/registry';
+export { LEGACY_DRAWING_TYPES, resolveDrawingType } from './drawings/legacy-ids';
 export { logicalToTime, timeToLogical } from './drawings/mapping';
 export type { AnchorTimeline } from './drawings/mapping';
 export { buildTradingCalendar } from './drawings/calendar';

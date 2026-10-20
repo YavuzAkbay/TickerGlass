@@ -112,23 +112,23 @@ def pivot_np(x, left, right, high):
     return out
 
 
-def pivots_hl_cases(out: Cases):
+def swing_hl_cases(out: Cases):
     out.add(
-        "pivots-hl",
+        "swing-hl",
         {},
         "numpy",
         {"ph": pivot_np(H, 10, 10, True), "pl": pivot_np(L, 10, 10, False)},
     )
     inputs = {"leftHigh": 5, "rightHigh": 3, "leftLow": 2, "rightLow": 7}
     out.add(
-        "pivots-hl-asym",
+        "swing-hl-asym",
         inputs,
         "numpy",
         {"ph": pivot_np(H, 5, 3, True), "pl": pivot_np(L, 2, 7, False)},
     )
 
 
-# ------------------------------------------------------------ zigzag / auto fib
+# ------------------------------------------------------------ zigzag / swing fib
 
 
 def zz_pivot_np(x, d, high):
@@ -244,11 +244,11 @@ FIB = (
 )
 
 
-def auto_fib_outputs(deviation, depth, reverse, shown: dict):
+def swing_fib_outputs(deviation, depth, reverse, shown: dict):
     atr = rma(true_range(True), 10)
     piv = zigzag_np(H, L, depth, 100 * atr / C * deviation)
     outs = {fid: nans() for fid, *_ in FIB}
-    assert len(piv) >= 2, "auto-fib case needs two pivots"
+    assert len(piv) >= 2, "swing-fib case needs two pivots"
     (s_bar, s_price, _), (_, e_price, _) = piv[-2], piv[-1]
     if reverse:
         s_price, e_price = e_price, s_price
@@ -258,14 +258,14 @@ def auto_fib_outputs(deviation, depth, reverse, shown: dict):
     return outs
 
 
-def auto_fib_cases(out: Cases):
-    out.add("auto-fib", {}, "numpy", auto_fib_outputs(3, 10, False, {}))
+def swing_fib_cases(out: Cases):
+    out.add("swing-fib", {}, "numpy", swing_fib_outputs(3, 10, False, {}))
     shown = {"show236": False, "show1618": True, "show4236": True}
     out.add(
-        "auto-fib-reverse",
+        "swing-fib-reverse",
         {"deviation": 2, "depth": 8, "reverse": True, **shown},
         "numpy",
-        auto_fib_outputs(2, 8, True, shown),
+        swing_fib_outputs(2, 8, True, shown),
     )
 
 
@@ -306,7 +306,7 @@ def linreg_cases(out: Cases):
     )
 
 
-# ------------------------------------------------------------ 52 week high/low
+# ------------------------------------------------------------ 52-week range
 
 
 def high_low_time(time, high, low, weeks):
@@ -402,9 +402,9 @@ def vp_cases(out: Cases):
 def cases() -> list[Case]:
     out = Cases()
     pivot_cases(out)
-    pivots_hl_cases(out)
+    swing_hl_cases(out)
     zigzag_cases(out)
-    auto_fib_cases(out)
+    swing_fib_cases(out)
     linreg_cases(out)
     high_low_cases(out)
     seasonality_cases(out)

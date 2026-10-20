@@ -247,11 +247,11 @@ def test_drawing_channel_parts_and_scope(client: TestClient) -> None:
     save_drawing(client, "rect", type="rectangle")
     save_drawing(client, "pc3", type="parallel-channel", points=[{}, {}, {}])
     save_drawing(client, "pc2", type="parallel-channel", points=[{}, {}])
-    save_drawing(client, "flat", type="flat-top-bottom", points=[{}, {}, {}])
-    save_drawing(client, "flat2", type="flat-top-bottom", points=[{}, {}])
-    save_drawing(client, "dj4", type="disjoint-channel", points=[{}, {}, {}, {}])
-    save_drawing(client, "dj3", type="disjoint-channel", points=[{}, {}, {}])
-    save_drawing(client, "dj2", type="disjoint-channel", points=[{}, {}])
+    save_drawing(client, "flat", type="flat-channel", points=[{}, {}, {}])
+    save_drawing(client, "flat2", type="flat-channel", points=[{}, {}])
+    save_drawing(client, "dj4", type="split-channel", points=[{}, {}, {}, {}])
+    save_drawing(client, "dj3", type="split-channel", points=[{}, {}, {}])
+    save_drawing(client, "dj2", type="split-channel", points=[{}, {}])
     save_drawing(client, "msft", symbol="MSFT")
     save_drawing(client, "synced", scope="all", symbol=None)
 
@@ -268,7 +268,7 @@ def test_drawing_channel_parts_and_scope(client: TestClient) -> None:
         assert res.status_code == 201 and res.json()["drawingId"] == did
     for did in ("pc2", "flat2", "dj2"):
         res = client.post("/api/alerts", json=body(spec=drawing_spec(did, "lower")))
-        assert res.status_code == 422 and "flat-top-bottom" in res.json()["detail"]
+        assert res.status_code == 422 and "flat-channel" in res.json()["detail"]
     # Their lines are not a single 'line' part either.
     assert client.post("/api/alerts", json=body(spec=drawing_spec("flat"))).status_code == 422
     whole = {

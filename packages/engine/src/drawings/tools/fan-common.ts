@@ -1,5 +1,5 @@
 // Shared fan (rays from one origin, fills between consecutive rays) and box
-// grid code: fib speed resistance fan, Gann fan/box. Pixel space (CSS px,
+// grid code: fib fan, Gann fan/box. Pixel space (CSS px,
 // pane-local): rays stay straight on every price scale.
 import { BODY_HIT, lineDistance, segmentInView, setLineStyle, WEAK_BODY_HIT } from '../draw-utils';
 import { pointInPolygon } from '../shape-utils';

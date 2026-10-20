@@ -21,7 +21,7 @@ test('add an indicator, edit its settings, hide and remove it', async ({ page })
   const rows = page.locator('.ind-row');
   let short = 'RSI';
   if ((await rows.count()) === 0) {
-    await search.fill('Moving Average Simple');
+    await search.fill('Simple Moving Average');
     short = 'SMA';
   }
   await expect(rows.first()).toBeVisible();

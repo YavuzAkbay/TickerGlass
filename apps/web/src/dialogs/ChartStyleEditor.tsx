@@ -79,7 +79,7 @@ const atr = (s: StyleValues, key: string) => s[key] === 'atr';
 const SPECS: Record<ChartType, SectionSpec[]> = {
   candles: [{ title: 'Candles', rows: CANDLE_ROWS }],
   hollowCandles: [{ title: 'Hollow candles', rows: CANDLE_ROWS }],
-  volumeCandles: [{ title: 'Volume candles', rows: CANDLE_ROWS }],
+  volumeCandles: [{ title: 'Volume-width candles', rows: CANDLE_ROWS }],
   heikinAshi: [{ title: 'Heikin Ashi', rows: CANDLE_ROWS }],
   bars: [{ title: 'Bars', rows: BAR_ROWS }],
   line: LINE_SECTIONS,
@@ -103,7 +103,7 @@ const SPECS: Record<ChartType, SectionSpec[]> = {
   ],
   baseline: [
     {
-      title: 'Baseline',
+      title: 'Baseline split',
       rows: [
         { label: 'Price source', select: { key: 'source', options: SOURCES } },
         {
@@ -142,7 +142,7 @@ const SPECS: Record<ChartType, SectionSpec[]> = {
   ],
   hlcArea: [
     {
-      title: 'HLC area',
+      title: 'Range area',
       rows: [
         { label: 'High line', colors: [{ key: 'highColor', label: 'High line colour' }] },
         { label: 'Low line', colors: [{ key: 'lowColor', label: 'Low line colour' }] },
@@ -163,7 +163,7 @@ const SPECS: Record<ChartType, SectionSpec[]> = {
   ],
   columns: [
     {
-      title: 'Columns',
+      title: 'Histogram',
       rows: [
         { label: 'Price source', select: { key: 'source', options: SOURCES } },
         { label: 'Colours', colors: upDown('upColor', 'downColor') },
@@ -173,7 +173,7 @@ const SPECS: Record<ChartType, SectionSpec[]> = {
   ],
   highLow: [
     {
-      title: 'High-low',
+      title: 'High–low bars',
       rows: [
         { label: 'Body', colors: [{ key: 'color', label: 'Body colour' }] },
         { label: 'Borders', colors: [{ key: 'borderColor', label: 'Border colour' }] },

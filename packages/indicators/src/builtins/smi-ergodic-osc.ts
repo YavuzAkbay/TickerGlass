@@ -2,11 +2,11 @@ import { defineIndicator } from '../registry';
 import { change } from './common';
 import { ergodicOf } from './smi-ergodic';
 
-/** SMI Ergodic Oscillator: SMI Ergodic Indicator minus its signal, as a histogram. */
+/** SMI Ergodic Histogram: SMI Ergodic minus its signal, as a histogram. */
 export const SMI_ERGODIC_OSC = defineIndicator({
   id: 'smi-ergodic-osc',
-  name: 'SMI Ergodic Oscillator',
-  shortName: 'SMIO',
+  name: 'SMI Ergodic Histogram',
+  shortName: 'SMI Hist',
   category: 'momentum',
   keywords: ['smi', 'ergodic', 'tsi', 'blau', 'oscillator', 'histogram'],
   overlay: false,
@@ -20,7 +20,7 @@ export const SMI_ERGODIC_OSC = defineIndicator({
     {
       type: 'plot',
       id: 'osc',
-      title: 'SMI Ergodic Oscillator',
+      title: 'SMI Ergodic Histogram',
       kind: 'histogram',
       color: '#ff5252',
     },

@@ -1,5 +1,5 @@
 // Shared level rendering/hit testing for the fib tools: price levels
-// (retracement, extension, channel), time levels (time zone, trend-based
+// (retracement, extension, channel), time levels (time zone, fib time
 // time) and concentric arcs (circles, speed arcs, wedge; pixel space).
 import type { ChartTheme } from '../../options';
 import { BODY_HIT, setLineStyle, textFont, WEAK_BODY_HIT } from '../draw-utils';
@@ -133,7 +133,7 @@ export function fibRetracementPrice(
   return reverse ? from + (to - from) * level : to + (from - to) * level;
 }
 
-/** Trend-based extension: projects the move a->b from c. */
+/** Fib extension: projects the move a->b from c. */
 export function fibExtensionPrice(a: number, b: number, c: number, level: number): number {
   return c + (b - a) * level;
 }
@@ -303,7 +303,7 @@ const TV_TREND_TIME_LEVELS: readonly (readonly [number, string, boolean])[] = [
   [4.236, '#787b86', false],
 ];
 
-/** Fresh copy of the trend-based fib time levels. */
+/** Fresh copy of the fib time extension levels. */
 export function defaultTrendTimeLevels(): DrawingLevel[] {
   return TV_TREND_TIME_LEVELS.map(([value, color, visible]) => ({ value, color, visible }));
 }
