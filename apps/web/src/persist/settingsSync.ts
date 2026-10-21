@@ -9,6 +9,7 @@ import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { Settings } from '../api/types';
 import { parseAlertPrefs, readAlertPrefs, useAlertPrefs } from '../alerts/prefs';
+import { parseTradingPrefs, readTradingPrefs, useTradingPrefs } from '../replay/prefs';
 import { parseEventPrefs, readEventPrefs, useEventPrefs } from '../events/prefs';
 import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
@@ -156,6 +157,12 @@ export const SETTING_DEFS: SettingDef[] = [
     read: readEventPrefs,
     write: (v) => useEventPrefs.setState(parseEventPrefs(v)),
     subscribe: (fn) => useEventPrefs.subscribe(fn),
+  },
+  {
+    key: 'replay.trading',
+    read: readTradingPrefs,
+    write: (v) => useTradingPrefs.setState(parseTradingPrefs(v)),
+    subscribe: (fn) => useTradingPrefs.subscribe(fn),
   },
 ];
 

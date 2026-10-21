@@ -10,6 +10,7 @@ import {
   type PaperState,
   type Side,
 } from './paper';
+import { useTradingPrefs } from './prefs';
 
 export const TRADE_MARKER_GROUP = 'replay-trades';
 export const POSITION_LINE_GROUP = 'replay-position';
@@ -119,17 +120,30 @@ export class ReplayTrading implements ReplaySession {
   private mark(): void {
     const symbol = this.deps.symbol();
     const bar = this.deps.lastBar();
+    let moved = false;
     if (bar && Number.isFinite(bar.close) && useTrading.getState().marks[symbol] !== bar.close) {
       useTrading.setState((s) => ({ marks: { ...s.marks, [symbol]: bar.close } }));
+      moved = true;
     }
-    if (symbol !== this.drawnSymbol) this.draw();
+    // The position label shows the P&L at the mark: redraw while a position is open.
+    const pnlShown =
+      moved &&
+      useTradingPrefs.getState().pnlLabel &&
+      !!useTrading.getState().paper.positions[symbol];
+    if (symbol !== this.drawnSymbol || pnlShown) this.draw();
+  }
+
+  /** Draw again after the display preferences changed (no-op before a replay drew anything). */
+  redraw(): void {
+    if (this.drawnSymbol !== null) this.draw();
   }
 
   private draw(): void {
     const symbol = this.deps.symbol();
     this.drawnSymbol = symbol;
-    const { paper } = useTrading.getState();
-    const markers: ChartMarker[] = paper.trades
+    const { paper, marks } = useTrading.getState();
+    const prefs = useTradingPrefs.getState();
+    const markers: ChartMarker[] = (prefs.tradeMarkers ? paper.trades : [])
       .filter((t) => t.symbol === symbol)
       .map((t) => ({
         id: `trade-${t.id}`,
@@ -140,7 +154,12 @@ export class ReplayTrading implements ReplaySession {
         tooltip: `${t.side === 'buy' ? 'Buy' : 'Sell'} ${t.qty} @ ${t.price.toFixed(2)}`,
       }));
     this.deps.setMarkers(TRADE_MARKER_GROUP, markers);
-    const pos = paper.positions[symbol];
+    const pos = prefs.positionLine ? paper.positions[symbol] : undefined;
+    const mark = marks[symbol];
+    const pnl =
+      pos && prefs.pnlLabel && mark !== undefined && Number.isFinite(mark)
+        ? ` · P&L ${money((mark - pos.avg) * pos.qty)}`
+        : '';
     this.deps.setPriceLines(
       POSITION_LINE_GROUP,
       pos
@@ -151,7 +170,7 @@ export class ReplayTrading implements ReplaySession {
               price: pos.avg,
               color: pos.qty > 0 ? UP : DOWN,
               lineStyle: 'dashed',
-              label: `${pos.qty > 0 ? 'Long' : 'Short'} ${Math.abs(pos.qty)} @ ${pos.avg.toFixed(2)}`,
+              label: `${pos.qty > 0 ? 'Long' : 'Short'} ${Math.abs(pos.qty)} @ ${pos.avg.toFixed(2)}${pnl}`,
               axisLabel: false,
             },
           ]

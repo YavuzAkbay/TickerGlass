@@ -19,7 +19,12 @@ import {
   useIndicatorPrefs,
   useIndicatorStore,
 } from '../indicators/store';
-import { useChartView } from '../store/chartView';
+import {
+  DEFAULT_STATUS_LINE,
+  parseStatusLine,
+  pickChartView,
+  useChartView,
+} from '../store/chartView';
 import { readChartTemplate } from './chartTemplates';
 import { DrawingSync, DRAWING_SYNC_KEY, type DrawingApi } from './drawingSync';
 import { capToasts } from '../ui/Toast';
@@ -110,6 +115,7 @@ const slot = (symbol: string, extra: Partial<ChartSlotState> = {}): ChartSlotSta
     showPrevClose: false,
     timezone: 'exchange',
     prepost: false,
+    statusLine: DEFAULT_STATUS_LINE,
   },
   ...extra,
   // Symbol travels in the chart state; tests use a marker indicator list instead.
@@ -750,7 +756,13 @@ describe('layout state: chart grid (v5)', () => {
     expect(s).toEqual({
       template: '1',
       grid: { kind: 'leaf', chartId: 'c1' },
-      charts: [{ id: 'c1', ...v4() }],
+      charts: [
+        {
+          id: 'c1',
+          ...v4(),
+          chartSettings: { ...v4().chartSettings, statusLine: DEFAULT_STATUS_LINE },
+        },
+      ],
       activeChartId: 'c1',
       sync: DEFAULT_SYNC_FLAGS,
     });
@@ -1575,6 +1587,45 @@ describe('chart templates', () => {
     });
     expect(out).toEqual({ ...base, theme: 'light', chartStyle: { candles: { upColor: '#0f0' } } });
     expect(readChartTemplate(base, null)).toEqual(base);
+  });
+});
+
+describe('status line settings', () => {
+  it('pickChartView copies the status line, defaults for a view without one', () => {
+    const view = useChartView.getState();
+    expect(pickChartView(view).statusLine).toEqual(DEFAULT_STATUS_LINE);
+    const old = { ...view, statusLine: undefined } as unknown as typeof view;
+    expect(pickChartView(old).statusLine).toEqual(DEFAULT_STATUS_LINE);
+  });
+
+  it('parseStatusLine keeps valid fields and defaults the rest', () => {
+    expect(parseStatusLine({ ohlc: false, title: 'both', volume: 'no', title2: 1 })).toEqual({
+      ...DEFAULT_STATUS_LINE,
+      ohlc: false,
+      title: 'both',
+    });
+    expect(parseStatusLine({ title: 'bogus' })).toEqual(DEFAULT_STATUS_LINE);
+    expect(parseStatusLine(null)).toEqual(DEFAULT_STATUS_LINE);
+  });
+
+  it('a layout saved without a status line loads with the defaults', () => {
+    const stored = {
+      chart: null,
+      indicators: [],
+      compares: { items: [], scaleRestore: null },
+      chartSettings: { chartType: 'line', chartStyle: {}, showPrevClose: true },
+    };
+    const s = parseLayoutState(stored, 4)!;
+    expect(first(s).chartSettings.statusLine).toEqual(DEFAULT_STATUS_LINE);
+    expect(first(s).chartSettings.chartType).toBe('line');
+    const custom = {
+      ...stored,
+      chartSettings: { ...stored.chartSettings, statusLine: { ohlc: false } },
+    };
+    expect(first(parseLayoutState(custom, 4)).chartSettings.statusLine).toEqual({
+      ...DEFAULT_STATUS_LINE,
+      ohlc: false,
+    });
   });
 });
 

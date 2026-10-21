@@ -33,7 +33,12 @@ import { useLayoutGrid } from '../layout/store';
 import { whenMounted } from '../layout/mounted';
 import { MAX_CHARTS, template as templateTree } from '../layout/templates';
 import { normalizeSymbol, useAppStore } from '../store/app';
-import { useChartView, type ChartViewState } from '../store/chartView';
+import {
+  parseStatusLine,
+  useChartView,
+  type ChartViewState,
+  type StatusLineSettings,
+} from '../store/chartView';
 import { setActiveChart, useChartStore } from '../store/chart';
 import { isObj } from './net';
 
@@ -45,6 +50,7 @@ export interface ChartSettings {
   showPrevClose: boolean;
   timezone: string;
   prepost: boolean;
+  statusLine: StatusLineSettings;
 }
 
 /** One chart of a layout. */
@@ -93,6 +99,7 @@ const chartSettingsOf = (view: StoreApi<ChartViewState>): ChartSettings => {
     showPrevClose: s.showPrevClose,
     timezone: s.timezone,
     prepost: s.prepost,
+    statusLine: s.statusLine,
   };
 };
 
@@ -273,6 +280,8 @@ function parseSlot(raw: unknown, base: ChartSettings): ChartSlotState | null {
       showPrevClose: pick('showPrevClose', (v) => typeof v === 'boolean'),
       timezone: pick('timezone', (v) => typeof v === 'string'),
       prepost: pick('prepost', (v) => typeof v === 'boolean'),
+      // Layouts saved before the status line settings have none: defaults.
+      statusLine: parseStatusLine(cs.statusLine),
     },
   };
 }

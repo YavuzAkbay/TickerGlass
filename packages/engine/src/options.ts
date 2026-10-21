@@ -58,6 +58,32 @@ export const LIGHT_THEME: ChartTheme = {
 export type CrosshairMode = 'cross' | 'dot' | 'arrow';
 export type MagnetMode = 'off' | 'weak' | 'strong';
 
+/** Main-pane legend title: the symbol, its description, or both. */
+export type LegendTitleMode = 'ticker' | 'description' | 'both';
+
+/** What the main-pane legend (status line) shows. */
+export interface LegendOptions {
+  title: LegendTitleMode;
+  /** Exchange name after the interval. */
+  exchange: boolean;
+  /** Open, high, low and close values. */
+  ohlc: boolean;
+  /** Change from the previous close, absolute and percent. */
+  barChange: boolean;
+  volume: boolean;
+  /** Backdrop behind the legend text. */
+  background: boolean;
+}
+
+export const DEFAULT_LEGEND_OPTIONS: LegendOptions = {
+  title: 'ticker',
+  exchange: true,
+  ohlc: true,
+  barChange: true,
+  volume: true,
+  background: false,
+};
+
 export interface ChartOptions {
   theme: ChartTheme;
   /** 'exchange' uses the symbol's exchange timezone. */
@@ -73,6 +99,7 @@ export interface ChartOptions {
   locale: string;
   /** "+" box on the price axis crosshair label (emits `priceAxisPlus`). */
   priceAxisPlusButton: boolean;
+  legend: LegendOptions;
 }
 
 export const DEFAULT_OPTIONS: ChartOptions = {
@@ -86,4 +113,5 @@ export const DEFAULT_OPTIONS: ChartOptions = {
   showPrevClose: false,
   locale: 'en-US',
   priceAxisPlusButton: true,
+  legend: DEFAULT_LEGEND_OPTIONS,
 };

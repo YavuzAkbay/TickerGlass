@@ -105,7 +105,7 @@ Phase 3 notes:
 
 - Shell entries for later phases are present but inert, with a phase hint: chart types (4), indicators (5), drawing tools are selectable state only (6), layouts (7), compare (9), alerts (10), replay (13).
 - Watchlist panel was a basic recent-symbols list in this phase; the full version landed in Phase 8.
-- Settings dialog: Symbol, Canvas, and Scales tabs work; others are placeholders until Phase 15.
+- Settings dialog: Symbol, Canvas, and Scales tabs worked in this phase; the other tabs landed in Phase 15.
 
 ### Phase 4: Chart types
 
@@ -288,7 +288,7 @@ Phase 14 notes:
 
 ### Phase 15: Polish & completeness sweep
 
-- [ ] Chart settings dialog completeness: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
+- [x] Chart settings dialog completeness: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
 - [x] Events on chart: dividends, splits, earnings markers with tooltips
 - [ ] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
 - [ ] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
@@ -301,6 +301,7 @@ Phase 15 notes:
 - Timezones and calendar (engine): one shared `ZoneOffsets` cache in `packages/engine/src/scale/timezone.ts` (used by the timezone converter and `feed/resample.ts`) stores `[start, end) -> offset` intervals; transitions are located by daily sampling and bisection to the second, so half-hour DST shifts (Australia/Lord_Howe) and +5:45 (Asia/Kathmandu) are exact. The drawing calendar (`drawings/calendar.ts`) learns recurring holidays from weekdays without bars (fixed dates with weekend observance, nth/last weekday of a month, Easter-relative days) and the chart retries a missing calendar once per new exchange day of live bars. Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#drawings).
 - Chart error states: the engine `error` event carries `{message, status?, retryAfter?}` (from `FeedError`, which parses `Retry-After`). `apps/web/src/chart/ChartError.tsx` overlays the failed chart cell (per-chart `session.info.error`): 404 names the symbol and opens symbol search, 429 counts down and reloads by itself, network/502/503 offer Retry. Classifier and delay in `errorState.ts`. e2e: `e2e/errors.spec.ts`.
 - VWAP event anchors: Earnings, Dividends and Splits reset the VWAP at the first bar at or after each event. The chart controller loads the symbol's events (same cache) only when such an instance exists, and sends them to the worker with the context (`BarsEnv.events`); only definitions declaring `usesEvents` receive them and recompute when they change. Expressions get no events; replay needs no clipping since resets only happen at bars. The alerts service has no events: there these anchors accumulate over the loaded bars ([LIMITATIONS.md](LIMITATIONS.md#alerts)).
+- Status line and Trading settings: `statusLine` is part of the per-chart view (`store/chartView.ts`, saved in the layout's `chartSettings`; layouts saved without it load with the defaults) and reaches the engine through `Chart.setLegendOptions` (`LegendOptions`: title mode, exchange, OHLC, bar change, volume, background); the indicator and compare legends read the title, input and value flags from it. Trading prefs (`replay/prefs.ts`, synced as `replay.trading`) switch the replay trade markers, the position line and the unrealized P&L in the position line label. e2e: `e2e/chart.spec.ts`.
 
 ### Phase 16: AI analysis integration point (feature built separately)
 

@@ -10,6 +10,7 @@ import { toast } from '../ui/Toast';
 import { ReplayAlerts } from './alerts';
 import { ReplayController } from './controller';
 import { useReplayStore } from './store';
+import { useTradingPrefs } from './prefs';
 import { ReplayTrading, useTrading } from './trading';
 
 /**
@@ -64,6 +65,9 @@ export const trading = new ReplayTrading({
     replayChart()?.setPriceLines(group, lines),
   notify: (message) => toast(message, 'info', 8000),
 });
+
+// Display preferences (Settings -> Trading) apply to what is already drawn.
+useTradingPrefs.subscribe(() => trading.redraw());
 
 export const replay = new ReplayController({
   feed: replayFeed,

@@ -126,3 +126,21 @@ test('benchmark: 100k bars pan/zoom stays near 60fps', async ({ page }) => {
   console.log(`frame time p50=${result.p50.toFixed(1)}ms p95=${result.p95.toFixed(1)}ms`);
   expect(result.p50).toBeLessThan(20);
 });
+
+test('Settings > Status line: turning OHLC off removes the values from the legend', async ({
+  page,
+}) => {
+  await open(page);
+  const legend = page.locator('.io-legend-info').first();
+  const labels = legend.locator('.io-legend-label', { hasText: /^[OHLC]$/ });
+  await expect(labels).toHaveCount(4);
+  await expect(legend).toContainText('%');
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('tab', { name: 'Status line' }).click();
+  await page.getByLabel('Open, high, low and close').uncheck();
+  // The title and the change stay; the four values are gone.
+  await expect(labels).toHaveCount(0);
+  await expect(legend).toContainText('%');
+  await page.getByRole('button', { name: 'Ok' }).click();
+  await expect(labels).toHaveCount(0);
+});

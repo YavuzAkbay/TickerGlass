@@ -70,6 +70,7 @@ const LAYOUT_FIELDS = [
   'showPrevClose',
   'timezone',
   'prepost',
+  'statusLine',
 ] as const;
 
 const notifier: Notifier = {

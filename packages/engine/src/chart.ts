@@ -1,7 +1,7 @@
 import { Emitter } from './events';
 import { formatInterval, intervalSeconds, isIntraday, parseInterval } from './feed/intervals';
 import { SeriesStore } from './model/series-store';
-import { DEFAULT_OPTIONS, type ChartOptions, type ChartTheme } from './options';
+import { DEFAULT_OPTIONS, type ChartOptions, type ChartTheme, type LegendOptions } from './options';
 import { Pane, div, place } from './pane';
 import { CanvasLayer } from './render/canvas';
 import { dashedLine, font, hLine, labelBox, vLine } from './render/draw';
@@ -444,6 +444,12 @@ export class Chart implements StudyApi, DrawingApi {
     if (reload && this.symbol) void this.load();
     this.invalidate(INVALIDATE_LAYOUT);
     this.emitState();
+  }
+
+  /** Change what the main-pane legend (status line) shows. */
+  setLegendOptions(opts: Partial<LegendOptions>): void {
+    this.options = { ...this.options, legend: { ...this.options.legend, ...opts } };
+    this.updateLegends();
   }
 
   addPane(ratio = 1, id?: string): Pane {
@@ -2583,29 +2589,46 @@ export class Chart implements StudyApi, DrawingApi {
         const info = this.symbolInfo;
         const bar = this.store.bar(idx);
         const prev = this.store.bar(idx - 1);
-        const title = info
-          ? `${info.symbol} · ${formatInterval(this.interval)} · ${info.exchangeName ?? info.exchange ?? ''}`
-          : this.symbol;
+        const lg = this.options.legend;
+        let title = this.symbol;
+        if (info) {
+          const name = lg.title === 'ticker' ? '' : info.name || info.symbol;
+          const head =
+            lg.title === 'ticker'
+              ? info.symbol
+              : lg.title === 'description'
+                ? name
+                : name === info.symbol
+                  ? info.symbol
+                  : `${info.symbol} · ${name}`;
+          const exchange = lg.exchange ? (info.exchangeName ?? info.exchange ?? '') : '';
+          title = [head, formatInterval(this.interval), exchange].filter(Boolean).join(' · ');
+        }
         let html = `<span class="io-legend-title">${escapeHtml(title)}</span>`;
         if (bar) {
           const color = bar.close >= bar.open ? t.up : t.down;
           const f = (v: number) => formatPrice(v, this.decimals);
           const item = (label: string, v: string) =>
             `<span class="io-legend-item"><span class="io-legend-label">${label}</span><span style="color:${color}">${v}</span></span>`;
-          html +=
-            item('O', f(bar.open)) +
-            item('H', f(bar.high)) +
-            item('L', f(bar.low)) +
-            item('C', f(bar.close));
-          if (prev) {
+          if (lg.ohlc)
+            html +=
+              item('O', f(bar.open)) +
+              item('H', f(bar.high)) +
+              item('L', f(bar.low)) +
+              item('C', f(bar.close));
+          if (prev && lg.barChange) {
             const ch = bar.close - prev.close;
             const pct = (ch / prev.close) * 100;
             const sign = ch >= 0 ? '+' : '';
             html += `<span class="io-legend-item" style="color:${color}">${sign}${f(ch)} (${formatPercent(pct)})</span>`;
           }
-          if (this.volumeMode !== 'hidden')
+          if (lg.volume && this.volumeMode !== 'hidden')
             html += `<span class="io-legend-item"><span class="io-legend-label">Vol</span><span style="color:${color}">${formatVolume(bar.volume)}</span></span>`;
         }
+        const st = pane.legendEl.style;
+        st.background = lg.background ? 'color-mix(in srgb, var(--io-bg) 82%, transparent)' : '';
+        st.padding = lg.background ? '0 6px' : '';
+        st.borderRadius = lg.background ? '4px' : '';
         setHtml(pane.legendInfo, html);
       } else {
         // Study legends are rendered by the app into pane.legendSlot.
