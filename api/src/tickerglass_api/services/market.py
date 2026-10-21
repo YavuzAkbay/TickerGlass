@@ -88,14 +88,17 @@ class MarketService:
         self._session_ttl = s.extended_ttl_s
 
         def cache(
-            name: str, ttl: float, ttl_for: Callable[[Row], float] | None = None
+            name: str,
+            ttl: float,
+            ttl_for: Callable[[Row], float] | None = None,
+            negative_ttl: float = s.cache_negative_ttl_s,
         ) -> SmartCache[str, Any]:
             return SmartCache(
                 name,
                 ttl=ttl,
                 stale_ttl=s.cache_stale_max_s,
                 max_entries=s.cache_max_entries,
-                negative_ttl=s.cache_negative_ttl_s,
+                negative_ttl=negative_ttl,
                 stats=stats,
                 clock=clock,
                 refresher=refresher,
@@ -103,16 +106,26 @@ class MarketService:
                 ttl_for=ttl_for,
             )
 
-        self._quotes: SmartCache[str, Row] = cache("quotes", s.quote_ttl_s, self._quote_ttl_for)
-        self._extended: SmartCache[str, Row] = cache("extended", s.extended_ttl_s)
+        # A symbol missing from a quote answer is remembered only briefly.
+        self._quotes: SmartCache[str, Row] = cache(
+            "quotes", s.quote_ttl_s, self._quote_ttl_for, s.quote_negative_ttl_s
+        )
+        self._extended: SmartCache[str, Row] = cache(
+            "extended", s.extended_ttl_s, negative_ttl=s.quote_negative_ttl_s
+        )
         self._events: SmartCache[str, Row] = cache("events", s.events_ttl_s)
         self._news: SmartCache[str, _News] = cache("news", s.news_ttl_s)
         self._fundamentals: SmartCache[str, Row] = cache("fundamentals", s.fundamentals_ttl_s)
 
-    def quotes(self, symbols: list[str], *, max_age: float | None = None) -> list[Row]:
-        """Latest quote per known symbol, in request order; unknown symbols are omitted."""
+    def quotes(
+        self, symbols: list[str], *, max_age: float | None = None, stale_ok: bool = True
+    ) -> list[Row]:
+        """Latest quote per known symbol, in request order; unknown symbols are omitted.
+
+        `stale_ok=False` never serves a stale value after a failed load: such symbols
+        are omitted (and the error raised when nothing at all can be returned)."""
         wanted = list(dict.fromkeys(s.upper() for s in symbols))
-        found = self._quotes.get_many(wanted, self._load_quotes, max_age=max_age)
+        found = self._quotes.get_many(wanted, self._load_quotes, max_age=max_age, stale_ok=stale_ok)
         return [found[sym] for sym in wanted if sym in found]
 
     def _quote_ttl_for(self, row: Row) -> float:

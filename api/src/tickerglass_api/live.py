@@ -12,7 +12,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, Protocol
 
-from .providers.base import MarketDataProvider, RateLimited
+from .providers.base import MarketDataProvider, ProviderError
 from .providers.guard import UpstreamGuard
 from .services.market import MarketService
 
@@ -105,19 +105,22 @@ def provider_poller(provider: MarketDataProvider) -> Poller:
     return poll
 
 
-def market_poller(market: MarketService, guard: UpstreamGuard, *, max_age: float) -> Poller:
-    """Poll through the quote cache, so a poll and `/api/quotes` within `max_age` seconds
-    share one upstream request. Polls run in background mode: they yield to interactive
-    requests when the upstream budget runs low, and a refusal just skips the round."""
+def market_poller(market: MarketService, guard: UpstreamGuard) -> Poller:
+    """Poll through the quote cache, so polls and `/api/quotes` share upstream requests
+    while a quote is fresh (its TTL follows the market state: a closed market is not
+    polled upstream every round). Only fresh values are returned: a stale one served
+    after a failed load would be broadcast as a live tick. Polls run in background mode:
+    they yield to interactive requests when the upstream budget runs low, and a refusal
+    or failure just skips the round."""
 
     def fetch(symbols: list[str]) -> list[dict[str, Any]]:
         with guard.background():
-            return market.quotes(symbols, max_age=max_age)
+            return market.quotes(symbols, stale_ok=False)
 
     async def poll(symbols: list[str]) -> dict[str, dict[str, Any]]:
         try:
             rows = await asyncio.to_thread(fetch, symbols)
-        except RateLimited as exc:
+        except ProviderError as exc:
             log.debug("poll skipped for %d symbol(s): %s", len(symbols), exc)
             return {}
         return _poll_result(rows)

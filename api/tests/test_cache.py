@@ -396,3 +396,75 @@ def test_get_many_partial_failure() -> None:
     load.failed = {"C"}
     with pytest.raises(ProviderError, match="chunk failed"):
         cache.get_many(["C"], load)
+
+
+class CancellingExecutor(Executor):
+    """Accepts jobs but never runs them; `cancel_all` cancels them like a shutdown."""
+
+    def __init__(self) -> None:
+        self.futures: list[Future[Any]] = []
+
+    def submit(self, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> Future[T]:
+        fut: Future[T] = Future()
+        self.futures.append(fut)
+        return fut
+
+    def cancel_all(self) -> None:
+        for fut in self.futures:
+            fut.cancel()
+
+
+def _join_refresh(cache: SmartCache[str, Any], stats: CacheStats, load: Loader) -> list[Any]:
+    """Start a foreground `get` that waits on the in-flight refresh of "k"; returns the
+    list its result (or error) is appended to."""
+    out: list[Any] = []
+
+    def call() -> None:
+        try:
+            out.append(cache.get("k", load, swr=False))
+        except BaseException as exc:
+            out.append(exc)
+
+    before = stats.counter("cache.t.coalesced")
+    threading.Thread(target=call, daemon=True).start()
+    wait_for(lambda: stats.counter("cache.t.coalesced") == before + 1)
+    return out
+
+
+def test_waiter_on_refused_background_refresh_gets_stale() -> None:
+    clock = FakeClock()
+    stats = CacheStats()
+    executor = QueueExecutor()
+    cache = make(clock, refresher=executor, stats=stats)
+    load = Loader()
+    cache.get("k", load)
+    clock.now += 20
+    assert cache.get("k", load) == "v1"  # refresh queued
+    out = _join_refresh(cache, stats, load)
+    load.error = RateLimited("budget reserved", retry_after=5)
+    executor.run_all()
+    wait_for(lambda: bool(out))
+    assert out == ["v1"]
+
+
+def test_cancelled_refresh_gives_waiters_stale_or_provider_error() -> None:
+    clock = FakeClock()
+    stats = CacheStats()
+    executor = CancellingExecutor()
+    cache = make(clock, refresher=executor, stats=stats)
+    load = Loader()
+    cache.get("k", load)
+    clock.now += 20
+    cache.get("k", load)
+    out = _join_refresh(cache, stats, load)
+    executor.cancel_all()
+    wait_for(lambda: bool(out))
+    assert out == ["v1"]
+
+    clock.now += 20
+    cache.get("k", load)  # stale again: a second refresh
+    out = _join_refresh(cache, stats, load)
+    clock.now += 100  # the stale value expires while the waiter waits
+    executor.cancel_all()
+    wait_for(lambda: bool(out))
+    assert isinstance(out[0], ProviderError)

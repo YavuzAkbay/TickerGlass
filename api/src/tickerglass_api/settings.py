@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     cache_max_entries: int = 4096
     #: How long an unknown symbol is remembered as unknown.
     cache_negative_ttl_s: float = 3600
+    #: Same for symbols missing from a quote answer (shorter: a glitch may drop rows).
+    quote_negative_ttl_s: float = 300
+    #: After a failed v7 quote request, how long quotes use the daily-bar fallback instead
+    #: (small batches only; larger ones are served stale or fail).
+    quote_v7_retry_s: float = 300
 
     # Bar tail refresh (services/bars.py, services/sessions.py), seconds.
     #: Intraday tail TTL while the market is open.
