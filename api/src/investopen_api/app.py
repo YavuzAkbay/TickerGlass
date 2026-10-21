@@ -16,7 +16,13 @@ from . import __version__
 from .db import make_engine, run_migrations
 from .live import LiveHub, LiveSource, Poller, provider_poller
 from .notifications.dispatcher import Dispatcher
-from .providers.base import MarketDataProvider, ProviderError, SymbolNotFound
+from .providers.base import (
+    MarketDataProvider,
+    ProviderError,
+    RateLimited,
+    SymbolNotFound,
+    UpstreamUnavailable,
+)
 from .routes import (
     alerts,
     bars,
@@ -113,6 +119,18 @@ def create_app(
     @app.exception_handler(SymbolNotFound)
     async def _not_found(_: Request, exc: SymbolNotFound) -> JSONResponse:
         return JSONResponse({"detail": f"symbol not found: {exc}"}, status_code=404)
+
+    @app.exception_handler(RateLimited)
+    async def _rate_limited(_: Request, exc: RateLimited) -> JSONResponse:
+        return JSONResponse(
+            {"detail": str(exc)},
+            status_code=429,
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+
+    @app.exception_handler(UpstreamUnavailable)
+    async def _unavailable(_: Request, exc: UpstreamUnavailable) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=503)
 
     @app.exception_handler(ProviderError)
     async def _upstream(_: Request, exc: ProviderError) -> JSONResponse:

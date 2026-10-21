@@ -11,6 +11,18 @@ class ProviderError(Exception):
     """Upstream data source failed (network, rate limit, unexpected payload)."""
 
 
+class RateLimited(ProviderError):
+    """Upstream kept refusing after retries; `retry_after` is a hint in seconds."""
+
+    def __init__(self, message: str, retry_after: int) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class UpstreamUnavailable(ProviderError):
+    """Upstream could not be reached (connection failure or timeout)."""
+
+
 class PartialQuotes(ProviderError):
     """Some request chunks failed: `quotes` holds what succeeded, `failed` the symbols
     whose chunk failed (their absence means "unknown", not "no such symbol")."""
