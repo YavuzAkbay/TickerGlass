@@ -1,6 +1,7 @@
 import asyncio
 import math
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -97,7 +98,16 @@ def create_app(
         app.state.provider = prov
         app.state.bar_service = BarService(engine, prov, stats=stats)
         app.state.symbol_service = SymbolService(engine, prov)
-        app.state.market_service = MarketService(prov)
+        # Background refreshes of stale cache entries, shared by every in-memory cache.
+        refresher = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cache-refresh")
+        app.state.cache_refresher = refresher
+        app.state.market_service = MarketService(
+            prov,
+            settings=settings,
+            stats=stats,
+            refresher=refresher,
+            background=guard.background,
+        )
         source = live_source
         if source is None:
             from .providers.yahoo_live import YahooLiveSource
@@ -119,6 +129,8 @@ def create_app(
         yield
         await dispatcher.stop()
         await app.state.live_hub.close()
+        # Queued refreshes are dropped; a running one finishes on its own thread.
+        refresher.shutdown(wait=False, cancel_futures=True)
         engine.dispose()
 
     app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
