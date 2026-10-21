@@ -27,7 +27,7 @@ function commitGrid(templateId: string | null, change: TemplateChange): void {
   useLayoutGrid.setState((s) => {
     const slots = { ...s.slots };
     for (const id of change.removed) delete slots[id];
-    return { template: templateId, grid: change.grid, slots };
+    return { template: templateId, grid: change.grid, slots, maximizedId: null };
   });
 }
 
@@ -112,3 +112,13 @@ export function focusStep(dir: 1 | -1): void {
   );
   if (next !== null) setActiveChart(next);
 }
+
+/** Maximize the focused chart over the whole grid, or restore the grid if one is maximized. */
+export function toggleMaximize(): void {
+  const { activeId } = useChartStore.getState();
+  useLayoutGrid.setState((s) => ({
+    maximizedId: s.maximizedId !== null || activeId === null ? null : activeId,
+  }));
+}
+
+export const isMaximized = (): boolean => useLayoutGrid.getState().maximizedId !== null;

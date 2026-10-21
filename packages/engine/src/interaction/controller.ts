@@ -30,6 +30,78 @@ type Drag =
   /** A drawing gesture owns the pointer (creation, select press, drag). */
   | { kind: 'drawing' };
 
+/** A built-in chart-navigation key (handled by the chart when it has focus). */
+export interface KeyBinding {
+  /** Display label, e.g. "Left / Right". */
+  key: string;
+  description: string;
+  group: string;
+}
+
+interface NavKey extends KeyBinding {
+  /** KeyboardEvent.key values that trigger it. */
+  keys: readonly string[];
+  /** Only plain Alt+key (Shift+Alt+R is an app shortcut: replay). */
+  noAlt?: boolean;
+  run(chart: Chart, shift: boolean): void;
+}
+
+const NAV_GROUP = 'Chart navigation';
+const panStep = (chart: Chart, shift: boolean) => chart.timeScale.barSpacing * (shift ? 10 : 1);
+
+/** The single source of truth for the keys below; the shortcuts help lists `KEY_BINDINGS`. */
+const NAV_KEYS: readonly NavKey[] = [
+  {
+    keys: ['ArrowLeft'],
+    key: 'Left',
+    description: 'Scroll back one bar (Shift: ten bars)',
+    group: NAV_GROUP,
+    run: (c, shift) => c.timeScale.pan(panStep(c, shift)),
+  },
+  {
+    keys: ['ArrowRight'],
+    key: 'Right',
+    description: 'Scroll forward one bar (Shift: ten bars)',
+    group: NAV_GROUP,
+    run: (c, shift) => c.timeScale.pan(-panStep(c, shift)),
+  },
+  {
+    keys: ['ArrowUp', '+', '='],
+    key: 'Up or +',
+    description: 'Zoom in',
+    group: NAV_GROUP,
+    run: (c) => c.timeScale.zoom(c.paneWidth, 1.2),
+  },
+  {
+    keys: ['ArrowDown', '-'],
+    key: 'Down or -',
+    description: 'Zoom out',
+    group: NAV_GROUP,
+    run: (c) => c.timeScale.zoom(c.paneWidth, 1 / 1.2),
+  },
+  {
+    keys: ['End'],
+    key: 'End',
+    description: 'Jump to the latest bar',
+    group: NAV_GROUP,
+    run: (c) => c.scrollToRealtime(),
+  },
+  {
+    keys: ['r', 'R'],
+    key: 'Alt+R',
+    description: 'Reset the chart view',
+    group: NAV_GROUP,
+    noAlt: true,
+    run: (c) => c.resetView(),
+  },
+];
+
+export const KEY_BINDINGS: readonly KeyBinding[] = NAV_KEYS.map(({ key, description, group }) => ({
+  key,
+  description,
+  group,
+}));
+
 /** Mouse, touch, wheel and keyboard handling for a Chart. */
 export class InteractionController {
   private drag: Drag | null = null;
@@ -309,36 +381,10 @@ export class InteractionController {
     }
     // Alt+arrows belong to the app (e.g. replay shortcuts), not to panning/zooming.
     if (e.altKey && e.key.startsWith('Arrow')) return;
-    const ts = this.chart.timeScale;
-    const step = ts.barSpacing * (e.shiftKey ? 10 : 1);
-    switch (e.key) {
-      case 'ArrowLeft':
-        ts.pan(step);
-        break;
-      case 'ArrowRight':
-        ts.pan(-step);
-        break;
-      case 'ArrowUp':
-      case '+':
-      case '=':
-        ts.zoom(this.chart.paneWidth, 1.2);
-        break;
-      case 'ArrowDown':
-      case '-':
-        ts.zoom(this.chart.paneWidth, 1 / 1.2);
-        break;
-      case 'End':
-        this.chart.scrollToRealtime();
-        break;
-      case 'r':
-      case 'R':
-        // Shift+Alt+R is an app shortcut (replay): only plain Alt+R resets the view.
-        if (!e.altKey || e.shiftKey) return;
-        this.chart.resetView();
-        break;
-      default:
-        return;
-    }
+    const binding = NAV_KEYS.find((k) => k.keys.includes(e.key));
+    if (!binding) return;
+    if (binding.noAlt && (!e.altKey || e.shiftKey)) return;
+    binding.run(this.chart, e.shiftKey);
     e.preventDefault();
     this.chart.viewChanged('user');
     this.chart.viewSettled();

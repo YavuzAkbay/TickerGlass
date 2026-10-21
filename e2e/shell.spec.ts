@@ -71,3 +71,82 @@ test('dock panel opens in the bottom dock', async ({ page }) => {
   await page.getByRole('button', { name: 'Notes' }).first().click();
   await expect(page.locator('.dock textarea')).toBeVisible();
 });
+
+test('? opens the shortcut help with chart navigation keys', async ({ page }) => {
+  await page.locator('.chart-area').click();
+  await page.keyboard.press('Shift+?');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Chart navigation')).toBeVisible();
+  await expect(dialog.getByText('Jump to the latest bar')).toBeVisible();
+  await expect(dialog.getByText('Keyboard shortcuts').first()).toBeVisible();
+});
+
+test('? typed into an input does not open the help', async ({ page }) => {
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+  await page.keyboard.type('?');
+  await expect(page.getByRole('dialog').getByText('Chart navigation')).toHaveCount(0);
+});
+
+const imageSize = async (path: string) => {
+  const { readFile } = await import('node:fs/promises');
+  const buf = await readFile(path);
+  return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+};
+
+async function runCommand(page: import('@playwright/test').Page, query: string) {
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+  await page.keyboard.type(query);
+  await page.keyboard.press('Enter');
+}
+
+test('screenshot downloads a PNG named symbol_interval_stamp', async ({ page }) => {
+  const download = page.waitForEvent('download');
+  await runCommand(page, 'Download chart image');
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^[\w.^=-]+_1D_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.png$/);
+});
+
+test('layout screenshot of two charts is wider than a single chart image', async ({ page }) => {
+  await page.getByRole('button', { name: 'Chart layout', exact: true }).click();
+  await page.locator('[data-template="2c"]').click();
+  await expect(page.locator('.chart-cell')).toHaveCount(2);
+  await page
+    .locator('.chart-cell')
+    .nth(0)
+    .locator('.chart-host')
+    .click({ position: { x: 120, y: 100 } });
+
+  let download = page.waitForEvent('download');
+  await runCommand(page, 'Download chart image');
+  const single = await imageSize((await (await download).path())!);
+
+  download = page.waitForEvent('download');
+  await runCommand(page, 'Download layout image');
+  const layout = await imageSize((await (await download).path())!);
+  expect(layout.w).toBeGreaterThan(single.w * 1.5);
+});
+
+test('Alt+Enter maximizes the focused chart and Escape restores', async ({ page }) => {
+  await page.getByRole('button', { name: 'Chart layout', exact: true }).click();
+  await page.locator('[data-template="2c"]').click();
+  await expect(page.locator('.chart-cell')).toHaveCount(2);
+  await page
+    .locator('.chart-cell')
+    .nth(1)
+    .locator('.chart-host')
+    .click({ position: { x: 120, y: 100 } });
+  const widths = () =>
+    page
+      .locator('.grid-cell')
+      .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+  const [before] = await widths();
+  await page.keyboard.press('Alt+Enter');
+  await expect(page.locator('.grid-cell[data-maximized]')).toHaveCount(1);
+  const max = await page
+    .locator('.grid-cell[data-maximized]')
+    .evaluate((e) => e.getBoundingClientRect().width);
+  expect(max).toBeGreaterThan(before! * 1.5);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.grid-cell[data-maximized]')).toHaveCount(0);
+});

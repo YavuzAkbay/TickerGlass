@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Chart } from '../chart';
-import { InteractionController } from './controller';
+import { InteractionController, KEY_BINDINGS } from './controller';
 
 type KeyListener = (e: unknown) => void;
 
@@ -123,5 +123,22 @@ describe('InteractionController view change causes', () => {
     b.fire('pointerdown', { clientX: 100, clientY: 490 });
     b.fire('pointermove', { clientX: 120, clientY: 490 });
     expect(b.chart.viewChanged.mock.calls).toEqual([['user']]);
+  });
+});
+
+describe('KEY_BINDINGS', () => {
+  it('describes the chart navigation keys', () => {
+    expect(KEY_BINDINGS.map((b) => b.key)).toEqual([
+      'Left',
+      'Right',
+      'Up or +',
+      'Down or -',
+      'End',
+      'Alt+R',
+    ]);
+    for (const b of KEY_BINDINGS) {
+      expect(b.description).not.toBe('');
+      expect(b.group).toBe('Chart navigation');
+    }
   });
 });

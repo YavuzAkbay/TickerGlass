@@ -290,7 +290,7 @@ Phase 14 notes:
 
 - [x] Chart settings dialog completeness: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
 - [x] Events on chart: dividends, splits, earnings markers with tooltips
-- [ ] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
+- [x] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
 - [ ] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
 - [ ] Accessibility basics, i18n scaffolding
 - [ ] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
@@ -302,6 +302,7 @@ Phase 15 notes:
 - Chart error states: the engine `error` event carries `{message, status?, retryAfter?}` (from `FeedError`, which parses `Retry-After`). `apps/web/src/chart/ChartError.tsx` overlays the failed chart cell (per-chart `session.info.error`): 404 names the symbol and opens symbol search, 429 counts down and reloads by itself, network/502/503 offer Retry. Classifier and delay in `errorState.ts`. e2e: `e2e/errors.spec.ts`.
 - VWAP event anchors: Earnings, Dividends and Splits reset the VWAP at the first bar at or after each event. The chart controller loads the symbol's events (same cache) only when such an instance exists, and sends them to the worker with the context (`BarsEnv.events`); only definitions declaring `usesEvents` receive them and recompute when they change. Expressions get no events; replay needs no clipping since resets only happen at bars. The alerts service has no events: there these anchors accumulate over the loaded bars ([LIMITATIONS.md](LIMITATIONS.md#alerts)).
 - Status line and Trading settings: `statusLine` is part of the per-chart view (`store/chartView.ts`, saved in the layout's `chartSettings`; layouts saved without it load with the defaults) and reaches the engine through `Chart.setLegendOptions` (`LegendOptions`: title mode, exchange, OHLC, bar change, volume, background); the indicator and compare legends read the title, input and value flags from it. Trading prefs (`replay/prefs.ts`, synced as `replay.trading`) switch the replay trade markers, the position line and the unrealized P&L in the position line label. e2e: `e2e/chart.spec.ts`.
+- Shortcuts and screenshots: the help dialog lists the engine's `KEY_BINDINGS` (the table that also drives chart navigation keys) next to every command shortcut, `?` opens it. `chart.screenshotLayout` composites every chart cell by its grid rectangle with a footer (symbols, intervals, UTC time); files are named `<symbol>_<interval>_<YYYY-MM-DD_HH-mm>.png` (UTC). `Alt+Enter` maximizes the focused chart within the layout, Escape restores. Code: `apps/web/src/chart/screenshot.ts`.
 
 ### Phase 16: AI analysis integration point (feature built separately)
 
