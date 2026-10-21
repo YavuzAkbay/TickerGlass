@@ -3,6 +3,7 @@
 // (computation), fetches higher-timeframe series and routes results.
 import {
   intervalSeconds,
+  isExpressionSymbol,
   parseInterval,
   type Bar,
   type BarColumns,
@@ -23,7 +24,10 @@ import {
   isUserScriptType,
   resolveIndicatorId,
   resolveOutputs,
+  coerceInputs,
+  usesEvents,
   type AnyIndicatorDefinition,
+  type BarsEvents,
   type InstanceStatus,
   type RuntimeContext,
 } from '@investopen/indicators';
@@ -37,6 +41,7 @@ import {
 import { BRICK_MESSAGE, ExternalSymbols } from './external';
 import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './sandbox/limits';
 import { userScriptProblem } from '../scripts/definitions';
+import type { EventsResponse } from '../events/api';
 import type { FromWorker, ToWorker } from './protocol';
 import type { StoreApi } from 'zustand/vanilla';
 import type { IndicatorRuntimeState } from './store';
@@ -96,6 +101,11 @@ export interface ControllerOptions {
   chartType?: () => ChartType;
   /** Bumps whenever fetched data must be refetched (replay start/seek/stop). Default: constant. */
   dataEpoch?: () => number;
+  /**
+   * The symbol's dividends, splits and earnings, for indicators that reset at
+   * events (VWAP anchors). Default: none (such indicators get no events).
+   */
+  loadEvents?: (symbol: string) => Promise<EventsResponse>;
 }
 
 interface Applied {
@@ -124,6 +134,21 @@ const TF_MAX_BARS = 5000;
 const MAX_RESYNCS = 3;
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Event times by kind from an events response. Times past the last bar never
+ * reset anything (resets happen at bars), so during replay future events have
+ * no effect without being clipped here.
+ */
+export function eventTimesOf(res: EventsResponse): BarsEvents {
+  const times = (list: readonly { t: number }[] | undefined) =>
+    (list ?? []).map((e) => e.t).filter((t) => typeof t === 'number' && Number.isFinite(t));
+  return {
+    dividends: times(res.dividends),
+    splits: times(res.splits),
+    earnings: times(res.earnings),
+  };
+}
 
 /** Interval in seconds, 0 when the string does not parse. */
 export function secondsOf(interval: string): number {
@@ -194,6 +219,12 @@ export class IndicatorController {
   private resyncs = 0;
   /** A fatal worker error was reported: no more resyncs, no repeated toasts. */
   private failed = false;
+  /** Symbol whose events are loaded or loading (null: none requested). */
+  private eventsSymbol: string | null = null;
+  /** Its events once loaded (sent with the context). */
+  private events: BarsEvents | null = null;
+  /** Bumped per events request; stale responses are dropped. */
+  private eventsToken = 0;
 
   constructor(private readonly opts: ControllerOptions) {
     this.chart = opts.chart;
@@ -327,6 +358,7 @@ export class IndicatorController {
         this.engine(() => this.chart.updateStudySpec(inst.id, { priceScale: next.priceScale }));
       this.applied.set(inst.id, next);
     }
+    this.ensureEvents();
   }
 
   // ------------------------------------------------------------- instances
@@ -512,6 +544,9 @@ export class IndicatorController {
       this.worker.post({ type: 'clear' });
       this.dropTimeframes();
     }
+    // The new symbol's events go out with a later context; the old ones are dropped now.
+    if (this.eventsSymbol !== null && this.eventsSymbol !== symbol) this.dropEvents();
+    this.ensureEvents();
     const epoch = this.opts.dataEpoch?.() ?? 0;
     if (epoch !== this.dataEpoch) {
       // Replay started, seeked or stopped: timeframe series hold stale (or future) data.
@@ -581,11 +616,52 @@ export class IndicatorController {
       session: info?.session ?? null,
       intervalSeconds: secondsOf(this.chart.getInterval()),
       timeframeSeconds,
+      events: this.events,
     };
     const key = JSON.stringify(context);
     if (key === this.contextKey) return null;
     this.contextKey = key;
     return context;
+  }
+
+  // ---------------------------------------------------------------- events
+
+  /** Some instance resets at events (e.g. VWAP anchored to earnings). */
+  private needsEvents(): boolean {
+    return this.list.some((inst) => {
+      const def = getIndicator(inst.type);
+      return def !== undefined && usesEvents(def, coerceInputs(def, inst.inputs));
+    });
+  }
+
+  /** Load the chart symbol's events once an instance needs them; they reach the worker with the context. */
+  private ensureEvents(): void {
+    const load = this.opts.loadEvents;
+    if (!load || !this.needsEvents()) return;
+    const symbol = this.chart.getSymbol();
+    if (symbol === this.eventsSymbol) return;
+    this.dropEvents();
+    this.eventsSymbol = symbol;
+    // No events exist for an expression or spread.
+    if (isExpressionSymbol(symbol)) return;
+    const mine = this.eventsToken;
+    load(symbol).then(
+      (res) => {
+        if (mine !== this.eventsToken || this.destroyed) return;
+        this.events = eventTimesOf(res);
+        this.sendContext();
+      },
+      () => {
+        // Unknown symbol or provider down: event anchors accumulate over the whole
+        // series (the chart's event markers and the Details panel show the error).
+      },
+    );
+  }
+
+  private dropEvents(): void {
+    this.eventsToken++;
+    this.eventsSymbol = null;
+    this.events = null;
   }
 
   private dropTimeframes(): void {

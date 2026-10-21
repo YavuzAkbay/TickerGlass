@@ -512,6 +512,12 @@ export interface IndicatorDefinition<
    */
   warmup?: IndicatorWarmup<S>;
   /**
+   * The values read `env.events` (VWAP's Earnings/Dividends/Splits anchors).
+   * Only such instances receive the chart symbol's events, and only they
+   * recompute when the events change. Omit for false.
+   */
+  usesEvents?: FromInputs<S, boolean>;
+  /**
    * Called once per full computation. Create every stateful primitive here
    * through `ctx.ta`; never keep mutable state in closure variables (it would
    * not be rewound when the last bar is re-run). Returns the per-bar step.
@@ -524,7 +530,8 @@ export type IndicatorWarmup<S extends InputsSchema = InputsSchema> =
 
 /**
  * Facts about the bars an instance runs on, provided by the host
- * (`IndicatorRuntime.setContext`). Changing them recomputes every instance.
+ * (`IndicatorRuntime.setContext`). Changing them recomputes every instance
+ * (events: only instances that use them).
  */
 export interface BarsEnv {
   /** IANA exchange timezone for calendar periods (VWAP anchors); 'UTC' when unknown. */
@@ -537,6 +544,19 @@ export interface BarsEnv {
    * interval of the time bars they were built from.
    */
   intervalSeconds: number;
+  /**
+   * Corporate event times of the symbol (unix seconds, sorted ascending, same
+   * unit as bar times), only for definitions that declare `usesEvents`.
+   * Absent = unknown (no events loaded, or a host without them).
+   */
+  events?: BarsEvents;
+}
+
+/** Event times by kind (unix seconds, sorted ascending). */
+export interface BarsEvents {
+  readonly dividends: readonly number[];
+  readonly splits: readonly number[];
+  readonly earnings: readonly number[];
 }
 
 export interface SetupContext<S extends InputsSchema> {

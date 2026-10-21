@@ -10,7 +10,10 @@ import type {
 export type ToWorker =
   /** Raw timeframe input value -> resolved ('' = chart bars). */
   | { type: 'timeframeMap'; map: Record<string, string> }
-  /** Exchange timezone/session and bar intervals (symbol/interval change); recomputes as needed. */
+  /**
+   * Exchange timezone/session and bar intervals (symbol/interval change) and the
+   * symbol's event times (null = none; event-anchored VWAP); recomputes as needed.
+   */
   | { type: 'context'; context: RuntimeContext }
   | { type: 'add'; spec: InstanceSpec }
   | { type: 'setInputs'; id: string; inputs: InputValueMap }

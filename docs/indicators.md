@@ -83,13 +83,18 @@ export const SMA = defineIndicator({
 reused context: `c.i`, OHLCV arrays, `c.src.<sourceInput>`, `c.inputs`, `c.env`, `c.set`, `c.setColor`,
 `c.get(id, j<i)` (own earlier outputs). `env` (also in `setup`'s context, additive) is the host's `BarsEnv`:
 `timezone` (IANA exchange zone, `'UTC'` when unknown), `session` (`"HHMM-HHMM"` or null) and
-`intervalSeconds` (0 = unknown; timeframe instances get their timeframe's seconds). Period-anchored
+`intervalSeconds` (0 = unknown; timeframe instances get their timeframe's seconds), plus `events`
+(`{dividends, splits, earnings}` unix-second times, sorted) only for definitions that declare `usesEvents`
+(a bool or a function of the inputs); a change of events recomputes only those. Period-anchored
 indicators use `calendarPeriod(time, unit, tz, session)` (`session|week|month|quarter|year|decade|century`;
 `session` = exchange calendar day, or the trading day of a session that wraps midnight, e.g. futures
 18:00-17:00; weeks, months, quarters and years of such a session also start at the session open, so a Sunday
 18:00 open begins the new week; weeks start Monday). Zone offsets are cached per 15 UTC minutes (half-hour
 DST zones such as Australia/Lord_Howe). VWAP: anchors Session/Week/Month/Quarter/Year/Decade/Century in the
-exchange timezone and "Hide VWAP on 1D or Above" (`env.intervalSeconds >= 1D`). OBV: "Smoothing" (None,
+exchange timezone, Earnings/Dividends/Splits anchors (reset at the first bar at or after each event; an
+event in a gap resets at the next bar, several in one bar reset once; before the first event, or without
+event data, the VWAP accumulates from the series start) and "Hide VWAP on 1D or Above"
+(`env.intervalSeconds >= 1D`). OBV: "Smoothing" (None,
 SMA, SMA + Bollinger Bands, EMA, SMMA (RMA), WMA, VWMA; length, BB StdDev). Unset outputs are NaN for the bar. All running state lives in `ta` primitives created in
 `setup` (`sma ema rma wma vwma sum stdev dev highest lowest history vars series`; Phase 12 adds `cum()`,
 `highestBars(n)` / `lowestBars(n)` (offset <= 0 of the extreme within the last n values, ties = most recent),

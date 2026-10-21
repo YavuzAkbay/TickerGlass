@@ -60,8 +60,8 @@ export {
 };
 export { MA_TYPES } from './common';
 export type { MaType } from './common';
-export { anchorPeriod, VWAP_ANCHORS } from './vwap';
-export type { VwapAnchor } from './vwap';
+export { anchorPeriod, VWAP_ANCHORS, VWAP_EVENT_ANCHORS } from './vwap';
+export type { VwapAnchor, VwapEventAnchor } from './vwap';
 export * from './groups/external';
 export * from './groups/momentum';
 export * from './groups/other';

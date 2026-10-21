@@ -1,5 +1,6 @@
 import type { DataFeed } from '@investopen/engine';
 import { replayFeed } from '../chart/feed';
+import { fetchEvents } from '../events/api';
 import { syncScriptDefinitions } from '../scripts/definitions';
 import { useScriptsStore } from '../scripts/store';
 import type { ChartSession } from '../chart/session';
@@ -37,6 +38,7 @@ export function attachIndicators(session: ChartSession, feed: DataFeed): () => v
     prepost: () => session.view.getState().prepost,
     chartType: () => session.view.getState().chartType,
     dataEpoch: () => replayFeed.epoch,
+    loadEvents: fetchEvents,
   });
   ctl.setHidden(indicatorsHidden(useUiStore.getState()));
   // The chart shows settings-dialog previews too (they are not persisted).
