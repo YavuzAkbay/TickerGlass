@@ -324,6 +324,40 @@ describe('session-aware extrapolation past the last bar', () => {
       for (let j = 0; j < 30; j++) expect(cal.step(last, 1 + 7 * j)).toBe(future[j]! + 14.5 * H);
     });
 
+    /** The `count`-th plain weekday (no holidays) after UTC midnight `t`. */
+    const plusWeekdays = (t: number, count: number) => {
+      let d = t;
+      for (let left = count; left > 0;) {
+        d += D;
+        const wd = new Date(d * 1000).getUTCDay();
+        if (wd !== 0 && wd !== 6) left--;
+      }
+      return d;
+    };
+
+    it.each([2, 3])('learns no holidays from %iD bars (missing weekdays are not closures)', (n) => {
+      // Every n-th session of the schedule, as a resampled multi-day chart has.
+      const bars = history.filter((_, i) => (history.length - 1 - i) % n === 0);
+      const iv: Interval = { unit: 'day', count: n };
+      const tl = withCalendar(bars, iv);
+      const last = bars.at(-1)!;
+      for (let k = 1; k <= 400; k++)
+        expect(logicalToTime(tl, bars.length - 1 + k)).toEqual({
+          time: plusWeekdays(last, n * k),
+        });
+    });
+
+    it('learns no holidays from sparse intraday bars', () => {
+      // Thin trading: a quarter of the sessions have no hourly bar at all.
+      const thin = history.filter((_, i) => (i * 7919) % 4 !== 0);
+      const bars = thin.flatMap((d) => Array.from({ length: 7 }, (_, k) => d + 14.5 * H + k * H));
+      const cal = buildTradingCalendar(Float64Array.from(bars), bars.length, HOUR, 'UTC')!;
+      const last = bars.at(-1)!;
+      const lastDay = Math.floor(last / D) * D;
+      for (let j = 0; j < 300; j++)
+        expect(cal.step(last, 1 + 7 * j)).toBe(plusWeekdays(lastDay, j + 1) + 14.5 * H);
+    });
+
     it('learns nothing from complete data or less than a year of it', () => {
       const plain = dailyBars(600); // every weekday for over two years
       const tl = withCalendar(plain, DAY);

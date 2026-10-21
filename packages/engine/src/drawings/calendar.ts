@@ -14,6 +14,14 @@ const MIN_FULL_DAYS = 2;
 const HOLIDAY_YEARS = 5;
 /** Occurrences (all missing) a holiday rule needs before it is trusted. */
 const MIN_HOLIDAY_SEEN = 2;
+/**
+ * Share of weekdays (non-holiday and holiday) in the window that must have
+ * bars before missing weekdays are read as closures. Exchanges close on at most
+ * about 20 weekdays a year (>= 92% coverage); thinly traded symbols whose bars
+ * skip quiet days fall below it, and a day missing by chance would otherwise be
+ * learned whenever its few yearly occurrences all happened to be quiet.
+ */
+const MIN_WEEKDAY_COVERAGE = 0.9;
 /** Easter-relative offsets (days) considered: Carnival (-48) .. Corpus Christi (+60). */
 const EASTER_MIN = -50;
 const EASTER_MAX = 60;
@@ -191,7 +199,9 @@ function learned(t: Tally): Set<number> {
  * from other calendars (lunar new year) are not learned. A rule needs two
  * weekday occurrences, so in practice two to five years of daily or hourly
  * bars; short intraday histories learn nothing. Gaps inside the data need no
- * rules: anchors there map to bars.
+ * rules: anchors there map to bars. Only for intraday or 1-day bars (multi-day
+ * bars leave most weekdays without a bar), and nothing is learned when under
+ * MIN_WEEKDAY_COVERAGE of the window's weekdays have bars (sparse data).
  */
 function learnHolidays(
   conv: TzConverter,
@@ -223,6 +233,15 @@ function learnHolidays(
   }
   if (Number.isNaN(firstDay)) return null;
   const has = (day: number) => day >= firstDay && day <= lastDay && present[day - firstDay] === 1;
+  let weekdays = 0;
+  let covered = 0;
+  for (let day = firstDay; day <= lastDay; day++) {
+    const wd = weekday(day);
+    if (!weekends && (wd === 0 || wd === 6)) continue;
+    weekdays++;
+    if (has(day)) covered++;
+  }
+  if (covered < MIN_WEEKDAY_COVERAGE * weekdays) return null;
   const fixed: Tally = new Map();
   const nth: Tally = new Map();
   const easter: Tally = new Map();
@@ -320,9 +339,12 @@ export function buildTradingCalendar(
     } else lasts[lasts.length - 1] = tod;
   }
   if (iv >= DAY) {
-    const holidays = learnHolidays(conv, time, length, weekends);
+    const count = Math.max(1, Math.round(iv / DAY));
+    // Multi-day bars (2D, 3D) leave weekdays without a bar that are not
+    // closures, and the 1-day source bars are not available here: learn none.
+    const holidays = count === 1 ? learnHolidays(conv, time, length, weekends) : null;
     const s: Shape = { tz: conv, iv, weekends, dayStart: 0, perDay: 0, holidays };
-    return dailyCalendar(s, Math.max(1, Math.round(iv / DAY)));
+    return dailyCalendar(s, count);
   }
   let dayStart: number;
   let span: number;
