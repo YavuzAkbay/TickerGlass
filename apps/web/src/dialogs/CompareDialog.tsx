@@ -164,7 +164,7 @@ export default function CompareDialog({ onClose }: { onClose: () => void; arg?: 
         <Layers size={40} strokeWidth={1.2} className="dlg-emptystate-icon" />
         <h3>Compare symbols</h3>
         <p>Overlay other symbols on this chart to compare performance.</p>
-        <p className="dlg-emptystate-phase">
+        <p className="dlg-emptystate-hint">
           Type a ticker, or an expression such as <b>AAPL/MSFT</b> or <b>(AAPL+MSFT)/2</b>.
         </p>
       </div>

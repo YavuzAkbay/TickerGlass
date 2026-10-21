@@ -24,7 +24,7 @@ export interface StatusLineSettings {
 
 export const DEFAULT_STATUS_LINE: StatusLineSettings = {
   title: 'ticker',
-  exchange: true,
+  exchange: false,
   ohlc: true,
   barChange: true,
   volume: true,

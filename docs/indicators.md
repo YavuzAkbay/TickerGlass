@@ -30,7 +30,7 @@ export const SMA = defineIndicator({
       id: 'ma',
       title: 'MA',
       kind: 'line',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       offset: (i) => i.offset,
     },
   ],
@@ -447,16 +447,3 @@ transform's volume column. Timeframe alignment uses brick times (non-decreasing)
   value anywhere instead of at the last bar, `noValues`: all NaN expected).
 - `test/repaint.test.ts` covers `setAt` with a test-only ZigZag (ticks moving pivots back and forth,
   appends, `Change.from`, dependents).
-
-## 9. Work split (follow-up agents)
-
-| Agent            | Owns (create/modify)                                                                                                                                                                                                                                                                                                                                                                                                         | Must not touch                               |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| **A** indicators | `packages/indicators/src/builtins/**` (one file per indicator, registered in `builtins/index.ts`), `src/ta.ts` and the `Ta` interface (add primitives, e.g. `wma`, `vwma`, `change`, `atr`, `crossover`), `scripts/golden.py`, `test/**`, package `package.json`/tsconfig for tests                                                                                                                                          | runtime/instance semantics, engine, apps/web |
-| **B** engine     | `packages/engine/src/studies/**` (renderers, study store, hit testing; `types.ts` additive only), `chart.ts` (StudyApi, `seriesRevision`, `seriesChange` emission incl. brick/HA logic, legend slot, offsets past the last bar, study autoscale/scaleRange), `pane.ts`, `render/**` as needed, engine tests                                                                                                                  | indicators package, apps/web                 |
-| **C** web        | `apps/web/src/indicators/**` (worker, client, results cache, tf fetching/subscriptions, auto-tf table, `contract.ts`), `dialogs/IndicatorsDialog.tsx` (search, categories, favorites), new settings dialog (Inputs / Style / Visibility-per-interval tabs generated from the schema, defaults, "Save as default"), legend row (eye/settings/source/remove/more) via `getLegendSlot`, store/commands/context-menu wiring, e2e | engine and indicators internals              |
-
-Core 25 (A): SMA, EMA, WMA, VWMA, HMA, VWAP, Anchored VWAP, Bollinger, Keltner, Donchian, Ichimoku, Parabolic
-SAR, Supertrend, RSI, MACD, Stochastic, Stoch RSI, CCI, ATR, ADX/DMI, OBV, MFI, Williams %R, Volume, Pivot
-Points Standard (`timeframe` input, default `'auto'`). Until B lands, C can develop against a stub that logs
-`StudyApi` calls; until A lands, C uses SMA/EMA.

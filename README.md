@@ -5,7 +5,7 @@ It aims for feature parity with professional charting tools: multiple chart type
 tools, indicators, compare, alerts, watchlists (with a plain-text import/export, see [docs/watchlists.md](docs/watchlists.md)), templates, and market replay. Market data
 comes from Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance).
 
-> **Status:** early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for progress.
+> **Status:** feature-complete for the planned scope. Known limitations: [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 
 ## Disclaimer
 

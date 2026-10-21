@@ -33,6 +33,13 @@
 }
 .sh-name {
   min-width: 0;
+  padding: 2px 4px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--muted);
@@ -60,4 +67,12 @@
 }
 .sh-stat-label {
   color: var(--muted);
+}
+
+.sh-name:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.sh-name:focus-visible {
+  outline: var(--focus-ring);
 }

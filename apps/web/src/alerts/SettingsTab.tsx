@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { errorMessage } from '../api/client';
 import * as alertsApi from '../api/alerts';
 import type { AlertChannels } from '../api/alerts';
-import { Check, Row, Section } from '../dialogs/controls';
+import { Row, Section, Setting } from '../dialogs/controls';
 import { toast } from '../ui/Toast';
 import { browserPermission, requestBrowserPermission, type NotifPermission } from './notify';
 import { SOUND_NAMES, useAlertPrefs, type SoundName } from './prefs';
@@ -14,7 +14,7 @@ const CHANNELS = ['webhook', 'telegram', 'email'] as const;
 const PERMISSION_TEXT: Record<NotifPermission, string> = {
   granted: 'Allowed',
   default: 'Not asked yet',
-  denied: 'Blocked in the browser settings for this site',
+  denied: 'Blocked by the browser',
   unsupported: 'Not supported by this browser',
 };
 
@@ -51,12 +51,12 @@ export function AlertsSettingsTab() {
   return (
     <>
       <Section title="On the chart">
-        <Check
+        <Setting
           checked={prefs.lines}
           label="Show lines for active price alerts"
           onChange={(lines) => prefs.set({ lines })}
         />
-        <Check
+        <Setting
           checked={prefs.markers}
           label="Show markers for fired alerts"
           onChange={(markers) => prefs.set({ markers })}
@@ -96,7 +96,7 @@ export function AlertsSettingsTab() {
             onChange={(e) => prefs.set({ volume: Number(e.target.value) / 100 })}
           />
         </Row>
-        <Row label="Hide toasts after (s, 0 = keep)" htmlFor="set-alert-toast">
+        <Row label="Hide toasts after" htmlFor="set-alert-toast">
           <input
             id="set-alert-toast"
             type="number"
@@ -109,6 +109,7 @@ export function AlertsSettingsTab() {
               if (Number.isFinite(s)) prefs.set({ toastMs: s * 1000 });
             }}
           />
+          <span className="dlg-number-suffix">seconds (0 keeps them)</span>
         </Row>
         <Row label="Browser notifications">
           <span>{PERMISSION_TEXT[permission]}</span>
