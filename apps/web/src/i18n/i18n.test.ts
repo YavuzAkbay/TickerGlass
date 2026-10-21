@@ -15,7 +15,7 @@ describe('translate', () => {
     expect(translate('en', 'chart.label', { symbol: 'AAPL', interval: '1D' })).toBe(
       'Chart: AAPL, 1D',
     );
-    expect(translate('en', 'dock.unread', { count: 3 })).toBe('3 unread');
+    expect(translate('en', 'nav.unread', { count: 3 })).toBe('3 unread');
   });
 
   it('keeps placeholders without a parameter', () => {
@@ -33,7 +33,7 @@ describe('translate', () => {
 describe('t', () => {
   it('uses the locale from the ui store', () => {
     expect(useUiStore.getState().locale).toBe('en');
-    expect(t('dock.watchlist')).toBe('Watchlist');
+    expect(t('nav.watchlist')).toBe('Watchlist');
   });
 });
 

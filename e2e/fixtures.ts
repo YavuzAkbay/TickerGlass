@@ -8,6 +8,18 @@ import { test as base, expect } from '@playwright/test';
 import { MockServer, mockPersistence } from './persistence';
 
 export const test = base.extend<{ server: MockServer }>({
+  // Start with the Navigator collapsed so coordinate-based specs get the full chart width.
+  // Seeds only a fresh profile; specs that clear storage and reload keep this default.
+  page: async ({ page }, use) => {
+    await page.addInitScript(() => {
+      if (localStorage.getItem('investopen-ui') !== null) return;
+      localStorage.setItem(
+        'investopen-ui',
+        JSON.stringify({ state: { navOpen: false, navSection: 'watchlist' }, version: 3 }),
+      );
+    });
+    await use(page);
+  },
   server: [
     async ({ page }, use) => {
       const server = new MockServer();

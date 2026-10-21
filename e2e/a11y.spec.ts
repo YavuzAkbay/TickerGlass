@@ -71,24 +71,25 @@ test('a re-rendering parent does not take Escape or Tab from the nested modal', 
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
 });
 
-test('dock tabs use tablist semantics and arrow keys', async ({ page }) => {
+test('navigator tabs use tablist semantics and arrow keys', async ({ page }) => {
   await expect(page.getByRole('tablist', { name: 'Panels' })).toBeVisible();
-  const watchlist = page.getByRole('tab', { name: 'Watchlist' });
+  const panels = page.getByRole('tablist', { name: 'Panels' });
+  const watchlist = panels.getByRole('tab', { name: 'Watchlist' });
   await watchlist.click();
   await expect(watchlist).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tabpanel')).toBeVisible();
 
-  await page.keyboard.press('ArrowRight');
-  const details = page.getByRole('tab', { name: 'Details' });
-  await expect(details).toBeFocused();
-  await expect(details).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowDown');
+  const alerts = panels.getByRole('tab', { name: 'Alerts' });
+  await expect(alerts).toBeFocused();
+  await expect(alerts).toHaveAttribute('aria-selected', 'true');
   await expect(watchlist).toHaveAttribute('aria-selected', 'false');
-  await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Details');
+  await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Alerts');
 
-  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowUp');
   await expect(watchlist).toBeFocused();
-  await page.keyboard.press('ArrowLeft');
-  await expect(page.getByRole('tab', { name: 'Notes' })).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(panels.getByRole('tab', { name: 'Data window' })).toBeFocused();
   await page.keyboard.press('Home');
   await expect(watchlist).toBeFocused();
 });

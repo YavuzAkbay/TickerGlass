@@ -1,9 +1,9 @@
-/* App frame: command bar across the top, then chart pane with bottom dock, and the
+/* App frame: command bar across the top, then the navigator on the left, the chart pane, and the
    drawing tool rail on the right edge (collapsible to zero width). */
 .app {
   display: grid;
   grid-template-rows: 36px minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   height: 100vh;
   background: var(--border);
   gap: 1px;
@@ -22,7 +22,7 @@
 }
 
 .app-rail {
-  grid-area: 2 / 2 / 3 / 3;
+  grid-area: 2 / 3 / 3 / 4;
   display: flex;
   min-height: 0;
   overflow: hidden;
@@ -33,8 +33,12 @@
   display: none;
 }
 
-.center {
+.navigator {
   grid-area: 2 / 1 / 3 / 2;
+}
+
+.center {
+  grid-area: 2 / 2 / 3 / 3;
   display: flex;
   flex-direction: column;
   min-width: 0;

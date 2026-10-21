@@ -1,12 +1,12 @@
-/* Panel contents shared by the dock tabs. Dock frame styles live in dock/dock.css. */
+/* Panel contents shared by the Navigator sections. Frame styles live in navigator/navigator.css. */
 /* ---- shared bits ---- */
 .rs-num {
   font-variant-numeric: tabular-nums;
 }
-.dock .up {
+.navigator .up {
   color: var(--up);
 }
-.dock .down {
+.navigator .down {
   color: var(--down);
 }
 .rs-muted {

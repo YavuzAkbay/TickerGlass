@@ -11,7 +11,7 @@ import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
-import { Dock } from './dock/Dock';
+import { Navigator } from './navigator/Navigator';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
 import { ToolRail } from './toolbar/ToolRail';
@@ -64,6 +64,7 @@ export function App() {
       <header className="app-top">
         <TopBar />
       </header>
+      <Navigator />
       <main className="center">
         <div className="chart-pane">
           <div className="chart-area">
@@ -71,7 +72,6 @@ export function App() {
           </div>
           <RangeStrip />
         </div>
-        <Dock />
       </main>
       <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
         <ToolRail />
