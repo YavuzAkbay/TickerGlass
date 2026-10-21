@@ -97,7 +97,8 @@ session?)`), in the exchange timezone: weekends are skipped unless the newest 20
   and monthly intervals step plain intervals (months by calendar month). Recurring exchange
   holidays are learned from weekdays without bars in the newest 5 years of raw bars (fixed dates with their
   weekend observance, nth/last weekday of a month, days relative to Easter; each missing on every occurrence,
-  at least twice) and skipped; other holidays count as slots. Anchors created in the future area are whole slots.
+  at least twice) and skipped; other holidays count as slots. Only intraday and 1-day bars with bars on at least
+  90% of weekdays learn holidays (multi-day bars and sparse data learn none). Anchors created in the future area are whole slots.
 - **Before the first bar**: extrapolated back from the first bar; resolves exactly once history loads.
 - **Brick types** (Renko, Kagi, Line break, P&F, Range): the run of bricks at the last brick time `<= time`,
   offset by `brick` (position within bricks sharing a time). Up to `endTime` (newest raw bar) maps to the
