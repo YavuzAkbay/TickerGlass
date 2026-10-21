@@ -2,7 +2,7 @@ import { timeToLogical, type AnchorTimeline } from '../drawings/mapping';
 import type { ChartTheme } from '../options';
 import { font, roundRect } from './draw';
 
-export type ChartMarkerShape = 'bell' | 'circle' | 'arrowUp' | 'arrowDown';
+export type ChartMarkerShape = 'bell' | 'circle' | 'arrowUp' | 'arrowDown' | 'letter';
 export type ChartMarkerPosition = 'aboveBar' | 'belowBar' | 'price';
 
 /** A time-anchored mark on the main pane (alert fired, event, ...). */
@@ -15,6 +15,8 @@ export interface ChartMarker {
   price?: number;
   color: string;
   shape: ChartMarkerShape;
+  /** Badge text for `shape: 'letter'` (one or two characters). */
+  text?: string;
   tooltip?: string;
 }
 
@@ -45,8 +47,9 @@ export interface MarkerLayoutInput {
 /**
  * Places markers of every group. Culled: a marker whose bar is outside the
  * visible x range or whose y is outside the pane is dropped, as is an
- * above/below marker with no bar under it (outside the data) or a price marker
- * without a finite price. Markers on the same bar and side stack outward.
+ * above/below marker before the first bar or a price marker without a finite
+ * price. An above/below marker past the last bar (a future event) sits at the
+ * last bar's extreme. Markers on the same bar and side stack outward.
  */
 export function layoutMarkers(
   groups: ReadonlyMap<string, readonly ChartMarker[]>,
@@ -69,15 +72,17 @@ export function layoutMarkers(
         if (m.price === undefined || !Number.isFinite(m.price)) continue;
         y = inp.priceToY(m.price);
       } else {
-        if (index < 0 || index >= tl.length) continue;
+        if (index < 0) continue;
+        // Past the newest bar: stack on the newest bar's extreme.
+        const bar = Math.min(index, tl.length - 1);
         const key = `${index}|${m.position}`;
         const n = stacks.get(key) ?? 0;
         stacks.set(key, n + 1);
         const off = GAP + MARKER_SIZE / 2 + n * STACK_STEP;
         y =
           m.position === 'aboveBar'
-            ? inp.priceToY(inp.high[index]!) - off
-            : inp.priceToY(inp.low[index]!) + off;
+            ? inp.priceToY(inp.high[bar]!) - off
+            : inp.priceToY(inp.low[bar]!) + off;
       }
       if (!Number.isFinite(y) || y < -pad || y > inp.paneHeight + pad) continue;
       out.push({ group, marker: m, x, y });
@@ -108,11 +113,24 @@ export function drawGlyph(
   cy: number,
   size: number,
   color: string,
+  text?: string,
 ): void {
   const h = size / 2;
   ctx.fillStyle = color;
   ctx.beginPath();
   switch (shape) {
+    case 'letter':
+      // Rounded badge with a short label in the middle.
+      roundRect(ctx, cx - h, cy - h, size, size, 3);
+      ctx.fill();
+      if (text) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `600 ${Math.round(size * 0.65)}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, cx, cy + 0.5);
+      }
+      return;
     case 'circle':
       ctx.arc(cx, cy, h * 0.8, 0, Math.PI * 2);
       break;
@@ -160,7 +178,7 @@ export function drawGlyph(
 
 export function drawMarkers(ctx: CanvasRenderingContext2D, placed: readonly PlacedMarker[]): void {
   for (const p of placed) {
-    drawGlyph(ctx, p.marker.shape, p.x, p.y, MARKER_SIZE, p.marker.color);
+    drawGlyph(ctx, p.marker.shape, p.x, p.y, MARKER_SIZE, p.marker.color, p.marker.text);
   }
 }
 

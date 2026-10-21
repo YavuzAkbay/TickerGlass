@@ -9,6 +9,7 @@ import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { Settings } from '../api/types';
 import { parseAlertPrefs, readAlertPrefs, useAlertPrefs } from '../alerts/prefs';
+import { parseEventPrefs, readEventPrefs, useEventPrefs } from '../events/prefs';
 import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
 import { migrateToolIds, useUiStore, type RightPanel } from '../store/ui';
@@ -149,6 +150,12 @@ export const SETTING_DEFS: SettingDef[] = [
     read: readAlertPrefs,
     write: (v) => useAlertPrefs.setState(parseAlertPrefs(v)),
     subscribe: (fn) => useAlertPrefs.subscribe(fn),
+  },
+  {
+    key: 'events.prefs',
+    read: readEventPrefs,
+    write: (v) => useEventPrefs.setState(parseEventPrefs(v)),
+    subscribe: (fn) => useEventPrefs.subscribe(fn),
   },
 ];
 

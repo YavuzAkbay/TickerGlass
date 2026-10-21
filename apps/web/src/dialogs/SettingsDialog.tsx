@@ -22,6 +22,7 @@ import {
   type PriceScaleMode,
 } from '@investopen/engine';
 import { AlertsSettingsTab } from '../alerts/SettingsTab';
+import { EventsTab } from '../events/EventsTab';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { ChartTemplate } from '../api/types';
@@ -73,11 +74,6 @@ const PLANNED: Partial<Record<TabId, string[]>> = {
     'Positions, orders and executions on chart',
     'Profit & loss display',
     'Order and position line styles',
-  ],
-  events: [
-    'Ideas, dividends, splits and earnings',
-    'Economic events and session breaks',
-    'Latest news markers',
   ],
 };
 
@@ -511,6 +507,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     );
   } else if (tab === 'alerts') {
     content = <AlertsSettingsTab />;
+  } else if (tab === 'events') {
+    content = <EventsTab />;
   } else {
     content = (
       <Placeholder title={TABS.find((t) => t.id === tab)?.label ?? ''} items={PLANNED[tab] ?? []} />
