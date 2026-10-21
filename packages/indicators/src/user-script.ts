@@ -38,7 +38,7 @@ export type UserInputDef = Exclude<InputDef, TimeframeInputDef | SymbolInputDef>
  */
 export interface UserScriptManifest extends Omit<
   AnyIndicatorDefinition,
-  'setup' | 'inputs' | 'outputs' | 'warmup'
+  'setup' | 'inputs' | 'outputs' | 'warmup' | 'usesEvents'
 > {
   inputs: Record<string, UserInputDef>;
   outputs: readonly OutputDef[];

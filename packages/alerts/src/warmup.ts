@@ -4,6 +4,7 @@
  * (EMA/RMA seed error decays like (1 - 2/(L+1))^k, below 1e-8 after ~10·L bars).
  */
 import {
+  VWAP_EVENT_ANCHORS,
   defaultRegistry,
   resolveInputs,
   type IndicatorRegistry,
@@ -30,6 +31,9 @@ const CUMULATIVE: ReadonlySet<string> = new Set(['obv']);
 const VWAP_TYPES: ReadonlySet<string> = new Set(['vwap', 'vwap-bands']);
 
 const DAY = 86_400;
+
+const isEventAnchor = (anchor: unknown): boolean =>
+  typeof anchor === 'string' && (VWAP_EVENT_ANCHORS as readonly string[]).includes(anchor);
 /** Nominal (upper bound) length of a VWAP anchor period. */
 const ANCHOR_SECONDS: Readonly<Record<string, number>> = {
   Session: DAY,
@@ -108,6 +112,10 @@ export function instanceWarmup(inst: IndicatorRefInstance, opts: WarmupOptions =
       intInput(inst, 'spanB', 52),
     );
     own = 10 * lengths + intInput(inst, 'displacement', 26);
+  } else if (VWAP_TYPES.has(inst.type) && isEventAnchor(inst.inputs['anchor'])) {
+    // Earnings/Dividends/Splits anchors: the service has no event data, so the
+    // VWAP accumulates over all loaded bars (load as many as cumulative ones).
+    own = maxBars;
   } else if (VWAP_TYPES.has(inst.type)) {
     // Since the start of the anchor period before the current one.
     const anchor = inst.inputs['anchor'];

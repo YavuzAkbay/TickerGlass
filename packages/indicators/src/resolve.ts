@@ -132,6 +132,12 @@ export function timeframeInputValue(def: AnyIndicatorDefinition, inputs: InputVa
   return '';
 }
 
+/** Whether an instance with these (resolved) inputs reads `env.events` (`def.usesEvents`). */
+export function usesEvents(def: AnyIndicatorDefinition, inputs: InputValueMap): boolean {
+  const u = def.usesEvents;
+  return typeof u === 'function' ? u(inputs as InputValues<InputsSchema>) : u === true;
+}
+
 /**
  * Whether a timeframe instance aligns to confirmed (closed) timeframe bars:
  * the timeframe input's `waitForCloseInput` bool is true.

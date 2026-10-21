@@ -27,6 +27,7 @@ export {
   resolveOutputs,
   sourceRefs,
   timeframeInputValue,
+  usesEvents,
   waitsForTimeframeClose,
 } from './resolve';
 export { calendarPeriod, tzOffset } from './calendar';

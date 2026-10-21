@@ -6,12 +6,14 @@ import {
   resolveInputs,
   sourceRefs,
   timeframeInputValue,
+  usesEvents,
   waitsForTimeframeClose,
 } from './resolve';
 import type {
   BarArrays,
   BarInput,
   BarsEnv,
+  BarsEvents,
   IndicatorResult,
   InputValueMap,
   InstanceStatus,
@@ -49,10 +51,32 @@ export interface RuntimeOptions {
 /**
  * Host facts about the chart's bars (all optional; omitted fields keep their
  * value). `timeframeSeconds` maps a resolved timeframe ('1W') to its interval
- * for timeframe instances' `env.intervalSeconds` (0 when missing).
+ * for timeframe instances' `env.intervalSeconds` (0 when missing). `events`:
+ * the symbol's event times (any order; non-finite times are dropped), null to
+ * clear them.
  */
-export interface RuntimeContext extends Partial<BarsEnv> {
+export interface RuntimeContext extends Partial<Omit<BarsEnv, 'events'>> {
   timeframeSeconds?: Record<string, number>;
+  events?: BarsEvents | null;
+}
+
+/** Finite times, sorted ascending, frozen. */
+function eventTimes(times: readonly number[]): readonly number[] {
+  return Object.freeze(times.filter((t) => Number.isFinite(t)).sort((a, b) => a - b));
+}
+
+function sameTimes(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
+function sameEvents(a: BarsEvents | undefined, b: BarsEvents | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    sameTimes(a.dividends, b.dividends) &&
+    sameTimes(a.splits, b.splits) &&
+    sameTimes(a.earnings, b.earnings)
+  );
 }
 
 interface Node {
@@ -114,27 +138,47 @@ export class IndicatorRuntime {
   }
 
   private applyContext(ctx: RuntimeContext): void {
+    let events = this.env.events;
+    if (ctx.events === null) events = undefined;
+    else if (ctx.events) {
+      const next: BarsEvents = Object.freeze({
+        dividends: eventTimes(ctx.events.dividends),
+        splits: eventTimes(ctx.events.splits),
+        earnings: eventTimes(ctx.events.earnings),
+      });
+      // Same times keep the old object, so instances using them see no change.
+      if (!sameEvents(events, next)) events = next;
+    }
     this.env = Object.freeze({
       timezone: ctx.timezone ?? this.env.timezone,
       session: ctx.session !== undefined ? ctx.session : this.env.session,
       intervalSeconds: ctx.intervalSeconds ?? this.env.intervalSeconds,
+      ...(events ? { events } : {}),
     });
     if (ctx.timeframeSeconds) this.tfSeconds = { ...ctx.timeframeSeconds };
   }
 
-  /** Give the node's instance the env for its series; true when it changed. */
+  /**
+   * Give the node's instance the env for its series; true when it changed.
+   * Events only reach instances that use them, so other instances do not
+   * recompute when the events change.
+   */
   private syncEnv(node: Node): boolean {
-    const want = node.tf
-      ? { ...this.env, intervalSeconds: this.tfSeconds[node.tf] ?? 0 }
-      : this.env;
+    const { events, ...base } = this.env;
+    const want: BarsEnv = {
+      ...base,
+      ...(node.tf ? { intervalSeconds: this.tfSeconds[node.tf] ?? 0 } : {}),
+      ...(events && usesEvents(node.inst.def, node.spec.inputs ?? {}) ? { events } : {}),
+    };
     const cur = node.inst.env;
     if (
       cur.timezone === want.timezone &&
       cur.session === want.session &&
-      cur.intervalSeconds === want.intervalSeconds
+      cur.intervalSeconds === want.intervalSeconds &&
+      cur.events === want.events
     )
       return false;
-    node.inst.setEnv(Object.freeze({ ...want }));
+    node.inst.setEnv(Object.freeze(want));
     return true;
   }
 

@@ -116,6 +116,9 @@ describe('warmupBars', () => {
     expect(instanceWarmup(vwap, { intervalSeconds: 300 })).toBe(577);
     expect(instanceWarmup(vwap, { intervalSeconds: 3600 })).toBe(300);
     expect(instanceWarmup(vwap)).toBe(5000);
+    // Event anchors: no events in the service, so all loaded bars accumulate.
+    const earnings = { id: 'a', type: 'vwap', inputs: { anchor: 'Earnings' } };
+    expect(instanceWarmup(earnings, { intervalSeconds: 300, maxBars: 4000 })).toBe(4000);
   });
 
   it('chains add up along sources (max over upstream)', () => {

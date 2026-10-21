@@ -19,18 +19,25 @@ import {
   defineIndicator,
   getIndicator,
   registerIndicator,
+  type BarsEvents,
   type InputValueMap,
 } from '@investopen/indicators';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistory } from '../commands/history';
 import { addIndicator, removeIndicators } from './actions';
-import { IndicatorController, type ChartHost, type WorkerPort } from './controller';
+import {
+  IndicatorController,
+  type ChartHost,
+  type ControllerOptions,
+  type WorkerPort,
+} from './controller';
 import { createInstance, type IndicatorState } from './model';
 import type { FromWorker, ToWorker } from './protocol';
 import { useIndicatorRuntime, useIndicatorStore } from './store';
 import { WorkerCore } from './workerCore';
 import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './sandbox/limits';
 import { useScriptsStore } from '../scripts/store';
+import type { EventsResponse } from '../events/api';
 
 // A whole-indicator timeframe test definition (Pivot Points style).
 if (!getIndicator('test_tf_close'))
@@ -302,6 +309,7 @@ function setup(
     lost?: boolean;
     chartType?: () => ChartType;
     dataEpoch?: () => number;
+    loadEvents?: ControllerOptions['loadEvents'];
   } = {},
 ) {
   const chart = new FakeChart();
@@ -319,6 +327,7 @@ function setup(
     ...(opts.lost ? { onStudiesLost: removeIndicators } : {}),
     ...(opts.chartType ? { chartType: opts.chartType } : {}),
     ...(opts.dataEpoch ? { dataEpoch: opts.dataEpoch } : {}),
+    ...(opts.loadEvents ? { loadEvents: opts.loadEvents } : {}),
   });
   const frame = () => frames.splice(0).forEach((f) => f());
   return { chart, log, ctl, frame, onError };
@@ -492,6 +501,7 @@ describe('IndicatorController', () => {
         session: null,
         intervalSeconds: DAY,
         timeframeSeconds: { '1W': 7 * DAY },
+        events: null,
       },
     });
     const daily = makeBars(40);
@@ -539,6 +549,54 @@ describe('IndicatorController', () => {
     chart.load(makeBars(12));
     await settle();
     expect(withContext()).toHaveLength(n);
+  });
+
+  it('loads events for event-anchored VWAP and sends them when they change', async () => {
+    const bars = makeBars(10);
+    const t = (i: number) => bars.time[i]!;
+    const responses: Record<string, EventsResponse> = {
+      AAPL: { dividends: [{ t: t(4) - 60, amount: 0.25 }], splits: [], earnings: [] },
+      MSFT: { dividends: [{ t: t(7), amount: 0.8 }] },
+    };
+    const loadEvents = vi.fn((symbol: string) => Promise.resolve(responses[symbol] ?? {}));
+    const { chart, log, ctl } = setup({ loadEvents });
+    const session = inst('vwap');
+    ctl.sync([session]);
+    chart.load(bars);
+    await settle();
+    // Only event anchors need events.
+    expect(loadEvents).not.toHaveBeenCalled();
+
+    const vwap = inst('vwap', { anchor: 'Dividends' });
+    ctl.sync([session, vwap]);
+    await settle();
+    expect(loadEvents.mock.calls).toEqual([['AAPL']]);
+    const sent = log.filter((m) => m.type === 'context').at(-1)!;
+    expect(sent).toMatchObject({ context: { events: { dividends: [t(4) - 60] } } });
+    const want = (events: BarsEvents | null) => {
+      const rt = new IndicatorRuntime({ context: { events } });
+      rt.add({ id: 'x', type: 'vwap', inputs: { anchor: 'Dividends' } });
+      rt.setBars(bars);
+      const r = rt.result('x')!;
+      return Array.from(r.values.vwap!.subarray(0, r.length));
+    };
+    const ev = (d: number[]): BarsEvents => ({ dividends: d, splits: [], earnings: [] });
+    expect(chart.studies.get(vwap.id)!.values.vwap).toEqual(want(ev([t(4) - 60])));
+    expect(want(ev([t(4) - 60]))).not.toEqual(want(null));
+
+    // A new symbol drops the old events and loads its own.
+    chart.symbol = 'MSFT';
+    chart.load(bars);
+    await settle();
+    expect(loadEvents.mock.calls).toEqual([['AAPL'], ['MSFT']]);
+    expect(chart.studies.get(vwap.id)!.values.vwap).toEqual(want(ev([t(7)])));
+
+    // No events exist for an expression.
+    chart.symbol = 'AAPL/MSFT';
+    chart.load(bars);
+    await settle();
+    expect(loadEvents).toHaveBeenCalledTimes(2);
+    expect(chart.studies.get(vwap.id)!.values.vwap).toEqual(want(null));
   });
 
   it('WorkerCore applies a context sent with bars in one computation', () => {
