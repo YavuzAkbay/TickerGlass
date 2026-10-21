@@ -138,6 +138,54 @@ describe('resample', () => {
     expect([...r.close]).toEqual([5.25, 11.25]);
   });
 
+  it('cuts NY days at local midnight on both 2024 DST edges (23h and 25h days)', () => {
+    const hourly = (from: string, to: string): number[] => {
+      const out: number[] = [];
+      for (let t = z(from); t < z(to); t += HOUR) out.push(t);
+      return out;
+    };
+    const spring = resample(
+      cols(hourly('2024-03-09T05:00:00Z', '2024-03-11T04:00:00Z')),
+      parseInterval('1D'),
+      NY,
+    );
+    expect([...spring.time].map(iso)).toEqual(['2024-03-09T05:00:00Z', '2024-03-10T05:00:00Z']);
+    expect([...spring.volume]).toEqual([24, 23]);
+    const fall = resample(
+      cols(hourly('2024-11-02T04:00:00Z', '2024-11-04T05:00:00Z')),
+      parseInterval('1D'),
+      NY,
+    );
+    expect([...fall.time].map(iso)).toEqual(['2024-11-02T04:00:00Z', '2024-11-03T04:00:00Z']);
+    expect([...fall.volume]).toEqual([24, 25]);
+  });
+
+  it('keeps the half-hour grid across the Lord Howe DST start (+10:30 -> +11:00 at 15:30Z)', () => {
+    // 15m bars 00:30..03:15 local on 2024-10-06; local 02:00-02:29 does not exist.
+    const start = z('2024-10-05T14:00:00Z');
+    const times = Array.from({ length: 10 }, (_, i) => start + i * 15 * MIN);
+    const r = resample(cols(times), parseInterval('30m'), {
+      timezone: 'Australia/Lord_Howe',
+      session: '0000-2359',
+    });
+    expect([...r.time].map(iso)).toEqual([
+      '2024-10-05T14:00:00Z', // 00:30 +10:30
+      '2024-10-05T14:30:00Z', // 01:00
+      '2024-10-05T15:00:00Z', // 01:30
+      '2024-10-05T15:30:00Z', // 02:30 +11:00
+      '2024-10-05T16:00:00Z', // 03:00
+    ]);
+    expect([...r.volume]).toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it('buckets days and hours in Asia/Kathmandu (+5:45)', () => {
+    const ctx = createBucketContext({ timezone: 'Asia/Kathmandu', session: '0000-2359' });
+    const t = z('2024-01-01T18:20:00Z'); // 00:05 local on Jan 2
+    expect(iso(bucketStart(t, parseInterval('1D'), ctx))).toBe('2024-01-01T18:15:00Z');
+    expect(iso(bucketStart(t, parseInterval('1h'), ctx))).toBe('2024-01-01T18:15:00Z');
+    expect(iso(bucketStart(t - 10 * MIN, parseInterval('1h'), ctx))).toBe('2024-01-01T17:15:00Z');
+  });
+
   it('keeps post-market buckets after the session close', () => {
     // Premarket from 04:00 (09:00Z), regular session, post-market to 20:00 (01:00Z).
     const start = z('2024-01-02T09:00:00Z');

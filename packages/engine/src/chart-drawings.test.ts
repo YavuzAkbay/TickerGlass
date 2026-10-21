@@ -386,6 +386,38 @@ describe('Chart drawing API', () => {
     expect(chart.getAnchorTimeline().calendar).not.toBe(cal);
   });
 
+  it('builds a missing intraday calendar once two full days of live bars arrived', async () => {
+    const { Chart } = await import('./chart');
+    const H = 3600;
+    // Hourly 14:30..20:30 UTC: one full day loaded, the next two arrive live.
+    const day = (d: number) =>
+      makeBars(7, START + d * DAY + 14.5 * H).map((b, k) => ({
+        ...b,
+        time: b.time - k * DAY + k * H,
+      }));
+    const feed = new FakeFeed(day(0));
+    const chart = new Chart(new FakeEl() as unknown as HTMLElement, feed);
+    charts.push(chart);
+    await chart.setInterval('1h');
+    await chart.setSymbol('TEST');
+    expect(chart.getAnchorTimeline().calendar).toBeNull(); // one full day: no shape yet
+    // Read per bar, as frames do: retried on day 2's first bar only, then kept.
+    for (const b of day(1)) {
+      feed.tick(b);
+      expect(chart.getAnchorTimeline().calendar).toBeNull();
+    }
+    const [first, ...rest] = day(2);
+    feed.tick(first!);
+    const cal = chart.getAnchorTimeline().calendar;
+    expect(cal).toBeTruthy(); // first bar of day 3: two full days, built once
+    for (const b of rest) {
+      feed.tick(b);
+      expect(chart.getAnchorTimeline().calendar).toBe(cal);
+    }
+    // Friday's close steps to Monday's open.
+    expect(cal!.step(START + 2 * DAY + 20.5 * H, 1)).toBe(START + 5 * DAY + 14.5 * H);
+  });
+
   it('pointercancel aborts a drawing gesture instead of committing it', async () => {
     const { chart } = await load(10);
     vi.stubGlobal('Element', FakeEl);
