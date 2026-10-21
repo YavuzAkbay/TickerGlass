@@ -104,15 +104,27 @@ whose `to` is not newer than the newest cached bar never refreshes (`bars.covere
   `BARS_TAIL_TTL_INTRADAY_S` (30 s) for intraday intervals, `BARS_TAIL_TTL_DAILY_S` (300 s) for daily and longer. After
   the close: one final refresh `BARS_SETTLE_AFTER_CLOSE_S` (1200 s) later. Then nothing until the next open, so a
   weekend costs no requests.
-- Only a weekly schedule is known (Monday to Friday, one regular session, in the exchange time zone). Pre/post series
-  count as open for the whole weekday. Crypto, currencies, futures, unknown instrument types and symbols without a usable
-  session count as always open and are refreshed at the plain TTL.
+- Only a weekly schedule is known (one regular session per trading day, in the exchange time zone). The trading days
+  follow the time zone: Monday to Friday for the Americas, Europe, Australia and the major Asian and African markets,
+  Sunday to Thursday for Riyadh, Qatar, Kuwait, Bahrain and Cairo. Any other time zone counts as always open. Pre/post
+  series count as open for the whole trading day. Crypto, currencies, futures, unknown instrument types and symbols
+  without a usable session count as always open and are refreshed at the plain TTL.
+- The stored session may be from an early-close day. A session shorter than 4 hours, or metadata older than 24 hours,
+  keeps its open time but counts as open until midnight.
 - Holidays are inferred. A series that is open but receives no new bar though one is due is "quiet": its TTL doubles on
   each such check, up to `BARS_QUIET_BACKOFF_MAX_S` (1800 s). A quiet series whose newest bar is from before today, 30
-  minutes after the regular open, is taken to be on a holiday and waits for the next open.
+  minutes after the regular open (a holiday, a stock with no trade yet, a fund whose NAV comes after the close), is
+  checked every `BARS_QUIET_BACKOFF_MAX_S` until the close, and still gets the one refresh after the close.
 - Without stored metadata (first request of a symbol) the plain TTL applies.
 - If a refresh fails, the cached bars are served, the failure is logged, and the series is retried after at least 30 s
   (longer when the failure was a rate limit with a longer `Retry-After`). It raises an error only when nothing is cached.
+  A re-backfill that comes back empty for a series with cached bars counts as such a failure.
+- A series not read for longer than one request may span (1m: 7 days) is caught up in chunks, back to at most Yahoo's
+  lookback; the older cached bars are kept.
+- A series Yahoo has no bars for is answered "not found" from memory for `CACHE_NEGATIVE_TTL_S`. A 1m backfill whose
+  newest 7-day chunk is empty stops there, unless the symbol's metadata is stored.
+- Upstream calls happen before the sync writes anything, so no database write lock is held while waiting on Yahoo; a
+  re-backfill replaces the stored bars only after the fresh ones arrived.
 
 **Overlap handling.** A tail refresh refetches the 3 newest cached bars and compares their closes (the newest one is
 skipped, as it may still have been forming):
@@ -145,7 +157,9 @@ thread so requests keep being served. A failed run is logged and the next one ha
 1. Prune the bars as above.
 2. Delete symbol metadata not refreshed for 30 days that no cached series refers to.
 3. SQLite only: `PRAGMA optimize`, and `VACUUM` when more than 25% of the file's pages are free and the free pages add up
-   to more than 64 MiB. Deleted bars leave free pages but never shrink the file by themselves.
+   to more than 64 MiB. Deleted bars leave free pages but never shrink the file by themselves. VACUUM blocks writers
+   while it runs, so it waits for a run with no bar request in the last 10 minutes (`maintenance.vacuum_deferred`
+   counts the put-off ones). SQLite connections wait up to 60 s for a busy database before failing.
 4. Log one INFO line with what was pruned and the upstream and bar counters (skipped when identical to the previous run's).
 
 `CACHE_MAINTENANCE_ENABLED=false` turns it off. On Postgres only steps 1 and 2 apply.
@@ -196,6 +210,7 @@ Nothing is persisted in the browser by these caches; a reload starts empty.
 | Unknown symbol                 | 1 h                                                                       | n/a                                     |
 | Bars tail, market open         | 30 s intraday, 300 s daily and longer (doubling when quiet, up to 30 min) | On error, always                        |
 | Bars tail, market closed       | One refresh 20 min after the close, then none until the next open         | Always                                  |
+| Bars, unknown series           | 1 h (`CACHE_NEGATIVE_TTL_S`)                                              | n/a                                     |
 | Bars, unused series            | Deleted after 30 d (intraday), 365 d (daily and longer), or over 10M rows | n/a                                     |
 | Upstream breaker, rate limited | 30 s, doubling to 900 s                                                   | n/a                                     |
 | Upstream breaker, unavailable  | 10 s                                                                      | n/a                                     |
@@ -251,10 +266,10 @@ request. The body is a tree built from dotted counter names, with these top-leve
 - `bars`: `backfill`, `rebackfill`, `tail_refresh`, `tail_skipped_fresh`, `tail_skipped_closed`, `tail_quiet`,
   `covered`, `stale_retry_wait`, `stale_error`, `overlap_same`, `overlap_rescaled`, `overlap_revised`, `pruned_series`,
   `pruned_rows`, and the `rows` gauge after the last maintenance run.
-- `cache`: per cache (`quotes`, `extended`, `events`, `news`, `fundamentals`, `search`): `hit`, `miss`, `coalesced`
-  (joined another caller's load), `stale` (served while reloading), `refresh`, `refresh_error`, `stale_on_error`,
+- `cache`: per cache (`quotes`, `extended`, `events`, `news`, `fundamentals`, `search`, `symbol_info`): `hit`, `miss`,
+  `coalesced` (joined another caller's load), `stale` (served while reloading), `refresh`, `refresh_error`, `stale_on_error`,
   `evicted`, and the `size` gauge.
-- `maintenance`, `db`: `runs`, `vacuums`, and (SQLite) the `free_bytes` and `file_bytes` gauges.
+- `maintenance`, `db`: `runs`, `vacuums`, `vacuum_deferred`, and (SQLite) the `free_bytes` and `file_bytes` gauges.
 - `guard`: the upstream guard's state now.
 
 Counters appear once they have been incremented, so a fresh process returns few keys. Example after three quote

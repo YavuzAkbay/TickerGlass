@@ -1,10 +1,16 @@
 """Exchange trading hours, used to skip bar tail refreshes while a market is closed.
 
-Only a weekly schedule is known: one regular session per weekday (Mon-Fri) in the
-exchange time zone, taken from the symbol's metadata. Holidays are not known; they are
-inferred from series that stop receiving bars (see `next_check_at`). Crypto, currencies,
-futures, unknown instrument types and a missing or unparseable session are treated as
-always open, so a fetch is never skipped wrongly.
+Only a weekly schedule is known: one regular session per trading day in the exchange
+time zone, taken from the symbol's metadata. The trading days follow the time zone
+(`TRADING_WEEKS`: Monday-Friday, or Sunday-Thursday for several Middle Eastern
+exchanges); a time zone not listed there is treated as always open. Holidays are not
+known; series that stop receiving bars back off (see `next_check_at`). Crypto,
+currencies, futures, unknown instrument types and a missing or unparseable session are
+treated as always open, so a fetch is never skipped wrongly.
+
+The stored session is the one current when the metadata was fetched, which may have
+been an early-close day. A session shorter than `SHORT_SESSION`, or metadata older than
+`METADATA_MAX_AGE`, keeps its open but is taken to run until midnight.
 """
 
 import re
@@ -24,33 +30,97 @@ HOLIDAY_GRACE = timedelta(minutes=30)
 INTRADAY_GRACE_S = 60
 # Bound on the stored quiet streak; the backoff is capped well below 2**this anyway.
 QUIET_STREAK_MAX = 16
-_WEEKDAYS = 5  # Monday..Friday
-# Any span of this many days contains a weekday.
-_SEARCH_DAYS = 8
 _SESSION_RE = re.compile(r"^(\d{2})(\d{2})-(\d{2})(\d{2})$")
+# Any span of this many days contains a trading day.
+_SEARCH_DAYS = 8
+#: Stored sessions shorter than this may be an early close (a US half day is 3.5 hours).
+SHORT_SESSION = timedelta(hours=4)
+#: Metadata older than this may hold another day's (early-close) session.
+METADATA_MAX_AGE = timedelta(hours=24)
+
+MON_FRI = frozenset({0, 1, 2, 3, 4})
+SUN_THU = frozenset({6, 0, 1, 2, 3})
+# Trading days (`date.weekday()`) per exchange time zone. Not listed: always open.
+# Sunday-Thursday: Saudi Exchange, Qatar Stock Exchange, Boursa Kuwait, Bahrain Bourse,
+# Egyptian Exchange. Left out on purpose: zones whose exchanges changed their week
+# recently or trade on another week (Asia/Jerusalem, Asia/Tehran).
+_SUN_THU_ZONES = ("Asia/Riyadh", "Asia/Qatar", "Asia/Kuwait", "Asia/Bahrain", "Africa/Cairo")
+_MON_FRI_PREFIXES = ("America/", "Europe/", "Australia/")
+_MON_FRI_ZONES = (
+    "Africa/Casablanca",
+    "Africa/Johannesburg",
+    "Africa/Lagos",
+    "Africa/Nairobi",
+    "Asia/Bangkok",
+    "Asia/Calcutta",
+    "Asia/Colombo",
+    "Asia/Dubai",
+    "Asia/Ho_Chi_Minh",
+    "Asia/Hong_Kong",
+    "Asia/Jakarta",
+    "Asia/Karachi",
+    "Asia/Kolkata",
+    "Asia/Kuala_Lumpur",
+    "Asia/Manila",
+    "Asia/Saigon",
+    "Asia/Seoul",
+    "Asia/Shanghai",
+    "Asia/Singapore",
+    "Asia/Taipei",
+    "Asia/Tokyo",
+    "Pacific/Auckland",
+)
+TRADING_WEEKS: dict[str, frozenset[int]] = {
+    **dict.fromkeys(_SUN_THU_ZONES, SUN_THU),
+    **dict.fromkeys(_MON_FRI_ZONES, MON_FRI),
+}
+
+
+def trading_week(tz_name: str) -> frozenset[int] | None:
+    """Trading weekdays of exchanges in `tz_name`, or None when not known."""
+    week = TRADING_WEEKS.get(tz_name)
+    if week is None and tz_name.startswith(_MON_FRI_PREFIXES):
+        week = MON_FRI
+    return week
+
+
+class StoredInfo(dict[str, Any]):
+    """Stored symbol metadata plus when it was fetched (UTC)."""
+
+    def __init__(self, data: Mapping[str, Any], *, fetched_at: datetime) -> None:
+        super().__init__(data)
+        self.fetched_at = fetched_at
 
 
 @dataclass(frozen=True)
 class TradingHours:
-    """One regular session per weekday in `tz`; `extended` opens the whole weekday."""
+    """One regular session per trading day (`days`, `date.weekday()` numbers) in `tz`;
+    `extended` opens the whole trading day."""
 
     tz: ZoneInfo
     open: time
     close: time
-    # Pre/post-market series: every weekday is open from midnight to midnight.
+    # Pre/post-market series: every trading day is open from midnight to midnight.
     extended: bool = False
+    days: frozenset[int] = MON_FRI
+    # False when the stored close may be an early one: sessions run until midnight.
+    close_known: bool = True
 
     @classmethod
     def from_symbol_info(
-        cls, info: Mapping[str, Any], *, prepost: bool = False
+        cls, info: Mapping[str, Any], *, prepost: bool = False, now: datetime | None = None
     ) -> "TradingHours | None":
         """Hours from stored symbol metadata (`type`, `timezone`, `session` "HHMM-HHMM"),
-        or None when the symbol is always open or its hours are unknown."""
+        or None when the symbol is always open or its hours are unknown. With `now` and
+        a `StoredInfo`, metadata older than `METADATA_MAX_AGE` has an unknown close."""
         kind = str(info.get("type") or "").lower()
         if kind not in SESSION_TYPES:
             return None
         tz_name, session = info.get("timezone"), info.get("session")
         if not isinstance(tz_name, str) or not isinstance(session, str):
+            return None
+        days = trading_week(tz_name)
+        if days is None:
             return None
         try:
             tz = ZoneInfo(tz_name)
@@ -62,21 +132,27 @@ class TradingHours:
         start, end = bounds
         if end <= start:  # overnight session: no closed gap we could rely on
             return None
-        return cls(tz, start, end, extended=prepost)
+        length = datetime.combine(date.min, end) - datetime.combine(date.min, start)
+        stale = (
+            now is not None
+            and isinstance(info, StoredInfo)
+            and now - _utc(info.fetched_at) > METADATA_MAX_AGE
+        )
+        close_known = length >= SHORT_SESSION and not stale
+        return cls(tz, start, end, extended=prepost, days=days, close_known=close_known)
 
     def session(self, day: date) -> tuple[datetime, datetime]:
-        """Open and close of the session on `day` (a weekday), as aware datetimes."""
+        """Open and close of the session on `day` (a trading day), as aware datetimes."""
+        midnight = datetime.combine(day + timedelta(days=1), time(0), self.tz)
         if self.extended:
-            return (
-                datetime.combine(day, time(0), self.tz),
-                datetime.combine(day + timedelta(days=1), time(0), self.tz),
-            )
-        return datetime.combine(day, self.open, self.tz), datetime.combine(day, self.close, self.tz)
+            return datetime.combine(day, time(0), self.tz), midnight
+        close = datetime.combine(day, self.close, self.tz) if self.close_known else midnight
+        return datetime.combine(day, self.open, self.tz), close
 
     def current_session(self, now: datetime) -> tuple[datetime, datetime] | None:
         """Bounds of the session `now` falls in, or None while closed."""
         day = now.astimezone(self.tz).date()
-        if day.weekday() >= _WEEKDAYS:
+        if day.weekday() not in self.days:
             return None
         start, end = self.session(day)
         return (start, end) if start <= now < end else None
@@ -89,22 +165,27 @@ class TradingHours:
         today = now.astimezone(self.tz).date()
         for back in range(_SEARCH_DAYS):
             day = today - timedelta(days=back)
-            if day.weekday() < _WEEKDAYS and (end := self.session(day)[1]) <= now:
+            if day.weekday() in self.days and (end := self.session(day)[1]) <= now:
                 return end
-        raise AssertionError("no weekday session within a week")  # pragma: no cover
+        raise AssertionError("no trading day within a week")  # pragma: no cover
 
     def next_open(self, now: datetime) -> datetime:
         """The earliest session open after `now`."""
         today = now.astimezone(self.tz).date()
         for ahead in range(_SEARCH_DAYS + 1):
             day = today + timedelta(days=ahead)
-            if day.weekday() < _WEEKDAYS and (start := self.session(day)[0]) > now:
+            if day.weekday() in self.days and (start := self.session(day)[0]) > now:
                 return start
-        raise AssertionError("no weekday session within a week")  # pragma: no cover
+        raise AssertionError("no trading day within a week")  # pragma: no cover
 
     def regular_open(self, day: date) -> datetime:
         """Open of the regular session on `day`, also for extended series."""
         return datetime.combine(day, self.open, self.tz)
+
+
+def _utc(dt: datetime) -> datetime:
+    # SQLite drops tzinfo on round-trip; stored times are UTC.
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def _parse_session(text: str) -> tuple[time, time] | None:
@@ -151,7 +232,9 @@ def next_check_at(
       `quiet_max_s` and never past the session close; a check that would land after the
       close moves to `close + settle_s` instead.
     - Open, quiet, newest bar (`newest_ts`) from before today and more than
-      `HOLIDAY_GRACE` past the regular open: an unknown holiday, wait for the next open.
+      `HOLIDAY_GRACE` past the regular open: an unknown holiday, or a series whose bar
+      comes late (a quiet stock, a fund's NAV after the close). Back off at once to
+      `quiet_max_s`, still capped by the close; the settle check stays.
     - Closed, last fetch before the last close + `settle_s`: one final check then.
     - Closed otherwise: the next open.
     """
@@ -170,7 +253,8 @@ def next_check_at(
         today = now.astimezone(hours.tz).date()
         newest_day = datetime.fromtimestamp(newest_ts, hours.tz).date()
         if newest_day < today and now >= hours.regular_open(today) + HOLIDAY_GRACE:
-            return hours.next_open(now)
+            # Never jump to the next open: the day may be trading after all.
+            backoff = timedelta(seconds=max(base_ttl, quiet_max_s))
     due = last_fetch + backoff
     end = session[1]
     return due if due < end else end + settle

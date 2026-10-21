@@ -6,6 +6,7 @@ import pytest
 
 from tickerglass_api.services.sessions import (
     HOLIDAY_GRACE,
+    StoredInfo,
     TradingHours,
     newer_bar_due,
     next_check_at,
@@ -219,17 +220,30 @@ def test_always_open_never_waits_for_a_session() -> None:
     assert check(None, saturday, streak=2) == saturday + timedelta(seconds=120)
 
 
-def test_holiday_jumps_to_next_open_once_grace_passed() -> None:
+def test_suspected_holiday_backs_off_at_the_cap_within_the_session() -> None:
     hours = us()
     friday_bar = ny(2026, 10, 9, 15, 55)
     early = ny(2026, 10, 12, 9, 45)
     assert check(hours, early, streak=2, newest=friday_bar) == early + timedelta(seconds=120)
     late = ny(2026, 10, 12, 9, 30) + HOLIDAY_GRACE
-    assert check(hours, late, streak=2, newest=friday_bar) == ny(2026, 10, 13, 9, 30)
-    # Not quiet, or today's bar present: no jump.
+    assert check(hours, late, streak=2, newest=friday_bar) == late + timedelta(seconds=QUIET_MAX)
+    # Never past the close: the settle check stays.
+    near_close = ny(2026, 10, 12, 15, 45)
+    assert check(hours, near_close, streak=9, newest=friday_bar) == ny(2026, 10, 12, 16, 20)
+    # Not quiet, or today's bar present: the plain backoff.
     assert check(hours, late, newest=friday_bar) == late + timedelta(seconds=30)
     today_bar = ny(2026, 10, 12, 9, 55)
     assert check(hours, late, streak=2, newest=today_bar) == late + timedelta(seconds=120)
+
+
+def test_late_first_bar_on_a_trading_day_is_not_skipped() -> None:
+    # Wednesday 10:05 and no bar yet today: the next check stays on Wednesday.
+    hours = us()
+    now = ny(2026, 10, 14, 10, 5)
+    tuesday_bar = ny(2026, 10, 13, 15, 55)
+    due = check(hours, now, streak=1, newest=tuesday_bar)
+    assert due == now + timedelta(seconds=QUIET_MAX)
+    assert due < ny(2026, 10, 14, 16, 0)
 
 
 def test_holiday_grace_counts_from_the_regular_open_with_prepost() -> None:
@@ -237,9 +251,73 @@ def test_holiday_grace_counts_from_the_regular_open_with_prepost() -> None:
     friday_bar = ny(2026, 10, 9, 19, 55)
     night = ny(2026, 10, 12, 1, 0)
     assert check(hours, night, streak=1, newest=friday_bar) == night + timedelta(seconds=60)
-    assert check(hours, ny(2026, 10, 12, 10, 0), streak=1, newest=friday_bar) == ny(
-        2026, 10, 13, 0, 0
+    ten = ny(2026, 10, 12, 10, 0)
+    assert check(hours, ten, streak=1, newest=friday_bar) == ten + timedelta(seconds=QUIET_MAX)
+
+
+# -------------------------------------------------------------- trading week
+
+RIYADH = ZoneInfo("Asia/Riyadh")
+
+
+@pytest.mark.parametrize("tz", ["Asia/Riyadh", "Asia/Qatar", "Asia/Kuwait", "Africa/Cairo"])
+def test_sunday_to_thursday_exchanges(tz: str) -> None:
+    hours = TradingHours.from_symbol_info(
+        {"type": "equity", "timezone": tz, "session": "1000-1500"}
     )
+    assert hours is not None
+    zone = ZoneInfo(tz)
+    # 2026-10-18 is a Sunday.
+    assert hours.is_open(datetime(2026, 10, 18, 11, tzinfo=zone))
+    assert hours.is_open(datetime(2026, 10, 15, 11, tzinfo=zone))  # Thursday
+    assert not hours.is_open(datetime(2026, 10, 16, 11, tzinfo=zone))  # Friday
+    assert not hours.is_open(datetime(2026, 10, 17, 11, tzinfo=zone))  # Saturday
+    assert hours.next_open(datetime(2026, 10, 15, 16, tzinfo=zone)) == datetime(
+        2026, 10, 18, 10, tzinfo=zone
+    )
+    assert hours.last_close(datetime(2026, 10, 17, 12, tzinfo=zone)) == datetime(
+        2026, 10, 15, 15, tzinfo=zone
+    )
+
+
+def test_riyadh_sunday_open_friday_closed() -> None:
+    info = {"type": "equity", "timezone": "Asia/Riyadh", "session": "1000-1500"}
+    hours = TradingHours.from_symbol_info(info)
+    assert hours is not None
+    sunday = datetime(2026, 10, 18, 11, tzinfo=RIYADH)
+    assert check(hours, sunday) == sunday + timedelta(seconds=30)
+    friday = datetime(2026, 10, 16, 11, tzinfo=RIYADH)
+    assert check(hours, friday) == datetime(2026, 10, 18, 10, tzinfo=RIYADH)
+
+
+@pytest.mark.parametrize("tz", ["Asia/Tehran", "Asia/Jerusalem", "UTC"])
+def test_unknown_trading_week_means_always_open(tz: str) -> None:
+    info = {"type": "equity", "timezone": tz, "session": "0930-1600"}
+    assert TradingHours.from_symbol_info(info) is None
+
+
+# ---------------------------------------------------- unreliable session close
+
+
+def test_short_stored_session_keeps_the_weekday_open_until_midnight() -> None:
+    # Metadata fetched on an early-close day.
+    hours = TradingHours.from_symbol_info({**US_EQUITY, "session": "0930-1300"})
+    assert hours is not None
+    assert not hours.is_open(ny(2026, 11, 30, 9, 0))
+    assert hours.is_open(ny(2026, 11, 30, 14, 0))
+    assert hours.is_open(ny(2026, 11, 30, 23, 59))
+    assert not hours.is_open(ny(2026, 11, 28, 14, 0))  # Saturday
+
+
+def test_old_metadata_extends_the_close() -> None:
+    info = StoredInfo({**US_EQUITY, "session": "0930-1500"}, fetched_at=ny(2026, 10, 12, 10))
+    fresh = TradingHours.from_symbol_info(info, now=ny(2026, 10, 12, 15, 30))
+    assert fresh is not None and not fresh.is_open(ny(2026, 10, 12, 15, 30))
+    old = TradingHours.from_symbol_info(info, now=ny(2026, 10, 14, 15, 30))
+    assert old is not None and old.is_open(ny(2026, 10, 14, 15, 30))
+    # A plain mapping has no age: trusted.
+    plain = TradingHours.from_symbol_info(dict(info), now=ny(2026, 10, 14, 15, 30))
+    assert plain is not None and not plain.is_open(ny(2026, 10, 14, 15, 30))
 
 
 # --------------------------------------------------------------- newer_bar_due

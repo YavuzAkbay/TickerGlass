@@ -25,6 +25,8 @@ COLUMNS = "symbol, interval, prepost, ts, open, high, low, close, adj_close, vol
 
 
 def _rebuild_bars(*, with_rowid: bool) -> None:
+    # Left behind by a run that crashed mid-copy (SQLite DDL here is not transactional).
+    op.execute("DROP TABLE IF EXISTS bars_new")
     op.create_table(
         "bars_new",
         sa.Column("symbol", sa.String(length=32), nullable=False),

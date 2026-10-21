@@ -14,7 +14,14 @@ refetches a few closed bars already cached and compares them (`_classify_overlap
   upserted, nothing else.
 
 When a tail refresh fails, the cached bars are served and the refresh is retried
-after a short pause.
+after a short pause. Upstream calls happen before any write of the same sync, so no
+database write lock is held across network I/O, and a re-backfill replaces the series
+only once its fresh bars are in hand. A tail that reaches back further than one request
+may span (a series not read for a while) is caught up in chunks, keeping older bars.
+
+A series the provider has no bars for is remembered as unknown for
+`TailPolicy.unknown_symbol_ttl_s`; a chunked backfill stops after an empty newest chunk
+unless the symbol is known (stored metadata).
 
 With a `session_lookup` the tail TTL follows the market session (see
 `services.sessions`): refreshes at the TTL while open, one final refresh after the
@@ -29,8 +36,8 @@ import logging
 import math
 import statistics
 import threading
-from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -71,6 +78,8 @@ TAIL_RETRY_AFTER = timedelta(seconds=30)
 ACCESS_TOUCH_EVERY = timedelta(hours=1)
 #: Over the row budget, series are evicted until this share of it is left.
 BUDGET_TARGET = 0.9
+#: Unknown series remembered at most (expired ones are dropped first, then the oldest).
+UNKNOWN_MAX_ENTRIES = 4096
 
 #: Stored metadata of a symbol (`SymbolService.cached_info`), None when unknown.
 SessionLookup = Callable[[str], dict[str, Any] | None]
@@ -90,6 +99,8 @@ class TailPolicy:
     tail_ttl_daily_s: float = 300
     settle_after_close_s: float = 1200
     quiet_backoff_max_s: float = 1800
+    #: How long a series without any upstream bars is answered "not found" from memory.
+    unknown_symbol_ttl_s: float = 3600
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "TailPolicy":
@@ -98,6 +109,7 @@ class TailPolicy:
             tail_ttl_daily_s=settings.bars_tail_ttl_daily_s,
             settle_after_close_s=settings.bars_settle_after_close_s,
             quiet_backoff_max_s=settings.bars_quiet_backoff_max_s,
+            unknown_symbol_ttl_s=settings.cache_negative_ttl_s,
         )
 
 
@@ -173,10 +185,40 @@ class BarService:
         self._policy = policy
         # Series whose last tail refresh failed -> earliest next attempt.
         self._retry_at: dict[tuple[str, str, bool], datetime] = {}
-        self._locks: defaultdict[tuple[str, str, bool], threading.Lock] = defaultdict(
-            threading.Lock
-        )
+        # Series the provider had no bars for -> when that answer expires.
+        self._unknown: dict[tuple[str, str, bool], datetime] = {}
+        # Guards `_retry_at` and `_unknown` (prune sweeps them from another thread).
+        self._maps_guard = threading.Lock()
+        # One lock per series (see `_series_lock`); `_evict` drops those of deleted series.
+        self._locks: dict[tuple[str, str, bool], threading.Lock] = {}
         self._locks_guard = threading.Lock()
+        self._last_request_at: datetime | None = None
+
+    @property
+    def last_request_at(self) -> datetime | None:
+        """`now` of the latest bar request, None before the first."""
+        return self._last_request_at
+
+    def _lock_for(self, key: tuple[str, str, bool]) -> threading.Lock:
+        """The series' registered lock, created when missing."""
+        with self._locks_guard:
+            return self._locks.setdefault(key, threading.Lock())
+
+    @contextmanager
+    def _series_lock(self, key: tuple[str, str, bool]) -> Iterator[None]:
+        """Hold the series' lock. A lock dropped by `_evict` while this waited on it is
+        released again and the registered one taken instead (see `_drop_lock`)."""
+        while True:
+            lock = self._lock_for(key)
+            lock.acquire()
+            with self._locks_guard:
+                if self._locks.get(key) is lock:
+                    break
+            lock.release()
+        try:
+            yield
+        finally:
+            lock.release()
 
     def get_bars(
         self,
@@ -228,16 +270,26 @@ class BarService:
         Raises only when nothing is cached; a failed tail refresh leaves the cache as is.
         """
         now = (now or datetime.now(UTC)).astimezone(UTC)
+        self._last_request_at = now
         key = (symbol, spec.name, prepost)
         info = self._session_lookup(symbol) if self._session_lookup is not None else None
-        hours = TradingHours.from_symbol_info(info, prepost=prepost) if info is not None else None
-        with self._locks_guard:
-            lock = self._locks[key]
-        with lock, Session(self._engine) as s:
+        hours = (
+            TradingHours.from_symbol_info(info, prepost=prepost, now=now)
+            if info is not None
+            else None
+        )
+        with self._series_lock(key), Session(self._engine) as s:
             meta = s.get(SeriesMeta, key)
             if meta is None:
+                if self._known_unknown(key, now):
+                    self._stats.incr("bars.unknown_cached")
+                    raise SymbolNotFound(symbol)
                 self._stats.incr("bars.backfill")
-                self._backfill(s, symbol, spec, prepost, now)
+                try:
+                    self._backfill(s, symbol, spec, prepost, now, known=info is not None)
+                except SymbolNotFound:
+                    self._remember_unknown(key, now)
+                    raise
                 if self._session_lookup is not None:
                     self._schedule(s, key, spec, info, hours, now, newest_before=None)
                 s.commit()
@@ -252,7 +304,7 @@ class BarService:
             elif end is not None and end <= self._newest_ts(s, symbol, spec.name, prepost):
                 # Only older bars were asked for; the tail does not matter.
                 self._stats.incr("bars.covered")
-            elif (retry_at := self._retry_at.get(key)) is not None and now < retry_at:
+            elif self._retry_pending(key, now):
                 self._stats.incr("bars.stale_retry_wait")
             else:
                 self._stats.incr("bars.tail_refresh")
@@ -272,7 +324,8 @@ class BarService:
                     pause = TAIL_RETRY_AFTER
                     if isinstance(exc, RateLimited):
                         pause = max(pause, timedelta(seconds=exc.retry_after))
-                    self._retry_at[key] = now + pause
+                    with self._maps_guard:
+                        self._retry_at[key] = now + pause
                     self._stats.incr("bars.stale_error")
                     log.warning(
                         "tail refresh failed for %s %s prepost=%s, serving cached bars: %s",
@@ -286,11 +339,43 @@ class BarService:
                         self._touch(s, meta, now)
                     s.commit()
                     return
-                self._retry_at.pop(key, None)
+                with self._maps_guard:
+                    self._retry_at.pop(key, None)
                 if self._session_lookup is not None:
                     self._schedule(s, key, spec, info, hours, now, newest_before=newest_before)
             self._touch(s, meta, now)
             s.commit()
+
+    def _retry_pending(self, key: tuple[str, str, bool], now: datetime) -> bool:
+        """True while a failed tail refresh waits for its retry; drops expired pauses."""
+        with self._maps_guard:
+            retry_at = self._retry_at.get(key)
+            if retry_at is None:
+                return False
+            if now < retry_at:
+                return True
+            del self._retry_at[key]
+            return False
+
+    def _known_unknown(self, key: tuple[str, str, bool], now: datetime) -> bool:
+        """True while the provider's "no bars" answer for the series is remembered."""
+        with self._maps_guard:
+            until = self._unknown.get(key)
+            if until is None:
+                return False
+            if now < until:
+                return True
+            del self._unknown[key]
+            return False
+
+    def _remember_unknown(self, key: tuple[str, str, bool], now: datetime) -> None:
+        p = self._policy if self._policy is not None else TailPolicy()
+        with self._maps_guard:
+            self._unknown[key] = now + timedelta(seconds=p.unknown_symbol_ttl_s)
+            if len(self._unknown) > UNKNOWN_MAX_ENTRIES:
+                _drop_expired(self._unknown, now)
+            while len(self._unknown) > UNKNOWN_MAX_ENTRIES:
+                del self._unknown[next(iter(self._unknown))]
 
     def _ttl(self, spec: IntervalSpec) -> timedelta:
         if self._policy is None:
@@ -398,21 +483,67 @@ class BarService:
         )
 
     def _backfill(
-        self, s: Session, symbol: str, spec: IntervalSpec, prepost: bool, now: datetime
+        self,
+        s: Session,
+        symbol: str,
+        spec: IntervalSpec,
+        prepost: bool,
+        now: datetime,
+        *,
+        known: bool,
     ) -> None:
-        frames: list[pd.DataFrame] = []
-        if spec.max_lookback is None:
-            frames.append(self._provider.history(symbol, spec.name, None, None, prepost))
-        else:
-            start = now - spec.max_lookback
-            step = spec.chunk or spec.max_lookback
-            while start < now:
-                stop = min(start + step, now + timedelta(days=1))
-                frames.append(self._provider.history(symbol, spec.name, start, stop, prepost))
-                start = stop
-        df = _concat(frames)
+        df = self._fetch_full(symbol, spec, prepost, now, known=known)
         if df.empty and not self._has_bars(s, symbol, spec.name, prepost):
             raise SymbolNotFound(symbol)
+        self._store_full(s, symbol, spec, prepost, now, df)
+
+    def _fetch_full(
+        self, symbol: str, spec: IntervalSpec, prepost: bool, now: datetime, *, known: bool
+    ) -> pd.DataFrame:
+        """All the history the provider serves. Unless the symbol is `known` to exist, an
+        empty newest chunk ends a chunked fetch (an unknown symbol costs one call)."""
+        if spec.max_lookback is None:
+            return _concat([self._provider.history(symbol, spec.name, None, None, prepost)])
+        start = now - spec.max_lookback
+        if spec.chunk is None:
+            return _concat([self._provider.history(symbol, spec.name, start, now, prepost)])
+        return self._fetch_range(
+            symbol, spec, prepost, start, now + timedelta(days=1), stop_if_newest_empty=not known
+        )
+
+    def _fetch_range(
+        self,
+        symbol: str,
+        spec: IntervalSpec,
+        prepost: bool,
+        start: datetime,
+        end: datetime,
+        *,
+        stop_if_newest_empty: bool = False,
+    ) -> pd.DataFrame:
+        """Bars in [start, end), in requests of at most `spec.chunk`, newest first."""
+        if spec.chunk is None:
+            return _concat([self._provider.history(symbol, spec.name, start, end, prepost)])
+        frames: list[pd.DataFrame] = []
+        stop = end
+        while stop > start:
+            begin = max(stop - spec.chunk, start)
+            frame = self._provider.history(symbol, spec.name, begin, stop, prepost)
+            if not frames and frame.empty and stop_if_newest_empty:
+                break
+            frames.append(frame)
+            stop = begin
+        return _concat(frames)
+
+    def _store_full(
+        self,
+        s: Session,
+        symbol: str,
+        spec: IntervalSpec,
+        prepost: bool,
+        now: datetime,
+        df: pd.DataFrame,
+    ) -> None:
         _upsert(s, symbol, spec.name, prepost, df)
         s.merge(
             SeriesMeta(
@@ -443,7 +574,15 @@ class BarService:
         # Calendar-based intervals (weeks, months) need a wider window to see full bars.
         span = max(spec.seconds * (TAIL_OVERLAP_BARS + 1), 4 * 86_400)
         start = datetime.fromtimestamp(tail[-1].ts, UTC) - timedelta(seconds=span)
-        fresh = self._provider.history(symbol, spec.name, start, now + timedelta(days=1), prepost)
+        end = now + timedelta(days=1)
+        if spec.max_lookback is not None and start < now - spec.max_lookback:
+            # Not read for longer than the provider's lookback: catch up what it still
+            # serves; the older cached bars stay (with a gap before the fresh ones).
+            start = now - spec.max_lookback
+            self._stats.incr("bars.tail_catch_up")
+        elif spec.chunk is not None and end - start > spec.chunk:
+            self._stats.incr("bars.tail_catch_up")
+        fresh = self._fetch_range(symbol, spec, prepost, start, end)
         overlap = _classify_overlap(tail, fresh)
         if isinstance(overlap, Same):
             self._stats.incr("bars.overlap_same")
@@ -474,12 +613,20 @@ class BarService:
         self, s: Session, symbol: str, spec: IntervalSpec, prepost: bool, now: datetime
     ) -> None:
         self._stats.incr("bars.rebackfill")
+        # Fetch before the DELETE: that takes the SQLite write lock, which must not be held
+        # across network I/O, and an empty answer must not wipe the cached bars.
+        df = self._fetch_full(symbol, spec, prepost, now, known=True)
+        if df.empty:
+            if self._has_bars(s, symbol, spec.name, prepost):
+                # The series exists: a transient upstream glitch, served stale by `sync`.
+                raise ProviderError(f"re-backfill of {symbol} {spec.name} returned no bars")
+            raise SymbolNotFound(symbol)
         s.execute(
             delete(Bar).where(
                 Bar.symbol == symbol, Bar.interval == spec.name, Bar.prepost == prepost
             )
         )
-        self._backfill(s, symbol, spec, prepost, now)
+        self._store_full(s, symbol, spec, prepost, now, df)
 
     def prune(
         self,
@@ -500,11 +647,15 @@ class BarService:
         "Used" is `last_accessed_at`, or `backfilled_at` when never recorded. A series
         used within `protect_s` is never deleted, nor one a request is syncing right now
         (its lock is busy). Each series is deleted in its own transaction, so this can
-        run in the background while requests are served.
+        run in the background while requests are served. Expired retry pauses and
+        unknown-series entries are dropped, and so are the locks of deleted series.
         """
         now = (now or datetime.now(UTC)).astimezone(UTC)
         protect_from = now - timedelta(seconds=protect_s)
         report = PruneReport()
+        with self._maps_guard:
+            _drop_expired(self._retry_at, now)
+            _drop_expired(self._unknown, now)
 
         uses = self._series_uses()
         for intraday, days in ((True, intraday_retention_days), (False, daily_retention_days)):
@@ -603,15 +754,18 @@ class BarService:
         Returns the bar rows deleted, or None when skipped: the lock is busy (counted in
         `report`), the series is gone, or it was used meanwhile.
         """
-        with self._locks_guard:
-            lock = self._locks[key]
+        lock = self._lock_for(key)
         if not lock.acquire(blocking=False):
             report.skipped_busy += 1
             return None
         try:
+            with self._locks_guard:
+                if self._locks.get(key) is not lock:  # dropped meanwhile: series gone
+                    return None
             with Session(self._engine) as s:
                 meta = s.get(SeriesMeta, key)
                 if meta is None:
+                    self._drop_lock(key)
                     return None
                 if _last_used(meta.last_accessed_at, meta.backfilled_at) >= used_before:
                     return None
@@ -631,10 +785,23 @@ class BarService:
                     )
                 )
                 s.commit()
-            self._retry_at.pop(key, None)
+            with self._maps_guard:
+                self._retry_at.pop(key, None)
+            self._drop_lock(key)
             return rows
         finally:
             lock.release()
+
+    def _drop_lock(self, key: tuple[str, str, bool]) -> None:
+        """Forget the lock of a deleted series. The caller holds that lock.
+
+        Safe because only a lock's holder ever removes it, so the registered lock of a
+        key cannot change while anyone is inside `_series_lock`. A request already
+        waiting on the dropped lock finds it unregistered once it gets it, lets go and
+        takes the registered (new) lock instead: at most one request per series runs.
+        """
+        with self._locks_guard:
+            self._locks.pop(key, None)
 
     @staticmethod
     def _newest_ts(s: Session, symbol: str, interval: str, prepost: bool) -> int:
@@ -664,6 +831,12 @@ def _aware(dt: datetime) -> datetime:
 def _last_used(accessed: datetime | None, backfilled: datetime) -> datetime:
     """When a series was last read; series cached before access tracking: when cached."""
     return _aware(accessed if accessed is not None else backfilled)
+
+
+def _drop_expired(deadlines: dict[tuple[str, str, bool], datetime], now: datetime) -> None:
+    """Remove entries whose deadline has passed (caller holds the map's guard)."""
+    for key in [k for k, until in deadlines.items() if until <= now]:
+        del deadlines[key]
 
 
 def _rowcount(result: Result[Any]) -> int:
