@@ -123,3 +123,59 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await expect(tree.getByText('No drawings')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('inspector edits the selected drawing, closes on Escape, and shows symbol details', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('drw-e2e')) return;
+    sessionStorage.setItem('drw-e2e', '1');
+    localStorage.removeItem('investopen-drawings');
+  });
+  await page.goto('/?feed=synthetic');
+  await waitForChart(page);
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  await expect(inspector).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await page.mouse.click(500, 300);
+  await page.mouse.click(800, 420);
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(650, 360);
+  await expect.poll(() => page.evaluate(() => window.chart.getSelection().length)).toBe(1);
+
+  const widthBefore = await page.evaluate(() => window.chart.root.getBoundingClientRect().width);
+  await page
+    .getByRole('toolbar', { name: 'Drawing toolbar' })
+    .getByRole('button', { name: 'Properties', exact: true })
+    .click();
+  await expect(inspector).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.chart.root.getBoundingClientRect().width))
+    .toBeLessThan(widthBefore);
+
+  await inspector
+    .getByRole('button', { name: /^Line:/ })
+    .first()
+    .click();
+  await page.getByRole('option', { name: '#DE6A4F' }).click();
+  await expect.poll(async () => (await drawings(page))[0]!.style.lineColor).toBe('#de6a4f');
+
+  // Escape closes the picker first, then the Inspector; the drawing stays.
+  await page.keyboard.press('Escape');
+  await inspector.getByRole('combobox').first().focus();
+  await page.keyboard.press('Escape');
+  await expect(inspector).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.chart.root.getBoundingClientRect().width))
+    .toBe(widthBefore);
+  expect((await drawings(page)).length).toBe(1);
+
+  // The symbol in the header opens the symbol details.
+  await page.getByRole('button', { name: /^Open details for/ }).click();
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByRole('heading', { name: 'Symbol details' })).toBeVisible();
+  await inspector.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(inspector).toHaveCount(0);
+});

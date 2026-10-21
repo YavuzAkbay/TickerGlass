@@ -3,25 +3,25 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 44px;
-  flex: 0 0 44px;
-  padding: 6px 0;
+  width: var(--rail-w);
+  flex: 0 0 var(--rail-w);
+  padding: 4px 0;
   background: var(--panel);
   user-select: none;
 }
 
 .lt-group {
   position: relative;
-  width: 44px;
+  width: var(--rail-w);
   display: flex;
   justify-content: center;
   flex: 0 0 auto;
 }
 
 .io-icon-btn.lt-btn {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   margin: 1px 0;
   padding: 0;
   border-radius: var(--radius-control);
@@ -33,10 +33,10 @@
 }
 .io-icon-btn.lt-btn.active {
   color: var(--accent-text);
-  background: var(--active-bg);
+  background: var(--accent-soft);
 }
 .io-icon-btn.lt-btn.active:hover {
-  background: var(--active-bg);
+  background: var(--accent-soft);
 }
 .lt-group.open .io-icon-btn.lt-btn {
   background: var(--hover);
@@ -79,9 +79,9 @@
 
 .lt-sep {
   flex: 0 0 auto;
-  width: 24px;
+  width: calc(var(--rail-w) - 16px);
   height: 1px;
-  margin: 6px 0;
+  margin: 4px 0;
   background: var(--border);
 }
 .lt-spacer {
@@ -100,11 +100,6 @@
   }
   .lt-sep {
     margin: 3px 0;
-  }
-}
-@media (max-height: 660px) {
-  .io-icon-btn.lt-btn {
-    height: 28px;
   }
 }
 

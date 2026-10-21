@@ -48,6 +48,12 @@ export const en = {
   'symbolHeader.earnings': 'Next earnings',
 
   // Navigator
+  'inspector.label': 'Inspector',
+  'inspector.symbol': 'Symbol details',
+  'inspector.drawing': 'Drawing',
+  'inspector.close': 'Close inspector',
+  'inspector.resize': 'Resize inspector (double-click to reset)',
+  'drawing.properties': 'Properties',
   'nav.panels': 'Panels',
   'nav.watchlist': 'Watchlist',
   'nav.alerts': 'Alerts',
