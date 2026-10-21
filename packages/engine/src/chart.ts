@@ -312,6 +312,8 @@ export class Chart implements StudyApi, DrawingApi {
     calendar: null as TradingCalendar | null,
   };
   private calendarKey = '';
+  /** Exchange-local day of the newest raw bar when the calendar was last built. */
+  private calendarDay = NaN;
   /** Bumped when the raw bars are replaced or extended backwards (not on live bars). */
   private rawEpoch = 0;
   private readonly drawingFormats = new Map<string, DrawingFormat>();
@@ -988,7 +990,9 @@ export class Chart implements StudyApi, DrawingApi {
    * Trading calendar of the raw bars (exchange timezone). Built once per load
    * (symbol, interval, extended hours) and history prepend, not per live bar,
    * so anchors past the last bar keep their slots as bars arrive. The regular
-   * session shapes the day unless extended hours are shown.
+   * session shapes the day unless extended hours are shown. A calendar that
+   * could not be built (too few full days) is retried once per new exchange
+   * day of live bars, so it appears once enough days have arrived.
    */
   private tradingCalendar(): TradingCalendar | null {
     const r = this.raw;
@@ -996,8 +1000,12 @@ export class Chart implements StudyApi, DrawingApi {
     const tz = this.symbolInfo?.timezone ?? 'UTC';
     const session = this.options.prepost ? null : (this.symbolInfo?.session ?? null);
     const key = n ? `${this.rawEpoch}|${this.intervalString()}|${tz}|${session ?? ''}` : '';
-    if (key !== this.calendarKey) {
+    const changed = key !== this.calendarKey;
+    if (!changed && (!n || this.timeline.calendar)) return this.timeline.calendar;
+    const day = n ? Math.floor(createTzConverter(tz).toLocal(r.time[n - 1]!) / 86_400) : NaN;
+    if (changed || day !== this.calendarDay) {
       this.calendarKey = key;
+      this.calendarDay = day;
       this.timeline.calendar = n
         ? buildTradingCalendar(r.time, n, this.interval, tz, session)
         : null;

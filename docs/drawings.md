@@ -91,11 +91,13 @@ session?)`), in the exchange timezone: weekends are skipped unless the newest 20
   otherwise the typical day of those bars (modal first and last bar time of day, at least two full days
   matching it, else plain steps), so odd after-hours prints and partial days do not change it. The chart
   builds it once per load / history prepend, not per live bar, so future anchors keep their slots as bars
-  arrive. Slot times lie on the bar grid from the day's first slot (intervals that do not divide a day, e.g.
+  arrive; a calendar missing for lack of data is retried on the first live bar of each new exchange day. Slot times lie on the bar grid from the day's first slot (intervals that do not divide a day, e.g.
   7m, restart the grid each day). A bar in a gap (an odd print) sits before the next day's first slot. A time
   in a non-trading gap maps to the next slot, like gaps inside the data. Round-the-clock intraday data, weekly
-  and monthly intervals step plain intervals (months by calendar month). Exchange holidays are not known
-  (they count as slots). Anchors created in the future area are whole slots.
+  and monthly intervals step plain intervals (months by calendar month). Recurring exchange
+  holidays are learned from weekdays without bars in the newest 5 years of raw bars (fixed dates with their
+  weekend observance, nth/last weekday of a month, days relative to Easter; each missing on every occurrence,
+  at least twice) and skipped; other holidays count as slots. Anchors created in the future area are whole slots.
 - **Before the first bar**: extrapolated back from the first bar; resolves exactly once history loads.
 - **Brick types** (Renko, Kagi, Line break, P&F, Range): the run of bricks at the last brick time `<= time`,
   offset by `brick` (position within bricks sharing a time). Up to `endTime` (newest raw bar) maps to the

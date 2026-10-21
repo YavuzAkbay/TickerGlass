@@ -298,6 +298,7 @@ Phase 14 notes:
 Phase 15 notes:
 
 - Events on chart: `apps/web/src/events/` (`api.ts` shares one 10-minute cache of `GET /api/events/{symbol}` with the Details panel, `attach.ts` builds the `events` marker group, `prefs.ts` holds the per-type toggles synced as `events.prefs`, `EventsTab.tsx` is the Settings tab). Badges D (dividend amount), S (split n:m) and E (earnings estimate, actual, surprise) sit below the bars; an upcoming earnings date is drawn past the last bar; nothing is drawn for symbol expressions, and during replay events after the clock are hidden. Engine: marker `shape: 'letter'` with `text`. e2e: `e2e/events.spec.ts`.
+- Timezones and calendar (engine): one shared `ZoneOffsets` cache in `packages/engine/src/scale/timezone.ts` (used by the timezone converter and `feed/resample.ts`) stores `[start, end) -> offset` intervals; transitions are located by daily sampling and bisection to the second, so half-hour DST shifts (Australia/Lord_Howe) and +5:45 (Asia/Kathmandu) are exact. The drawing calendar (`drawings/calendar.ts`) learns recurring holidays from weekdays without bars (fixed dates with weekend observance, nth/last weekday of a month, Easter-relative days) and the chart retries a missing calendar once per new exchange day of live bars. Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#drawings).
 
 ### Phase 16: AI analysis integration point (feature built separately)
 
