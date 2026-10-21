@@ -10,14 +10,29 @@ const MAX_DAYS = 40_000;
 
 /** Full trading days (modal first and last bar) needed to learn an intraday day shape. */
 const MIN_FULL_DAYS = 2;
+/** Years of the newest raw bars searched for recurring holidays (schedules change over time). */
+const HOLIDAY_YEARS = 5;
+/** Occurrences (all missing) a holiday rule needs before it is trusted. */
+const MIN_HOLIDAY_SEEN = 2;
+/**
+ * Share of weekdays (non-holiday and holiday) in the window that must have
+ * bars before missing weekdays are read as closures. Exchanges close on at most
+ * about 20 weekdays a year (>= 92% coverage); thinly traded symbols whose bars
+ * skip quiet days fall below it, and a day missing by chance would otherwise be
+ * learned whenever its few yearly occurrences all happened to be quiet.
+ */
+const MIN_WEEKDAY_COVERAGE = 0.9;
+/** Easter-relative offsets (days) considered: Carnival (-48) .. Corpus Christi (+60). */
+const EASTER_MIN = -50;
+const EASTER_MAX = 60;
 
 /**
  * Trading calendar for anchors past the last bar (docs/drawings.md §3): bar
- * slots skip weekends (unless the data has weekend bars) and, intraday, the
+ * slots skip weekends (unless the data has weekend bars), recurring exchange
+ * holidays learned from the data (see `learnHolidays`) and, intraday, the
  * hours outside the trading day (the regular session when given, else the
- * typical day seen in the data), so overnight gaps and weekends are not
- * counted as slots. Slot times lie on the bar grid from the day's first slot.
- * Exchange holidays are not known.
+ * typical day seen in the data), so overnight gaps, weekends and holidays are
+ * not counted as slots. Slot times lie on the bar grid from the day's first slot.
  */
 export interface TradingCalendar {
   /** Time of slot `k` (whole, >= 0) after the slot opening at `from` (k = 0 is `from`). */
@@ -35,6 +50,23 @@ interface Shape {
   dayStart: number;
   /** Intraday: slots per trading day (0 = round the clock from local midnight, only weekend skipping). */
   perDay: number;
+  /** Recurring holidays learned from the data; null when none. */
+  holidays: Holidays | null;
+}
+
+/**
+ * Recurring exchange holidays, as rules a local day number can be tested
+ * against. Keys: `month * 100 + day` (fixed dates), `month * 100 + weekday * 10
+ * + nth` (nth weekday of the month, 9 = last), days from Easter Sunday.
+ */
+interface Holidays {
+  fixed: Set<number>;
+  nth: Set<number>;
+  easter: Set<number>;
+  /** Fixed dates observed on the Friday before when they fall on a Saturday. */
+  satToFri: Set<number>;
+  /** Fixed dates observed on the Monday after when they fall on a Sunday. */
+  sunToMon: Set<number>;
 }
 
 const SESSION_RE = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/;
@@ -67,11 +99,197 @@ function mode(values: number[]): number {
 }
 
 const weekday = (localDay: number) => (localDay + 4) % 7; // 1970-01-01 was a Thursday (4)
-const tradingDay = (s: Shape, localDay: number) => {
-  if (s.weekends) return true;
+const weekendDay = (s: Shape, localDay: number) => {
+  if (s.weekends) return false;
   const wd = weekday(localDay);
-  return wd !== 0 && wd !== 6;
+  return wd === 0 || wd === 6;
 };
+const tradingDay = (s: Shape, localDay: number) =>
+  !weekendDay(s, localDay) && !(s.holidays && isHoliday(s.holidays, localDay));
+
+/** Civil date of a day number (days since 1970-01-01) as `year * 10000 + month * 100 + day`. */
+function civil(z0: number): number {
+  const z = z0 + 719_468;
+  const era = Math.floor(z / 146_097);
+  const doe = z - era * 146_097;
+  const yoe = Math.floor(
+    (doe - Math.floor(doe / 1460) + Math.floor(doe / 36_524) - Math.floor(doe / 146_096)) / 365,
+  );
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  const m = mp < 10 ? mp + 3 : mp - 9;
+  return (yoe + era * 400 + (m <= 2 ? 1 : 0)) * 10_000 + m * 100 + d;
+}
+
+const dayNumber = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) / 86_400_000;
+const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+const easterDays = new Map<number, number>();
+/** Day number of (Gregorian) Easter Sunday: the anonymous Gregorian computus. */
+function easterSunday(y: number): number {
+  let e = easterDays.get(y);
+  if (e === undefined) {
+    const a = y % 19;
+    const b = Math.floor(y / 100);
+    const c = y % 100;
+    const d = Math.floor(b / 4);
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * (b % 4) + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    e = dayNumber(y, month, day);
+    easterDays.set(y, e);
+  }
+  return e;
+}
+
+/** Whether local day `day` (a weekday) is a learned holiday or its observed day. */
+function isHoliday(h: Holidays, day: number): boolean {
+  const c = civil(day);
+  const y = Math.floor(c / 10_000);
+  const md = c % 10_000;
+  const m = Math.floor(md / 100);
+  const d = md % 100;
+  const wd = weekday(day);
+  if (h.fixed.has(md)) return true;
+  const nth = m * 100 + wd * 10;
+  if (h.nth.size > 0) {
+    if (h.nth.has(nth + Math.ceil(d / 7))) return true;
+    if (d + 7 > daysInMonth(y, m) && h.nth.has(nth + 9)) return true;
+  }
+  if (h.easter.size > 0 && h.easter.has(day - easterSunday(y))) return true;
+  if (wd === 5 && h.satToFri.has(civil(day + 1) % 10_000)) return true;
+  return wd === 1 && h.sunToMon.has(civil(day - 1) % 10_000);
+}
+
+/** Counts of a holiday rule: occurrences on trading weekdays and how many had no bars. */
+type Tally = Map<number, [seen: number, missing: number]>;
+
+function tally(t: Tally, key: number, missing: boolean): void {
+  const v = t.get(key);
+  if (v) {
+    v[0]++;
+    if (missing) v[1]++;
+  } else t.set(key, [1, missing ? 1 : 0]);
+}
+
+/** Rules seen at least MIN_HOLIDAY_SEEN times and missing every time. */
+function learned(t: Tally): Set<number> {
+  const out = new Set<number>();
+  for (const [key, [seen, missing]] of t)
+    if (seen >= MIN_HOLIDAY_SEEN && missing === seen) out.add(key);
+  return out;
+}
+
+/**
+ * Recurring holidays from weekdays without bars in the newest HOLIDAY_YEARS of
+ * data (all of `time`, not only the shape sample). Learned, when every
+ * occurrence in that window had no bars and there were at least two: fixed
+ * dates (Jan 1, Dec 25), the nth or last weekday of a month (third Monday of
+ * January, last Monday of May), days relative to Easter (Good Friday, Easter
+ * Monday), and, for learned fixed dates, observance on the Friday before /
+ * Monday after when the date falls on a weekend (only once seen so). A new or
+ * moved holiday and one-off closures are unknown until they recur; schedules
+ * from other calendars (lunar new year) are not learned. A rule needs two
+ * weekday occurrences, so in practice two to five years of daily or hourly
+ * bars; short intraday histories learn nothing. Gaps inside the data need no
+ * rules: anchors there map to bars. Only for intraday or 1-day bars (multi-day
+ * bars leave most weekdays without a bar), and nothing is learned when under
+ * MIN_WEEKDAY_COVERAGE of the window's weekdays have bars (sparse data).
+ */
+function learnHolidays(
+  conv: TzConverter,
+  time: ArrayLike<number>,
+  length: number,
+  weekends: boolean,
+): Holidays | null {
+  const lastDay = Math.floor(conv.toLocal(time[length - 1]!) / DAY);
+  const windowStart = lastDay - HOLIDAY_YEARS * 366;
+  if (Math.floor(conv.toLocal(time[0]!) / DAY) > lastDay - 366) return null;
+  // First bar of the window (UTC times are sorted; allow a day of offset slack).
+  let lo = 0;
+  let hi = length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (time[mid]! < (windowStart - 1) * DAY) lo = mid + 1;
+    else hi = mid;
+  }
+  let firstDay = NaN;
+  let present = new Uint8Array(0);
+  for (let i = lo; i < length; i++) {
+    const day = Math.floor(conv.toLocal(time[i]!) / DAY);
+    if (day < windowStart) continue;
+    if (Number.isNaN(firstDay)) {
+      firstDay = day;
+      present = new Uint8Array(lastDay - firstDay + 1);
+    }
+    present[day - firstDay] = 1;
+  }
+  if (Number.isNaN(firstDay)) return null;
+  const has = (day: number) => day >= firstDay && day <= lastDay && present[day - firstDay] === 1;
+  let weekdays = 0;
+  let covered = 0;
+  for (let day = firstDay; day <= lastDay; day++) {
+    const wd = weekday(day);
+    if (!weekends && (wd === 0 || wd === 6)) continue;
+    weekdays++;
+    if (has(day)) covered++;
+  }
+  if (covered < MIN_WEEKDAY_COVERAGE * weekdays) return null;
+  const fixed: Tally = new Map();
+  const nth: Tally = new Map();
+  const easter: Tally = new Map();
+  for (let day = firstDay; day <= lastDay; day++) {
+    const wd = weekday(day);
+    if (!weekends && (wd === 0 || wd === 6)) continue;
+    const missing = !has(day);
+    const c = civil(day);
+    const y = Math.floor(c / 10_000);
+    const md = c % 10_000;
+    const m = Math.floor(md / 100);
+    const d = md % 100;
+    tally(fixed, md, missing);
+    tally(nth, m * 100 + wd * 10 + Math.ceil(d / 7), missing);
+    if (d + 7 > daysInMonth(y, m)) tally(nth, m * 100 + wd * 10 + 9, missing);
+    const off = day - easterSunday(y);
+    if (off >= EASTER_MIN && off <= EASTER_MAX) tally(easter, off, missing);
+  }
+  const h: Holidays = {
+    fixed: learned(fixed),
+    nth: learned(nth),
+    easter: learned(easter),
+    satToFri: new Set(),
+    sunToMon: new Set(),
+  };
+  if (!weekends) {
+    // Weekend observance of learned fixed dates: the adjacent weekday had no
+    // bars every time the date fell on that weekend day (inside the data).
+    const firstYear = Math.floor(civil(firstDay) / 10_000);
+    const lastYear = Math.floor(civil(lastDay) / 10_000);
+    for (const md of h.fixed) {
+      const sat: Tally = new Map();
+      const sun: Tally = new Map();
+      for (let y = firstYear; y <= lastYear; y++) {
+        const day = dayNumber(y, Math.floor(md / 100), md % 100);
+        const wd = weekday(day);
+        if (wd === 6 && day - 1 >= firstDay && day - 1 <= lastDay) tally(sat, 0, !has(day - 1));
+        if (wd === 0 && day + 1 >= firstDay && day + 1 <= lastDay) tally(sun, 0, !has(day + 1));
+      }
+      const s = sat.get(0);
+      if (s && s[0] === s[1]) h.satToFri.add(md);
+      const u = sun.get(0);
+      if (u && u[0] === u[1]) h.sunToMon.add(md);
+    }
+  }
+  const any = h.fixed.size + h.nth.size + h.easter.size;
+  return any > 0 ? h : null;
+}
 
 /** UTC time of local seconds `l` (handles DST up to the transition hour). */
 function fromLocal(tz: TzConverter, l: number): number {
@@ -90,6 +308,8 @@ function fromLocal(tz: TzConverter, l: number): number {
  * full days must match it (so an odd after-hours print or a partial day does
  * not change the shape). Build it once per load / symbol / interval, not per
  * bar: a shape that changes with new bars moves anchors past the last bar.
+ * When it is null for lack of data, retrying once per new exchange day is
+ * enough (a day completes at most once per day).
  */
 export function buildTradingCalendar(
   time: ArrayLike<number>,
@@ -119,8 +339,12 @@ export function buildTradingCalendar(
     } else lasts[lasts.length - 1] = tod;
   }
   if (iv >= DAY) {
-    const s: Shape = { tz: conv, iv, weekends, dayStart: 0, perDay: 0 };
-    return dailyCalendar(s, Math.max(1, Math.round(iv / DAY)));
+    const count = Math.max(1, Math.round(iv / DAY));
+    // Multi-day bars (2D, 3D) leave weekdays without a bar that are not
+    // closures, and the 1-day source bars are not available here: learn none.
+    const holidays = count === 1 ? learnHolidays(conv, time, length, weekends) : null;
+    const s: Shape = { tz: conv, iv, weekends, dayStart: 0, perDay: 0, holidays };
+    return dailyCalendar(s, count);
   }
   let dayStart: number;
   let span: number;
@@ -148,6 +372,7 @@ export function buildTradingCalendar(
     weekends,
     dayStart: perDay === 0 ? 0 : dayStart,
     perDay,
+    holidays: learnHolidays(conv, time, length, weekends),
   });
 }
 
@@ -172,7 +397,7 @@ function tradingDaysBetween(s: Shape, a: number, b: number): number {
 /** First trading day >= day. */
 function nextTradingDay(s: Shape, day: number): number {
   let d = day;
-  for (let guard = 0; !tradingDay(s, d) && guard < 7; guard++) d++;
+  for (let guard = 0; !tradingDay(s, d) && guard < 31; guard++) d++;
   return d;
 }
 

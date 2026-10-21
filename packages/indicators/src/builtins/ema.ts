@@ -3,7 +3,7 @@ import { defineIndicator } from '../registry';
 /** Exponential moving average, seeded with the SMA of the first `length` values. */
 export const EMA = defineIndicator({
   id: 'ema',
-  name: 'Moving Average Exponential',
+  name: 'Exponential Moving Average',
   shortName: 'EMA',
   category: 'movingAverage',
   keywords: ['ma', 'exponential', 'average'],
@@ -19,7 +19,7 @@ export const EMA = defineIndicator({
       id: 'ema',
       title: 'EMA',
       kind: 'line',
-      color: '#2962ff',
+      color: '#6E9BD6',
       offset: (inputs) => inputs.offset,
     },
   ],

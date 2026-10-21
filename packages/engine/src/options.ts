@@ -17,44 +17,72 @@ export interface ChartTheme {
   fontSize: number;
 }
 
+const CHROME_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+
 export const DARK_THEME: ChartTheme = {
-  background: '#0f1115',
-  text: '#b2b5be',
-  textMuted: '#787b86',
-  grid: '#1c2029',
-  border: '#2a2e39',
-  crosshair: '#9598a1',
-  crosshairLabelBg: '#363a45',
-  crosshairLabelText: '#d1d4dc',
-  up: '#26a69a',
-  down: '#ef5350',
-  wickUp: '#26a69a',
-  wickDown: '#ef5350',
-  extendedHoursBg: '#2962ff12',
-  prevClose: '#787b86',
-  fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
+  background: '#14130F',
+  text: '#CFC9BA',
+  textMuted: '#9A9484',
+  grid: 'rgba(236, 231, 218, 0.05)',
+  border: '#34312A',
+  crosshair: '#B8B09D',
+  crosshairLabelBg: '#3A362D',
+  crosshairLabelText: '#ECE7DA',
+  up: '#7FB069',
+  down: '#DE6A4F',
+  wickUp: '#7FB069',
+  wickDown: '#DE6A4F',
+  extendedHoursBg: '#E0A93B0F',
+  prevClose: '#A39E8F',
+  fontFamily: CHROME_FONT,
   fontSize: 11,
 };
 
 export const LIGHT_THEME: ChartTheme = {
   ...DARK_THEME,
-  background: '#ffffff',
-  text: '#131722',
-  textMuted: '#6a6d78',
-  grid: '#f0f3fa',
-  border: '#e0e3eb',
-  crosshair: '#9598a1',
-  crosshairLabelBg: '#131722',
-  crosshairLabelText: '#ffffff',
-  up: '#089981',
-  down: '#f23645',
-  wickUp: '#089981',
-  wickDown: '#f23645',
-  extendedHoursBg: '#2962ff0d',
+  background: '#F6F3EC',
+  text: '#1E1B16',
+  textMuted: '#6F6859',
+  grid: 'rgba(30, 27, 22, 0.06)',
+  border: '#DDD6C7',
+  crosshair: '#6F6859',
+  crosshairLabelBg: '#1E1B16',
+  crosshairLabelText: '#F6F3EC',
+  up: '#2F7D5B',
+  down: '#B5452F',
+  wickUp: '#2F7D5B',
+  wickDown: '#B5452F',
+  extendedHoursBg: '#8A5D0E0D',
 };
 
 export type CrosshairMode = 'cross' | 'dot' | 'arrow';
 export type MagnetMode = 'off' | 'weak' | 'strong';
+
+/** Main-pane legend title: the symbol, its description, or both. */
+export type LegendTitleMode = 'ticker' | 'description' | 'both';
+
+/** What the main-pane legend (status line) shows. */
+export interface LegendOptions {
+  title: LegendTitleMode;
+  /** Exchange name after the interval. */
+  exchange: boolean;
+  /** Open, high, low and close values. */
+  ohlc: boolean;
+  /** Change from the previous close, absolute and percent. */
+  barChange: boolean;
+  volume: boolean;
+  /** Backdrop behind the legend text. */
+  background: boolean;
+}
+
+export const DEFAULT_LEGEND_OPTIONS: LegendOptions = {
+  title: 'ticker',
+  exchange: true,
+  ohlc: true,
+  barChange: true,
+  volume: true,
+  background: false,
+};
 
 export interface ChartOptions {
   theme: ChartTheme;
@@ -69,6 +97,9 @@ export interface ChartOptions {
   /** Dashed line at the previous session's close (intraday). */
   showPrevClose: boolean;
   locale: string;
+  /** "+" box on the price axis crosshair label (emits `priceAxisPlus`). */
+  priceAxisPlusButton: boolean;
+  legend: LegendOptions;
 }
 
 export const DEFAULT_OPTIONS: ChartOptions = {
@@ -81,4 +112,6 @@ export const DEFAULT_OPTIONS: ChartOptions = {
   adjusted: false,
   showPrevClose: false,
   locale: 'en-US',
+  priceAxisPlusButton: true,
+  legend: DEFAULT_LEGEND_OPTIONS,
 };

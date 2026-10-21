@@ -8,6 +8,7 @@ import { createAutosaver, type Autosaver } from '../api/autosave';
 import { ApiError, errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { DEFAULT_LIST_NAME, useWatchlistStore } from '../watchlist/store';
 import type { FlagColor, WatchlistEntry } from '../watchlist/types';
 import { isTransient } from './net';
@@ -152,7 +153,8 @@ export class WatchlistSync {
   }
 
   private createSeed(): string {
-    const { symbol, recentSymbols } = useAppStore.getState();
+    const { recentSymbols } = useAppStore.getState();
+    const { symbol } = useChartView.getState();
     const syms = [...new Set([symbol, ...recentSymbols])];
     return useWatchlistStore.getState().createList(
       DEFAULT_LIST_NAME,

@@ -1,4 +1,4 @@
-/** Response shapes of the REST API (see api/src/investopen_api/routes/). */
+/** Response shapes of the REST API (see api/src/tickerglass_api/routes/). */
 import type { FlagColor, WatchlistItem } from '../watchlist/types';
 
 export interface Quote {
@@ -81,7 +81,7 @@ export interface Performance {
 }
 
 // ------------------------------------------------------------ persistence
-// User data (docs/persistence.md; api/src/investopen_api/userdata/schemas.py).
+// User data (docs/persistence.md; api/src/tickerglass_api/userdata/schemas.py).
 // JSON payloads are opaque to the server; timestamps are ISO 8601 strings.
 
 /** Version of the import/export bundle this client writes. */
@@ -205,6 +205,26 @@ export type { Flag, Watchlist } from '../watchlist/types';
 
 export type Settings = Record<string, unknown>;
 
+/** A user JS indicator (docs/persistence.md). `manifest` is null if the last save did not compile. */
+export interface UserScript {
+  id: string;
+  name: string;
+  source: string;
+  manifest: Record<string, unknown> | null;
+  apiVersion: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Editable fields of a user script. */
+export interface UserScriptIn {
+  name: string;
+  source: string;
+  manifest: Record<string, unknown> | null;
+  apiVersion: number;
+}
+
 export interface Note {
   id: string;
   /** null = general note. */
@@ -218,7 +238,7 @@ export interface Note {
 /** All user data (`GET /api/export`, `POST /api/import`). */
 export interface Bundle {
   version: number;
-  app: 'investopen';
+  app: 'tickerglass';
   exportedAt?: string | null;
   layouts: (Layout | (LayoutDocument & { id: string; isLastUsed?: boolean }))[];
   drawings: { data: Record<string, unknown>; schemaVersion?: number }[];

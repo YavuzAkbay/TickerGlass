@@ -4,7 +4,7 @@ import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import { findSticker, findTool, isToolAvailable, selectTool, UNAVAILABLE_HINT } from './tools';
 
-const POS_KEY = 'investopen-favbar-pos';
+const POS_KEY = 'tickerglass-favbar-pos';
 
 function loadPos(): { x: number; y: number } | null {
   try {

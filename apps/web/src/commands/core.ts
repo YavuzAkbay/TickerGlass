@@ -1,3 +1,4 @@
+import type { Chart } from '@tickerglass/engine';
 import {
   Camera,
   Expand,
@@ -9,14 +10,25 @@ import {
   Settings,
   Undo2,
 } from 'lucide-react';
-import { changeScale, toggleScaleMode } from '../chart/scaleActions';
+import { useAlerts } from '../alerts/store';
+import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
+import { changeScale, toggleScaleMode } from './scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
-import { getChart } from '../store/chart';
-import { useAppStore } from '../store/app';
-import { useUiStore, type RightPanel } from '../store/ui';
+import { activeChartId, syncBus } from '../layout/sync';
+import { composeScreenshot, screenshotFilename } from '../chart/screenshot';
+import { leaves } from '../layout/grid';
+import { useLayoutGrid } from '../layout/store';
+import { getChart, useChartStore } from '../store/chart';
+import { normalizeSymbol, useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
+import { useUiStore, type NavSection } from '../store/ui';
 import { toast } from '../ui/Toast';
 import { useHistory } from './history';
 import { commands, type Command } from './registry';
+
+/** Longest main-chart symbol: drawings and notes store it in a String(32) column. */
+export const MAX_CHART_SYMBOL = 32;
+export const TOO_LONG_FOR_CHART = `Too long for a chart symbol (max ${MAX_CHART_SYMBOL}), add it with Compare instead`;
 
 const hasChart = () => !!getChart();
 /** Undo/redo would fight an ongoing drawing drag or the open text editor. */
@@ -29,28 +41,42 @@ const open = (
   arg?: unknown,
 ) => useUiStore.getState().openDialog(id, arg);
 
-export async function saveScreenshot(copy: boolean): Promise<void> {
-  const chart = getChart();
-  if (!chart) return;
-  const canvas = chart.takeScreenshot();
+/** Charts to capture: the focused one, or every chart of the layout in grid order. */
+function screenshotCharts(layout: boolean): Chart[] {
+  const active = getChart();
+  if (!active) return [];
+  const { grid, maximizedId } = useLayoutGrid.getState();
+  if (!layout || maximizedId !== null) return [active];
+  const { sessions } = useChartStore.getState();
+  const charts = leaves(grid).flatMap((id) => sessions.get(id)?.chart ?? []);
+  return charts.length ? charts : [active];
+}
+
+export async function saveScreenshot(copy: boolean, layout = false): Promise<void> {
+  const charts = screenshotCharts(layout);
+  const first = charts[0];
+  if (!first) return;
+  const now = new Date();
+  const canvas = composeScreenshot(charts, now);
   const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
   if (!blob) return;
+  const what = charts.length > 1 ? 'Layout' : 'Chart';
   if (copy && 'ClipboardItem' in window) {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-    toast('Chart image copied to clipboard', 'success');
+    toast(`${what} image copied to clipboard`, 'success');
     return;
   }
   const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   a.href = URL.createObjectURL(blob);
-  a.download = `${chart.getSymbol()}_${chart.getInterval()}_${stamp}.png`;
+  a.download = screenshotFilename(first.getSymbol(), first.getInterval(), now);
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-const PANELS: [RightPanel, string][] = [
+const PANELS: [NavSection | 'details', string][] = [
   ['watchlist', 'Watchlist'],
   ['alerts', 'Alerts'],
+  ['events', 'Events'],
   ['objectTree', 'Object tree'],
   ['dataWindow', 'Data window'],
   ['details', 'Symbol details'],
@@ -72,7 +98,15 @@ export function registerCoreCommands(): () => void {
       title: 'Set symbol',
       hidden: true,
       run: (arg) => {
-        if (typeof arg === 'string' && arg) useAppStore.getState().setSymbol(arg.toUpperCase());
+        if (typeof arg !== 'string' || !arg) return;
+        const symbol = normalizeSymbol(arg);
+        if (symbol.length > MAX_CHART_SYMBOL) {
+          toast(TOO_LONG_FOR_CHART, 'error');
+          return;
+        }
+        const from = activeChartId();
+        if (from !== null) syncBus.setSymbol(from, symbol);
+        else useChartView.getState().setSymbol(symbol);
       },
     },
     {
@@ -80,7 +114,10 @@ export function registerCoreCommands(): () => void {
       title: 'Set interval',
       hidden: true,
       run: (arg) => {
-        if (typeof arg === 'string' && arg) useAppStore.getState().setInterval(arg);
+        if (typeof arg !== 'string' || !arg) return;
+        const from = activeChartId();
+        if (from !== null) syncBus.setInterval(from, arg);
+        else useChartView.getState().setInterval(arg);
       },
     },
     {
@@ -184,6 +221,22 @@ export function registerCoreCommands(): () => void {
       run: () => saveScreenshot(true),
     },
     {
+      id: 'chart.screenshotLayout',
+      title: 'Download layout image',
+      category: 'Chart',
+      icon: Camera,
+      enabled: hasChart,
+      run: () => saveScreenshot(false, true),
+    },
+    {
+      id: 'chart.screenshotLayout.copy',
+      title: 'Copy layout image',
+      category: 'Chart',
+      icon: Camera,
+      enabled: hasChart,
+      run: () => saveScreenshot(true, true),
+    },
+    {
       id: 'view.fullscreen',
       title: 'Toggle fullscreen',
       category: 'View',
@@ -240,27 +293,46 @@ export function registerCoreCommands(): () => void {
       title: 'Toggle extended trading hours',
       category: 'Chart',
       shortcut: 'Alt+E',
-      run: () => useAppStore.setState((s) => ({ prepost: !s.prepost })),
+      run: () => useChartView.setState((s) => ({ prepost: !s.prepost })),
     },
     {
       id: 'alert.create',
       title: 'Create alert',
       category: 'Alerts',
       shortcut: 'Alt+a',
-      run: () => toast('Alerts arrive in Phase 10'),
+      // `{price?, paneId?, symbol?, drawingId?, indicatorId?}` or `{cloneOf: id}`.
+      run: (arg) => {
+        if (isCloneArgs(arg)) {
+          if (useAlerts.getState().alerts[arg.cloneOf]) openAlertDialog({ cloneOf: arg.cloneOf });
+          else toast('Alert not found', 'error');
+          return;
+        }
+        openAlertDialog(sanitizeCreateArgs(arg));
+      },
     },
     {
-      id: 'replay.toggle',
-      title: 'Bar replay',
-      category: 'Chart',
-      shortcut: 'Shift+Alt+r',
-      run: () => toast('Market replay arrives in Phase 13'),
+      id: 'alert.edit',
+      title: 'Edit alert',
+      category: 'Alerts',
+      hidden: true,
+      run: (arg) => {
+        const id = (arg as { id?: unknown } | undefined)?.id;
+        if (typeof id === 'string' && useAlerts.getState().alerts[id])
+          openAlertDialog({ editId: id });
+        else toast('Alert not found', 'error');
+      },
     },
     ...PANELS.map(([id, title]): Command => ({
       id: `view.panel.${id}`,
       title: `Toggle ${title} panel`,
       category: 'Panels',
-      run: () => useUiStore.getState().togglePanel(id),
+      run: () => {
+        const ui = useUiStore.getState();
+        // Symbol details live in the Inspector.
+        if (id !== 'details') ui.toggleNav(id);
+        else if (ui.inspector?.view === 'symbol') ui.closeInspector();
+        else ui.openInspector('symbol');
+      },
     })),
   ];
   return commands.register(list);

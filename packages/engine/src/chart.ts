@@ -1,10 +1,28 @@
 import { Emitter } from './events';
 import { formatInterval, intervalSeconds, isIntraday, parseInterval } from './feed/intervals';
 import { SeriesStore } from './model/series-store';
-import { DEFAULT_OPTIONS, type ChartOptions, type ChartTheme } from './options';
+import { DEFAULT_OPTIONS, type ChartOptions, type ChartTheme, type LegendOptions } from './options';
 import { Pane, div, place } from './pane';
 import { CanvasLayer } from './render/canvas';
 import { dashedLine, font, hLine, labelBox, vLine } from './render/draw';
+import {
+  drawMarkers,
+  drawMarkerTooltip,
+  hitMarker,
+  layoutMarkers,
+  layoutStrip,
+  stripReservePx,
+  type ChartMarker,
+  type PlacedMarker,
+} from './render/markers';
+import {
+  drawPriceLineAxisLabels,
+  drawPriceLines,
+  hitPriceLine,
+  layoutPriceLines,
+  type ChartPriceLine,
+  type PlacedPriceLine,
+} from './render/price-lines';
 import { type PaneSeries } from './render/series';
 import { MainSeries, VolumeSeries, type VolumeMode } from './render/main-series';
 import {
@@ -40,8 +58,9 @@ import type { Bar, DataFeed, Interval, SymbolInfo, Unsubscribe } from './types';
 import { formatStudyTick, formatStudyValue } from './studies/format';
 import { commonPrefix, diffTail, snapshotSeries, type SeriesSnapshot } from './studies/series-diff';
 import { Study } from './studies/study';
-import { StudySeries } from './studies/study-series';
+import { StudySeries, type StudyLastValue } from './studies/study-series';
 import type {
+  LegendSlotKind,
   SeriesChange,
   StudyApi,
   StudyData,
@@ -55,10 +74,11 @@ import type {
 } from './studies/types';
 import { DrawingInteraction, type DrawingPointerTarget } from './drawings/interaction';
 import { cloneDrawing, DrawingLayer, type DrawingHit, type DrawingHost } from './drawings/layer';
-import { withTime } from './drawings/geometry';
+import { isPaneCoords, withTime } from './drawings/geometry';
 import { buildTradingCalendar, type TradingCalendar } from './drawings/calendar';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './drawings/mapping';
 import { getDrawingTool } from './drawings/registry';
+import { mapSyncTime, type SyncTimeRef } from './sync/time-map';
 import type {
   Drawing,
   DrawingApi,
@@ -72,6 +92,8 @@ import type {
   DrawingOptions,
   DrawingPasteOptions,
   DrawingPatch,
+  DrawingPoint,
+  DrawingToolOptions,
 } from './drawings/types';
 import './drawings/tools';
 
@@ -81,10 +103,14 @@ const COLLAPSED_PANE_HEIGHT = 24;
 const MIN_PANE_HEIGHT = 30;
 const LAZY_LOAD_THRESHOLD = 150;
 const AXIS_LABEL_HEIGHT = 20;
+/** Width of the "+" box at the left edge of the price label (axis-relative from x = 1). */
+const PLUS_WIDTH = 18;
 
 const INVALIDATE_OVERLAY = 1;
 const INVALIDATE_MAIN = 2;
 const INVALIDATE_LAYOUT = 4;
+/** Tolerance (bar slots) for pane edges computed in floating point. */
+const EDGE_EPS = 1e-6;
 
 /** Ids reserved for built-in series. */
 const RESERVED_STUDY_IDS = new Set(['main', 'volume', 'volume-pane']);
@@ -95,6 +121,25 @@ export interface CrosshairInfo {
   time: number | null;
   price: number | null;
   bar: Bar | null;
+}
+
+/**
+ * What moved the view: a pointer/keyboard gesture that moved the time axis
+ * ('user'), a price-scale-only gesture ('price'; the visible time range is
+ * unchanged), an API call, or a data load.
+ */
+export type ViewChangeCause = 'user' | 'price' | 'api' | 'data';
+
+/** Crosshair position from another chart of a layout (see `setSyncedCrosshair`). */
+export interface SyncedCrosshair {
+  /** Open time (unix s) of the source chart's bar under its crosshair. */
+  time: number;
+  /** Source chart interval, e.g. "5m", "1D". */
+  interval: string;
+  /** Exchange timezone (IANA) of the source symbol; null = UTC. */
+  timezone: string | null;
+  /** Price for the horizontal line; null = vertical line only (another symbol). */
+  price: number | null;
 }
 
 /** A point on the chart in chart terms (for context menus, drawings, alerts). */
@@ -111,17 +156,61 @@ export interface ChartPoint {
   drawingId?: string | null;
 }
 
+/** Payload of the `error` event. `status` and `retryAfter` come from a `FeedError`. */
+export interface ChartErrorInfo {
+  message: string;
+  /** HTTP status of a failed request; 0 for network errors. Absent for other errors. */
+  status?: number;
+  /** Seconds the server asked to wait before retrying (429/503). */
+  retryAfter?: number;
+}
+
+function chartErrorInfo(err: unknown, message?: string): ChartErrorInfo {
+  const info: ChartErrorInfo = {
+    message: message ?? (err instanceof Error ? err.message : String(err)),
+  };
+  if (err instanceof Error) {
+    const { status, retryAfter } = err as { status?: unknown; retryAfter?: unknown };
+    if (typeof status === 'number') info.status = status;
+    if (typeof retryAfter === 'number') info.retryAfter = retryAfter;
+  }
+  return info;
+}
+
+/** Timing of the chart's recent frames (`Chart.getRenderStats`). */
+export interface RenderStats {
+  /** Frames rendered since the chart was created. */
+  frames: number;
+  /** Duration of the last frame (layout + main + overlay), ms. */
+  lastFrameMs: number;
+  /** Mean duration of the last (up to) 60 frames, ms. */
+  avgFrameMs: number;
+  /** Canvas layers redrawn in the last frame. */
+  layersDrawn: number;
+  /** Bars in the visible range the last full redraw drew (0 for overlay-only frames). */
+  barsDrawn: number;
+}
+
+/** Frames averaged by `RenderStats.avgFrameMs`. */
+const STATS_WINDOW = 60;
+
 export interface ChartEvents extends StudyEvents, DrawingEvents {
   contextMenu: ChartPoint;
   /** Live update of the last bar (or a newly appended one). */
   barUpdate: Bar;
   crosshairMove: CrosshairInfo;
   visibleRangeChange: { from: number; to: number };
+  /** The time scale moved or zoomed, or the bars under it changed. */
+  viewChange: { cause: ViewChangeCause };
   symbolResolved: SymbolInfo;
   dataLoaded: { symbol: string; interval: string; bars: number };
   loading: boolean;
-  error: { message: string };
+  error: ChartErrorInfo;
   stateChange: ChartState;
+  /** The "+" on the price axis label was clicked. */
+  priceAxisPlus: { paneId: string; price: number };
+  markerClick: { group: string; id: string };
+  priceLineClick: { group: string; id: string };
 }
 
 export interface PaneState {
@@ -165,8 +254,19 @@ export type HitTarget =
       /** Drawing part under the pointer (drawings sit above all series). With a
        * drawing hit, `seriesId` is null unless the drawing hit is weak. */
       drawing?: DrawingHit;
+      /** Marker or price line under the pointer (checked before drawings on click). */
+      marker?: { group: string; id: string };
+      priceLine?: { group: string; id: string };
     }
-  | { kind: 'priceAxis'; pane: Pane; y: number }
+  | {
+      kind: 'priceAxis';
+      pane: Pane;
+      y: number;
+      /** The "+" box of the price label is under the pointer. */
+      plus?: boolean;
+      /** A price line's axis label is under the pointer. */
+      priceLine?: { group: string; id: string };
+    }
   | { kind: 'timeAxis'; x: number }
   | { kind: 'separator'; index: number }
   | { kind: 'none' };
@@ -176,7 +276,31 @@ interface CrosshairPos {
   x: number; // snapped to bar centre
   y: number; // snapped by magnet
   index: number;
+  rawX: number;
   rawY: number;
+}
+
+/** One text line per legend row (price info, compares, study rows); spans are space-separated. */
+function legendLines(pane: Pane): string[] {
+  const text = (el: Element): string => {
+    const parts: string[] = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = (n.textContent ?? '').trim();
+      if (t) parts.push(t);
+    }
+    return parts.join(' ');
+  };
+  const lines: string[] = [];
+  const add = (t: string) => {
+    if (t) lines.push(t);
+  };
+  add(text(pane.legendInfo));
+  for (const host of [pane.legendCompare, pane.legendSlot]) {
+    if (host.children.length === 0) add(text(host));
+    else for (const row of Array.from(host.children)) add(text(row));
+  }
+  return lines;
 }
 
 export class Chart implements StudyApi, DrawingApi {
@@ -214,6 +338,9 @@ export class Chart implements StudyApi, DrawingApi {
   private loadGen = 0;
   private unsubscribe: Unsubscribe | null = null;
   private crosshair: CrosshairPos | null = null;
+  /** Crosshair mirrored from another chart; `logical` is cached per `key` (bars, chart type). */
+  private synced: { ref: SyncTimeRef; price: number | null; logical: number; key: string } | null =
+    null;
   private maximized: Pane | null = null;
   private separators: HTMLDivElement[] = [];
   private timeAxisEl: HTMLDivElement;
@@ -226,6 +353,13 @@ export class Chart implements StudyApi, DrawingApi {
   private dpr = 1;
   private invalid = 0;
   private frame = 0;
+  /** Recent frame durations (ring of STATS_WINDOW) and last-frame counters. */
+  private readonly frameMs = new Float64Array(STATS_WINDOW);
+  private frames = 0;
+  private layersDrawn = 0;
+  private barsDrawn = 0;
+  /** Emit `performance.measure` entries per frame (see `setProfiling`). */
+  private profiling = false;
   private marks: TimeMark[] = [];
   private resizeObserver: ResizeObserver;
   private countdownTimer: ReturnType<typeof setInterval>;
@@ -248,11 +382,17 @@ export class Chart implements StudyApi, DrawingApi {
     calendar: null as TradingCalendar | null,
   };
   private calendarKey = '';
+  /** Exchange-local day of the newest raw bar when the calendar was last built. */
+  private calendarDay = NaN;
   /** Bumped when the raw bars are replaced or extended backwards (not on live bars). */
   private rawEpoch = 0;
   private readonly drawingFormats = new Map<string, DrawingFormat>();
   private readonly intervalCache: { iv: Interval | null; str: string } = { iv: null, str: '' };
   private readonly axisLabelBuf: DrawingAxisLabel[] = [];
+  private readonly markerGroups = new Map<string, readonly ChartMarker[]>();
+  private readonly lineGroups = new Map<string, readonly ChartPriceLine[]>();
+  /** Pointer over a price axis (drives the price label + "+" without the crosshair). */
+  private axisHover: { pane: Pane; y: number } | null = null;
 
   constructor(container: HTMLElement, feed: DataFeed, options: Partial<ChartOptions> = {}) {
     injectStyle();
@@ -353,6 +493,12 @@ export class Chart implements StudyApi, DrawingApi {
     if (reload && this.symbol) void this.load();
     this.invalidate(INVALIDATE_LAYOUT);
     this.emitState();
+  }
+
+  /** Change what the main-pane legend (status line) shows. */
+  setLegendOptions(opts: Partial<LegendOptions>): void {
+    this.options = { ...this.options, legend: { ...this.options.legend, ...opts } };
+    this.updateLegends();
   }
 
   addPane(ratio = 1, id?: string): Pane {
@@ -501,12 +647,15 @@ export class Chart implements StudyApi, DrawingApi {
     const s = this.studies.get(id);
     if (!s || data.revision !== this._seriesRevision) return;
     s.study.setData(data);
+    s.dataVersion++;
     this.invalidate(INVALIDATE_MAIN);
   }
 
   updateStudyData(id: string, patch: StudyDataPatch): void {
     const s = this.studies.get(id);
-    if (s?.study.patch(patch, this._seriesRevision)) this.invalidate(INVALIDATE_MAIN);
+    if (!s?.study.patch(patch, this._seriesRevision)) return;
+    s.dataVersion++;
+    this.invalidate(INVALIDATE_MAIN);
   }
 
   setStudyVisible(id: string, visible: boolean): void {
@@ -532,8 +681,21 @@ export class Chart implements StudyApi, DrawingApi {
     return s ? s.study.legendValues(index, this._seriesRevision, this.decimals) : [];
   }
 
-  getLegendSlot(paneId: string): HTMLElement | null {
-    return this.panes.find((p) => p.id === paneId)?.legendSlot ?? null;
+  getLegendSlot(paneId: string, kind: LegendSlotKind = 'studies'): HTMLElement | null {
+    const pane = this.panes.find((p) => p.id === paneId);
+    if (!pane) return null;
+    return kind === 'compare' ? pane.legendCompare : pane.legendSlot;
+  }
+
+  /** Decimals of the symbol's price format (study text labels). */
+  get symbolDecimals(): number {
+    return this.decimals;
+  }
+
+  /** Base value of the main pane's price series at displayed bar `i`: the
+   * reference compare overlays ('same % scale') are rescaled to. */
+  compareReference(i: number): number | null {
+    return this.panes.find((p) => p.id === 'main')?.series[0]?.baseValue(i) ?? null;
   }
 
   /** True when `id` is a study on this chart. */
@@ -631,12 +793,18 @@ export class Chart implements StudyApi, DrawingApi {
 
   // --------------------------------------------------------------- drawings
 
-  setActiveTool(type: string | null): void {
-    this.drawingInput.setActiveTool(type);
+  setActiveTool(type: string | null, opts?: DrawingToolOptions): void {
+    this.drawingInput.setActiveTool(type, opts);
   }
 
   getActiveTool(): string | null {
     return this.drawingInput.activeTool;
+  }
+
+  /** The finished transient measurement's anchors (Measure tool / quick measure), or null. */
+  getMeasure(): DrawingPoint[] | null {
+    const m = this.drawingLayer.measure;
+    return m ? m.points.map((p) => ({ ...p })) : null;
   }
 
   setDrawingOptions(patch: Partial<DrawingOptions>): void {
@@ -739,7 +907,8 @@ export class Chart implements StudyApi, DrawingApi {
     let refPane: string | null = null;
     if (opts.at && tl.length) {
       let first: { l: number; price: number; pane: string } | null = null;
-      for (const d of src)
+      // Pane-coordinate drawings stay where they were on screen (no offset/at).
+      for (const d of src.filter((d) => !isPaneCoords(d.type)))
         for (const p of d.points) {
           const l = timeToLogical(tl, p);
           if (Number.isFinite(l) && (!first || l < first.l))
@@ -754,8 +923,10 @@ export class Chart implements StudyApi, DrawingApi {
     const out: Drawing[] = [];
     let z = layer.topZ();
     for (const d of src) {
+      const fixed = isPaneCoords(d.type);
       const points = d.points.map((p) => {
         let q = { ...p };
+        if (fixed) return q;
         if (dl && tl.length) {
           const t = logicalToTime(tl, timeToLogical(tl, p) + dl);
           if (t) q = withTime(q, t);
@@ -838,6 +1009,15 @@ export class Chart implements StudyApi, DrawingApi {
       pane: (id) => this.panes.find((p) => p.id === id) ?? null,
       format: (paneId) => this.drawingFormat(paneId),
       invalidate: () => this.invalidate(INVALIDATE_OVERLAY),
+      zoomTo: (paneId, from, to, minPrice, maxPrice) => {
+        this.setVisibleLogicalRange(from, to);
+        const ps = this.panes.find((p) => p.id === paneId)?.priceScale;
+        if (ps && minPrice !== undefined && maxPrice !== undefined) {
+          ps.setManualRange(minPrice, maxPrice);
+          this.invalidate(INVALIDATE_MAIN);
+          this.emitState();
+        }
+      },
       // ChartEvents extends DrawingEvents, so this view of the emitter is exact.
       emit: (event, payload) =>
         (this.events as unknown as Emitter<DrawingEvents>).emit(event, payload),
@@ -886,7 +1066,9 @@ export class Chart implements StudyApi, DrawingApi {
    * Trading calendar of the raw bars (exchange timezone). Built once per load
    * (symbol, interval, extended hours) and history prepend, not per live bar,
    * so anchors past the last bar keep their slots as bars arrive. The regular
-   * session shapes the day unless extended hours are shown.
+   * session shapes the day unless extended hours are shown. A calendar that
+   * could not be built (too few full days) is retried once per new exchange
+   * day of live bars, so it appears once enough days have arrived.
    */
   private tradingCalendar(): TradingCalendar | null {
     const r = this.raw;
@@ -894,8 +1076,12 @@ export class Chart implements StudyApi, DrawingApi {
     const tz = this.symbolInfo?.timezone ?? 'UTC';
     const session = this.options.prepost ? null : (this.symbolInfo?.session ?? null);
     const key = n ? `${this.rawEpoch}|${this.intervalString()}|${tz}|${session ?? ''}` : '';
-    if (key !== this.calendarKey) {
+    const changed = key !== this.calendarKey;
+    if (!changed && (!n || this.timeline.calendar)) return this.timeline.calendar;
+    const day = n ? Math.floor(createTzConverter(tz).toLocal(r.time[n - 1]!) / 86_400) : NaN;
+    if (changed || day !== this.calendarDay) {
       this.calendarKey = key;
+      this.calendarDay = day;
       this.timeline.calendar = n
         ? buildTradingCalendar(r.time, n, this.interval, tz, session)
         : null;
@@ -976,6 +1162,7 @@ export class Chart implements StudyApi, DrawingApi {
     this.invalidate(INVALIDATE_LAYOUT);
     // Plain types share the raw store, so indices only change through a transform.
     if (wasTransform || this.usesTransform) this.emitSeriesReset();
+    this.emitViewChange('data');
     this.emitState();
   }
 
@@ -990,6 +1177,7 @@ export class Chart implements StudyApi, DrawingApi {
       this.recomputeWeights();
       this.resetBrickView();
       if (this.usesTransform) this.emitSeriesReset();
+      this.emitViewChange('data');
     }
     this.invalidate(INVALIDATE_MAIN);
   }
@@ -1110,6 +1298,7 @@ export class Chart implements StudyApi, DrawingApi {
     this.timeScale.reset(this.store.length - 1);
     for (const p of this.panes) p.priceScale.autoScale = true;
     this.invalidate(INVALIDATE_MAIN);
+    this.emitViewChange('api');
     this.emitState();
   }
 
@@ -1123,7 +1312,16 @@ export class Chart implements StudyApi, DrawingApi {
     const i1 = to === Infinity ? n - 1 : Math.max(i0, this.store.indexAtOrBefore(to));
     this.timeScale.fitRange(i0, i1);
     for (const p of this.panes) p.priceScale.autoScale = true;
-    this.viewChanged();
+    this.viewChanged('api');
+    this.emitState();
+  }
+
+  /** Show logical bar indices [from, to] (fractional, may extend past the data)
+   * across the pane width; the inverse of the visible logical span. Price scales
+   * are left alone. Ignored unless both are finite and from < to. */
+  setVisibleLogicalRange(from: number, to: number): void {
+    if (!this.timeScale.setVisibleLogicalRange(from, to)) return;
+    this.viewChanged('api');
     this.emitState();
   }
 
@@ -1142,7 +1340,43 @@ export class Chart implements StudyApi, DrawingApi {
     const ts = this.timeScale;
     ts.rightOffset = ts.width / ts.barSpacing / 2 - (ts.baseIndex - i);
     ts.clamp();
-    this.viewChanged();
+    this.viewChanged('api');
+    this.emitState();
+  }
+
+  /**
+   * Times (unix s) of the first and last bar slots (at least partly) visible at
+   * the pane edges; past the last bar these are future slots (session-aware).
+   * The `to` slot is the one `setRightEdgeTime` puts at the right edge. Null
+   * without bars.
+   */
+  getVisibleTimeRange(): { from: number; to: number } | null {
+    const tl = this.refreshTimeline();
+    if (!tl.length || this.timeScale.width <= 0) return null;
+    const { from, to } = this.timeScale.logicalRange();
+    // Slot k spans logical [k - 0.5, k + 0.5); an edge exactly on a boundary
+    // belongs to the slot inside the pane.
+    const a = logicalToTime(tl, Math.floor(from + 0.5 + EDGE_EPS));
+    const b = logicalToTime(tl, Math.ceil(to - 0.5 - EDGE_EPS));
+    return a && b ? { from: a.time, to: b.time } : null;
+  }
+
+  /**
+   * Scroll so the bar slot at `time` (unix s, may be in the future) ends at the
+   * right pane edge, loading history as needed. Bar spacing is kept. Emits
+   * `viewChange` with cause 'api'.
+   */
+  async setRightEdgeTime(time: number): Promise<void> {
+    await this.whenLoaded();
+    await this.ensureHistory(time);
+    if (!this.store.length || !Number.isFinite(time)) return;
+    const l = timeToLogical(this.refreshTimeline(), { time });
+    if (!Number.isFinite(l)) return;
+    const ts = this.timeScale;
+    // Right edge of slot l at x = width (see TimeScale.indexToX).
+    ts.rightOffset = l - ts.baseIndex;
+    ts.clamp();
+    this.viewChanged('api');
     this.emitState();
   }
 
@@ -1169,7 +1403,7 @@ export class Chart implements StudyApi, DrawingApi {
       ctx.font = font(this.theme, 13);
       ctx.fillStyle = this.theme.text;
       ctx.textBaseline = 'top';
-      ctx.fillText(pane.legendEl.textContent ?? '', 8, pane.top + 8);
+      legendLines(pane).forEach((line, n) => ctx.fillText(line, 8, pane.top + 8 + n * 18));
       ctx.restore();
     }
     blit(this.timeAxisMain, 0, this.timeAxisTop);
@@ -1204,6 +1438,7 @@ export class Chart implements StudyApi, DrawingApi {
   scrollToRealtime(): void {
     this.timeScale.reset(this.store.length - 1);
     this.invalidate(INVALIDATE_MAIN);
+    this.emitViewChange('api');
   }
 
   getState(): ChartState {
@@ -1292,10 +1527,13 @@ export class Chart implements StudyApi, DrawingApi {
 
   destroy(): void {
     this.destroyed = true;
+    // A load or history page still in flight must not subscribe or apply bars afterwards.
+    this.loadGen++;
     cancelAnimationFrame(this.frame);
     clearInterval(this.countdownTimer);
     this.resizeObserver.disconnect();
     this.unsubscribe?.();
+    this.unsubscribe = null;
     this.controller.destroy();
     this.events.clear();
     this.root.remove();
@@ -1325,8 +1563,29 @@ export class Chart implements StudyApi, DrawingApi {
     const pane = visible.find((p) => y >= p.top && y < p.top + p.height);
     if (!pane) return { kind: 'none' };
     const py = y - pane.top;
-    if (x >= this.paneWidth) return { kind: 'priceAxis', pane, y: py };
+    if (x >= this.paneWidth) {
+      const axisX = x - this.paneWidth;
+      const plus = this.plusRect(pane);
+      const inPlus =
+        plus !== null &&
+        axisX >= 1 &&
+        axisX < 1 + PLUS_WIDTH &&
+        py >= plus.top &&
+        py < plus.top + AXIS_LABEL_HEIGHT;
+      if (inPlus) return { kind: 'priceAxis', pane, y: py, plus: true };
+      const line = hitPriceLine(this.placedLines(pane), x, py, this.paneWidth, pane.height);
+      return {
+        kind: 'priceAxis',
+        pane,
+        y: py,
+        ...(line ? { priceLine: { group: line.group, id: line.line.id } } : {}),
+      };
+    }
     const s = this.hitSeries(pane, x, py);
+    const marker = pane.id === 'main' ? hitMarker(this.placedMarkers(), x, py) : null;
+    const line = marker
+      ? null
+      : hitPriceLine(this.placedLines(pane), x, py, this.paneWidth, pane.height);
     return {
       kind: 'pane',
       pane,
@@ -1336,12 +1595,124 @@ export class Chart implements StudyApi, DrawingApi {
       outputId: s.outputId,
       ...(s.fill ? { fill: true } : {}),
       ...(s.drawing ? { drawing: s.drawing } : {}),
+      ...(marker ? { marker: { group: marker.group, id: marker.marker.id } } : {}),
+      ...(line ? { priceLine: { group: line.group, id: line.line.id } } : {}),
     };
+  }
+
+  // ------------------------------------------------- markers, lines, "+" button
+
+  /**
+   * Replaces the markers of `group` (`[]` clears it). Markers are time-based
+   * (mapped through the time scale, so they follow interval changes), culled to
+   * the visible range, drawn on the main pane, and not part of `getState()`.
+   */
+  setMarkers(group: string, markers: readonly ChartMarker[]): void {
+    if (markers.length)
+      this.markerGroups.set(
+        group,
+        markers.map((m) => ({ ...m })),
+      );
+    else this.markerGroups.delete(group);
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Replaces the price lines of `group` (`[]` clears it). Not part of `getState()`. */
+  setPriceLines(group: string, lines: readonly ChartPriceLine[]): void {
+    if (lines.length)
+      this.lineGroups.set(
+        group,
+        lines.map((l) => ({ ...l })),
+      );
+    else this.lineGroups.delete(group);
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Pointer position over a price axis (null: left it). Called by the controller. */
+  setAxisHover(pane: Pane | null, y: number): void {
+    const prev = this.axisHover;
+    if (!pane || !this.store.length || !this.options.priceAxisPlusButton) {
+      if (prev) {
+        this.axisHover = null;
+        this.invalidate(INVALIDATE_OVERLAY);
+      }
+      return;
+    }
+    if (prev && prev.pane === pane && prev.y === y) return;
+    this.axisHover = { pane, y };
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Emits `priceAxisPlus` for the price under the current label of `pane`. */
+  firePriceAxisPlus(pane: Pane): void {
+    const r = this.plusRect(pane);
+    if (!r) return;
+    this.events.emit('priceAxisPlus', { paneId: pane.id, price: pane.priceScale.yToPrice(r.y) });
+  }
+
+  /** Emits `markerClick` / `priceLineClick` for a click on `hit`. Returns whether one fired. */
+  emitOverlayClick(hit: HitTarget): boolean {
+    if (hit.kind === 'pane' && hit.marker) {
+      this.events.emit('markerClick', hit.marker);
+      return true;
+    }
+    if ((hit.kind === 'pane' || hit.kind === 'priceAxis') && hit.priceLine) {
+      this.events.emit('priceLineClick', hit.priceLine);
+      return true;
+    }
+    return false;
+  }
+
+  /** Where the price label sits on `pane` (crosshair, else axis hover): raw y and clamped box top. */
+  private plusRect(pane: Pane): { y: number; top: number } | null {
+    if (!this.options.priceAxisPlusButton || !this.store.length) return null;
+    const c = this.crosshair;
+    const y = c && c.pane === pane ? c.y : this.axisHover?.pane === pane ? this.axisHover.y : null;
+    if (y === null) return null;
+    return {
+      y,
+      top: Math.max(0, Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2)),
+    };
+  }
+
+  private placedMarkers(): PlacedMarker[] {
+    if (!this.markerGroups.size) return [];
+    const main = this.panes[0];
+    if (!main || main.height <= 0) return [];
+    const s = this.store;
+    return layoutMarkers(this.markerGroups, {
+      timeline: this.refreshTimeline(),
+      high: s.high,
+      low: s.low,
+      indexToX: (i) => this.timeScale.indexToX(i),
+      priceToY: (p) => main.priceScale.priceToY(p),
+      paneWidth: this.paneWidth,
+      paneHeight: main.height,
+    });
+  }
+
+  /** Bottom reserve for the main pane's `paneBottom` strip (0 without strip markers). */
+  private stripReserve(paneHeight: number): number {
+    if (!this.markerGroups.size || paneHeight <= 0) return 0;
+    const { levels } = layoutStrip(this.markerGroups, {
+      timeline: this.refreshTimeline(),
+      indexToX: (i) => this.timeScale.indexToX(i),
+      paneWidth: this.paneWidth,
+      paneHeight,
+    });
+    return stripReservePx(levels);
+  }
+
+  private placedLines(pane: Pane): PlacedPriceLine[] {
+    if (!this.lineGroups.size) return [];
+    return layoutPriceLines(this.lineGroups, pane.id, pane.height, (p) =>
+      pane.priceScale.priceToY(p),
+    );
   }
 
   /** Topmost object under (x, y), in this order: drawings (handles, strokes,
    * strong parts), lines/marks/bars of every series, weak drawing parts
-   * (background fills), marks of own-scale ('none') studies, study fill interiors. */
+   * (background fills), marks of background ('none') studies, study fill interiors. */
   private hitSeries(
     pane: Pane,
     x: number,
@@ -1356,7 +1727,7 @@ export class Chart implements StudyApi, DrawingApi {
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
       if (s instanceof StudySeries) {
-        if (s.excludeFromAutoscale) continue; // background overlay: tested below
+        if (s.behind) continue; // background overlay: tested below
         const out = s.hitTestPx(x, y, 'marks');
         if (out !== null) return { id: s.id, outputId: out, fill: false };
       } else if (s.hitTest(i, price, tol)) return { id: s.id, outputId: null, fill: false };
@@ -1366,7 +1737,7 @@ export class Chart implements StudyApi, DrawingApi {
     // behind the price series and drawings, so those win where they overlap.
     for (let k = pane.series.length - 1; k >= 0; k--) {
       const s = pane.series[k]!;
-      if (!(s instanceof StudySeries) || !s.excludeFromAutoscale) continue;
+      if (!(s instanceof StudySeries) || !s.behind) continue;
       const out = s.hitTestPx(x, y, 'marks');
       if (out !== null) return { id: s.id, outputId: out, fill: false };
     }
@@ -1407,7 +1778,14 @@ export class Chart implements StudyApi, DrawingApi {
     }
     const index = Math.max(0, Math.min(this.store.length - 1, this.timeScale.xToIndex(x)));
     const snappedX = this.timeScale.indexToX(this.timeScale.xToIndex(x));
-    this.crosshair = { pane, x: snappedX, y: this.magnetY(pane, index, y), index, rawY: y };
+    this.crosshair = {
+      pane,
+      x: snappedX,
+      y: this.magnetY(pane, index, y),
+      index,
+      rawX: x,
+      rawY: y,
+    };
     this.invalidate(INVALIDATE_OVERLAY);
     this.emitCrosshair();
   }
@@ -1432,11 +1810,53 @@ export class Chart implements StudyApi, DrawingApi {
     return best;
   }
 
-  /** Called by the controller after any view change. */
-  viewChanged(): void {
+  /** Called by the controller after any view change (and by view API calls with 'api'). */
+  viewChanged(cause: ViewChangeCause): void {
     this.invalidate(INVALIDATE_MAIN);
     if (this.crosshair)
       this.setCrosshair(this.crosshair.pane, this.crosshair.x, this.crosshair.rawY);
+    this.emitViewChange(cause);
+  }
+
+  private emitViewChange(cause: ViewChangeCause): void {
+    if (this.synced) this.synced.key = '';
+    this.events.emit('viewChange', { cause });
+  }
+
+  /**
+   * Show (or with null, clear) a crosshair mirrored from another chart: a
+   * vertical line at the bar matching `p.time` (see `mapSyncTime`), plus a
+   * horizontal line and price label when `p.price` is not null. Drawn only
+   * while this chart has no crosshair of its own; never emits `crosshairMove`.
+   * Throws on an invalid `p.interval`.
+   */
+  setSyncedCrosshair(p: SyncedCrosshair | null): void {
+    if (!p) {
+      if (!this.synced) return;
+      this.synced = null;
+      this.invalidate(INVALIDATE_OVERLAY);
+      return;
+    }
+    const ref: SyncTimeRef = {
+      time: p.time,
+      interval: parseInterval(p.interval),
+      timezone: p.timezone,
+    };
+    const price = p.price !== null && Number.isFinite(p.price) ? p.price : null;
+    this.synced = { ref, price, logical: NaN, key: '' };
+    this.invalidate(INVALIDATE_OVERLAY);
+  }
+
+  /** Logical index of the synced crosshair (NaN: none), recomputed when bars or the view change. */
+  private syncedIndex(): number {
+    const s = this.synced;
+    if (!s) return NaN;
+    const key = `${this._seriesRevision}|${this.rawEpoch}|${this.store.length}|${this._chartType}`;
+    if (s.key !== key) {
+      s.key = key;
+      s.logical = mapSyncTime(s.ref, this.refreshTimeline(), this.symbolInfo?.timezone ?? null);
+    }
+    return s.logical;
   }
 
   viewSettled(): void {
@@ -1454,6 +1874,7 @@ export class Chart implements StudyApi, DrawingApi {
   private load(): Promise<void> {
     // Symbol/interval changed: drawings shown there may differ (scope, visibility).
     if (this.drawingInput.busy) this.drawingInput.abort();
+    this.drawingLayer.measure = null;
     this.drawingLayer.pruneSelection();
     this.loadPromise = this.doLoad();
     return this.loadPromise;
@@ -1501,6 +1922,7 @@ export class Chart implements StudyApi, DrawingApi {
         interval: formatInterval(interval),
         bars: this.store.length,
       });
+      this.emitViewChange('data');
       this.emitState();
     } catch (err) {
       if (gen !== this.loadGen) return;
@@ -1510,7 +1932,8 @@ export class Chart implements StudyApi, DrawingApi {
       this.setStatus(message);
       this.invalidate(INVALIDATE_LAYOUT);
       this.emitSeriesReset();
-      this.events.emit('error', { message });
+      this.emitViewChange('data');
+      this.events.emit('error', chartErrorInfo(err, message));
     } finally {
       if (gen === this.loadGen) this.events.emit('loading', false);
     }
@@ -1525,10 +1948,12 @@ export class Chart implements StudyApi, DrawingApi {
         prepost: this.options.prepost,
         timezone: info?.timezone ?? null,
         session: info?.session ?? null,
+        adjusted: this.options.adjusted,
       },
       this.raw.last(),
       (bar) => {
         if (gen !== this.loadGen) return;
+        const lengthBefore = this.store.length;
         const r = this.raw.upsert(bar);
         if (r === 'ignored') return;
         // Brick views can change more than their tail: compare with a snapshot.
@@ -1555,6 +1980,7 @@ export class Chart implements StudyApi, DrawingApi {
           for (const c of tail)
             this.emitSeriesChange({ kind: c.kind, revision: this._seriesRevision, index: c.index });
         if (this.crosshair) this.emitCrosshair();
+        if (this.store.length !== lengthBefore) this.emitViewChange('data');
         this.events.emit('barUpdate', bar);
       },
     );
@@ -1594,10 +2020,11 @@ export class Chart implements StudyApi, DrawingApi {
           // Brick views are rebuilt from the first bar, so they can differ anywhere.
           if (BRICK_TYPES.has(this._chartType) || added <= 0) this.emitSeriesReset();
           else this.emitSeriesPrepend(added);
+          this.emitViewChange('data');
         }
         return n;
       } catch (err) {
-        this.events.emit('error', { message: err instanceof Error ? err.message : String(err) });
+        this.events.emit('error', chartErrorInfo(err));
         return 0;
       } finally {
         this.loadingMore = false;
@@ -1653,12 +2080,41 @@ export class Chart implements StudyApi, DrawingApi {
   // ---------------------------------------------------------------- rendering
 
   private flush(): void {
+    const start = performance.now();
     this.frame = 0;
     const level = this.invalid;
     this.invalid = 0;
     if (level & INVALIDATE_LAYOUT) this.layout();
-    if (level & (INVALIDATE_LAYOUT | INVALIDATE_MAIN)) this.renderMain();
+    const main = (level & (INVALIDATE_LAYOUT | INVALIDATE_MAIN)) !== 0;
+    if (main) this.renderMain();
     this.renderOverlay();
+    const end = performance.now();
+    this.frameMs[this.frames % STATS_WINDOW] = end - start;
+    this.frames++;
+    // Per visible pane: bg, main, axis (full redraw) and overlay, axis overlay; plus the time axis.
+    const panes = this.visiblePanes().length;
+    this.layersDrawn = (main ? panes * 3 + 1 : 0) + panes * 2 + 1;
+    if (!main) this.barsDrawn = 0;
+    if (this.profiling) performance.measure('tickerglass:render', { start, end });
+  }
+
+  /** Timing of recent frames, for profiling. Cheap: reads a few counters. */
+  getRenderStats(): RenderStats {
+    const n = Math.min(this.frames, STATS_WINDOW);
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += this.frameMs[i]!;
+    return {
+      frames: this.frames,
+      lastFrameMs: this.frames ? this.frameMs[(this.frames - 1) % STATS_WINDOW]! : 0,
+      avgFrameMs: n ? sum / n : 0,
+      layersDrawn: this.layersDrawn,
+      barsDrawn: this.barsDrawn,
+    };
+  }
+
+  /** Record each frame as a `performance.measure` entry ("tickerglass:render"). Off by default. */
+  setProfiling(on: boolean): void {
+    this.profiling = on;
   }
 
   private layout(): void {
@@ -1726,6 +2182,16 @@ export class Chart implements StudyApi, DrawingApi {
     return Math.max(MIN_AXIS_WIDTH, this.axisWidth);
   }
 
+  /** Axis label of a study's last value: the study's own value on own-scale
+   * studies and linear/log panes, else in the pane's units (percent/indexed). */
+  private studyLabelText(pane: Pane, s: StudySeries, lv: StudyLastValue): string {
+    const mode = pane.priceScale.mode;
+    if (lv.y === undefined && mode !== 'linear' && mode !== 'log')
+      return this.formatAxisValue(pane, lv.price);
+    const { format, precision } = s.study.spec;
+    return formatStudyValue(lv.raw, format, precision, this.decimals);
+  }
+
   private formatAxisValue(pane: Pane, price: number): string {
     const ps = pane.priceScale;
     if (ps.mode === 'percent') return formatPercent(ps.toDisplay(price)).replace('+', '');
@@ -1742,6 +2208,7 @@ export class Chart implements StudyApi, DrawingApi {
     const { from, to } = this.timeScale.visibleRange();
     const t = this.theme;
     const paneW = this.paneWidth;
+    this.barsDrawn = Math.max(0, to - from + 1);
 
     if (from !== this.lastRange.from || to !== this.lastRange.to) {
       this.lastRange = { from, to };
@@ -1773,6 +2240,8 @@ export class Chart implements StudyApi, DrawingApi {
       // Auto-scale + percent base.
       const base = pane.series[0]?.baseValue(from);
       if (base) ps.base = base;
+      // Keep candles clear of the event strip; its layout depends on x only.
+      ps.reserveBottomPx = pane.id === 'main' ? this.stripReserve(pane.height) : 0;
       if (ps.autoScale && from <= to) {
         let min = Infinity;
         let max = -Infinity;
@@ -1793,8 +2262,9 @@ export class Chart implements StudyApi, DrawingApi {
       const dev = pane.bg.device();
       dev.fillStyle = t.grid;
       for (const m of this.marks) vLine(dev, m.x, 0, pane.height, this.dpr);
-      const ticks = ps.ticks(pane.height < 120 ? 24 : 34);
-      pane.labelDecimals = decimalsForStep(ticks);
+      const tickSet = ps.tickSet(pane.height < 120 ? 24 : 34);
+      const ticks = tickSet.ticks;
+      pane.labelDecimals = tickSet.decimals ?? decimalsForStep(ticks);
       for (const tk of ticks) hLine(dev, tk.y, 0, paneW, this.dpr);
       if (pane.id === 'main' && from <= to) this.shadeExtendedHours(dev, from, to, pane.height);
 
@@ -1802,10 +2272,8 @@ export class Chart implements StudyApi, DrawingApi {
       pane.main.begin();
       const ctx = pane.main.device();
       if (from <= to) {
-        // Overlays (volume) go behind the price series.
-        const ordered = [...pane.series].sort(
-          (a, b) => Number(!!b.excludeFromAutoscale) - Number(!!a.excludeFromAutoscale),
-        );
+        // Background overlays (volume) go behind the price series.
+        const ordered = [...pane.series].sort((a, b) => Number(!!b.behind) - Number(!!a.behind));
         for (const s of ordered) {
           s.draw({
             ctx,
@@ -1881,11 +2349,50 @@ export class Chart implements StudyApi, DrawingApi {
       : formatAxisNumber(value, pane.labelDecimals);
   }
 
+  /** Crosshair-style price label at pane-relative `y`, with the "+" box when `plus` (default: enabled). */
+  private drawPriceLabel(
+    ax: CanvasRenderingContext2D,
+    pane: Pane,
+    y: number,
+    fontStr: string,
+    plus = this.options.priceAxisPlusButton,
+  ): void {
+    const t = this.theme;
+    const top = Math.max(0, Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2));
+    labelBox(
+      ax,
+      this.formatAxisValue(pane, pane.priceScale.yToPrice(y)),
+      1,
+      top,
+      this.axisWidth - 2,
+      AXIS_LABEL_HEIGHT,
+      t.crosshairLabelBg,
+      t.crosshairLabelText,
+      fontStr,
+      'left',
+      plus ? PLUS_WIDTH + 4 : 6,
+    );
+    if (!plus) return;
+    const cx = 1 + PLUS_WIDTH / 2;
+    const cy = top + AXIS_LABEL_HEIGHT / 2;
+    ax.fillStyle = t.crosshairLabelText;
+    ax.globalAlpha = 0.18;
+    ax.fillRect(1, top, PLUS_WIDTH, AXIS_LABEL_HEIGHT);
+    ax.globalAlpha = 1;
+    ax.fillRect(cx - 4, cy - 0.5, 8, 1);
+    ax.fillRect(cx - 0.5, cy - 4, 1, 8);
+  }
+
   private renderOverlay(): void {
     const t = this.theme;
     const c = this.crosshair;
     const fontStr = font(t);
     const paneW = this.paneWidth;
+    // Mirrored crosshair from another chart, only while this chart has none.
+    let syncIndex = c ? NaN : this.syncedIndex();
+    const syncX = this.timeScale.indexToX(syncIndex);
+    if (!(syncX >= 0 && syncX <= paneW)) syncIndex = NaN;
+    const syncPrice = this.synced?.price ?? null;
 
     for (const pane of this.panes) {
       if (pane.height <= 0) continue;
@@ -1893,22 +2400,28 @@ export class Chart implements StudyApi, DrawingApi {
       const ax = pane.axisOverlay.begin();
       const ps = pane.priceScale;
       this.drawingLayer.render(pane, ctx, this.dpr);
+      const lines = this.placedLines(pane);
+      if (lines.length) drawPriceLines(ctx, lines, paneW, this.dpr, fontStr);
+      if (pane.id === 'main') {
+        const placed = this.placedMarkers();
+        if (placed.length) {
+          drawMarkers(ctx, placed);
+          const hov = c && c.pane === pane ? hitMarker(placed, c.rawX, c.rawY) : null;
+          if (hov) drawMarkerTooltip(ctx, hov, t, paneW, pane.height);
+        }
+      }
 
       // Study last values (below the series' own label).
       for (const s of pane.series) {
         if (!(s instanceof StudySeries)) continue;
-        const { format, precision } = s.study.spec;
         for (const lv of s.lastValues()) {
-          const y = ps.priceToY(lv.price);
+          const y = lv.y ?? ps.priceToY(lv.price);
           if (y < 0 || y > pane.height) continue;
           const top = Math.max(
             0,
             Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2),
           );
-          const text =
-            ps.mode === 'linear' || ps.mode === 'log'
-              ? formatStudyValue(lv.price, format, precision, this.decimals)
-              : this.formatAxisValue(pane, lv.price);
+          const text = this.studyLabelText(pane, s, lv);
           labelBox(
             ax,
             text,
@@ -1984,7 +2497,33 @@ export class Chart implements StudyApi, DrawingApi {
         );
       }
 
-      if (!c) continue;
+      if (lines.length) {
+        drawPriceLineAxisLabels(
+          ax,
+          lines,
+          this.axisWidth,
+          pane.height,
+          (p) => this.formatAxisValue(pane, p),
+          fontStr,
+        );
+      }
+
+      const hover = this.axisHover;
+      if (!c && hover && hover.pane === pane) {
+        this.drawPriceLabel(ax, pane, hover.y, fontStr);
+      }
+
+      if (!c) {
+        if (Number.isNaN(syncIndex)) continue;
+        ctx.strokeStyle = t.crosshair;
+        dashedLine(ctx, syncX, 0, syncX, pane.height, this.dpr, [4, 4]);
+        if (pane.id !== 'main' || syncPrice === null) continue;
+        const y = ps.priceToY(syncPrice);
+        if (!(y >= 0 && y <= pane.height)) continue;
+        dashedLine(ctx, 0, y, paneW, y, this.dpr, [4, 4]);
+        this.drawPriceLabel(ax, pane, y, fontStr, false);
+        continue;
+      }
       ctx.strokeStyle = t.crosshair;
       dashedLine(ctx, c.x, 0, c.x, pane.height, this.dpr, [4, 4]);
       if (c.pane === pane) {
@@ -1995,22 +2534,7 @@ export class Chart implements StudyApi, DrawingApi {
           ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
           ctx.fill();
         }
-        const price = ps.yToPrice(c.y);
-        const top = Math.max(
-          0,
-          Math.min(pane.height - AXIS_LABEL_HEIGHT, c.y - AXIS_LABEL_HEIGHT / 2),
-        );
-        labelBox(
-          ax,
-          this.formatAxisValue(pane, price),
-          1,
-          top,
-          this.axisWidth - 2,
-          AXIS_LABEL_HEIGHT,
-          t.crosshairLabelBg,
-          t.crosshairLabelText,
-          fontStr,
-        );
+        this.drawPriceLabel(ax, pane, c.y, fontStr);
       }
     }
 
@@ -2041,13 +2565,18 @@ export class Chart implements StudyApi, DrawingApi {
         );
       }
     }
-    if (c) {
-      const time = this.store.time[c.index];
+    const cross = c
+      ? { time: this.store.time[c.index], x: c.x }
+      : Number.isNaN(syncIndex)
+        ? null
+        : { time: logicalToTime(this.refreshTimeline(), syncIndex)?.time, x: syncX };
+    if (cross) {
+      const time = cross.time;
       if (time !== undefined) {
         const text = formatCrosshairTime(time, this.interval.unit, this.tz, this.options.locale);
         tc.font = fontStr;
         const w = tc.measureText(text).width + 16;
-        const x = Math.max(0, Math.min(paneW - w, c.x - w / 2));
+        const x = Math.max(0, Math.min(paneW - w, cross.x - w / 2));
         labelBox(
           tc,
           text,
@@ -2157,29 +2686,46 @@ export class Chart implements StudyApi, DrawingApi {
         const info = this.symbolInfo;
         const bar = this.store.bar(idx);
         const prev = this.store.bar(idx - 1);
-        const title = info
-          ? `${info.symbol} · ${formatInterval(this.interval)} · ${info.exchangeName ?? info.exchange ?? ''}`
-          : this.symbol;
+        const lg = this.options.legend;
+        let title = this.symbol;
+        if (info) {
+          const name = lg.title === 'ticker' ? '' : info.name || info.symbol;
+          const head =
+            lg.title === 'ticker'
+              ? info.symbol
+              : lg.title === 'description'
+                ? name
+                : name === info.symbol
+                  ? info.symbol
+                  : `${info.symbol} · ${name}`;
+          const exchange = lg.exchange ? (info.exchangeName ?? info.exchange ?? '') : '';
+          title = [head, formatInterval(this.interval), exchange].filter(Boolean).join(' · ');
+        }
         let html = `<span class="io-legend-title">${escapeHtml(title)}</span>`;
         if (bar) {
           const color = bar.close >= bar.open ? t.up : t.down;
           const f = (v: number) => formatPrice(v, this.decimals);
           const item = (label: string, v: string) =>
             `<span class="io-legend-item"><span class="io-legend-label">${label}</span><span style="color:${color}">${v}</span></span>`;
-          html +=
-            item('O', f(bar.open)) +
-            item('H', f(bar.high)) +
-            item('L', f(bar.low)) +
-            item('C', f(bar.close));
-          if (prev) {
+          if (lg.ohlc)
+            html +=
+              item('O', f(bar.open)) +
+              item('H', f(bar.high)) +
+              item('L', f(bar.low)) +
+              item('C', f(bar.close));
+          if (prev && lg.barChange) {
             const ch = bar.close - prev.close;
             const pct = (ch / prev.close) * 100;
             const sign = ch >= 0 ? '+' : '';
             html += `<span class="io-legend-item" style="color:${color}">${sign}${f(ch)} (${formatPercent(pct)})</span>`;
           }
-          if (this.volumeMode !== 'hidden')
+          if (lg.volume && this.volumeMode !== 'hidden')
             html += `<span class="io-legend-item"><span class="io-legend-label">Vol</span><span style="color:${color}">${formatVolume(bar.volume)}</span></span>`;
         }
+        const st = pane.legendEl.style;
+        st.background = lg.background ? 'color-mix(in srgb, var(--io-bg) 82%, transparent)' : '';
+        st.padding = lg.background ? '0 6px' : '';
+        st.borderRadius = lg.background ? '4px' : '';
         setHtml(pane.legendInfo, html);
       } else {
         // Study legends are rendered by the app into pane.legendSlot.
@@ -2218,16 +2764,18 @@ function formatAxisNumber(v: number, decimals: number): string {
   return formatPrice(v, Math.min(8, decimals));
 }
 
-/** Decimals needed to tell adjacent ticks apart (step 0.25 -> 2, 5 -> 0). */
+/** Decimals needed to tell adjacent linear ticks apart (step 0.25 -> 2, 5 -> 0). */
 function decimalsForStep(ticks: { value: number }[]): number {
-  const a = ticks[0];
-  const b = ticks[1];
-  if (!a || !b) return 2;
-  const step = Math.abs(b.value - a.value);
-  if (!(step > 0)) return 2;
-  let d = 0;
-  while (d < 8 && Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) > 1e-9 * 10 ** d) d++;
-  return d;
+  if (ticks.length < 2) return 2;
+  // Finest decimals needed by any tick.
+  let decimals = 0;
+  for (const t of ticks) {
+    let d = 0;
+    while (d < 8 && Math.abs(Math.round(t.value * 10 ** d) - t.value * 10 ** d) > 1e-9 * 10 ** d)
+      d++;
+    if (d > decimals) decimals = d;
+  }
+  return decimals;
 }
 
 export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };

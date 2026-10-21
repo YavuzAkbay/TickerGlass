@@ -51,6 +51,20 @@ function chunks<T>(list: T[], n: number): T[][] {
   return out;
 }
 
+/** A frame of a `/ws` event topic (docs/alerts.md §1.6). */
+export interface EventFrame {
+  type: string;
+  topic: string;
+  [key: string]: unknown;
+}
+
+export interface EventSubscription {
+  /** Called for every frame of the subscribed topics. */
+  onFrame: (frame: EventFrame) => void;
+  /** The socket opened; `reconnected` when it had been down since the last open. */
+  onOpen?: (reconnected: boolean) => void;
+}
+
 export class QuoteStream {
   private readonly opts: QuoteStreamOptions;
   private refs = new Map<string, number>();
@@ -74,6 +88,9 @@ export class QuoteStream {
   private pendingExt = new Set<string>();
   private running = false;
   private onVisibility: (() => void) | null = null;
+  private eventSubs = new Set<{ topics: string[]; sub: EventSubscription }>();
+  /** Topic set the server has on the current socket (sorted, joined); null = none sent yet. */
+  private sentTopics: string | null = null;
 
   constructor(opts: QuoteStreamOptions = {}) {
     this.opts = opts;
@@ -107,11 +124,30 @@ export class QuoteStream {
     };
   }
 
+  /**
+   * Subscribe to `/ws` event topics. Keeps the socket open like a symbol ref,
+   * is re-sent on every (re)connect, and is released immediately.
+   */
+  subscribeEvents(topics: string[], sub: EventSubscription): () => void {
+    const entry = { topics: [...new Set(topics)], sub };
+    this.eventSubs.add(entry);
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    this.ensureRunning();
+    this.syncEvents();
+    return () => {
+      if (!this.eventSubs.delete(entry)) return;
+      this.syncEvents();
+      this.scheduleIdle();
+    };
+  }
+
   /** Stop everything (tests / teardown). */
   dispose(): void {
     this.stop();
     this.refs.clear();
     this.extRefs.clear();
+    this.eventSubs.clear();
   }
 
   // ------------------------------------------------------------ internals
@@ -145,10 +181,14 @@ export class QuoteStream {
       }
     }
     this.syncSocket();
-    if (!this.refs.size && !this.idleTimer && this.running)
+    this.scheduleIdle();
+  }
+
+  private scheduleIdle(): void {
+    if (!this.refs.size && !this.eventSubs.size && !this.idleTimer && this.running)
       this.idleTimer = setTimeout(() => {
         this.idleTimer = null;
-        if (!this.refs.size) this.stop();
+        if (!this.refs.size && !this.eventSubs.size) this.stop();
       }, IDLE_CLOSE_MS);
   }
 
@@ -183,6 +223,7 @@ export class QuoteStream {
     this.socket = null;
     this.open = false;
     this.sent.clear();
+    this.sentTopics = null;
     this.attempt = 0;
     this.pendingSnap.clear();
     this.pendingExt.clear();
@@ -218,9 +259,13 @@ export class QuoteStream {
         if (this.socket === ws) this.attempt = 0;
       }, STABLE_MS);
       this.sent.clear();
+      this.sentTopics = null;
       this.syncSocket();
-      if (this.wasDown) this.refresh(); // catch up on what was missed
+      this.syncEvents();
+      const reconnected = this.wasDown;
+      if (reconnected) this.refresh(); // catch up on what was missed
       this.wasDown = false;
+      for (const { sub } of [...this.eventSubs]) sub.onOpen?.(reconnected);
     };
     ws.onmessage = (ev) => {
       if (this.socket === ws) this.onMessage(ev.data);
@@ -232,6 +277,7 @@ export class QuoteStream {
       if (this.stableTimer) clearTimeout(this.stableTimer);
       this.stableTimer = null;
       this.sent.clear();
+      this.sentTopics = null;
       try {
         ws.close(); // onerror does not imply close: avoid an orphan socket
       } catch {
@@ -282,6 +328,16 @@ export class QuoteStream {
       if (frame.upstream === 'connected') this.setStatus('live');
       else if (frame.upstream === 'polling') this.setStatus('upstream-polling');
       // 'reconnecting' keeps the previous status.
+    } else if (typeof frame.topic === 'string') {
+      const f = frame as EventFrame;
+      for (const { topics, sub } of [...this.eventSubs])
+        if (topics.includes(f.topic)) {
+          try {
+            sub.onFrame(f);
+          } catch (err) {
+            console.warn('quote stream: event handler failed', err);
+          }
+        }
     } else if (frame.type === 'error') {
       console.warn('quote stream error', frame);
     }
@@ -306,6 +362,17 @@ export class QuoteStream {
       .sort((a, b) => (this.recency.get(b) ?? 0) - (this.recency.get(a) ?? 0))
       .slice(0, MAX_WS_SYMBOLS);
     return new Set(list);
+  }
+
+  /** Send the union of event topics when it changed since the last send on this socket. */
+  private syncEvents(): void {
+    if (!this.open) return;
+    const topics = [...new Set([...this.eventSubs].flatMap((e) => e.topics))].sort();
+    const key = topics.join(',');
+    if (this.sentTopics === null && !topics.length) return; // nothing to say yet
+    if (this.sentTopics === key) return;
+    this.sentTopics = key;
+    this.send({ op: 'events', topics });
   }
 
   private syncSocket(): void {

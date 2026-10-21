@@ -1,23 +1,25 @@
 import { LayoutTemplate } from 'lucide-react';
 import { useState } from 'react';
 import { errorMessage } from '../api/client';
-import * as persistence from '../api/persistence';
-import type { IndicatorTemplate } from '../api/types';
 import type { IndicatorState } from '../indicators/model';
 import { useIndicatorStore } from '../indicators/store';
 import {
   INDICATOR_TEMPLATE_SCHEMA_VERSION,
   applyIndicatorTemplate,
 } from '../persist/indicatorTemplates';
+import { indicatorTemplates, type TemplateRow } from '../persist/templateCache';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 
-type Template = IndicatorTemplate<IndicatorState>;
+type Template = TemplateRow<IndicatorState[]>;
+
+const savedOffline = (what: string) =>
+  toast(`${what} (server unreachable: it will sync later)`, 'info');
 
 const fail = (what: string, err: unknown) => toast(`${what}: ${errorMessage(err)}`, 'error', 6000);
 
-/** the common "Indicator templates" dropdown: save the current set, apply, rename, delete. */
+/** "Indicator templates" dropdown: save the current set, apply, rename, delete. */
 export function IndicatorTemplatesButton() {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -26,10 +28,10 @@ export function IndicatorTemplatesButton() {
   const hasIndicators = useIndicatorStore((s) => s.instances.length > 0);
 
   const refresh = () =>
-    persistence
-      .listIndicatorTemplates<IndicatorState>()
-      .then((list) => {
-        setTemplates([...list].sort((a, b) => a.name.localeCompare(b.name)));
+    indicatorTemplates
+      .list()
+      .then(({ items }) => {
+        setTemplates([...items].sort((a, b) => a.name.localeCompare(b.name)));
         setError(null);
       })
       .catch((err) => setError(errorMessage(err)));
@@ -53,31 +55,37 @@ export function IndicatorTemplatesButton() {
     )
       return;
     try {
-      await persistence.saveIndicatorTemplate({
+      const { offline } = await indicatorTemplates.save(
         name,
-        instances: useIndicatorStore.getState().instances,
-        schemaVersion: INDICATOR_TEMPLATE_SCHEMA_VERSION,
-      });
-      toast(`Indicator template "${name}" saved`, 'success');
+        useIndicatorStore.getState().instances,
+        INDICATOR_TEMPLATE_SCHEMA_VERSION,
+      );
+      if (offline) savedOffline(`Indicator template "${name}" saved`);
+      else toast(`Indicator template "${name}" saved`, 'success');
     } catch (err) {
       fail('Template could not be saved', err);
     }
   };
 
   const apply = (t: Template, mode: 'replace' | 'add') => {
-    const problem = applyIndicatorTemplate(t.instances, mode, t.name);
+    const problem = applyIndicatorTemplate(t.data, mode, t.name);
     if (problem) toast(problem, 'error');
   };
 
   const rename = async (t: Template) => {
     const name = await promptName({ title: 'Rename template', initial: t.name, okLabel: 'Rename' });
     if (!name || name === t.name) return;
+    // Save-then-delete would silently replace a template that already has this name.
+    const taken = [...(templates ?? []), ...indicatorTemplates.cached()].some(
+      (x) => x.name === name && x.id !== t.id,
+    );
+    if (taken) {
+      toast(`Template could not be renamed: "${name}" already exists`, 'error', 6000);
+      return;
+    }
     try {
-      await persistence.updateIndicatorTemplate(t.id, {
-        name,
-        instances: t.instances,
-        schemaVersion: t.schemaVersion,
-      });
+      await indicatorTemplates.save(name, t.data, t.schemaVersion);
+      await indicatorTemplates.remove(t);
     } catch (err) {
       fail('Template could not be renamed', err);
     }
@@ -92,7 +100,7 @@ export function IndicatorTemplatesButton() {
     });
     if (!yes) return;
     try {
-      await persistence.deleteIndicatorTemplate(t.id);
+      await indicatorTemplates.remove(t);
     } catch (err) {
       fail('Template could not be deleted', err);
     }

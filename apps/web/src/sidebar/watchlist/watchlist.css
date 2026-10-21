@@ -1,12 +1,12 @@
 /* Watchlist panel. Flag colors are shared by rows, menus and the switcher. */
 :root {
-  --wl-flag-red: #f23645;
-  --wl-flag-orange: #ff9800;
-  --wl-flag-yellow: #fdd835;
-  --wl-flag-green: #4caf50;
-  --wl-flag-cyan: #00bcd4;
-  --wl-flag-blue: #2962ff;
-  --wl-flag-purple: #9c27b0;
+  --wl-flag-red: #de6a4f;
+  --wl-flag-orange: #e0a93b;
+  --wl-flag-yellow: #f2d03b;
+  --wl-flag-green: #7fb069;
+  --wl-flag-cyan: #0fb5c9;
+  --wl-flag-blue: #6e9bd6;
+  --wl-flag-purple: #8e5cf6;
   --wl-flash-up-bg: color-mix(in srgb, var(--up) 30%, transparent);
   --wl-flash-down-bg: color-mix(in srgb, var(--down) 30%, transparent);
 }
@@ -35,7 +35,7 @@
   height: 28px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-strong);
   font: inherit;
@@ -67,7 +67,7 @@
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--input-bg);
   color: var(--text);
   font: inherit;
@@ -273,7 +273,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 6px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--panel-2);
   text-align: center;
 }
@@ -297,14 +297,14 @@
   gap: 2px;
   margin: 8px 14px;
   padding: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--panel-2);
 }
 .wl-seg button {
   flex: 1;
   height: 24px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -323,7 +323,7 @@
   bottom: 10px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--panel-2);
   color: var(--accent-text);
   font: inherit;

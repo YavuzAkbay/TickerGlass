@@ -7,17 +7,29 @@ export type {
   CrosshairInfo,
   HitTarget,
   PaneState,
+  RenderStats,
+  SyncedCrosshair,
+  ViewChangeCause,
 } from './chart';
-export { DARK_THEME, LIGHT_THEME, DEFAULT_OPTIONS } from './options';
-export type { ChartOptions, ChartTheme, CrosshairMode, MagnetMode } from './options';
+export { DARK_THEME, LIGHT_THEME, DEFAULT_OPTIONS, DEFAULT_LEGEND_OPTIONS } from './options';
+export type {
+  ChartOptions,
+  ChartTheme,
+  CrosshairMode,
+  LegendOptions,
+  LegendTitleMode,
+  MagnetMode,
+} from './options';
 export { Pane } from './pane';
 export { CandleSeries, LineSeries } from './render/series';
 export { MainSeries, VolumeSeries } from './render/main-series';
 export type { VolumeMode } from './render/main-series';
 export * from './chart-types';
-export type { DeepPartial } from './chart';
+export type { ChartErrorInfo, DeepPartial } from './chart';
 export type { PaneSeries, SeriesRenderContext } from './render/series';
 export type { PriceScaleMode } from './scale/price-scale';
+export type { ChartMarker, ChartMarkerPosition, ChartMarkerShape } from './render/markers';
+export type { ChartPriceLine, ChartPriceLineStyle } from './render/price-lines';
 export { SeriesStore } from './model/series-store';
 export * from './feed';
 export type * from './studies/types';
@@ -29,8 +41,16 @@ export {
   listDrawingTools,
   registerDrawingTool,
 } from './drawings/registry';
+export { LEGACY_DRAWING_TYPES, resolveDrawingType } from './drawings/legacy-ids';
 export { logicalToTime, timeToLogical } from './drawings/mapping';
 export type { AnchorTimeline } from './drawings/mapping';
+export { mapSyncTime } from './sync/time-map';
+export type { SyncTimeRef } from './sync/time-map';
 export { buildTradingCalendar } from './drawings/calendar';
 export type { TradingCalendar } from './drawings/calendar';
-export { ERASER_TOOL } from './drawings/interaction';
+export { isEmbeddedImage } from './drawings/tools/image';
+export { ERASER_TOOL, MEASURE_TOOL, PICK_TOOL, ZOOM_TOOL } from './drawings/interaction';
+export { KEY_BINDINGS } from './interaction/controller';
+export type { KeyBinding } from './interaction/controller';
+export { PALETTE } from './palette';
+export type { PaletteColor } from './palette';

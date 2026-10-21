@@ -1,16 +1,16 @@
 import type { ComponentType, ReactNode } from 'react';
-import type { ChartType } from '@investopen/engine';
+import type { ChartType } from '@tickerglass/engine';
 
 type IconProps = { size?: number };
 
-/** Small 24x24 line icon in the lucide style (currentColor, 1.5 stroke). */
+/** 20x20 line icon (currentColor, 1.5 stroke, round caps and joins, no fills except anchor dots). */
 function icon(children: ReactNode): ComponentType<IconProps> {
   return function ChartTypeIcon({ size = 18 }: IconProps) {
     return (
       <svg
         width={size}
         height={size}
-        viewBox="0 0 24 24"
+        viewBox="0 0 20 20"
         fill="none"
         stroke="currentColor"
         strokeWidth={1.5}
@@ -24,122 +24,100 @@ function icon(children: ReactNode): ComponentType<IconProps> {
   };
 }
 
-const BarsIcon = icon(
-  <>
-    <path d="M8 4v15M5 7h3M8 15h3" />
-    <path d="M16 6v14M13 10h3M16 17h3" />
-  </>,
+const dot = (x: number, y: number) => (
+  <circle key={`${x}-${y}`} cx={x} cy={y} r={1.5} fill="currentColor" stroke="none" />
 );
+
+const BarsIcon = icon(<path d="M6 3v14M3 6h3M6 13h3M14 4v13M11 8h3M14 15h3" />);
 const CandlesIcon = icon(
   <>
-    <path d="M8 3v3M8 16v4M16 5v4M16 18v2" />
-    <rect x="5.5" y="6" width="5" height="10" rx="0.5" fill="currentColor" />
-    <rect x="13.5" y="9" width="5" height="9" rx="0.5" />
+    <path d="M6 2.5v3M6 14v3.5M14 4v2.5M14 15v2" />
+    <rect x="4" y="5.5" width="4" height="8.5" rx="1" />
+    <rect x="12" y="6.5" width="4" height="8.5" rx="1" />
   </>,
 );
 const HollowCandlesIcon = icon(
   <>
-    <path d="M8 3v3M8 16v4M16 5v4M16 18v2" />
-    <rect x="5.5" y="6" width="5" height="10" rx="0.5" />
-    <rect x="13.5" y="9" width="5" height="9" rx="0.5" />
+    <path d="M6 2.5v3M6 14v3.5M14 4v2.5M14 15v2" />
+    <rect x="4" y="5.5" width="4" height="8.5" rx="1" />
+    <path d="M12 6.5h4v8.5h-4z" strokeDasharray="2 1.5" />
   </>,
 );
 const VolumeCandlesIcon = icon(
   <>
-    <path d="M7 4v3M7 15v4M16.5 6v3M16.5 17v3" />
-    <rect x="5" y="7" width="4" height="8" rx="0.5" fill="currentColor" />
-    <rect x="12.5" y="9" width="8" height="8" rx="0.5" />
+    <path d="M5 3v2.5M5 13v3.5M13.5 4v2M13.5 14v3" />
+    <rect x="3.5" y="5.5" width="3" height="7.5" rx="0.8" />
+    <rect x="10" y="6" width="7" height="8" rx="0.8" />
   </>,
 );
-const LineIcon = icon(<path d="M3 17l5-6 4 3 5-7 4 4" />);
+const LineIcon = icon(<path d="M2.5 14l4.5-5 3.5 2.5L17.5 4.5" />);
 const LineMarkersIcon = icon(
   <>
-    <path d="M4 17l4-6 4 3 5-7 3 4" />
-    <circle cx="4" cy="17" r="1.4" fill="currentColor" />
-    <circle cx="8" cy="11" r="1.4" fill="currentColor" />
-    <circle cx="12" cy="14" r="1.4" fill="currentColor" />
-    <circle cx="17" cy="7" r="1.4" fill="currentColor" />
-    <circle cx="20" cy="11" r="1.4" fill="currentColor" />
+    <path d="M3 14l4-5 3.5 2.5 6.5-7" />
+    {dot(3, 14)}
+    {dot(7, 9)}
+    {dot(10.5, 11.5)}
+    {dot(17, 4.5)}
   </>,
 );
-const StepLineIcon = icon(<path d="M3 17h4v-5h5v3h4V7h5" />);
-const AreaIcon = icon(
-  <>
-    <path d="M3 16l5-6 4 3 5-7 4 4v10H3z" fill="currentColor" fillOpacity={0.25} stroke="none" />
-    <path d="M3 16l5-6 4 3 5-7 4 4" />
-  </>,
-);
+const StepLineIcon = icon(<path d="M2.5 14.5h4v-5h4v3h3v-8h4" />);
+const AreaIcon = icon(<path d="M2.5 17V12l4.5-4.5 3.5 2.5 7-6.5V17z" />);
 const HlcAreaIcon = icon(
   <>
-    <path
-      d="M3 10l5-4 4 2 5-4 4 2v6l-4-2-5 4-4-2-5 4z"
-      fill="currentColor"
-      fillOpacity={0.2}
-      stroke="none"
-    />
-    <path d="M3 10l5-4 4 2 5-4 4 2" />
-    <path d="M3 14l5-4 4 2 5-4 4 2" strokeDasharray="1.5 2" />
-    <path d="M3 18l5-4 4 2 5-4 4 2" />
+    <path d="M2.5 8l4.5-3.5 3.5 2 7-3.5" />
+    <path d="M2.5 15l4.5-3.5 3.5 2 7-3.5" />
+    <path d="M2.5 8v7M17.5 3v7" />
   </>,
 );
 const BaselineIcon = icon(
   <>
-    <path d="M3 12h18" strokeDasharray="2 2" />
-    <path d="M3 16l4-2 3-6 4 9 3-3 4-7" />
+    <path d="M2.5 10h15" strokeDasharray="2 2" />
+    <path d="M2.5 14l3.5-2.5 3-5 3.5 7.5 2-2 3-4" />
   </>,
 );
-const ColumnsIcon = icon(
-  <>
-    <path d="M5 20v-7M9 20V9M13 20v-5M17 20V6M21 20v-9" strokeWidth={2.5} strokeLinecap="butt" />
-  </>,
-);
+const ColumnsIcon = icon(<path d="M4 17V11M8 17V7M12 17V12M16 17V4" strokeWidth={2.5} />);
 const HighLowIcon = icon(
   <>
-    <path d="M6 6v9M12 9v10M18 4v8" strokeWidth={2.5} strokeLinecap="butt" />
+    <path d="M5 5v9M10 7.5v9M15 3.5v8" />
+    <path d="M3.5 5h3M8.5 7.5h3M13.5 3.5h3" />
   </>,
 );
 const HeikinAshiIcon = icon(
   <>
-    <path d="M6 4v2M6 14v3M12 7v2M12 16v2M18 9v2M18 18v2" />
-    <rect x="4" y="6" width="4" height="8" rx="0.5" />
-    <rect x="10" y="9" width="4" height="7" rx="0.5" fill="currentColor" />
-    <rect x="16" y="11" width="4" height="7" rx="0.5" fill="currentColor" />
+    <path d="M4.5 3v2M4.5 12.5v3M10 6v2M10 14v2.5M15.5 8v1.5M15.5 16v2" />
+    <rect x="3" y="5" width="3" height="7.5" rx="0.8" />
+    <rect x="8.5" y="8" width="3" height="6" rx="0.8" />
+    <rect x="14" y="9.5" width="3" height="6.5" rx="0.8" />
   </>,
 );
 const RenkoIcon = icon(
   <>
-    <rect x="3" y="15" width="5" height="4" />
-    <rect x="8" y="11" width="5" height="4" />
-    <rect x="13" y="7" width="5" height="4" fill="currentColor" />
-    <rect x="18" y="3" width="3" height="4" fill="currentColor" />
+    <rect x="2.5" y="12" width="4.5" height="4" rx="0.8" />
+    <rect x="7" y="8" width="4.5" height="4" rx="0.8" />
+    <rect x="11.5" y="4" width="4.5" height="4" rx="0.8" />
   </>,
 );
 const LineBreakIcon = icon(
   <>
-    <rect x="3" y="12" width="5" height="7" />
-    <rect x="9.5" y="7" width="5" height="9" fill="currentColor" />
-    <rect x="16" y="4" width="5" height="7" />
+    <rect x="2.5" y="10" width="4" height="7" rx="0.8" />
+    <rect x="8" y="6" width="4" height="8" rx="0.8" />
+    <rect x="13.5" y="3" width="4" height="6" rx="0.8" />
   </>,
 );
-const KagiIcon = icon(
-  <>
-    <path d="M4 20v-8h4v4h4V6" />
-    <path d="M12 6h4v8h4V4" strokeWidth={2.5} />
-  </>,
-);
+const KagiIcon = icon(<path d="M3.5 17v-7h5v4h4V4h4" />);
 const PointFigureIcon = icon(
   <>
-    <path d="M4 15l3 3M7 15l-3 3M4 10l3 3M7 10l-3 3" />
-    <circle cx="12" cy="9" r="1.8" />
-    <circle cx="12" cy="14" r="1.8" />
-    <path d="M17 5l3 3M20 5l-3 3M17 10l3 3M20 10l-3 3" />
+    <path d="M3.5 3.5l3 3M6.5 3.5l-3 3M3.5 9l3 3M6.5 9l-3 3" />
+    <circle cx="12" cy="7" r="2" />
+    <circle cx="12" cy="13.5" r="2" />
+    <path d="M15.5 3.5l2 2M17.5 3.5l-2 2" />
   </>,
 );
 const RangeIcon = icon(
   <>
-    <path d="M6 9v8M3.5 11H6M6 15h2.5" />
-    <path d="M12 6v8M9.5 8H12M12 12h2.5" />
-    <path d="M18 3v8M15.5 5H18M18 9h2.5" />
+    <path d="M5 8v8M3 9.5h2M5 14h2" />
+    <path d="M10 4v8M8 5.5h2M10 10h2" />
+    <path d="M15 2.5v8M13 4h2M15 8.5h2" />
   </>,
 );
 
@@ -149,23 +127,23 @@ export interface ChartTypeDef {
   icon: ComponentType<IconProps>;
 }
 
-/** Chart styles in reference order. `null` marks a group separator. */
+/** Chart styles in menu order. `null` marks a group separator. */
 export const CHART_TYPE_MENU: (ChartTypeDef | null)[] = [
   { id: 'bars', label: 'Bars', icon: BarsIcon },
   { id: 'candles', label: 'Candles', icon: CandlesIcon },
   { id: 'hollowCandles', label: 'Hollow candles', icon: HollowCandlesIcon },
-  { id: 'volumeCandles', label: 'Volume candles', icon: VolumeCandlesIcon },
+  { id: 'volumeCandles', label: 'Volume-width candles', icon: VolumeCandlesIcon },
   null,
   { id: 'line', label: 'Line', icon: LineIcon },
-  { id: 'lineMarkers', label: 'Line with markers', icon: LineMarkersIcon },
-  { id: 'stepLine', label: 'Step line', icon: StepLineIcon },
+  { id: 'lineMarkers', label: 'Line + dots', icon: LineMarkersIcon },
+  { id: 'stepLine', label: 'Step', icon: StepLineIcon },
   null,
   { id: 'area', label: 'Area', icon: AreaIcon },
-  { id: 'hlcArea', label: 'HLC area', icon: HlcAreaIcon },
-  { id: 'baseline', label: 'Baseline', icon: BaselineIcon },
+  { id: 'hlcArea', label: 'Range area', icon: HlcAreaIcon },
+  { id: 'baseline', label: 'Baseline split', icon: BaselineIcon },
   null,
-  { id: 'columns', label: 'Columns', icon: ColumnsIcon },
-  { id: 'highLow', label: 'High-low', icon: HighLowIcon },
+  { id: 'columns', label: 'Histogram', icon: ColumnsIcon },
+  { id: 'highLow', label: 'High–low bars', icon: HighLowIcon },
   null,
   { id: 'heikinAshi', label: 'Heikin Ashi', icon: HeikinAshiIcon },
   null,

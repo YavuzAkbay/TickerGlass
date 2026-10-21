@@ -1,4 +1,4 @@
-import type { MagnetMode } from '@investopen/engine';
+import type { MagnetMode } from '@tickerglass/engine';
 import { commands, type Command } from '../commands/registry';
 import { removeAllDrawings, removeAllObjects } from '../drawings/actions';
 import { removeAllIndicators } from '../indicators/actions';
@@ -79,6 +79,13 @@ export function registerToolbarCommands(): () => void {
       run: resetToCursor,
     },
     ...shortcutCommands,
+    {
+      id: 'view.toggleToolRail',
+      title: 'Show or hide the drawing tool rail',
+      category: 'Drawings',
+      shortcut: 'Shift+t',
+      run: () => useUiStore.getState().toggleToolRail(),
+    },
     {
       id: 'drawings.toggleMagnet',
       title: 'Toggle magnet mode',

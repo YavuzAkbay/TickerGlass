@@ -1,4 +1,4 @@
-import { IndicatorRuntime } from '../src/runtime';
+import type { Change, IndicatorRuntime } from '../src/runtime';
 import type { BarArrays, BarInput, IndicatorResult } from '../src/types';
 
 export const DAY = 86_400;
@@ -71,14 +71,26 @@ export function ticks(b: BarInput): BarInput[] {
 /**
  * Feed `cols` to `rt` as history up to `from`, then bar by bar as live ticks
  * (append + updates). With `tf`, the timeframe series is fed the same way,
- * aggregated into UTC days.
+ * aggregated into UTC days. `external` holds chart-aligned bars of external
+ * symbols, fed the same way.
  */
-export function feedLive(rt: IndicatorRuntime, cols: BarArrays, from: number, tf = ''): void {
+export function feedLive(
+  rt: IndicatorRuntime,
+  cols: BarArrays,
+  from: number,
+  tf = '',
+  external: Readonly<Record<string, BarArrays>> = {},
+): void {
   rt.setBars(sliceBars(cols, 0, from));
+  for (const [symbol, ext] of Object.entries(external))
+    rt.setExternal(symbol, sliceBars(ext, 0, from));
   if (tf) rt.setTimeframeBars(tf, toColumns(dailyBars(cols, from)));
   const n = cols.time.length;
   for (let i = from; i < n; i++) {
     const partial = sliceBars(cols, 0, i + 1);
+    // External bars first: the series may be ahead of the chart, never behind.
+    for (const [symbol, ext] of Object.entries(external))
+      rt.updateExternal(symbol, i, sliceBars(ext, i, i + 1));
     for (const t of ticks(barAt(cols, i))) {
       rt.updateBar(i, t);
       if (tf) {
@@ -91,6 +103,35 @@ export function feedLive(rt: IndicatorRuntime, cols: BarArrays, from: number, tf
       }
     }
   }
+}
+
+/** Ticks that push the high/low far out and back (pivots created, cancelled, moved). */
+export function swingTicks(b: BarInput): BarInput[] {
+  const o = b.open;
+  return [
+    { ...b, high: o, low: o, close: o },
+    { ...b, high: b.high * 1.04, close: b.high * 1.04 },
+    { ...b, low: b.low * 0.96, close: b.low * 0.96 },
+    { ...b, high: b.high * 1.08, low: b.low * 0.92 },
+    b,
+  ];
+}
+
+/**
+ * Feed `cols` to `rt` as history up to `from`, then each bar as the live
+ * ticks `ticksOf` gives. Returns the changes of every tick, in order.
+ */
+export function feedTicks(
+  rt: IndicatorRuntime,
+  cols: BarArrays,
+  from: number,
+  ticksOf: (b: BarInput) => BarInput[],
+): Change[][] {
+  rt.setBars(sliceBars(cols, 0, from));
+  const all: Change[][] = [];
+  for (let i = from; i < cols.time.length; i++)
+    for (const t of ticksOf(barAt(cols, i))) all.push(rt.updateBar(i, t));
+  return all;
 }
 
 /** Exact copy of a result's live range, for equality checks (NaN-safe via toEqual). */

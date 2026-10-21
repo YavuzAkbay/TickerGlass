@@ -1,0 +1,54 @@
+/* Inspector: detail panel left of the tool rail; the 1px app grid gap is its hairline. No shadow. */
+.inspector {
+  grid-area: 2 / 3 / 3 / 4;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+}
+.inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  height: var(--bar-h);
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.inspector-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--font-size);
+  font-weight: 600;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.inspector-resize {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.inspector-resize:hover,
+.inspector-resize:focus-visible {
+  outline: none;
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--accent) 2px,
+    var(--accent) 4px,
+    transparent 4px
+  );
+}

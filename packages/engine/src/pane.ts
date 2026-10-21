@@ -9,10 +9,12 @@ export class Pane {
   readonly id: string;
   readonly el: HTMLDivElement;
   readonly axisEl: HTMLDivElement;
-  /** Legend container: engine-written info line, then the app-owned slot. */
+  /** Legend container: engine-written info line, then the app-owned compare and study slots. */
   readonly legendEl: HTMLDivElement;
   /** Written by the engine (symbol/OHLC line, non-study series). */
   readonly legendInfo: HTMLDivElement;
+  /** Owned by the app (compare overlay rows); the engine never writes it. */
+  readonly legendCompare: HTMLDivElement;
   /** Owned by the app (study legend rows); the engine never writes it. */
   readonly legendSlot: HTMLDivElement;
   readonly bg: CanvasLayer;
@@ -43,6 +45,7 @@ export class Pane {
     this.axisOverlay = new CanvasLayer(this.axisEl, 2);
     this.legendEl = div(this.el, 'io-legend');
     this.legendInfo = div(this.legendEl, 'io-legend-info');
+    this.legendCompare = div(this.legendEl, 'io-legend-compare');
     this.legendSlot = div(this.legendEl, 'io-legend-slot');
   }
 

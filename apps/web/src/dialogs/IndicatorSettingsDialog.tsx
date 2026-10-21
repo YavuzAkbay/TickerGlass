@@ -1,6 +1,10 @@
 import {
+  coerceInputs,
+  externalRefSymbol,
   getIndicator,
+  isExternalRef,
   isOutputRef,
+  isUserScriptType,
   resolveInputs,
   resolveOutputs,
   type AnyIndicatorDefinition,
@@ -12,11 +16,11 @@ import {
   type ResolvedOutput,
   type ShapeSize,
   type SourceValue,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { commitPreview, discardPreview, previewIndicator } from '../indicators/actions';
-import { sourceOptions } from '../indicators/menu';
+import { overlayOption, sourceOptions } from '../indicators/menu';
 import {
   VISIBILITY_UNITS,
   defaultVisibility,
@@ -25,12 +29,14 @@ import {
   type VisibilityUnit,
 } from '../indicators/model';
 import { useEffectiveInstances, useIndicatorPrefs } from '../indicators/store';
+import { useCompareStore } from '../compare/store';
 import { INTERVAL_GROUPS, intervalLabel } from '../topbar/intervals';
 import { DropdownMenu } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
 import { toast } from '../ui/Toast';
 import { ColorSwatch } from './ColorPicker';
 import { Check, Row, Section } from './controls';
+import { SymbolField } from './SymbolField';
 import '../indicators/indicators.css';
 import './dialogs.css';
 
@@ -108,7 +114,9 @@ export default function IndicatorSettingsDialog({
   const resetTo = (d: Editable) => {
     try {
       apply({
-        inputs: resolveInputs(def, d.inputs),
+        inputs: isUserScriptType(def.id)
+          ? coerceInputs(def, d.inputs)
+          : resolveInputs(def, d.inputs),
         styles: structuredClone(d.styles),
         visibility: d.visibility ? structuredClone(d.visibility) : null,
       });
@@ -335,6 +343,8 @@ function InputControl({
   all: IndicatorState[];
   onChange: (v: InputValueMap[string]) => void;
 }) {
+  const compareItems = useCompareStore((s) => s.items);
+  const overlays = [...new Set(compareItems.map((i) => i.symbol))];
   switch (def.kind) {
     case 'int':
     case 'float':
@@ -375,29 +385,63 @@ function InputControl({
         </select>
       );
     case 'source': {
-      const options = sourceOptions(inst, all);
       const cur = (value ?? def.default) as SourceValue;
+      // A source on a symbol that is not a compare overlay (free entry) stays listed.
+      const free =
+        isExternalRef(cur) && !overlays.includes(externalRefSymbol(cur))
+          ? [externalRefSymbol(cur)]
+          : [];
+      const options = sourceOptions(inst, all, [...overlays, ...free]);
       const missing =
         isOutputRef(cur) && !options.some((o) => sourceKey(o.value) === sourceKey(cur));
+      const plain = options.filter((o) => !o.group);
+      const overlayOptions = options.filter((o) => o.group === 'Overlays');
       return (
-        <select
-          id={id}
-          className="io-input dlg-select"
-          value={sourceKey(cur)}
-          onChange={(e) => {
-            const o = options.find((x) => sourceKey(x.value) === e.target.value);
-            if (o) onChange(o.value);
-          }}
-        >
-          {options.map((o) => (
-            <option key={sourceKey(o.value)} value={sourceKey(o.value)}>
-              {o.label}
-            </option>
-          ))}
-          {missing ? <option value={sourceKey(cur)}>Removed source</option> : null}
-        </select>
+        <>
+          <select
+            id={id}
+            className="io-input dlg-select"
+            value={sourceKey(cur)}
+            onChange={(e) => {
+              const o = options.find((x) => sourceKey(x.value) === e.target.value);
+              if (o) onChange(o.value);
+            }}
+          >
+            {plain.map((o) => (
+              <option key={sourceKey(o.value)} value={sourceKey(o.value)}>
+                {o.label}
+              </option>
+            ))}
+            {overlayOptions.length ? (
+              <optgroup label="Overlays">
+                {overlayOptions.map((o) => (
+                  <option key={sourceKey(o.value)} value={sourceKey(o.value)}>
+                    {o.label}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {missing ? <option value={sourceKey(cur)}>Removed source</option> : null}
+          </select>
+          <SymbolField
+            value=""
+            label={`${def.label} overlay symbol`}
+            placeholder="Overlay symbol…"
+            clearOnCommit
+            onCommit={(symbol) => onChange(overlayOption(symbol, 'close').value)}
+          />
+        </>
       );
     }
+    case 'symbol':
+      return (
+        <SymbolField
+          id={id}
+          value={typeof value === 'string' ? value : def.default}
+          label={def.label}
+          onCommit={onChange}
+        />
+      );
     case 'timeframe': {
       const cur = typeof value === 'string' ? value : def.default;
       const known = INTERVAL_GROUPS.flatMap((g) => g.intervals);
@@ -487,6 +531,8 @@ export function NumberInput({
 }
 
 // ------------------------------------------------------------------- style
+
+const VP_COLOR_LABELS = ['up volume', 'down volume', 'value area up', 'value area down', 'POC'];
 
 function StyleTab({
   outputs,
@@ -583,6 +629,19 @@ function StyleTab({
           case 'bgcolor':
             rest = swatches(o);
             break;
+          case 'volumeProfile':
+            // Colours in VOLUME_PROFILE_COLOR_KEYS order.
+            rest = o.colors.map((c, i) => (
+              <ColorSwatch
+                key={i}
+                value={c}
+                label={`${o.title} ${VP_COLOR_LABELS[i] ?? `colour ${i + 1}`}`}
+                onChange={(color) =>
+                  set(o.id, { colors: o.colors.map((x, j) => (j === i ? color : x)) })
+                }
+              />
+            ));
+            break;
           case 'shape':
             rest = (
               <>
@@ -621,7 +680,7 @@ const isAllVisible = (v: IntervalVisibility) =>
     ({ unit, limit }) => v[unit].enabled && v[unit].min === limit[0] && v[unit].max === limit[1],
   );
 
-/** Two-thumb range slider (the common visibility range); thumbs cannot cross. */
+/** Two-thumb range slider (visibility range); thumbs cannot cross. */
 function RangeSlider({
   min,
   max,

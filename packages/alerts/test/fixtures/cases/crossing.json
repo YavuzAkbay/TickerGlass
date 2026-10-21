@@ -1,0 +1,830 @@
+{
+  "area": "crossing",
+  "cases": [
+    {
+      "name": "crossingUp 9, 11 fires at 1",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "crossingUp 9, 10 does not fire (touch)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossingUp 9, 10, 11 fires at 2",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [2]
+    },
+    {
+      "name": "crossingUp first sample 11 without prev",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossingUp gap 9, NaN, 11 breaks the edge",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": null,
+            "y": 10,
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossingUp 11, 9 does not fire",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossingDown 11, 9 fires at 1",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingDown",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "crossingDown 10, 9 fires at 1",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingDown",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "crossingDown 9, 10, 9 fires at 2 (touch counts as a cross)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingDown",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [2]
+    },
+    {
+      "name": "crossingDown 11, 10 does not fire (touch)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingDown",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossing 9, 11, 9 fires at 1 and 2",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossing",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1, 2]
+    },
+    {
+      "name": "crossing 10, 10, 10 never fires",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossing",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 10,
+            "y": 10,
+            "open": 10,
+            "high": 10,
+            "low": 10,
+            "close": 10,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossingUp against a moving y (x 5, 6; y 6, 5)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 5,
+            "y": 6,
+            "open": 5,
+            "high": 5,
+            "low": 5,
+            "close": 5,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 6,
+            "y": 5,
+            "open": 6,
+            "high": 6,
+            "low": 6,
+            "close": 6,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "crossingUp with an invalid previous y",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": null,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "crossingUp with y missing",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 9,
+            "y": null,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 11,
+            "y": null,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    }
+  ]
+}

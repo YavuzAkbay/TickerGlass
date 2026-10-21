@@ -1,18 +1,27 @@
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+from curl_cffi.requests import exceptions as curl_exc
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
+from yfinance.exceptions import YFRateLimitError
 
-from investopen_api.app import create_app
-from investopen_api.db import make_engine, run_migrations
-from investopen_api.intervals import resolve_interval
-from investopen_api.providers.base import BAR_COLUMNS, SymbolNotFound
-from investopen_api.providers.yahoo import _normalize
-from investopen_api.services.bars import BarService
+from tickerglass_api.app import create_app
+from tickerglass_api.db import make_engine, run_migrations
+from tickerglass_api.intervals import resolve_interval
+from tickerglass_api.providers.base import (
+    BAR_COLUMNS,
+    ProviderError,
+    RateLimited,
+    SymbolNotFound,
+    UpstreamUnavailable,
+)
+from tickerglass_api.providers.yahoo import YahooProvider, _normalize
+from tickerglass_api.services.bars import BarService
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -213,3 +222,126 @@ def test_bars_endpoint_contract(tmp_path: Path) -> None:
         assert (
             client.get("/api/bars", params={"symbol": "AAPL", "interval": "1h"}).status_code == 404
         )
+
+
+def test_bars_endpoint_to_is_exclusive_upper_bound(tmp_path: Path) -> None:
+    # Market replay pages forward with `to` mid-history and past "now".
+    app = create_app(
+        provider=FakeProvider({("AAPL", "1d"): DAILY}), database_url=f"sqlite:///{tmp_path}/a.db"
+    )
+    ts = DAILY["ts"].tolist()
+    with TestClient(app) as client:
+        mid = ts[len(ts) // 2]
+        res = client.get(
+            "/api/bars", params={"symbol": "AAPL", "interval": "1d", "limit": 3, "to": mid}
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["t"] == ts[len(ts) // 2 - 3 : len(ts) // 2]
+        assert body["hasMore"] is True
+
+        future = ts[-1] + 365 * 86_400
+        res = client.get(
+            "/api/bars", params={"symbol": "AAPL", "interval": "1d", "limit": 2, "to": future}
+        )
+        assert res.status_code == 200
+        assert res.json()["t"] == ts[-2:]
+
+
+class FailingProvider(FakeProvider):
+    def __init__(self, error: Exception) -> None:
+        super().__init__({})
+        self.error = error
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "retry_after"),
+    [
+        (RateLimited("slow down", 16), 429, "16"),
+        (UpstreamUnavailable("offline"), 503, None),
+        (ProviderError("bad payload"), 502, None),
+    ],
+)
+def test_provider_errors_map_to_statuses(
+    tmp_path: Path, error: Exception, status: int, retry_after: str | None
+) -> None:
+    app = create_app(provider=FailingProvider(error), database_url=f"sqlite:///{tmp_path}/e.db")
+    with TestClient(app) as client:
+        res = client.get("/api/bars", params={"symbol": "AAPL", "interval": "1d"})
+    assert res.status_code == status
+    assert res.headers.get("Retry-After") == retry_after
+    assert res.json()["detail"] == str(error)
+
+
+def _fast_provider(retries: int = 1) -> YahooProvider:
+    return YahooProvider(min_interval=0, retries=retries)
+
+
+def test_call_raises_rate_limited_after_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
+    calls = 0
+
+    def fn() -> int:
+        nonlocal calls
+        calls += 1
+        raise YFRateLimitError()
+
+    with pytest.raises(RateLimited) as info:
+        _fast_provider(2)._call(fn)
+    assert calls == 3 and info.value.retry_after == 4
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        curl_exc.ConnectionError("down"),
+        curl_exc.Timeout("slow"),
+        TimeoutError("t"),
+        socket.gaierror("dns"),
+    ],
+)
+def test_call_raises_unavailable_on_connection_failure(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
+
+    def fn() -> int:
+        raise error
+
+    with pytest.raises(UpstreamUnavailable):
+        _fast_provider()._call(fn)
+
+
+@pytest.mark.parametrize("error", [PermissionError("cache"), FileNotFoundError("cache")])
+def test_call_disk_errors_are_not_unavailable(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
+
+    def fn() -> int:
+        raise error
+
+    with pytest.raises(ProviderError) as info:
+        _fast_provider()._call(fn)
+    assert type(info.value) is ProviderError
+
+
+def test_call_other_failures_stay_provider_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
+
+    def fn() -> int:
+        raise ValueError("junk")
+
+    with pytest.raises(ProviderError) as info:
+        _fast_provider()._call(fn)
+    assert type(info.value) is ProviderError

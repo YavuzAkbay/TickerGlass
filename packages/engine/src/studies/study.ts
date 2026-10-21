@@ -158,6 +158,10 @@ export class Study {
       case 'bgcolor':
         applyColors(o, s);
         break;
+      case 'volumeProfile':
+        // Palette entries are replaced one by one (up, down, VA up, VA down, POC).
+        if (s.colors) o.colors = o.colors.map((c, i) => s.colors?.[i] ?? c);
+        break;
       case 'shape':
         applyColors(o, s);
         if (s.size !== undefined) o.size = s.size;

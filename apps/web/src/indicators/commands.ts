@@ -1,4 +1,4 @@
-import { isOutputRef } from '@investopen/indicators';
+import { isOutputRef } from '@tickerglass/indicators';
 import { commands, type Command } from '../commands/registry';
 import {
   addIndicator,

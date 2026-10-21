@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -18,8 +18,8 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-drawing-templates');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-drawing-templates');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
@@ -43,9 +43,9 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
 
   // Change the colour from the floating toolbar.
   await toolbar.getByRole('button', { name: /^Line color/ }).click();
-  await page.getByRole('option', { name: '#f23645' }).click();
+  await page.getByRole('option', { name: '#DE6A4F' }).click();
   await page.keyboard.press('Escape');
-  await expect.poll(async () => (await drawings(page))[0]!.style.lineColor).toBe('#f23645');
+  await expect.poll(async () => (await drawings(page))[0]!.style.lineColor).toBe('#de6a4f');
   const placed = (await drawings(page))[0]!.points;
 
   // Drag the line up.
@@ -61,7 +61,7 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   // Undo the drag (colour change stays).
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(async () => (await drawings(page))[0]!.points).toEqual(placed);
-  expect((await drawings(page))[0]!.style.lineColor).toBe('#f23645');
+  expect((await drawings(page))[0]!.style.lineColor).toBe('#de6a4f');
 
   // Reload: the drawing comes back from localStorage.
   await page.reload();
@@ -69,7 +69,7 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   await expect.poll(async () => (await drawings(page)).length).toBe(1);
   const restored = (await drawings(page))[0]!;
   expect(restored.type).toBe('trend-line');
-  expect(restored.style.lineColor).toBe('#f23645');
+  expect(restored.style.lineColor).toBe('#de6a4f');
   expect(restored.points).toEqual(placed);
 
   // Select and delete with the keyboard.
@@ -84,8 +84,8 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(err.message));
   await page.addInitScript(() => {
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-indicators');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-indicators');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
@@ -94,7 +94,7 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await page.getByRole('button', { name: 'Indicators', exact: false }).first().click();
   const search = page.getByLabel('Search indicators');
   await search.fill('Relative Strength Index');
-  if ((await page.locator('.ind-row').count()) === 0) await search.fill('Moving Average Simple');
+  if ((await page.locator('.ind-row').count()) === 0) await search.fill('Simple Moving Average');
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');
@@ -110,7 +110,7 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await expect.poll(async () => (await drawings(page)).length).toBe(1);
 
   // Open the Object tree panel: one row per drawing and the study's series.
-  await page.getByRole('button', { name: 'Object tree' }).click();
+  await page.getByRole('tab', { name: 'Object tree' }).click();
   const tree = page.getByRole('tree', { name: 'Object tree' });
   await expect(tree).toBeVisible();
   await expect(tree.getByRole('treeitem', { name: 'Trend line' })).toHaveCount(1);
@@ -122,4 +122,118 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await expect.poll(async () => (await drawings(page)).length).toBe(0);
   await expect(tree.getByText('No drawings')).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test('inspector edits the selected drawing, closes on Escape, and shows symbol details', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('drw-e2e')) return;
+    sessionStorage.setItem('drw-e2e', '1');
+    localStorage.removeItem('tickerglass-drawings');
+  });
+  await page.goto('/?feed=synthetic');
+  await waitForChart(page);
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  await expect(inspector).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await page.mouse.click(500, 300);
+  await page.mouse.click(800, 420);
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(650, 360);
+  await expect.poll(() => page.evaluate(() => window.chart.getSelection().length)).toBe(1);
+
+  const widthBefore = await page.evaluate(() => window.chart.root.getBoundingClientRect().width);
+  await page
+    .getByRole('toolbar', { name: 'Drawing toolbar' })
+    .getByRole('button', { name: 'Properties', exact: true })
+    .click();
+  await expect(inspector).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.chart.root.getBoundingClientRect().width))
+    .toBeLessThan(widthBefore);
+
+  await inspector
+    .getByRole('button', { name: /^Line:/ })
+    .first()
+    .click();
+  await page.getByRole('option', { name: '#DE6A4F' }).click();
+  await expect.poll(async () => (await drawings(page))[0]!.style.lineColor).toBe('#de6a4f');
+
+  // Escape closes the picker first, then the Inspector; the drawing stays.
+  await page.keyboard.press('Escape');
+  await inspector.getByRole('combobox').first().focus();
+  await page.keyboard.press('Escape');
+  await expect(inspector).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.chart.root.getBoundingClientRect().width))
+    .toBe(widthBefore);
+  expect((await drawings(page)).length).toBe(1);
+
+  // The symbol in the header opens the symbol details.
+  await page.getByRole('button', { name: /^Open details for/ }).click();
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByRole('heading', { name: 'Symbol details' })).toBeVisible();
+  await inspector.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(inspector).toHaveCount(0);
+});
+
+test('inspector moves focus in, restores it, closes on symbol change, and leaves one hairline', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('drw-e2e')) return;
+    sessionStorage.setItem('drw-e2e', '1');
+    localStorage.removeItem('tickerglass-drawings');
+  });
+  await page.goto('/?feed=synthetic');
+  await waitForChart(page);
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  const gapBetweenChartAndRail = () =>
+    page.evaluate(() => {
+      const c = document.querySelector('.center')!.getBoundingClientRect();
+      const r = document.querySelector('.app-rail')!.getBoundingClientRect();
+      return r.left - c.right;
+    });
+  // No Inspector: a single 1px hairline between the chart and the tool rail.
+  expect(await gapBetweenChartAndRail()).toBe(1);
+
+  // Focus moves in on open and returns to the opener on close.
+  const symbolButton = page.getByRole('button', { name: /^Open details for/ });
+  await symbolButton.focus();
+  await page.keyboard.press('Enter');
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByRole('heading', { name: 'Symbol details' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(inspector).toHaveCount(0);
+  await expect(symbolButton).toBeFocused();
+
+  // With the Inspector: still one hairline on each side.
+  await symbolButton.click();
+  await expect(inspector).toBeVisible();
+  const box = await inspector.boundingBox();
+  const rail = await page.locator('.app-rail').boundingBox();
+  expect(Math.round(rail!.x - (box!.x + box!.width))).toBe(1);
+  await inspector.getByRole('button', { name: 'Close inspector' }).click();
+
+  // A drawing's properties close when the symbol changes.
+  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await page.mouse.click(500, 300);
+  await page.mouse.click(800, 420);
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(650, 360);
+  await page
+    .getByRole('toolbar', { name: 'Drawing toolbar' })
+    .getByRole('button', { name: 'Properties', exact: true })
+    .click();
+  await expect(inspector).toBeVisible();
+  await page.getByRole('button', { name: /^Symbol search/ }).click();
+  const input = page.getByLabel('Search symbols');
+  await input.fill('MSFT');
+  await input.press('Enter');
+  await expect.poll(() => page.evaluate(() => window.chart.getState().symbol)).toBe('MSFT');
+  await expect(inspector).toHaveCount(0);
 });

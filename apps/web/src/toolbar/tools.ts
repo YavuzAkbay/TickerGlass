@@ -1,4 +1,5 @@
-import { getDrawingTool, type CrosshairMode } from '@investopen/engine';
+import { getDrawingTool, type CrosshairMode } from '@tickerglass/engine';
+import { getIndicator } from '@tickerglass/indicators';
 import { useAppStore } from '../store/app';
 import { useUiStore, type DrawingToolId } from '../store/ui';
 import { toast } from '../ui/Toast';
@@ -59,14 +60,14 @@ export const TOOL_GROUPS: ToolGroup[] = [
   },
   {
     id: 'lines',
-    label: 'Trend line tools',
+    label: 'Lines',
     sections: [
       {
         title: 'Lines',
         tools: [
           t('trend-line', 'Trend line', I.IconTrendLine, 'Alt+t', 'tool.trendLine'),
           t('ray', 'Ray', I.IconRay),
-          t('info-line', 'Info line', I.IconInfoLine),
+          t('measured-line', 'Measured line', I.IconMeasuredLine),
           t('extended-line', 'Extended line', I.IconExtendedLine),
           t('trend-angle', 'Trend angle', I.IconTrendAngle),
           t(
@@ -86,8 +87,8 @@ export const TOOL_GROUPS: ToolGroup[] = [
         tools: [
           t('parallel-channel', 'Parallel channel', I.IconParallelChannel),
           t('regression-trend', 'Regression trend', I.IconRegressionTrend),
-          t('flat-top-bottom', 'Flat top/bottom', I.IconFlatTopBottom),
-          t('disjoint-channel', 'Disjoint channel', I.IconDisjointChannel),
+          t('flat-channel', 'Flat-edge channel', I.IconFlatChannel),
+          t('split-channel', 'Split channel', I.IconSplitChannel),
         ],
       },
       {
@@ -100,14 +101,14 @@ export const TOOL_GROUPS: ToolGroup[] = [
             'Modified Schiff pitchfork',
             I.IconModifiedSchiffPitchfork,
           ),
-          t('inside-pitchfork', 'Inside pitchfork', I.IconInsidePitchfork),
+          t('inner-pitchfork', 'Inner pitchfork', I.IconInnerPitchfork),
         ],
       },
     ],
   },
   {
     id: 'fib',
-    label: 'Gann and Fibonacci tools',
+    label: 'Fibonacci & Gann',
     sections: [
       {
         title: 'Fibonacci',
@@ -119,23 +120,23 @@ export const TOOL_GROUPS: ToolGroup[] = [
             'Alt+f',
             'tool.fibRetracement',
           ),
-          t('fib-extension', 'Trend-based fib extension', I.IconFibExtension),
+          t('fib-extension', 'Fib extension', I.IconFibExtension),
           t('fib-channel', 'Fib channel', I.IconFibChannel),
           t('fib-time-zone', 'Fib time zone', I.IconFibTimeZone),
-          t('fib-speed-fan', 'Fib speed resistance fan', I.IconFibSpeedFan),
-          t('fib-trend-time', 'Trend-based fib time', I.IconFibTrendTime),
+          t('fib-fan', 'Fib fan', I.IconFibFan),
+          t('fib-time-extension', 'Fib time extension', I.IconFibTimeExtension),
           t('fib-circles', 'Fib circles', I.IconFibCircles),
           t('fib-spiral', 'Fib spiral', I.IconFibSpiral),
-          t('fib-speed-arcs', 'Fib speed resistance arcs', I.IconFibSpeedArcs),
-          t('fib-wedge', 'Fib wedge', I.IconFibWedge),
-          t('pitchfan', 'Pitchfan', I.IconPitchfan),
+          t('fib-arcs', 'Fib arcs', I.IconFibArcs),
+          t('fib-sector', 'Fib sector', I.IconFibSector),
+          t('fork-fan', 'Fork fan', I.IconForkFan),
         ],
       },
       {
         title: 'Gann',
         tools: [
           t('gann-box', 'Gann box', I.IconGannBox),
-          t('gann-square-fixed', 'Gann square fixed', I.IconGannSquareFixed),
+          t('gann-grid', 'Gann grid', I.IconGannGrid),
           t('gann-square', 'Gann square', I.IconGannSquare),
           t('gann-fan', 'Gann fan', I.IconGannFan),
         ],
@@ -160,62 +161,62 @@ export const TOOL_GROUPS: ToolGroup[] = [
       {
         title: 'Elliott waves',
         tools: [
-          t('elliott-impulse', 'Elliott impulse wave (12345)', I.IconElliottImpulse),
-          t('elliott-correction', 'Elliott correction wave (ABC)', I.IconElliottCorrection),
-          t('elliott-triangle', 'Elliott triangle wave (ABCDE)', I.IconElliottTriangle),
-          t('elliott-double-combo', 'Elliott double combo wave (WXY)', I.IconElliottDoubleCombo),
-          t('elliott-triple-combo', 'Elliott triple combo wave (WXYXZ)', I.IconElliottTripleCombo),
+          t('elliott-impulse', 'Elliott impulse (5-wave)', I.IconElliottImpulse),
+          t('elliott-correction', 'Elliott correction (3-wave)', I.IconElliottCorrection),
+          t('elliott-triangle', 'Elliott triangle (5-wave)', I.IconElliottTriangle),
+          t('elliott-double-combo', 'Elliott double combination', I.IconElliottDoubleCombo),
+          t('elliott-triple-combo', 'Elliott triple combination', I.IconElliottTripleCombo),
         ],
       },
       {
         title: 'Cycles',
         tools: [
-          t('cyclic-lines', 'Cyclic lines', I.IconCyclicLines),
-          t('time-cycles', 'Time cycles', I.IconTimeCycles),
-          t('sine-line', 'Sine line', I.IconSineLine),
+          t('cycle-lines', 'Cycle lines', I.IconCycleLines),
+          t('cycle-arcs', 'Cycle arcs', I.IconCycleArcs),
+          t('sine-wave', 'Sine wave', I.IconSineWave),
         ],
       },
     ],
   },
   {
     id: 'forecasting',
-    label: 'Forecasting and measurement tools',
+    label: 'Projection & measure',
     sections: [
       {
-        title: 'Forecasting',
+        title: 'Projection',
         tools: [
           t('long-position', 'Long position', I.IconLongPosition),
           t('short-position', 'Short position', I.IconShortPosition),
-          t('forecast', 'Forecast', I.IconForecast),
-          t('bars-pattern', 'Bars pattern', I.IconBarsPattern),
-          t('ghost-feed', 'Ghost feed', I.IconGhostFeed),
-          t('projection', 'Projection', I.IconProjection),
+          t('price-target', 'Price target', I.IconPriceTarget),
+          t('bar-replica', 'Bar replica', I.IconBarReplica),
+          t('path-sketch', 'Path sketch', I.IconPathSketch),
+          t('swing-projection', 'Swing projection', I.IconSwingProjection),
         ],
       },
       {
         title: 'Volume-based',
         tools: [
           t('anchored-vwap', 'Anchored VWAP', I.IconAnchoredVwap),
-          t('fixed-range-vp', 'Fixed range volume profile', I.IconFixedRangeVp),
+          t('range-vp', 'Range volume profile', I.IconRangeVp),
           t('anchored-vp', 'Anchored volume profile', I.IconAnchoredVp),
         ],
       },
       {
-        title: 'Measurers',
+        title: 'Measure',
         tools: [
-          t('price-range', 'Price range', I.IconPriceRange),
-          t('date-range', 'Date range', I.IconDateRange),
-          t('date-price-range', 'Date and price range', I.IconDatePriceRange),
+          t('price-measure', 'Price measure', I.IconPriceMeasure),
+          t('time-measure', 'Time measure', I.IconTimeMeasure),
+          t('price-time-measure', 'Price & time measure', I.IconPriceTimeMeasure),
         ],
       },
     ],
   },
   {
     id: 'shapes',
-    label: 'Geometric shapes',
+    label: 'Shapes',
     sections: [
       {
-        title: 'Brushes',
+        title: 'Freehand',
         tools: [
           t('brush', 'Brush', I.IconBrush),
           t('highlighter', 'Highlighter', I.IconHighlighter),
@@ -224,10 +225,10 @@ export const TOOL_GROUPS: ToolGroup[] = [
       {
         title: 'Arrows',
         tools: [
-          t('arrow-marker', 'Arrow marker', I.IconArrowMarker),
+          t('arrow-pointer', 'Arrow pointer', I.IconArrowPointer),
           t('arrow-line', 'Arrow', I.IconArrowLine),
-          t('arrow-mark-up', 'Arrow mark up', I.IconArrowMarkUp),
-          t('arrow-mark-down', 'Arrow mark down', I.IconArrowMarkDown),
+          t('up-marker', 'Up marker', I.IconUpMarker),
+          t('down-marker', 'Down marker', I.IconDownMarker),
         ],
       },
       {
@@ -242,27 +243,27 @@ export const TOOL_GROUPS: ToolGroup[] = [
           t('triangle', 'Triangle', I.IconTriangle),
           t('arc', 'Arc', I.IconArc),
           t('curve', 'Curve', I.IconCurve),
-          t('double-curve', 'Double curve', I.IconDoubleCurve),
+          t('s-curve', 'S-curve', I.IconSCurve),
         ],
       },
     ],
   },
   {
     id: 'annotation',
-    label: 'Annotation tools',
+    label: 'Notes & labels',
     sections: [
       {
         tools: [
           t('text', 'Text', I.IconText),
-          t('anchored-text', 'Anchored text', I.IconAnchoredText),
+          t('pinned-text', 'Pinned text', I.IconPinnedText),
           t('note', 'Note', I.IconNote),
-          t('anchored-note', 'Anchored note', I.IconAnchoredNote),
+          t('pinned-note', 'Pinned note', I.IconPinnedNote),
           t('callout', 'Callout', I.IconCallout),
           t('comment', 'Comment', I.IconComment),
           t('price-label', 'Price label', I.IconPriceLabel),
-          t('price-note', 'Price note', I.IconPriceNote),
-          t('signpost', 'Signpost', I.IconSignpost),
-          t('flag-mark', 'Flag mark', I.IconFlagMark),
+          t('price-tag', 'Price tag', I.IconPriceTag),
+          t('pin', 'Pin', I.IconPin),
+          t('flag', 'Flag', I.IconFlag),
           t('table', 'Table', I.IconTable),
           t('image', 'Image', I.IconImage),
         ],
@@ -357,12 +358,26 @@ export function isCursorTool(id: string): boolean {
   return groupOf(id) === 'cursors';
 }
 
-/** Hint for toolbar tools without a registered drawing definition yet. */
-export const UNAVAILABLE_HINT = 'Coming in Phase 11';
+/** Hint for toolbar entries whose engine tool or indicator is missing (every shipped entry resolves). */
+export const UNAVAILABLE_HINT = 'Not available in this build';
 
-/** Cursors (incl. the eraser) and tools with a registered drawing definition. */
+/** Id of the indicator the Anchored VWAP toolbar entry adds. */
+export const ANCHORED_VWAP_ID = 'anchored-vwap';
+
+/**
+ * Cursors (incl. the eraser), the measure and zoom-in modes, stickers (engine
+ * `icon` tool), Anchored VWAP (needs its indicator) and tools with a registered
+ * drawing definition.
+ */
 export function isToolAvailable(id: string): boolean {
-  return isCursorTool(id) || !!getDrawingTool(id);
+  if (id === ANCHORED_VWAP_ID) return !!getIndicator(ANCHORED_VWAP_ID);
+  return (
+    isCursorTool(id) ||
+    id === MEASURE_TOOL.id ||
+    id === ZOOM_TOOL.id ||
+    !!getDrawingTool(id) ||
+    (!!findSticker(id) && !!getDrawingTool('icon'))
+  );
 }
 
 /** Select a tool: updates the active tool, the group's last-used tool and,

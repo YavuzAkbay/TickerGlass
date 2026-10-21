@@ -1,0 +1,160 @@
+/* Navigator: icon rail plus a resizable section panel on the left of the chart.
+   Docked chrome: hairline borders, no shadow. */
+.navigator {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+}
+.nav-rail {
+  display: flex;
+  flex: 0 0 var(--rail-w);
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: var(--rail-w);
+  padding: 6px 0;
+  border-right: 1px solid var(--border);
+  user-select: none;
+}
+.nav-tab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.nav-tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.nav-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.nav-tab.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.nav-tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.nav-rail .nav-tab .rs-icon-badge {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.nav-panel {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.nav-head {
+  display: flex;
+  flex: 0 0 var(--bar-h);
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.nav-title {
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-size);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.nav-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.nav-resize {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.nav-resize:hover,
+.nav-resize:focus-visible {
+  outline: none;
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--accent) 2px,
+    var(--accent) 4px,
+    transparent 4px
+  );
+}
+
+/* Events section */
+.nav-events-next {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.nav-events-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nav-events-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.nav-events-date {
+  color: var(--text);
+}
+.nav-events-kind {
+  color: var(--muted);
+  text-align: right;
+}
+.nav-events-detail {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+.nav-events-row[data-kind='earnings'] .nav-events-kind {
+  color: var(--accent-text);
+}

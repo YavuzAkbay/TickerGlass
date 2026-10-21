@@ -1,11 +1,14 @@
-import type { Chart, Drawing } from '@investopen/engine';
+import type { Chart, Drawing } from '@tickerglass/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistory } from '../commands/history';
 import { useChartStore } from '../store/chart';
 import { useIndicatorStore } from '../indicators/store';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
+import { useLayoutGrid } from '../layout/store';
 import { useUiStore } from '../store/ui';
-import { attachDrawings } from './attach';
+import { isToolAvailable } from '../toolbar/tools';
+import { attachDrawings, engineTool, keepPerDrawingStyle } from './attach';
 import {
   amendCreated,
   amendGesture,
@@ -37,10 +40,12 @@ import {
   STORAGE_KEY,
   applyToBuckets,
   backupKey,
+  createDrawingRuntimeStore,
   drawingsFor,
   loadDrawings,
   mergeBuckets,
   parseDrawings,
+  sanitizeDrawing,
   serializeDrawings,
   setLoadState,
   startDrawingPersistence,
@@ -60,7 +65,7 @@ function drw(patch: Partial<Drawing> = {}): Drawing {
       { time: 1000 * seq, price: 10 },
       { time: 2000 * seq, price: 20 },
     ],
-    style: { lineColor: '#2962ff', lineWidth: 2 },
+    style: { lineColor: '#6E9BD6', lineWidth: 2 },
     text: '',
     locked: false,
     hidden: false,
@@ -85,7 +90,7 @@ function seed(...list: Drawing[]) {
 beforeEach(() => {
   useDrawingStore.setState({ bySymbol: {}, synced: [] });
   useHistory.getState().clear();
-  useAppStore.setState({ symbol: 'AAPL', interval: '1D' });
+  useChartView.setState({ symbol: 'AAPL', interval: '1D' });
   useIndicatorStore.setState({ instances: [] });
   flushGestures();
   useHistory.getState().clear();
@@ -104,6 +109,24 @@ function memStorage(init: Record<string, string> = {}) {
 }
 
 describe('store and persistence', () => {
+  it('drawingsFor hides drawings bound to another chart of the same symbol', () => {
+    const free = drw();
+    const boundA = drw({ chartId: 'a' });
+    const boundB = drw({ chartId: 'b', scope: 'all' });
+    const s = applyToBuckets({ bySymbol: {}, synced: [] }, [free, boundA, boundB]);
+    const ids = (chart: string) => drawingsFor(s, 'AAPL', chart).map((d) => d.id);
+    expect(ids('a').sort()).toEqual([free.id, boundA.id].sort());
+    expect(ids('b').sort()).toEqual([free.id, boundB.id].sort());
+    expect(ids('c')).toEqual([free.id]);
+    // Bound synced-scope drawings stay bound; other symbols never show them.
+    expect(drawingsFor(s, 'MSFT', 'a').map((d) => d.id)).toEqual([]);
+    expect(drawingsFor(s, 'MSFT', 'b').map((d) => d.id)).toEqual([boundB.id]);
+  });
+
+  it('sanitizeDrawing keeps chartId', () => {
+    expect(sanitizeDrawing(drw({ chartId: 'a' }))?.chartId).toBe('a');
+  });
+
   it('routes drawings to symbol buckets or the synced bucket and moves them on scope change', () => {
     const a = drw();
     const b = drw({ symbol: 'MSFT' });
@@ -112,7 +135,7 @@ describe('store and persistence', () => {
     expect(s.bySymbol.AAPL!.map((d) => d.id)).toEqual([a.id]);
     expect(s.bySymbol.MSFT!.map((d) => d.id)).toEqual([b.id]);
     expect(s.synced.map((d) => d.id)).toEqual([c.id]);
-    expect(drawingsFor(s, 'AAPL').map((d) => d.id)).toEqual([a.id, c.id]);
+    expect(drawingsFor(s, 'AAPL', 'c1').map((d) => d.id)).toEqual([a.id, c.id]);
 
     s = applyToBuckets(s, [{ ...a, scope: 'all' }], [b.id]);
     expect(s.bySymbol).toEqual({});
@@ -197,16 +220,16 @@ describe('undo/redo', () => {
     const a = drw();
     const b = drw();
     seed(a, b);
-    updateDrawings([a.id, b.id], { style: { lineColor: '#f23645' } }, 'Color');
-    expect(currentDrawings().map((d) => d.style.lineColor)).toEqual(['#f23645', '#f23645']);
+    updateDrawings([a.id, b.id], { style: { lineColor: '#DE6A4F' } }, 'Color');
+    expect(currentDrawings().map((d) => d.style.lineColor)).toEqual(['#DE6A4F', '#DE6A4F']);
     expect(findDrawing(a.id)!.style.lineWidth).toBe(2);
     removeDrawings([a.id]);
     expect(currentDrawings().map((d) => d.id)).toEqual([b.id]);
     expect(past().map((e) => e.label)).toEqual(['Color', 'Remove Trend line']);
     undo();
-    expect(findDrawing(a.id)!.style.lineColor).toBe('#f23645');
+    expect(findDrawing(a.id)!.style.lineColor).toBe('#DE6A4F');
     undo();
-    expect(findDrawing(a.id)!.style.lineColor).toBe('#2962ff');
+    expect(findDrawing(a.id)!.style.lineColor).toBe('#6E9BD6');
     redo();
     redo();
     expect(findDrawing(a.id)).toBeUndefined();
@@ -228,7 +251,7 @@ describe('undo/redo', () => {
     setDrawingStyle([a.id], { lineColor: '#222222' }, 'Change line color', 'color:lineColor');
     expect(past()).toHaveLength(1);
     undo();
-    expect(findDrawing(a.id)!.style.lineColor).toBe('#2962ff');
+    expect(findDrawing(a.id)!.style.lineColor).toBe('#6E9BD6');
   });
 
   it('records engine gestures of one task as one step (create + default style amend)', async () => {
@@ -268,7 +291,7 @@ describe('undo/redo', () => {
     expect(findDrawing(a.id)!.locked).toBe(true);
     setScope([a.id], 'all');
     expect(useDrawingStore.getState().synced.map((d) => d.id)).toEqual([a.id]);
-    expect(drawingsFor(useDrawingStore.getState(), 'MSFT').map((d) => d.id)).toEqual([a.id]);
+    expect(drawingsFor(useDrawingStore.getState(), 'MSFT', 'c1').map((d) => d.id)).toEqual([a.id]);
     undo();
     expect(useDrawingStore.getState().bySymbol.AAPL!.map((d) => d.id)).toEqual([a.id]);
     undo();
@@ -427,8 +450,8 @@ describe('copy/paste, scope, symbol', () => {
   });
 
   it('normalizes the app symbol like the engine (bucket keys match)', () => {
-    useAppStore.getState().setSymbol(' msft ');
-    expect(useAppStore.getState().symbol).toBe('MSFT');
+    useChartView.getState().setSymbol(' msft ');
+    expect(useChartView.getState().symbol).toBe('MSFT');
     expect(useAppStore.getState().recentSymbols[0]).toBe('MSFT');
   });
 
@@ -573,6 +596,8 @@ describe('attach (engine events and sync)', () => {
     const handlers = new Map<string, Handler[]>();
     let list: Drawing[] = [];
     let beforeSet: (() => void) | null = null;
+    let active: string | null = null;
+    const toolCalls: { type: string | null; opts: unknown }[] = [];
     const chart = {
       on: (ev: string, fn: Handler) => {
         handlers.set(ev, [...(handlers.get(ev) ?? []), fn]);
@@ -582,8 +607,11 @@ describe('attach (engine events and sync)', () => {
             (handlers.get(ev) ?? []).filter((f) => f !== fn),
           );
       },
-      getActiveTool: () => null,
-      setActiveTool: () => {},
+      getActiveTool: () => active,
+      setActiveTool: (type: string | null, opts?: unknown) => {
+        active = type;
+        toolCalls.push({ type, opts });
+      },
       getDrawingOptions: () => ({ stayInDrawingMode: false, lockAll: false, hideAll: false }),
       setDrawingOptions: () => {},
       getSelection: () => [],
@@ -607,6 +635,7 @@ describe('attach (engine events and sync)', () => {
       chart: chart as unknown as Chart,
       emit,
       ids: () => list.map((d) => d.id),
+      toolCalls,
       onNextSet: (fn: () => void) => (beforeSet = fn),
     };
   }
@@ -614,7 +643,16 @@ describe('attach (engine events and sync)', () => {
   function attach() {
     vi.stubGlobal('window', { addEventListener: () => {}, removeEventListener: () => {} });
     const f = fakeChart();
-    const detach = attachDrawings(f.chart, {} as HTMLElement);
+    const detach = attachDrawings(
+      {
+        id: 'c1',
+        chart: f.chart,
+        view: useChartView,
+        history: useHistory,
+        drawingRuntime: useDrawingRuntime,
+      },
+      {} as HTMLElement,
+    );
     return {
       ...f,
       detach: () => {
@@ -633,10 +671,83 @@ describe('attach (engine events and sync)', () => {
     // The eraser removed `synced` mid-gesture; switching symbol aborts it,
     // which reports the removal from inside setDrawings.
     f.onNextSet(() => f.emit('drawingsRemoved', { drawings: [synced] }));
-    useAppStore.setState({ symbol: 'MSFT' });
+    useChartView.setState({ symbol: 'MSFT' });
     expect(findDrawing(synced.id)).toBeUndefined();
     expect(f.ids()).toEqual([]);
     f.detach();
+  });
+
+  it('maps emoji/sticker/icon toolbar ids to the engine icon tool with a preset glyph', () => {
+    const f = attach();
+    f.toolCalls.length = 0;
+    useUiStore.setState({ activeTool: 'sticker-bull' });
+    expect(f.toolCalls).toEqual([{ type: 'icon', opts: { style: { glyph: '\u{1F402}' } } }]);
+    // Another sticker re-arms the same engine type with its own glyph.
+    useUiStore.setState({ activeTool: 'emoji-fire' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'icon', opts: { style: { glyph: '\u{1F525}' } } });
+    useUiStore.setState({ activeTool: 'icon-star' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'icon', opts: { style: { glyph: '\u2605' } } });
+    expect(f.toolCalls).toHaveLength(3);
+    useUiStore.setState({ activeTool: 'trend-line' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'trend-line', opts: undefined });
+    f.detach();
+  });
+
+  it('engineTool and isToolAvailable cover stickers', () => {
+    expect(engineTool('emoji-rocket')).toEqual({ type: 'icon', style: { glyph: '\u{1F680}' } });
+    expect(engineTool('trend-line')).toEqual({ type: 'trend-line' });
+    expect(engineTool('cross')).toBeNull();
+    for (const id of ['emoji-smile', 'sticker-whale', 'icon-bolt'])
+      expect(isToolAvailable(id)).toBe(true);
+  });
+
+  it('maps the measure, zoom-in and Anchored VWAP entries to engine modes', () => {
+    expect(engineTool('measure')).toEqual({ type: 'measure' });
+    expect(engineTool('zoom-in')).toEqual({ type: 'zoom-in' });
+    expect(engineTool('anchored-vwap')).toEqual({ type: 'pick-point' });
+    expect(engineTool('replay-pick')).toMatchObject({ type: 'pick-point', cutPreview: true });
+    expect(engineTool('replay-pick')?.cursor).toMatch(
+      /^url\("data:image\/svg\+xml,.*\) 12 12, crosshair$/,
+    );
+    for (const id of ['measure', 'zoom-in', 'anchored-vwap'])
+      expect(isToolAvailable(id)).toBe(true);
+    const f = attach();
+    useUiStore.setState({ activeTool: 'zoom-in' });
+    expect(f.toolCalls.at(-1)).toEqual({ type: 'zoom-in', opts: undefined });
+    f.detach();
+  });
+
+  it('Anchored VWAP: a picked point adds the indicator anchored at that bar time', () => {
+    const f = attach();
+    useUiStore.setState({ activeTool: 'anchored-vwap' });
+    f.emit('pointPicked', { time: 1_700_000_000, price: 10, paneId: 'main' });
+    const added = useIndicatorStore.getState().instances;
+    expect(added).toHaveLength(1);
+    expect(added[0]!.type).toBe('anchored-vwap');
+    expect(added[0]!.inputs.anchor).toBe(1_700_000_000);
+    // A pick while another tool is active (stale event) adds nothing.
+    useUiStore.setState({ activeTool: 'cross' });
+    f.emit('pointPicked', { time: 1_700_086_400, price: 10, paneId: 'main' });
+    expect(useIndicatorStore.getState().instances).toHaveLength(1);
+    f.detach();
+  });
+
+  it('saved default styles keep the placed icon glyph and the path sketch seed', () => {
+    expect(keepPerDrawingStyle('icon', { glyph: 'A', size: 9 }, { glyph: 'B' })).toEqual({
+      glyph: 'B',
+      size: 9,
+    });
+    expect(keepPerDrawingStyle('path-sketch', { seed: 7, up: 'x' }, { seed: 42 })).toEqual({
+      up: 'x',
+      seed: 42,
+    });
+    // The saved seed never leaks into a drawing that has none of its own.
+    expect(keepPerDrawingStyle('path-sketch', { seed: 7, up: 'x' }, { up: 'y' })).toEqual({
+      up: 'x',
+    });
+    expect(keepPerDrawingStyle('trend-line', { lineWidth: 3 }, { lineWidth: 1 })).toEqual({
+      lineWidth: 3,
+    });
   });
 
   it('labels Alt+drag clones "Clone", not "Create"', async () => {
@@ -684,6 +795,36 @@ describe('attach (engine events and sync)', () => {
     expect(findDrawing(c.id)).toBeUndefined();
     useUiStore.setState({ syncNewDrawings: false });
     f.detach();
+  });
+
+  it('binds new drawings to their chart only while drawing sync is off', async () => {
+    const f = attach();
+    const grid = useLayoutGrid.getState().sync;
+    const created = async (d: Drawing) => {
+      f.chart.addDrawing(d);
+      f.emit('drawingCreated', { drawing: d });
+      await Promise.resolve();
+      return findDrawing(d.id)!;
+    };
+    useLayoutGrid.setState({ sync: { ...grid, drawings: true } });
+    expect((await created(drw())).chartId).toBeUndefined();
+    // A paste of a drawing bound elsewhere becomes unbound again.
+    expect((await created(drw({ chartId: 'other' }))).chartId).toBeUndefined();
+    useLayoutGrid.setState({ sync: { ...grid, drawings: false } });
+    const bound = await created(drw());
+    expect(bound.chartId).toBe('c1');
+    expect(f.chart.getDrawing(bound.id)!.chartId).toBe('c1');
+    expect((await created(drw({ chartId: 'other' }))).chartId).toBe('c1');
+    useLayoutGrid.setState({ sync: grid });
+    f.detach();
+  });
+
+  it('keeps selection and drag state per chart', () => {
+    const a = createDrawingRuntimeStore();
+    const b = createDrawingRuntimeStore();
+    a.setState({ selection: ['x'], dragging: true });
+    expect(b.getState().selection).toEqual([]);
+    expect(b.getState().dragging).toBe(false);
   });
 
   it('folds pane removal across symbols into one step; skips it during undo/redo', async () => {
@@ -763,7 +904,7 @@ describe('z-order', () => {
 });
 
 describe('visibility presets', () => {
-  it('builds reference interval presets', () => {
+  it('builds interval presets', () => {
     expect(visibilityPreset('1D', 'all')).toBeNull();
     const only = visibilityPreset('4h', 'only')!;
     expect(only.hours).toEqual({ enabled: true, min: 4, max: 4 });

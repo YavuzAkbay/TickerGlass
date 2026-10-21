@@ -1,8 +1,9 @@
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { Newspaper } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { NewsItem } from '../../api/types';
 import { commands } from '../../commands/registry';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import { isFlagRef, resolveActive } from '../../watchlist/model';
 import { useWatchlistPrefs } from '../../watchlist/prefs';
 import { useWatchlistStore } from '../../watchlist/store';
@@ -33,13 +34,16 @@ function useListSymbols(): string[] {
 }
 
 export function News() {
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
   // Session-only choice.
   const [mode, setMode] = useState<Mode>('symbol');
   const listSymbols = useListSymbols();
+  const expression = isExpressionSymbol(symbol);
   const path =
     mode === 'symbol'
-      ? `/news/${encodeURIComponent(symbol)}?limit=20`
+      ? expression
+        ? null
+        : `/news/${encodeURIComponent(symbol)}?limit=20`
       : listSymbols.length
         ? `/news?symbols=${encodeURIComponent(listSymbols.join(','))}&limit=30`
         : null;
@@ -67,6 +71,15 @@ export function News() {
       <div className="rs-empty">
         <Newspaper size={36} strokeWidth={1.2} />
         <div className="rs-empty-text">Add symbols to your watchlist to see their news.</div>
+      </div>,
+    );
+  }
+
+  if (mode === 'symbol' && expression) {
+    return wrap(
+      <div className="rs-empty">
+        <Newspaper size={36} strokeWidth={1.2} />
+        <div className="rs-empty-text">Not available for symbol expressions</div>
       </div>,
     );
   }

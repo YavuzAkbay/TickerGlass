@@ -1,4 +1,4 @@
-import type { Chart, ChartPoint } from '@investopen/engine';
+import type { Chart, ChartPoint } from '@tickerglass/engine';
 import {
   Bell,
   ClipboardCopy,
@@ -16,13 +16,16 @@ import {
   Trash2,
 } from 'lucide-react';
 import { commands } from '../commands/registry';
+import { isCompareId } from '../compare/model';
+import { findCompare } from '../compare/actions';
+import { compareMenuItems } from '../compare/menu';
 import { currentDrawings, removeDrawings } from '../drawings/actions';
-import { useDrawingRuntime } from '../drawings/store';
+import { useDrawingClipboard } from '../drawings/store';
 import { findIndicator } from '../indicators/actions';
 import { indicatorMenuItems } from '../indicators/menu';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
-import { changeScale, toggleScaleMode } from './scaleActions';
+import { changeScale, toggleScaleMode } from '../commands/scaleActions';
 import { openContextMenu } from '../ui/ContextMenu';
 import type { MenuItem } from '../ui/Menu';
 import { toast } from '../ui/Toast';
@@ -117,6 +120,10 @@ function paneItems(chart: Chart, paneId: string): MenuItem[] {
 /** Right-click menus for the chart canvas, price axis and time axis. */
 export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
   const { clientX: x, clientY: y } = p;
+  if (p.seriesId && isCompareId(p.seriesId) && findCompare(p.seriesId)) {
+    openContextMenu(x, y, compareMenuItems(p.seriesId));
+    return;
+  }
   if (p.seriesId && findIndicator(p.seriesId)) {
     openContextMenu(x, y, indicatorMenuItems(p.seriesId));
     return;
@@ -126,7 +133,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       {
         label: `Add alert at ${priceText(chart, p.price)}`,
         icon: Bell,
-        onSelect: () => commands.execute('alert.create', { price: p.price }),
+        onSelect: () => commands.execute('alert.create', { price: p.price, paneId: p.paneId }),
       },
       { type: 'separator' },
       ...scaleItems(chart, p.paneId),
@@ -174,7 +181,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       label: `Add alert on ${symbol} at ${priceText(chart, p.price)}`,
       icon: Bell,
       shortcut: 'Alt+A',
-      onSelect: () => commands.execute('alert.create', { price: p.price }),
+      onSelect: () => commands.execute('alert.create', { price: p.price, paneId: p.paneId }),
     },
     { type: 'separator' },
     {
@@ -192,7 +199,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       label: 'Paste',
       icon: ClipboardPaste,
       shortcut: 'Mod+v',
-      disabled: !useDrawingRuntime.getState().clipboard,
+      disabled: !useDrawingClipboard.getState().clipboard,
       onSelect: () => commands.execute('drawings.paste'),
     },
     {

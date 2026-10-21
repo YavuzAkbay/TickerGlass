@@ -113,7 +113,7 @@ export function recordingContext() {
       set: () => true,
     },
   ) as CanvasRenderingContext2D;
-  const rc: DrawingRenderContext = { ctx, dpr: 1, theme: DARK_THEME };
+  const rc: DrawingRenderContext = { ctx, dpr: 1, theme: DARK_THEME, invalidate: () => undefined };
   return { rc, calls, texts };
 }
 

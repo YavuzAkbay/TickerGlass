@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart, freshBoot } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -19,7 +20,7 @@ async function restored(page: Page, name = 'Untitled') {
 async function addSma(page: Page) {
   await page.getByRole('button', { name: 'Indicators', exact: true }).click();
   const search = page.getByLabel('Search indicators');
-  await search.fill('Moving Average Simple');
+  await search.fill('Simple Moving Average');
   await expect(page.locator('.ind-row').first()).toBeVisible();
   await search.press('Enter');
   await page.keyboard.press('Escape');
@@ -44,9 +45,7 @@ test('draw + add indicator, reload: restored from the server (not the browser ca
   page,
   server,
 }) => {
-  await page.goto('/?feed=synthetic');
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await freshBoot(page, server, '/?feed=synthetic');
   await restored(page);
   expect(server.layouts.size).toBe(1);
 
@@ -60,8 +59,8 @@ test('draw + add indicator, reload: restored from the server (not the browser ca
   await expect.poll(() => server.drawings.size).toBe(1);
   await expect
     .poll(() => {
-      const l = [...server.layouts.values()][0]!;
-      return (l.state.indicators as { type: string }[]).map((i) => i.type);
+      const l = server.current()!;
+      return (firstChart(l.state)!.indicators as { type: string }[]).map((i) => i.type);
     })
     .toEqual(['volume', 'sma']);
   await saved(page);
@@ -141,9 +140,9 @@ test('export the layout and all data as downloads', async ({ page }) => {
   download = page.waitForEvent('download');
   await layoutMenu(page, 'Export all data');
   file = await download;
-  expect(file.suggestedFilename()).toMatch(/^investopen-backup-\d{4}-\d\d-\d\d\.json$/);
+  expect(file.suggestedFilename()).toMatch(/^tickerglass-backup-\d{4}-\d\d-\d\d\.json$/);
   const bundle = JSON.parse(await readFile((await file.path())!, 'utf8'));
-  expect(bundle).toMatchObject({ version: 1, app: 'investopen' });
+  expect(bundle).toMatchObject({ version: 1, app: 'tickerglass' });
   expect(bundle.layouts).toHaveLength(1);
 });
 

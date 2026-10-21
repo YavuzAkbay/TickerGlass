@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, openChartSettings } from './fixtures';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -36,7 +36,26 @@ test('panning into history lazy-loads older bars without moving the view', async
       const c = window.chart;
       return c.store.time[c.timeScale.xToIndex(700)];
     });
-  await page.waitForTimeout(300); // let kinetic scrolling stop
+  // Let kinetic scrolling stop: the time under x stays the same for 10 frames in a row.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const at = () => {
+          const c = window.chart;
+          return c.store.time[c.timeScale.xToIndex(700)];
+        };
+        let last = at();
+        let stable = 0;
+        const frame = () => {
+          const now = at();
+          stable = now === last ? stable + 1 : 0;
+          last = now;
+          if (stable >= 10) resolve();
+          else requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      }),
+  );
   const t0 = await timeAt();
   await page.waitForFunction((n) => window.chart.store.length > n, before);
   expect(await timeAt()).toBe(t0);
@@ -106,4 +125,22 @@ test('benchmark: 100k bars pan/zoom stays near 60fps', async ({ page }) => {
   });
   console.log(`frame time p50=${result.p50.toFixed(1)}ms p95=${result.p95.toFixed(1)}ms`);
   expect(result.p50).toBeLessThan(20);
+});
+
+test('Settings > Status line: turning OHLC off removes the values from the legend', async ({
+  page,
+}) => {
+  await open(page);
+  const legend = page.locator('.io-legend-info').first();
+  const labels = legend.locator('.io-legend-label', { hasText: /^[OHLC]$/ });
+  await expect(labels).toHaveCount(4);
+  await expect(legend).toContainText('%');
+  await openChartSettings(page);
+  await page.getByRole('tab', { name: 'Status line' }).click();
+  await page.getByLabel('Open, high, low and close').uncheck();
+  // The title and the change stay; the four values are gone.
+  await expect(labels).toHaveCount(0);
+  await expect(legend).toContainText('%');
+  await page.getByRole('button', { name: 'Ok' }).click();
+  await expect(labels).toHaveCount(0);
 });

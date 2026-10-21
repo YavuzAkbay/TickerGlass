@@ -52,7 +52,7 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
   },
   volume: {
     id: 'volume',
-    label: 'Vol',
+    label: 'Volume',
     title: 'Volume',
     width: 'minmax(52px, 0.9fr)',
     render: (q) => ({ text: q ? fmtCompact(q.volume) : '' }),

@@ -26,6 +26,23 @@ describe('PriceScale', () => {
     }
   });
 
+  it('setManualRange fits the range between the margins and turns auto-scale off', () => {
+    for (const invert of [false, true]) {
+      const ps = scale();
+      ps.invert = invert;
+      ps.setManualRange(120, 140);
+      expect(ps.autoScale).toBe(false);
+      // Inversion mirrors the whole axis, margins included.
+      const top = 500 * ps.marginTop;
+      const bottom = 500 * (1 - ps.marginBottom);
+      expect(ps.priceToY(140)).toBeCloseTo(invert ? 500 - top : top, 6);
+      expect(ps.priceToY(120)).toBeCloseTo(invert ? 500 - bottom : bottom, 6);
+    }
+    const ps = scale();
+    ps.setManualRange(140, 120);
+    expect(ps.autoScale).toBe(true);
+  });
+
   it('invert flips the axis', () => {
     const ps = scale();
     const y = ps.priceToY(180);
@@ -65,5 +82,63 @@ describe('PriceScale', () => {
       expect(t.y).toBeGreaterThanOrEqual(-1);
       expect(t.y).toBeLessThanOrEqual(501);
     }
+  });
+
+  it('log ticks never crowd and cover top and bottom thirds', () => {
+    const ps = new PriceScale();
+    ps.mode = 'log';
+    ps.height = 700;
+    ps.setAutoRange(34, 1650);
+    const ticks = ps.ticks(34);
+    for (let i = 1; i < ticks.length; i++) {
+      const a = ticks[i - 1] as { y: number };
+      const b = ticks[i] as { y: number };
+      expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(34);
+    }
+    expect(ticks.some((t) => t.y < 700 / 3)).toBe(true);
+    expect(ticks.some((t) => t.y > (700 * 2) / 3)).toBe(true);
+  });
+
+  it('reserveBottomPx widens the bottom margin and round-trips', () => {
+    const ps = scale();
+    const y0 = ps.priceToY(100);
+    expect(y0).toBeCloseTo(500 * (1 - 0.08));
+    ps.reserveBottomPx = 10; // below the 40px margin: no effect
+    expect(ps.priceToY(100)).toBeCloseTo(y0);
+    ps.reserveBottomPx = 80;
+    expect(ps.priceToY(100)).toBeCloseTo(420);
+    expect(ps.priceToY(200)).toBeCloseTo(50);
+    expect(ps.yToPrice(ps.priceToY(137))).toBeCloseTo(137);
+    ps.invert = true;
+    // Inverted: the low end sits at the top, the reserve stays at the visual bottom.
+    expect(ps.priceToY(200)).toBeCloseTo(420);
+    expect(ps.yToPrice(ps.priceToY(137))).toBeCloseTo(137);
+  });
+
+  it('log ticks of a narrow range fall back to dense linear steps', () => {
+    const ps = new PriceScale();
+    ps.mode = 'log';
+    ps.height = 700;
+    ps.setAutoRange(1523.2, 1524.6);
+    const set = ps.tickSet(34);
+    expect(set.ticks.length).toBeGreaterThan(8);
+    for (let i = 1; i < set.ticks.length; i++)
+      expect(Math.abs(set.ticks[i]!.y - set.ticks[i - 1]!.y)).toBeGreaterThanOrEqual(34);
+    expect(set.decimals).toBe(1);
+  });
+
+  it('log tick decimals resolve tiny prices', () => {
+    const ps = new PriceScale();
+    ps.mode = 'log';
+    ps.height = 500;
+    ps.setAutoRange(0.000148, 0.000156);
+    const set = ps.tickSet(34);
+    expect(set.ticks.length).toBeGreaterThan(3);
+    expect(set.decimals).toBeGreaterThanOrEqual(6);
+    for (const t of set.ticks) expect(t.value.toFixed(set.decimals!)).not.toMatch(/^0\.0+$/);
+  });
+
+  it('linear tick sets carry no step decimals', () => {
+    expect(scale().tickSet().decimals).toBeNull();
   });
 });

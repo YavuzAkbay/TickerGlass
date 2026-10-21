@@ -1,10 +1,14 @@
 import {
+  USER_SCRIPT_PREFIX,
+  getIndicator,
+  isUserScriptType,
   listIndicators,
+  scriptIdOf,
   isOutputRef,
   type AnyIndicatorDefinition,
   type IndicatorCategory,
   type OutputSourceRef,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import {
   Activity,
   ArrowLeftRight,
@@ -13,39 +17,40 @@ import {
   Code,
   Gauge,
   Landmark,
+  Pencil,
+  Plus,
   Search,
   Spline,
   Star,
   TrendingUp,
-  Users,
   Waves,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { addIndicator } from '../indicators/actions';
 import { outputRefLabel, sourceInputKey } from '../indicators/model';
+import { openScriptEditor } from '../indicators/menu';
 import { useIndicatorPrefs, useIndicatorStore } from '../indicators/store';
+import { useScriptsStore } from '../scripts/store';
 import { Modal } from '../ui/Modal';
 import '../indicators/indicators.css';
 import './dialogs.css';
 
-type CategoryId =
-  'favorites' | 'scripts' | 'technicals' | IndicatorCategory | 'fundamentals' | 'community';
+type CategoryId = 'starred' | 'custom' | 'builtin' | IndicatorCategory | 'financials';
 
 interface Category {
   id: CategoryId;
   label: string;
   icon: LucideIcon;
-  disabled?: boolean;
   empty: string;
 }
 
 const TECH_CATEGORIES: { id: IndicatorCategory; label: string; icon: LucideIcon }[] = [
   { id: 'movingAverage', label: 'Moving averages', icon: Spline },
   { id: 'trend', label: 'Trend', icon: TrendingUp },
-  { id: 'momentum', label: 'Oscillators', icon: Activity },
+  { id: 'momentum', label: 'Momentum', icon: Activity },
   { id: 'volatility', label: 'Volatility', icon: Gauge },
-  { id: 'bands', label: 'Bands & channels', icon: ArrowLeftRight },
+  { id: 'bands', label: 'Envelopes & channels', icon: ArrowLeftRight },
   { id: 'volume', label: 'Volume', icon: ChartColumn },
   { id: 'other', label: 'Other', icon: Waves },
 ];
@@ -57,14 +62,14 @@ function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Categor
       title: 'Personal',
       items: [
         {
-          id: 'favorites',
-          label: 'Favorites',
+          id: 'starred',
+          label: 'Starred',
           icon: Star,
           empty: 'Star an indicator to keep it here.',
         },
         {
-          id: 'scripts',
-          label: 'My scripts',
+          id: 'custom',
+          label: 'Custom',
           icon: Code,
           empty: 'Your own scripts will be listed here.',
         },
@@ -74,8 +79,8 @@ function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Categor
       title: 'Built-ins',
       items: [
         {
-          id: 'technicals',
-          label: 'Technicals',
+          id: 'builtin',
+          label: 'Built-in',
           icon: ChartSpline,
           empty: 'No indicators are registered.',
         },
@@ -84,22 +89,10 @@ function groups(defs: AnyIndicatorDefinition[]): { title: string; items: Categor
           empty: 'No indicators in this category.',
         })),
         {
-          id: 'fundamentals',
-          label: 'Fundamentals',
+          id: 'financials',
+          label: 'Financials',
           icon: Landmark,
           empty: 'Income statement, balance sheet and valuation metrics.',
-        },
-      ],
-    },
-    {
-      title: 'Community',
-      items: [
-        {
-          id: 'community',
-          label: 'Community',
-          icon: Users,
-          disabled: true,
-          empty: 'Community scripts are not planned yet.',
         },
       ],
     },
@@ -127,23 +120,31 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   const favorites = useIndicatorPrefs((s) => s.favorites);
   const toggleFavorite = useIndicatorPrefs((s) => s.toggleFavorite);
   const instances = useIndicatorStore((s) => s.instances);
+  // Scripts changing (saved, deleted) re-registers their definitions: list again.
+  const scripts = useScriptsStore((s) => s.scripts);
   const [query, setQuery] = useState('');
-  const [cat, setCat] = useState<CategoryId>('technicals');
+  const [cat, setCat] = useState<CategoryId>('builtin');
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
   const all = listIndicators()
-    .filter((d) => !sourceOf || sourceInputKey(d))
+    .filter((d) => !sourceOf || (sourceInputKey(d) && !isUserScriptType(d.id)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const nav = groups(all);
   const current = nav.flatMap((g) => g.items).find((c) => c.id === cat);
   const q = query.trim();
   let rows: AnyIndicatorDefinition[];
   if (q) rows = all.filter((d) => matchesQuery(d, q));
-  else if (cat === 'favorites') rows = all.filter((d) => favorites.includes(d.id));
-  else if (cat === 'technicals') rows = all;
+  else if (cat === 'starred') rows = all.filter((d) => favorites.includes(d.id));
+  else if (cat === 'builtin') rows = all;
+  else if (cat === 'custom') rows = all.filter((d) => isUserScriptType(d.id));
   else rows = all.filter((d) => d.category === cat);
   const idx = Math.max(0, Math.min(active, rows.length - 1));
+  // Scripts that cannot run (no valid manifest) have no definition, but must stay reachable for editing.
+  const broken =
+    cat === 'custom' && !q && !sourceOf
+      ? scripts.filter((s) => !getIndicator(USER_SCRIPT_PREFIX + s.id))
+      : [];
 
   useEffect(() => {
     listRef.current
@@ -153,7 +154,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
 
   const add = (def: AnyIndicatorDefinition) => {
     const id = sourceOf ? addIndicator(def.id, { sourceOf }) : addIndicator(def.id);
-    // Indicator-on-indicator adds one; the plain picker stays open like reference.
+    // Indicator-on-indicator adds one; the plain picker stays open.
     if (id && sourceOf) onClose();
   };
 
@@ -169,7 +170,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   };
 
   let body: ReactNode;
-  if (rows.length === 0) {
+  if (rows.length === 0 && broken.length === 0) {
     const Icon = current?.icon ?? ChartSpline;
     body = (
       <div className="dlg-emptystate">
@@ -208,9 +209,38 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
               </button>
               <span className="ind-row-name">{d.name}</span>
               <span className="ind-row-short">{d.shortName}</span>
+              {isUserScriptType(d.id) ? (
+                <button
+                  type="button"
+                  className="ind-edit"
+                  aria-label={`Edit script ${d.name}`}
+                  title="Edit script"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openScriptEditor(scriptIdOf(d.id));
+                  }}
+                >
+                  <Pencil size={15} />
+                </button>
+              ) : null}
             </div>
           );
         })}
+        {broken.map((s) => (
+          <div key={s.id} className="ind-row-broken">
+            <span className="ind-row-name">{s.name}</span>
+            <span className="ind-row-short">has errors</span>
+            <button
+              type="button"
+              className="ind-edit"
+              aria-label={`Edit script ${s.name}`}
+              title="Edit script"
+              onClick={() => openScriptEditor(s.id)}
+            >
+              <Pencil size={15} />
+            </button>
+          </div>
+        ))}
       </>
     );
   }
@@ -257,7 +287,6 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
                     type="button"
                     className={`dlg-side-item${cat === c.id && !q ? ' active' : ''}`}
                     aria-current={cat === c.id ? 'true' : undefined}
-                    disabled={c.disabled}
                     onClick={() => {
                       setCat(c.id);
                       setQuery('');
@@ -266,7 +295,6 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
                   >
                     <Icon size={18} strokeWidth={1.6} />
                     <span>{c.label}</span>
-                    {c.disabled ? <span className="dlg-soon">Soon</span> : null}
                   </button>
                 );
               })}
@@ -279,6 +307,14 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
           role="listbox"
           aria-label="Indicators"
         >
+          {cat === 'custom' && !q && !sourceOf ? (
+            <div className="ind-scripts-head">
+              <button type="button" className="io-btn" onClick={() => openScriptEditor()}>
+                <Plus size={14} />
+                New script
+              </button>
+            </div>
+          ) : null}
           {body}
         </div>
       </div>

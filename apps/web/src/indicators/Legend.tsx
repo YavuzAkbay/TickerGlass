@@ -1,15 +1,17 @@
-import { getIndicator, type InstanceStatus } from '@investopen/indicators';
+import { getIndicator, type InstanceStatus } from '@tickerglass/indicators';
 import { Database, Ellipsis, Eye, EyeOff, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useChartStore } from '../store/chart';
+import { useStore } from 'zustand';
+import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';
 import { DropdownMenu } from '../ui/Menu';
 import { removeIndicator, toggleIndicatorVisible } from './actions';
+import type { StatusLineSettings } from '../store/chartView';
 import type { ChartHost } from './controller';
 import { inputsTitle, sourceInputKey, type IndicatorState } from './model';
 import { indicatorMenuItems, openIndicatorSettings, sourceMenuItems } from './menu';
-import { useEffectiveInstances, useIndicatorRuntime } from './store';
+import { useEffectiveInstancesOf } from './store';
 import './indicators.css';
 
 /**
@@ -46,14 +48,15 @@ function shieldFromChart(el: HTMLDivElement | null) {
 type LegendChart = Pick<ChartHost, 'getLegendSlot' | 'getStudyValues' | 'store'>;
 
 /** Study legend rows, rendered into each pane's engine legend slot. */
-export function IndicatorLegends({ chart }: { chart: LegendChart | null }) {
-  const instances = useEffectiveInstances();
-  const status = useIndicatorRuntime((s) => s.status);
-  const panes = useIndicatorRuntime((s) => s.panes);
+export function IndicatorLegends({ session }: { session: ChartSession }) {
+  const { chart } = session;
+  const statusLine = useStore(session.view, (s) => s.statusLine);
+  const instances = useEffectiveInstancesOf(session.indicators, session.preview);
+  const status = useStore(session.indicatorRuntime, (s) => s.status);
+  const panes = useStore(session.indicatorRuntime, (s) => s.panes);
   // Re-read last-bar values when results arrive.
-  useIndicatorRuntime((s) => s.tick);
-  const crossIndex = useChartStore((s) => s.crosshair?.index ?? null);
-  if (!chart) return null;
+  useStore(session.indicatorRuntime, (s) => s.tick);
+  const crossIndex = useStore(session.info, (s) => s.crosshair?.index ?? null);
   const index = crossIndex ?? chart.store.length - 1;
   const byPane = new Map<string, IndicatorState[]>();
   for (const inst of instances) {
@@ -76,6 +79,7 @@ export function IndicatorLegends({ chart }: { chart: LegendChart | null }) {
                 all={instances}
                 index={index}
                 status={status[inst.id]}
+                statusLine={statusLine}
               />
             ))}
           </div>,
@@ -93,12 +97,14 @@ function LegendRow({
   all,
   index,
   status,
+  statusLine,
 }: {
   chart: LegendChart;
   inst: IndicatorState;
   all: IndicatorState[];
   index: number;
   status: InstanceStatus | undefined;
+  statusLine: StatusLineSettings;
 }) {
   const [moreBtn, setMoreBtn] = useState<HTMLButtonElement | null>(null);
   const [srcBtn, setSrcBtn] = useState<HTMLButtonElement | null>(null);
@@ -114,14 +120,17 @@ function LegendRow({
 
   let tail;
   if (!def || status?.state === 'error') {
-    const msg = def ? (status?.state === 'error' ? status.message : '') : 'Unknown indicator';
+    // No definition: the controller's reason ("Script deleted", ...) when it gave one.
+    const msg = status?.state === 'error' ? status.message : def ? '' : 'Unknown indicator';
     tail = (
       <span className="ind-legend-error" title={msg}>
         {msg}
       </span>
     );
   } else if (status?.state === 'waiting') {
-    tail = <span className="ind-legend-muted">Loading {status.timeframe}…</span>;
+    tail = <span className="ind-legend-muted">Loading {status.symbol ?? status.timeframe}…</span>;
+  } else if (!statusLine.indicatorValues) {
+    tail = null;
   } else {
     tail = values.map((v) => (
       <span
@@ -140,8 +149,10 @@ function LegendRow({
       className={`ind-legend-row${inst.visible ? '' : ' off'}${menu ? ' menu-open' : ''}`}
       data-indicator-id={inst.id}
     >
-      <span className="ind-legend-name">{name}</span>
-      {inputs ? <span className="ind-legend-inputs">{inputs}</span> : null}
+      {statusLine.indicatorTitles ? <span className="ind-legend-name">{name}</span> : null}
+      {inputs && statusLine.indicatorInputs ? (
+        <span className="ind-legend-inputs">{inputs}</span>
+      ) : null}
       <span className="ind-legend-actions">
         <button
           type="button"

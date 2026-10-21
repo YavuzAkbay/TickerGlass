@@ -1,4 +1,4 @@
-import { getDrawingTool } from '@investopen/engine';
+import { getDrawingTool } from '@tickerglass/engine';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { findDrawing, finishTextEdit } from './actions';

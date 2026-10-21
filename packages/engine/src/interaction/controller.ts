@@ -21,12 +21,86 @@ type Drag =
       verticalPan: boolean;
       samples: { t: number; x: number }[];
     }
-  | { kind: 'priceAxis'; pane: Pane; lastY: number }
+  | { kind: 'priceAxis'; pane: Pane; lastY: number; startY: number; line: boolean }
+  /** Press on the price label's "+" (a click fires `priceAxisPlus`; no scaling). */
+  | { kind: 'plus'; pane: Pane }
   | { kind: 'timeAxis'; lastX: number }
   | { kind: 'separator'; index: number; lastY: number }
   | { kind: 'pinch'; pane: Pane; lastDist: number }
   /** A drawing gesture owns the pointer (creation, select press, drag). */
   | { kind: 'drawing' };
+
+/** A built-in chart-navigation key (handled by the chart when it has focus). */
+export interface KeyBinding {
+  /** Display label, e.g. "Left / Right". */
+  key: string;
+  description: string;
+  group: string;
+}
+
+interface NavKey extends KeyBinding {
+  /** KeyboardEvent.key values that trigger it. */
+  keys: readonly string[];
+  /** Only plain Alt+key (Shift+Alt+R is an app shortcut: replay). */
+  noAlt?: boolean;
+  run(chart: Chart, shift: boolean): void;
+}
+
+const NAV_GROUP = 'Chart navigation';
+const panStep = (chart: Chart, shift: boolean) => chart.timeScale.barSpacing * (shift ? 10 : 1);
+
+/** The single source of truth for the keys below; the shortcuts help lists `KEY_BINDINGS`. */
+const NAV_KEYS: readonly NavKey[] = [
+  {
+    keys: ['ArrowLeft'],
+    key: 'Left',
+    description: 'Scroll back one bar (Shift: ten bars)',
+    group: NAV_GROUP,
+    run: (c, shift) => c.timeScale.pan(panStep(c, shift)),
+  },
+  {
+    keys: ['ArrowRight'],
+    key: 'Right',
+    description: 'Scroll forward one bar (Shift: ten bars)',
+    group: NAV_GROUP,
+    run: (c, shift) => c.timeScale.pan(-panStep(c, shift)),
+  },
+  {
+    keys: ['ArrowUp', '+', '='],
+    key: 'Up or +',
+    description: 'Zoom in',
+    group: NAV_GROUP,
+    run: (c) => c.timeScale.zoom(c.paneWidth, 1.2),
+  },
+  {
+    keys: ['ArrowDown', '-'],
+    key: 'Down or -',
+    description: 'Zoom out',
+    group: NAV_GROUP,
+    run: (c) => c.timeScale.zoom(c.paneWidth, 1 / 1.2),
+  },
+  {
+    keys: ['End'],
+    key: 'End',
+    description: 'Jump to the latest bar',
+    group: NAV_GROUP,
+    run: (c) => c.scrollToRealtime(),
+  },
+  {
+    keys: ['r', 'R'],
+    key: 'Alt+R',
+    description: 'Reset the chart view',
+    group: NAV_GROUP,
+    noAlt: true,
+    run: (c) => c.resetView(),
+  },
+];
+
+export const KEY_BINDINGS: readonly KeyBinding[] = NAV_KEYS.map(({ key, description, group }) => ({
+  key,
+  description,
+  group,
+}));
 
 /** Mouse, touch, wheel and keyboard handling for a Chart. */
 export class InteractionController {
@@ -121,7 +195,9 @@ export class InteractionController {
         if (e.pointerType !== 'mouse') this.chart.setCrosshair(null, 0, 0);
         break;
       case 'priceAxis':
-        this.drag = { kind: 'priceAxis', pane: hit.pane, lastY: p.y };
+        this.drag = hit.plus
+          ? { kind: 'plus', pane: hit.pane }
+          : { kind: 'priceAxis', pane: hit.pane, lastY: p.y, startY: p.y, line: !!hit.priceLine };
         break;
       case 'timeAxis':
         this.drag = { kind: 'timeAxis', lastX: p.x };
@@ -150,6 +226,8 @@ export class InteractionController {
       chart.hoverStudy(hit);
       if (hit.kind === 'pane') chart.setCrosshair(hit.pane, hit.x, hit.y);
       else chart.setCrosshair(null, 0, 0);
+      if (hit.kind === 'priceAxis') chart.setAxisHover(hit.pane, hit.y);
+      else chart.setAxisHover(null, 0);
       return;
     }
 
@@ -166,7 +244,7 @@ export class InteractionController {
         d.samples.push({ t: e.timeStamp, x: p.x });
         if (d.samples.length > 5) d.samples.shift();
         this.el.style.cursor = 'grabbing';
-        chart.viewChanged();
+        chart.viewChanged('user');
         if (e.pointerType === 'mouse') chart.setCrosshair(d.pane, p.x, p.y - d.pane.top);
         break;
       }
@@ -174,14 +252,16 @@ export class InteractionController {
         const dy = p.y - d.lastY;
         d.lastY = p.y;
         d.pane.priceScale.scaleBy(Math.exp(dy * 0.005));
-        chart.viewChanged();
+        chart.viewChanged('price');
         break;
       }
+      case 'plus':
+        break;
       case 'timeAxis': {
         const dx = p.x - d.lastX;
         d.lastX = p.x;
         chart.timeScale.zoom(chart.paneWidth, Math.exp(dx * 0.006));
-        chart.viewChanged();
+        chart.viewChanged('user');
         break;
       }
       case 'separator': {
@@ -196,7 +276,7 @@ export class InteractionController {
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
         if (d.lastDist > 0) chart.timeScale.zoom((a.x + b.x) / 2, dist / d.lastDist);
         d.lastDist = dist;
-        chart.viewChanged();
+        chart.viewChanged('user');
         break;
       }
     }
@@ -222,7 +302,12 @@ export class InteractionController {
     const hit = this.chart.hitTest(p.x, p.y);
     if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= CLICK_SLOP) {
       this.chart.drawingInput.clickEmpty();
-      this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
+      if (!this.chart.emitOverlayClick(hit))
+        this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
+    } else if (d?.kind === 'plus') {
+      if (hit.kind === 'priceAxis' && hit.plus) this.chart.firePriceAxisPlus(d.pane);
+    } else if (d?.kind === 'priceAxis') {
+      if (d.line && Math.abs(p.y - d.startY) <= CLICK_SLOP) this.chart.emitOverlayClick(hit);
     } else if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
     if (d) this.chart.viewSettled();
     this.updateCursor(hit);
@@ -248,6 +333,7 @@ export class InteractionController {
     this.chart.hoverStudy(null);
     if (!this.drag) this.chart.drawingInput.hover(null, 0, 0, NO_MODS);
     if (!this.drag) this.chart.setCrosshair(null, 0, 0);
+    if (!this.drag) this.chart.setAxisHover(null, 0);
   }
 
   private onDoubleClick(e: MouseEvent): void {
@@ -282,7 +368,7 @@ export class InteractionController {
     } else {
       ts.zoom(hit.kind === 'pane' ? p.x : this.chart.paneWidth, Math.exp(-dy * 0.0015));
     }
-    this.chart.viewChanged();
+    this.chart.viewChanged(hit.kind === 'priceAxis' ? 'price' : 'user');
     if (hit.kind === 'pane') this.chart.setCrosshair(hit.pane, p.x, hit.y);
     clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => this.chart.viewSettled(), 250);
@@ -293,37 +379,14 @@ export class InteractionController {
       e.preventDefault();
       return;
     }
-    const ts = this.chart.timeScale;
-    const step = ts.barSpacing * (e.shiftKey ? 10 : 1);
-    switch (e.key) {
-      case 'ArrowLeft':
-        ts.pan(step);
-        break;
-      case 'ArrowRight':
-        ts.pan(-step);
-        break;
-      case 'ArrowUp':
-      case '+':
-      case '=':
-        ts.zoom(this.chart.paneWidth, 1.2);
-        break;
-      case 'ArrowDown':
-      case '-':
-        ts.zoom(this.chart.paneWidth, 1 / 1.2);
-        break;
-      case 'End':
-        this.chart.scrollToRealtime();
-        break;
-      case 'r':
-      case 'R':
-        if (!e.altKey) return;
-        this.chart.resetView();
-        break;
-      default:
-        return;
-    }
+    // Alt+arrows belong to the app (e.g. replay shortcuts), not to panning/zooming.
+    if (e.altKey && e.key.startsWith('Arrow')) return;
+    const binding = NAV_KEYS.find((k) => k.keys.includes(e.key));
+    if (!binding) return;
+    if (binding.noAlt && (!e.altKey || e.shiftKey)) return;
+    binding.run(this.chart, e.shiftKey);
     e.preventDefault();
-    this.chart.viewChanged();
+    this.chart.viewChanged('user');
     this.chart.viewSettled();
   }
 
@@ -338,7 +401,7 @@ export class InteractionController {
       const dt = t - prev;
       prev = t;
       this.chart.timeScale.pan(v * dt);
-      this.chart.viewChanged();
+      this.chart.viewChanged('user');
       v *= KINETIC_DECAY ** (dt / 16);
       if (Math.abs(v) > KINETIC_STOP_VELOCITY) this.kineticFrame = requestAnimationFrame(step);
       else {
@@ -364,7 +427,7 @@ export class InteractionController {
     switch (hit.kind) {
       case 'pane':
         cursor =
-          this.chart.isStudy(hit.seriesId) && !hit.fill
+          (this.chart.isStudy(hit.seriesId) && !hit.fill) || hit.marker || hit.priceLine
             ? 'pointer'
             : this.chart.options.crosshair === 'cross'
               ? 'crosshair'
@@ -373,7 +436,7 @@ export class InteractionController {
                 : 'default';
         break;
       case 'priceAxis':
-        cursor = 'ns-resize';
+        cursor = hit.plus || hit.priceLine ? 'pointer' : 'ns-resize';
         break;
       case 'timeAxis':
         cursor = 'ew-resize';

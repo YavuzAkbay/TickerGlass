@@ -16,18 +16,18 @@ import type { DrawingGeometry, DrawingHandle, DrawingLineStyle } from '../types'
 const TEXT_PAD = 6;
 
 export const RECTANGLE_DEFAULTS = {
-  lineColor: '#9c27b0',
+  lineColor: '#8e5cf6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   fillBackground: true,
-  backgroundColor: 'rgba(156, 39, 176, 0.2)',
+  backgroundColor: 'rgba(142, 92, 246, 0.2)',
   extendLeft: false,
   extendRight: false,
   showMiddleLine: false,
-  middleLineColor: '#9c27b0',
+  middleLineColor: '#8e5cf6',
   middleLineWidth: 1,
   middleLineStyle: 'dashed' as DrawingLineStyle,
-  textColor: '#9c27b0',
+  textColor: '#8e5cf6',
   fontSize: 14,
   bold: false,
   italic: false,
@@ -163,7 +163,7 @@ export const rectangle = defineDrawingTool({
       if (x >= x0 && x <= x0 + tp.w && y >= tp.y && y <= tp.y + tp.h) return TEXT_HIT;
     }
     if (boxEdgeDistance(x, y, bx.l, bx.t, bx.r, bx.b) <= tol + s.lineWidth / 2) return BODY_HIT;
-    // The interior is grabbable (strong) when filled, by convention.
+    // The interior is grabbable (strong) when filled,.
     return s.fillBackground && inBox(x, y, bx.l, bx.t, bx.r, bx.b) ? BODY_HIT : null;
   },
 

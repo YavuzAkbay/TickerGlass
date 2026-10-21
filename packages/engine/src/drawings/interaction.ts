@@ -1,6 +1,13 @@
+import { HANDLE_RADIUS } from './draw-utils';
 import type { DrawingPane } from './geometry';
-import { pointAt, withPrice, withTime } from './geometry';
-import { cloneDrawing, newDrawingId, type DrawingHit, type DrawingLayer } from './layer';
+import { isPaneCoords, panePoint, pointAt, withPrice, withTime } from './geometry';
+import {
+  cloneDrawing,
+  newDrawingId,
+  TOUCH_EXTRA,
+  type DrawingHit,
+  type DrawingLayer,
+} from './layer';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './mapping';
 import { getDrawingTool } from './registry';
 import type {
@@ -9,6 +16,8 @@ import type {
   DrawingChange,
   DrawingHitPart,
   DrawingPoint,
+  DrawingStyle,
+  DrawingToolOptions,
   PixelPoint,
 } from './types';
 
@@ -20,6 +29,12 @@ const FREEHAND_STEP = 3;
 const MAGNET_PX = 20;
 /** `setActiveTool(ERASER_TOOL)`: click/drag over drawings removes them. */
 export const ERASER_TOOL = 'eraser';
+/** `setActiveTool(ZOOM_TOOL)`: drag a box to zoom the chart to it, then back to the cursor. */
+export const ZOOM_TOOL = 'zoom-in';
+/** `setActiveTool(MEASURE_TOOL)`: a transient date and price range, never stored (no drawing events). */
+export const MEASURE_TOOL = 'measure';
+/** `setActiveTool(PICK_TOOL)`: the next click reports `pointPicked` (bar time and price) and returns to the cursor. */
+export const PICK_TOOL = 'pick-point';
 
 export interface DrawingPointerMods {
   shift: boolean;
@@ -56,6 +71,8 @@ type Gesture =
       /** Last freehand sample (root px). */
       lastX: number;
       lastY: number;
+      /** Measure mode / quick measure: the result is shown, not stored. */
+      transient?: boolean;
     }
   /** Pressed on a drawing, not yet moved past DRAG_SLOP. `toggleOff`: a
    * Shift-click on a selected drawing deselects it on release (not on drag). */
@@ -84,6 +101,8 @@ type Gesture =
   | { kind: 'erase'; pane: DrawingPane; removed: Drawing[] }
   /** Shift+drag on empty space: box select (root px); `base` = selection before. */
   | { kind: 'box'; pane: DrawingPane; downX: number; downY: number; base: string[] }
+  /** Zoom-in mode: dragging the zoom box (root px). */
+  | { kind: 'zoom'; pane: DrawingPane; downX: number; downY: number }
   | {
       kind: 'handle';
       pane: DrawingPane;
@@ -101,6 +120,11 @@ type Gesture =
  */
 export class DrawingInteraction {
   private tool: string | null = null;
+  /** `setActiveTool` preset style, merged into every drawing the tool creates. */
+  private toolStyle: DrawingStyle | undefined;
+  /** `setActiveTool` CSS cursor override. */
+  private toolCursor: string | undefined;
+  private cutPreview = false;
   private gesture: Gesture | null = null;
 
   constructor(private readonly layer: DrawingLayer) {}
@@ -114,12 +138,32 @@ export class DrawingInteraction {
     return this.gesture !== null;
   }
 
-  setActiveTool(type: string | null): void {
-    if (type !== null && type !== ERASER_TOOL && !getDrawingTool(type))
+  setActiveTool(type: string | null, opts: DrawingToolOptions = {}): void {
+    if (type !== null && !MODES.includes(type) && !getDrawingTool(type))
       throw new Error(`Unknown drawing tool: ${type}`);
     this.abort();
+    if (type !== null) this.clearMeasure();
     this.tool = type;
+    this.toolStyle = type !== null && opts.style ? structuredClone(opts.style) : undefined;
+    this.toolCursor = type !== null ? opts.cursor : undefined;
+    this.cutPreview = type === PICK_TOOL && opts.cutPreview === true;
+    this.layer.cutX = null;
     this.layer.host.invalidate();
+  }
+
+  private clearMeasure(): void {
+    if (!this.layer.measure) return;
+    this.layer.measure = null;
+    this.layer.host.invalidate();
+  }
+
+  /** Back to the cursor (the preset style goes with the tool). */
+  private leaveTool(): void {
+    this.tool = null;
+    this.toolStyle = undefined;
+    this.toolCursor = undefined;
+    this.cutPreview = false;
+    this.layer.cutX = null;
   }
 
   /** Cancel any gesture without events (API calls): drop the draft, undo a drag. */
@@ -128,6 +172,7 @@ export class DrawingInteraction {
     this.gesture = null;
     this.layer.draft = null;
     this.layer.marquee = null;
+    this.layer.cutX = null;
     if (g?.kind === 'move' || g?.kind === 'handle') this.cancelDrag(g);
     else if (g?.kind === 'erase' && g.removed.length)
       // The removals already happened: report them rather than losing them.
@@ -144,6 +189,7 @@ export class DrawingInteraction {
     mods: DrawingPointerMods,
   ): boolean {
     const g = this.gesture;
+    this.clearMeasure();
     if (g?.kind === 'create') {
       // Next anchor of a click-click creation.
       if (!g.pressed) {
@@ -163,6 +209,25 @@ export class DrawingInteraction {
       if (target.drawing) this.eraseId(erase, target.drawing.id);
       return true;
     }
+    if (this.tool === PICK_TOOL) {
+      const p = this.pointer(target.pane, x, y, mods, null, false);
+      this.leaveTool();
+      if (Number.isFinite(p.time))
+        this.layer.host.emit('pointPicked', {
+          time: p.time,
+          price: p.price,
+          paneId: target.pane.id,
+        });
+      this.layer.host.invalidate();
+      this.layer.host.emit('toolFinished', { type: PICK_TOOL, drawingId: null, active: false });
+      return true;
+    }
+    if (this.tool === ZOOM_TOOL) {
+      this.gesture = { kind: 'zoom', pane: target.pane, downX: x, downY: y };
+      return true;
+    }
+    if (this.tool === MEASURE_TOOL)
+      return this.startCreate('price-time-measure', target.pane, x, y, mods, true);
     if (this.tool) return this.startCreate(this.tool, target.pane, x, y, mods);
     const hit = target.drawing;
     if (!hit) {
@@ -220,6 +285,7 @@ export class DrawingInteraction {
         return true;
       }
       case 'box':
+      case 'zoom':
         this.layer.marquee = this.boxRect(g, x, y);
         this.layer.host.invalidate();
         return true;
@@ -227,7 +293,7 @@ export class DrawingInteraction {
   }
 
   /** Pane-local box from the press to (x, y), clamped to the pane. */
-  private boxRect(g: Extract<Gesture, { kind: 'box' }>, x: number, y: number) {
+  private boxRect(g: Extract<Gesture, { kind: 'box' | 'zoom' }>, x: number, y: number) {
     const top = g.pane.top;
     const w = this.layer.host.paneWidth;
     const h = g.pane.height;
@@ -252,6 +318,15 @@ export class DrawingInteraction {
     const g = this.gesture;
     if (g?.kind === 'create' && !g.pressed) this.updateDraft(x, y, mods);
     // The eraser highlights what it would remove.
+    if (this.cutPreview) {
+      const cutX = target
+        ? this.snap(target.pane, x, y - target.pane.top, mods, null, false).x
+        : null;
+      if (cutX !== this.layer.cutX) {
+        this.layer.cutX = cutX;
+        this.layer.host.invalidate();
+      }
+    }
     const next = (this.tool && this.tool !== ERASER_TOOL) || g ? null : (target?.drawing ?? null);
     const prev = this.layer.hovered;
     if (sameHit(prev, next)) return;
@@ -289,8 +364,19 @@ export class DrawingInteraction {
         this.gesture = null;
         this.layer.marquee = null;
         this.layer.host.invalidate();
-        // A Shift-click (no drag) on empty space keeps the selection.
-        if (Math.hypot(x - g.downX, y - g.downY) <= DRAG_SLOP) return true;
+        // A Shift-click (no drag) on empty space starts a quick measurement
+        // (the selection stays); the next click finishes it. Not while a
+        // selection exists: there Shift-click is part of multi-select.
+        if (Math.hypot(x - g.downX, y - g.downY) <= DRAG_SLOP) {
+          if (
+            !this.layer.selection.size &&
+            this.startCreate('price-time-measure', g.pane, g.downX, g.downY, mods, true)
+          ) {
+            const c = this.gesture as Gesture | null;
+            if (c?.kind === 'create') this.createUp(c, x, y, mods);
+          }
+          return true;
+        }
         const r = this.boxRect(g, x, y);
         const ids = this.layer.idsInRect(g.pane, r.left, r.top, r.right, r.bottom);
         const next = [...new Set([...g.base, ...ids])];
@@ -301,7 +387,32 @@ export class DrawingInteraction {
           this.layer.setSelection(next);
         return true;
       }
+      case 'zoom':
+        this.endZoom(g, x, y);
+        return true;
     }
+  }
+
+  /** Zoom-in release: zoom to the dragged box (a plain click keeps the mode) and return to the cursor. */
+  private endZoom(g: Extract<Gesture, { kind: 'zoom' }>, x: number, y: number): void {
+    this.gesture = null;
+    this.layer.marquee = null;
+    this.layer.host.invalidate();
+    if (Math.hypot(x - g.downX, y - g.downY) <= DRAG_SLOP) return;
+    const r = this.boxRect(g, x, y);
+    const ts = this.layer.host.timeScale;
+    const from = ts.xToLogical(r.left);
+    const to = ts.xToLogical(r.right);
+    if (!(to > from)) return;
+    const ps = g.pane.priceScale;
+    const a = ps.yToPrice(r.top);
+    const b = ps.yToPrice(r.bottom);
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    const priced = r.bottom - r.top >= DRAG_SLOP && hi > lo;
+    this.layer.host.zoomTo?.(g.pane.id, from, to, priced ? lo : undefined, priced ? hi : undefined);
+    this.leaveTool();
+    this.layer.host.emit('toolFinished', { type: ZOOM_TOOL, drawingId: null, active: false });
   }
 
   /** Click (no drag) on empty chart space: clears the selection. */
@@ -309,10 +420,10 @@ export class DrawingInteraction {
     if (!this.tool && this.layer.selection.size) this.layer.setSelection([]);
   }
 
-  /** Right-click: cancels a creation, or opens the drawing menu. */
+  /** Right-click: cancels a creation (multi-point: finishes with >= min anchors), or opens the drawing menu. */
   contextMenu(target: DrawingPointerTarget | null, clientX: number, clientY: number): boolean {
     if (this.gesture?.kind === 'create') {
-      this.cancelCreate();
+      this.endMulti(this.gesture, true);
       return true;
     }
     const hit = target?.drawing;
@@ -329,8 +440,14 @@ export class DrawingInteraction {
   }
 
   doubleClick(target: DrawingPointerTarget | null, clientX: number, clientY: number): boolean {
+    // A double-click finishes a multi-point creation.
+    const g = this.gesture;
+    if (g?.kind === 'create' && g.def.creation.kind === 'multi') {
+      this.endMulti(g, false, true);
+      return true;
+    }
     // Clicks that place anchors also produce dblclick events: swallow them.
-    if (this.tool || this.gesture) return true;
+    if (this.tool || g) return true;
     const hit = target?.drawing;
     if (!target || !hit) return false;
     this.layer.host.emit('drawingDoubleClick', {
@@ -348,15 +465,20 @@ export class DrawingInteraction {
    * per key). Returns whether the key was handled. */
   key(key: string, mods: DrawingPointerMods = NO_MODS): boolean {
     const g = this.gesture;
+    if (key === 'Enter' && g?.kind === 'create' && g.def.creation.kind === 'multi') {
+      this.endMulti(g, false);
+      return true;
+    }
     if (key === 'Escape') {
-      if (g?.kind === 'create') this.cancelCreate();
-      else if (g?.kind === 'box') this.abort();
+      if (g?.kind === 'create') this.endMulti(g, true);
+      else if (g?.kind === 'box' || g?.kind === 'zoom') this.abort();
       else if (g?.kind === 'move' || g?.kind === 'handle') {
         this.gesture = null;
         this.cancelDrag(g);
-      } else if (this.tool) {
+      } else if (this.layer.measure) this.clearMeasure();
+      else if (this.tool) {
         const type = this.tool;
-        this.tool = null;
+        this.leaveTool();
         this.layer.host.emit('toolFinished', { type, drawingId: null, active: false });
       } else if (this.layer.selection.size) this.layer.setSelection([]);
       else return false;
@@ -394,7 +516,9 @@ export class DrawingInteraction {
       const pane = layer.host.pane(d.paneId);
       if (!pane) continue;
       const before = cloneDrawing(d);
-      d.points = movePoints(d, startOf(d, tl, pane), bx * step, py * step, tl, pane);
+      const s = startOf(d, tl, pane);
+      // Pane-coordinate drawings move by px in both directions.
+      d.points = movePoints(d, s, bx * step, bx * step, py * step, tl, pane, layer.host.paneWidth);
       if (JSON.stringify(d.points) !== JSON.stringify(before.points))
         changes.push({ before, after: cloneDrawing(d) });
     }
@@ -415,7 +539,9 @@ export class DrawingInteraction {
     const g = this.gesture;
     if (g?.kind === 'move') return 'grabbing';
     if (g?.kind === 'handle') return g.cursor;
-    if (g?.kind === 'box') return 'crosshair';
+    if (g?.kind === 'box' || g?.kind === 'zoom') return 'crosshair';
+    if (this.tool === PICK_TOOL && this.toolCursor) return target ? this.toolCursor : null;
+    if (this.tool === ZOOM_TOOL || this.tool === PICK_TOOL) return target ? 'crosshair' : null;
     if (this.tool === ERASER_TOOL || g?.kind === 'erase')
       return target ? (target.drawing ? 'pointer' : 'crosshair') : null;
     if (this.tool || g?.kind === 'create') return target ? 'crosshair' : null;
@@ -430,14 +556,23 @@ export class DrawingInteraction {
     x: number,
     y: number,
     mods: DrawingPointerMods,
+    transient = false,
   ): boolean {
     const def = getDrawingTool(type);
     if (!def) return false;
-    const p = this.pointer(pane, x, y, mods, null, def.creation.kind !== 'freehand');
+    // Tools that read price data cannot be drawn on study panes.
+    if (def.panes === 'main' && pane.id !== 'main') return true;
+    const p = this.anchor(def, pane, x, y, mods, null, def.creation.kind !== 'freehand');
     if (!Number.isFinite(p.time)) return true; // no bars yet
     const c = def.creation;
-    const points = c.kind === 'points' && c.count >= 2 ? [p, { ...p }] : [p];
-    this.layer.draft = this.layer.build({ type, points, paneId: pane.id });
+    const points =
+      (c.kind === 'points' && c.count >= 2) || c.kind === 'multi' ? [p, { ...p }] : [p];
+    this.layer.draft = this.layer.build({
+      type,
+      points,
+      paneId: pane.id,
+      style: this.toolStyle ?? {},
+    });
     this.gesture = {
       kind: 'create',
       def,
@@ -450,6 +585,7 @@ export class DrawingInteraction {
       downY: y,
       lastX: x,
       lastY: y,
+      ...(transient ? { transient } : {}),
     };
     this.layer.host.invalidate();
     return true;
@@ -466,7 +602,7 @@ export class DrawingInteraction {
       !freehand && mods.shift && n >= 2 && angleConstraint(g.def)
         ? this.anchorPixel(g.pane, d.points[n - 2]!)
         : null;
-    const p = this.pointer(g.pane, x, y, mods, from, !freehand);
+    const p = this.anchor(g.def, g.pane, x, y, mods, from, !freehand);
     if (!Number.isFinite(p.time)) return;
     if (freehand) {
       if (!g.pressed || Math.hypot(x - g.lastX, y - g.lastY) < FREEHAND_STEP) return;
@@ -495,12 +631,88 @@ export class DrawingInteraction {
     if (c.kind === 'click') return this.finishCreate(g);
     if (c.kind === 'freehand')
       return d.points.length >= 2 ? this.finishCreate(g) : this.cancelCreate();
+    if (c.kind === 'multi') return this.multiUp(g, d, x, y, c);
     // points: the first release only fixes anchor 2 when it ended a drag.
     if (g.ups++ === 0) {
       if (g.dragged) g.placed++;
     } else g.placed++;
     if (g.placed >= c.count) return this.finishCreate(g);
     if (g.placed >= d.points.length) d.points.push({ ...d.points[d.points.length - 1]! });
+  }
+
+  /** Release of a multi-point creation: fix the floating anchor, close on the
+   * first anchor, or finish at `max`. Anchors [0, placed) are fixed, the last
+   * draft anchor floats. */
+  private multiUp(
+    g: Extract<Gesture, { kind: 'create' }>,
+    d: Drawing,
+    x: number,
+    y: number,
+    c: { min: number; max?: number; closable?: boolean },
+  ): void {
+    // Like 'points': the first release only fixes anchor 2 when it ended a drag.
+    if (g.ups++ === 0 && !g.dragged) return;
+    if (c.closable && g.placed >= 3 && this.onFirstAnchor(g, d, x, y)) {
+      // Closed: the last anchor is an exact copy of anchor 0.
+      d.points.length = g.placed;
+      d.points.push({ ...d.points[0]! });
+      return this.finishCreate(g);
+    }
+    g.placed++;
+    if (c.max !== undefined && g.placed >= c.max) {
+      d.points.length = g.placed;
+      return this.finishCreate(g);
+    }
+    d.points.push({ ...d.points[d.points.length - 1]! });
+  }
+
+  /** Root-px pointer within handle reach of the draft's first anchor. */
+  private onFirstAnchor(
+    g: Extract<Gesture, { kind: 'create' }>,
+    d: Drawing,
+    x: number,
+    y: number,
+  ): boolean {
+    this.layer.refreshView();
+    const p = this.layer.geometry(d, g.pane)?.points[0];
+    if (!p) return false;
+    const reach = HANDLE_RADIUS + (this.layer.touch ? TOUCH_EXTRA : 2);
+    return Math.hypot(p.x - x, p.y - (y - g.pane.top)) <= reach;
+  }
+
+  /**
+   * End a creation early (Esc, right-click: `cancel`; double-click, Enter).
+   * Multi-point tools keep the fixed anchors when there are at least `min`
+   * (`dedupe` drops the extra anchor a double-click's second click placed);
+   * otherwise Esc/right-click cancel and double-click/Enter keep creating.
+   * Other creation kinds just cancel.
+   */
+  private endMulti(g: Extract<Gesture, { kind: 'create' }>, cancel: boolean, dedupe = false): void {
+    const c = g.def.creation;
+    const d = this.layer.draft;
+    if (c.kind !== 'multi' || !d) return this.cancelCreate();
+    const fixed = d.points.slice(0, g.placed);
+    if (dedupe) {
+      // The second click of a double-click lands within a few px of the first.
+      this.layer.refreshView();
+      const px = this.layer.geometry(d, g.pane)?.points ?? [];
+      while (fixed.length >= 2) {
+        const a = px[fixed.length - 1];
+        const b = px[fixed.length - 2];
+        const near = a && b && Math.hypot(a.x - b.x, a.y - b.y) <= DRAG_SLOP;
+        if (!near && !samePoint(fixed[fixed.length - 1]!, fixed[fixed.length - 2]!)) break;
+        fixed.pop();
+      }
+    }
+    if (fixed.length >= c.min) {
+      d.points = fixed;
+      return this.finishCreate(g);
+    }
+    if (cancel) return this.cancelCreate();
+    // Keep creating from the remaining anchors, the last one floating again.
+    g.placed = fixed.length;
+    d.points = [...fixed, { ...d.points[d.points.length - 1]! }];
+    this.layer.host.invalidate();
   }
 
   private finishCreate(g: Extract<Gesture, { kind: 'create' }>): void {
@@ -514,21 +726,37 @@ export class DrawingInteraction {
       if (geo) d.points = g.def.completePoints(d.points, geo, d.style);
     }
     layer.draft = null;
+    if (g.transient) {
+      // Measurement: shown until the next click or Esc, no drawing events.
+      // A quick measure (started from the cursor) never touched the tool.
+      const modal = this.tool === MEASURE_TOOL;
+      layer.measure = d;
+      this.leaveTool();
+      layer.host.invalidate();
+      if (modal)
+        layer.host.emit('toolFinished', { type: MEASURE_TOOL, drawingId: null, active: false });
+      return;
+    }
     layer.insert(d);
     layer.host.emit('drawingCreated', { drawing: cloneDrawing(d) });
     layer.setSelection([d.id]);
     const stay = layer.options.stayInDrawingMode;
-    if (!stay) this.tool = null;
+    if (!stay) this.leaveTool();
     layer.host.emit('toolFinished', { type: d.type, drawingId: d.id, active: stay });
   }
 
   /** Drop the draft and leave the tool (Esc, right-click). */
   private cancelCreate(): void {
-    const type = this.layer.draft?.type ?? this.tool ?? '';
+    const g = this.gesture;
+    const transient = g?.kind === 'create' && g.transient;
+    const modal = this.tool === MEASURE_TOOL;
+    const type = transient ? MEASURE_TOOL : (this.layer.draft?.type ?? this.tool ?? '');
     this.gesture = null;
     this.layer.draft = null;
-    this.tool = null;
+    this.leaveTool();
     this.layer.host.invalidate();
+    // A cancelled quick measure (started from the cursor) leaves the tool alone.
+    if (transient && !modal) return;
     this.layer.host.emit('toolFinished', { type, drawingId: null, active: false });
   }
 
@@ -670,11 +898,12 @@ export class DrawingInteraction {
       else dx = 0;
     }
     const dl = Math.round(dx / layer.host.timeScale.barSpacing);
+    const w = layer.host.paneWidth;
     for (const id of g.ids) {
       const d = layer.items.get(id);
       const s = g.start.get(id);
       if (!d || !s) continue;
-      d.points = movePoints(d, s, dl, dy, tl, g.pane);
+      d.points = movePoints(d, s, dl, dx, dy, tl, g.pane, w);
     }
     layer.host.invalidate();
   }
@@ -695,10 +924,14 @@ export class DrawingInteraction {
     const n = g.start.length;
     const other = g.index === 0 ? 1 : g.index - 1;
     const from =
-      mods.shift && g.index < n && other < n && angleConstraint(def)
+      mods.shift && g.index < n && other < n && angleConstraint(def) && def.coords !== 'pane'
         ? this.anchorPixel(g.pane, g.start[other]!)
         : null;
-    const s = this.snap(g.pane, x, y - g.pane.top, mods, from);
+    // Pane-coordinate anchors follow the raw pointer (no bar slot, magnet or Shift).
+    const s: Snapped =
+      def.coords === 'pane'
+        ? { x, y: y - g.pane.top }
+        : this.snap(g.pane, x, y - g.pane.top, mods, from);
     let target = geo.toPoint(s.x, s.y);
     if (s.price !== undefined) target = withPrice(target, s.price);
     if (!Number.isFinite(target.time)) return;
@@ -837,6 +1070,21 @@ export class DrawingInteraction {
     const p = pointAt(tl, this.layer.host.timeScale, pane.priceScale, s.x, s.y);
     return s.price === undefined ? p : withPrice(p, s.price);
   }
+
+  /** `pointer()` for a tool: pane fractions (unsnapped) for `coords: 'pane'`. */
+  private anchor(
+    def: AnyDrawingToolDefinition,
+    pane: DrawingPane,
+    x: number,
+    y: number,
+    mods: DrawingPointerMods,
+    from: PixelPoint | null,
+    magnet: boolean,
+  ): DrawingPoint {
+    if (def.coords === 'pane')
+      return panePoint(x, y - pane.top, this.layer.host.paneWidth, pane.height);
+    return this.pointer(pane, x, y, mods, from, magnet);
+  }
 }
 
 /** Snapped pane-local pointer; `price` = exact magnet value when snapped to one. */
@@ -846,6 +1094,7 @@ interface Snapped {
   price?: number;
 }
 
+const MODES: readonly string[] = [ERASER_TOOL, ZOOM_TOOL, MEASURE_TOOL, PICK_TOOL];
 const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };
 
 /** Arrow key -> [bars, px] direction. */
@@ -866,15 +1115,22 @@ function startOf(d: Readonly<Drawing>, tl: AnchorTimeline, pane: DrawingPane): P
   };
 }
 
-/** `s` moved by `dl` whole bars and `dy` px, honouring the tool's `axes`. */
+/**
+ * `s` moved by `dl` whole bars and `dy` px, honouring the tool's `axes`.
+ * Pane-coordinate drawings move by (`dx`, `dy`) px instead, as a whole, kept
+ * inside the pane (`width` = pane width).
+ */
 function movePoints(
   d: Readonly<Drawing>,
   s: PointStart,
   dl: number,
+  dx: number,
   dy: number,
   tl: AnchorTimeline,
   pane: DrawingPane,
+  width: number,
 ): DrawingPoint[] {
+  if (isPaneCoords(d.type)) return movePanePoints(s.points, dx, dy, width, pane.height);
   const axes = getDrawingTool(d.type)?.axes ?? 'both';
   const ps = pane.priceScale;
   return s.points.map((p, i) => {
@@ -888,8 +1144,41 @@ function movePoints(
   });
 }
 
+/** Pane-fraction anchors moved by (dx, dy) px; the delta is limited so every
+ * anchor stays in 0..1 (the shape does not deform at the pane edges). */
+function movePanePoints(
+  pts: readonly DrawingPoint[],
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+): DrawingPoint[] {
+  const limit = (delta: number, vs: number[]) =>
+    Math.min(1 - Math.max(...vs), Math.max(-Math.min(...vs), delta));
+  const fx =
+    width > 0 && pts.length
+      ? limit(
+          dx / width,
+          pts.map((p) => p.time),
+        )
+      : 0;
+  const fy =
+    height > 0 && pts.length
+      ? limit(
+          dy / height,
+          pts.map((p) => p.price),
+        )
+      : 0;
+  return pts.map((p) => ({ time: p.time + fx, price: p.price + fy }));
+}
+
+function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
+  return a.time === b.time && a.price === b.price && (a.brick ?? 0) === (b.brick ?? 0);
+}
+
 /** Whether Shift constrains anchors of `def` to 45° steps (docs/drawings.md §7). */
 function angleConstraint(def: AnyDrawingToolDefinition): boolean {
+  if (def.coords === 'pane') return false;
   if (def.shiftConstraint) return def.shiftConstraint === 'angle';
   const c = def.creation;
   return c.kind === 'points' && c.count === 2 && (def.axes ?? 'both') === 'both';

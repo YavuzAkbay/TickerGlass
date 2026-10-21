@@ -12,8 +12,8 @@ import {
 } from './draw-utils';
 
 /** Extra handle reach (px) for touch; mouse uses 2. */
-const TOUCH_EXTRA = 8;
-import { Geometry, type DrawingPane, type GeometryView } from './geometry';
+export const TOUCH_EXTRA = 8;
+import { Geometry, isPaneCoords, type DrawingPane, type GeometryView } from './geometry';
 import type { AnchorTimeline } from './mapping';
 import { getDrawingTool } from './registry';
 import type {
@@ -60,6 +60,8 @@ export interface DrawingHost {
   format(paneId: string): DrawingFormat;
   /** Request an overlay redraw. */
   invalidate(): void;
+  /** Zoom-in mode: show logical bars [from, to] and, when given, the price range of pane `paneId`. */
+  zoomTo?(paneId: string, from: number, to: number, minPrice?: number, maxPrice?: number): void;
   emit<K extends keyof DrawingEvents>(event: K, payload: DrawingEvents[K]): void;
 }
 
@@ -101,6 +103,8 @@ export class DrawingLayer {
   options: DrawingOptions = { stayInDrawingMode: false, lockAll: false, hideAll: false };
   /** Drawing being created: drawn on top of its pane, not in `items`. */
   draft: Drawing | null = null;
+  /** Finished measure-mode / quick measurement: shown until the next click or Esc, never stored. */
+  measure: Drawing | null = null;
   /** Ids being dragged (render state `editing`). */
   readonly editing = new Set<string>();
   private sorted: Drawing[] | null = null;
@@ -111,13 +115,20 @@ export class DrawingLayer {
   private readonly state: DrawingRenderState = { selected: false, hovered: false, editing: false };
   /** Last pointer was a finger: larger hit tolerance and handle reach. */
   touch = false;
+  /** Pick-tool cut preview: pane-local x of the bar under the pointer, or null. */
+  cutX: number | null = null;
   /** Box-select rectangle being dragged (pane-local CSS px). */
   marquee: { paneId: string; left: number; top: number; right: number; bottom: number } | null =
     null;
 
   constructor(readonly host: DrawingHost) {
     this.view = { timeline: host.timeline(), timeScale: host.timeScale, width: 0 };
-    this.rc = { ctx: null as unknown as CanvasRenderingContext2D, dpr: 1, theme: host.theme };
+    this.rc = {
+      ctx: null as unknown as CanvasRenderingContext2D,
+      dpr: 1,
+      theme: host.theme,
+      invalidate: () => host.invalidate(),
+    };
   }
 
   // ------------------------------------------------------------ model
@@ -139,6 +150,7 @@ export class DrawingLayer {
       scope: input.scope ?? 'symbol',
       symbol: input.symbol ?? this.host.symbol,
       paneId: input.paneId ?? 'main',
+      ...(input.chartId !== undefined ? { chartId: input.chartId } : {}),
     };
   }
 
@@ -362,7 +374,7 @@ export class DrawingLayer {
   /** Geometry of `d` in `pane` for the current view (reused object), or null without bars. */
   geometry(d: Readonly<Drawing>, pane: DrawingPane): Geometry | null {
     let g: Geometry | undefined;
-    if (d === this.draft) g = this.draftGeom;
+    if (d === this.draft || d === this.measure) g = this.draftGeom;
     else {
       g = this.geoms.get(d.id);
       if (!g) {
@@ -389,7 +401,11 @@ export class DrawingLayer {
 
   /** Draw the pane's drawings (and the draft) on `ctx` (CSS px transform). */
   render(pane: DrawingPane, ctx: CanvasRenderingContext2D, dpr: number): void {
-    if (pane.height <= 0 || (!this.items.size && !this.draft)) return;
+    if (
+      pane.height <= 0 ||
+      (!this.items.size && !this.draft && !this.measure && this.cutX === null)
+    )
+      return;
     this.refreshView();
     const rc = this.rc;
     rc.ctx = ctx;
@@ -397,12 +413,28 @@ export class DrawingLayer {
     rc.theme = this.host.theme;
     for (const d of this.list())
       if (d.paneId === pane.id && this.isShown(d)) this.renderOne(d, pane);
+    if (this.measure?.paneId === pane.id) this.renderOne(this.measure, pane);
     if (this.draft?.paneId === pane.id) this.renderOne(this.draft, pane);
+    const cut = this.cutX;
+    if (cut !== null) {
+      const w = this.host.paneWidth;
+      ctx.save();
+      ctx.fillStyle = 'rgba(154, 164, 178, 0.25)';
+      ctx.fillRect(cut, 0, Math.max(0, w - cut), pane.height);
+      ctx.strokeStyle = 'rgba(154, 164, 178, 0.9)';
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(cut) + 0.5, 0);
+      ctx.lineTo(Math.round(cut) + 0.5, pane.height);
+      ctx.stroke();
+      ctx.restore();
+    }
     const m = this.marquee;
     if (m?.paneId === pane.id) {
       ctx.save();
-      ctx.fillStyle = 'rgba(41, 98, 255, 0.1)';
-      ctx.strokeStyle = 'rgba(41, 98, 255, 0.8)';
+      ctx.fillStyle = 'rgba(110, 155, 214, 0.1)';
+      ctx.strokeStyle = 'rgba(110, 155, 214, 0.8)';
       ctx.lineWidth = 1;
       ctx.fillRect(m.left, m.top, m.right - m.left, m.bottom - m.top);
       ctx.strokeRect(m.left + 0.5, m.top + 0.5, m.right - m.left, m.bottom - m.top);
@@ -448,7 +480,7 @@ export class DrawingLayer {
     if (!def) return;
     const g = this.geometry(d, pane);
     if (!g) return;
-    if (!(def.isVisible ? def.isVisible(g, d.style) : anchorsInView(g))) return;
+    if (!inView(def, g, d)) return;
     const state = this.renderState(d);
     const { ctx, theme } = this.rc;
     ctx.save();
@@ -482,7 +514,8 @@ export class DrawingLayer {
         for (const l of fn(d, d.style, state)) out.push(l);
         return;
       }
-      if (!state.selected && !state.editing) return;
+      // Pane fractions are not prices or times.
+      if ((!state.selected && !state.editing) || isPaneCoords(d.type)) return;
       const color = colorOf(d.style);
       for (const p of d.points) out.push({ value: axis === 'price' ? p.price : p.time, color });
     };
@@ -540,7 +573,7 @@ export class DrawingLayer {
       const g = def ? this.geometry(d, pane) : null;
       if (!def || !g) continue;
       // Culled drawings (off screen) are not drawn, so they cannot be hit.
-      if (!(def.isVisible ? def.isVisible(g, d.style) : anchorsInView(g))) continue;
+      if (!inView(def, g, d)) continue;
       if (!this.isLocked(d)) {
         const hs = this.handlesOf(def, d, g);
         for (let i = 0; i < hs.length; i++) {
@@ -568,6 +601,13 @@ export class DrawingLayer {
     }
     return res;
   }
+}
+
+/** Culling: the tool's `isVisible`, else anchors in view; pane-coordinate
+ * drawings are always on screen. */
+function inView(def: AnyDrawingToolDefinition, g: Geometry, d: Readonly<Drawing>): boolean {
+  if (def.isVisible) return def.isVisible(g, d.style);
+  return def.coords === 'pane' || anchorsInView(g);
 }
 
 const VIS_UNIT: Record<Interval['unit'], keyof DrawingIntervalVisibility> = {

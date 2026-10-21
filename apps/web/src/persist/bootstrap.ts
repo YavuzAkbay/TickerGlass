@@ -4,17 +4,20 @@
  * and notes from the API, change tracking, and offline fallback with
  * reconnect. localStorage stays the offline cache throughout.
  */
-import type { Chart } from '@investopen/engine';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
-import { useIndicatorStore } from '../indicators/store';
-import { useAppStore } from '../store/app';
-import { useChartStore } from '../store/chart';
+import { startAlertNotifications } from '../alerts/notify';
+import { startAlertsSync } from '../alerts/sync';
+import { DEFAULT_CHART_VIEW } from '../store/chartView';
+import type { ChartSession } from '../chart/session';
+import { useLayoutGrid } from '../layout/store';
+import { getActiveSession, useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { actionToast, toast } from '../ui/Toast';
 import { DrawingSync } from './drawingSync';
 import { DrawingTemplatesSync } from './drawingTemplatesSync';
-import { captureLayoutState } from './layoutState';
+import { chartTemplates, indicatorTemplates } from './templateCache';
+import { activeSlot, captureLayoutState, parseLayoutState, type LayoutState } from './layoutState';
 import { LayoutSession, useLayoutStatus, type Notifier } from './layouts';
 import {
   LOCAL_BUNDLE_KEY,
@@ -27,6 +30,7 @@ import {
 import { isObj, isTransient, readJson, safeStorage } from './net';
 import { GENERAL_NOTE, NotesSync, useNotesStore } from './notes';
 import { SettingsSync } from './settingsSync';
+import { UserScriptsSync } from './userScripts';
 import { WatchlistSync } from './watchlists';
 
 export interface Persistence {
@@ -36,6 +40,7 @@ export interface Persistence {
   drawingTemplates: DrawingTemplatesSync;
   notes: NotesSync;
   watchlists: WatchlistSync;
+  userScripts: UserScriptsSync;
   /** Try to reach the API now (no-op while connected). */
   reconnect: () => Promise<void>;
   /** Save everything pending now. */
@@ -56,6 +61,8 @@ const RECONNECT_MS = 15_000;
 /** Layout capture throttle: pans and zooms fire many events. */
 const CHANGE_MS = 300;
 
+const activeSymbol = () => getActiveSession()?.view.getState().symbol ?? DEFAULT_CHART_VIEW.symbol;
+
 const LAYOUT_FIELDS = [
   'symbol',
   'interval',
@@ -64,6 +71,7 @@ const LAYOUT_FIELDS = [
   'showPrevClose',
   'timezone',
   'prepost',
+  'statusLine',
 ] as const;
 
 const notifier: Notifier = {
@@ -126,11 +134,16 @@ export function startPersistence(): () => void {
         10_000,
       ),
   });
+  const userScripts = new UserScriptsSync();
+  // The offline copy first, so saved layouts find their scripts even without the API.
+  userScripts.loadCache();
   drawings.start();
   settings.start();
   drawingTemplates.start();
   notes.start();
   watchlists.start();
+  const stopAlerts = startAlertsSync();
+  const stopAlertNotify = startAlertNotifications();
 
   // ---------------------------------------------------------------- layout changes
   let changeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -142,26 +155,39 @@ export function startPersistence(): () => void {
   const changed = () => {
     if (!changeTimer) changeTimer = setTimeout(flushChange, CHANGE_MS);
   };
-  let chartOffs: (() => void)[] = [];
-  const watchChart = (chart: Chart | null) => {
-    chartOffs.forEach((off) => off());
-    chartOffs = chart
-      ? [chart.on('stateChange', changed), chart.on('visibleRangeChange', changed)]
-      : [];
-  };
-  watchChart(useChartStore.getState().chart);
-
-  const offs = [
-    useIndicatorStore.subscribe((s, p) => {
+  // The layout holds every chart: follow all sessions' stores.
+  let sessionOffs: (() => void)[] = [];
+  const watchSession = (session: ChartSession): (() => void)[] => [
+    session.chart.on('stateChange', changed),
+    session.chart.on('visibleRangeChange', changed),
+    session.indicators.subscribe((s, p) => {
       if (s.instances !== p.instances) changed();
     }),
-    useAppStore.subscribe((s, p) => {
+    session.compares.subscribe((s, p) => {
+      if (s.items !== p.items || s.scaleRestore !== p.scaleRestore) changed();
+    }),
+    session.view.subscribe((s, p) => {
       if (LAYOUT_FIELDS.some((k) => s[k] !== p[k])) changed();
       if (s.symbol !== p.symbol && online)
         drawings.pull(s.symbol).catch((err) => report(err, 'Drawings could not be loaded'));
     }),
+  ];
+  const watchSessions = () => {
+    sessionOffs.forEach((off) => off());
+    sessionOffs = [...useChartStore.getState().sessions.values()].flatMap(watchSession);
+  };
+  watchSessions();
+
+  const offs = [
+    () => sessionOffs.forEach((off) => off()),
     useChartStore.subscribe((s, p) => {
-      if (s.chart !== p.chart) watchChart(s.chart);
+      if (s.sessions !== p.sessions) watchSessions();
+      // Focus changes alone are view-only (see LayoutManager.onChange): not watched.
+      if (s.sessions !== p.sessions) changed();
+    }),
+    // Grid arrangement (splitter drags, template changes) and sync flags.
+    useLayoutGrid.subscribe((s, p) => {
+      if (s.grid !== p.grid || s.sync !== p.sync || s.template !== p.template) changed();
     }),
   ];
 
@@ -176,6 +202,7 @@ export function startPersistence(): () => void {
     if (disposed) return;
     online = false;
     setOnline(false);
+    userScripts.settle();
     if (!offlineToast) {
       offlineToast = true;
       toast(
@@ -229,6 +256,9 @@ export function startPersistence(): () => void {
       drawingTemplates.load(),
       notes.load(),
       watchlists.load(),
+      userScripts.load(),
+      indicatorTemplates.sync(),
+      chartTemplates.sync(),
     ]);
     if (disposed) return;
     const failed = results.find((r) => r.status === 'rejected');
@@ -252,17 +282,24 @@ export function startPersistence(): () => void {
   const offerLocalData = () => {
     const summary = localDataSummary(storage);
     if (!summary) return;
-    const bundle = readJson<{ drawings?: { data?: unknown }[]; layouts?: { state?: unknown }[] }>(
-      storage.get(LOCAL_BUNDLE_KEY),
-    );
+    const bundle = readJson<{
+      drawings?: { data?: unknown }[];
+      layouts?: { state?: unknown; schemaVersion?: unknown }[];
+    }>(storage.get(LOCAL_BUNDLE_KEY));
     const missing = (bundle?.drawings ?? []).filter(
       (d) => isObj(d.data) && !(String(d.data.id) in drawings.meta.revisions),
     ).length;
-    const localIndicators = JSON.stringify(
-      (isObj(bundle?.layouts?.[0]?.state) && bundle.layouts[0].state.indicators) || [],
-    );
+    const local = bundle?.layouts?.[0];
+    const localState = local
+      ? parseLayoutState(
+          local.state,
+          typeof local.schemaVersion === 'number' ? local.schemaVersion : 1,
+        )
+      : null;
+    const indicatorsOf = (s: LayoutState | null) =>
+      JSON.stringify(s ? activeSlot(s).indicators : []);
     const layoutDiffers =
-      summary.layout && localIndicators !== JSON.stringify(captureLayoutState().indicators);
+      summary.layout && indicatorsOf(localState) !== indicatorsOf(captureLayoutState());
     if (!missing && !layoutDiffers) {
       dismissLocalData(storage); // nothing new; the backups stay
       return;
@@ -304,9 +341,7 @@ export function startPersistence(): () => void {
     }
     if (!online) void connect();
     else {
-      drawings
-        .pull(useAppStore.getState().symbol)
-        .catch((err) => report(err, 'Drawings could not be loaded'));
+      drawings.pull(activeSymbol()).catch((err) => report(err, 'Drawings could not be loaded'));
       // Cheap; picks up changes made on other devices.
       watchlists.load().catch((err) => report(err, 'Watchlists could not be loaded'));
     }
@@ -337,7 +372,10 @@ export function startPersistence(): () => void {
     if (send) flushChange();
     else if (changeTimer) clearTimeout(changeTimer);
     offs.forEach((off) => off());
-    watchChart(null);
+    sessionOffs.forEach((off) => off());
+    sessionOffs = [];
+    stopAlerts();
+    stopAlertNotify();
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onBeforeUnload);
     document.removeEventListener('visibilitychange', onVisible);
@@ -354,6 +392,7 @@ export function startPersistence(): () => void {
     drawingTemplates,
     notes,
     watchlists,
+    userScripts,
     reconnect: connect,
     flushAll,
     halt: () => stop(false).then(() => undefined),

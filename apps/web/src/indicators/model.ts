@@ -6,10 +6,16 @@ import {
   isIntraday,
   parseInterval,
   type Interval,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
+  EXTERNAL_SOURCE_PREFIX,
+  coerceInputs,
+  externalRefSymbol,
+  externalSymbols,
   getIndicator,
+  isExternalRef,
   isOutputRef,
+  isUserScriptType,
   resolveInputs,
   sourceRefs,
   timeframeInputValue,
@@ -19,7 +25,7 @@ import {
   type OutputSourceRef,
   type OutputStyleOverrides,
   type PriceSource,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 
 // ------------------------------------------------------------- visibility
 
@@ -143,7 +149,8 @@ let seq = 0;
 /** Unique per chart, never 'main'/'volume*'. */
 export function newInstanceId(type: string): string {
   seq = (seq + 1) % 1e6;
-  return `${type}_${Date.now().toString(36)}${seq.toString(36)}`;
+  // User script types contain ':' (registry id `user:<scriptId>`).
+  return `${type.replace(/[^A-Za-z0-9_-]/g, '_')}_${Date.now().toString(36)}${seq.toString(36)}`;
 }
 
 export function createInstance(
@@ -199,7 +206,7 @@ export function sourceRefOf(inst: IndicatorState): OutputSourceRef | null {
   const def = getIndicator(inst.type);
   const key = def ? sourceInputKey(def) : null;
   const v = key ? inst.inputs[key] : undefined;
-  return isOutputRef(v) ? v : null;
+  return isOutputRef(v) && !isExternalRef(v) ? v : null;
 }
 
 /**
@@ -212,13 +219,26 @@ export function validateInstances(list: readonly IndicatorState[]): string | nul
   for (const inst of list) {
     const def = getIndicator(inst.type);
     if (!def) return `Unknown indicator "${inst.type}"`;
-    try {
-      resolveInputs(def, inst.inputs);
-    } catch (err) {
-      return err instanceof Error ? err.message : String(err);
+    const user = isUserScriptType(inst.type);
+    // Scripts and built-ins never read each other's outputs (checked on the stored refs).
+    for (const r of sourceRefs(def, inst.inputs)) {
+      const target = byId.get(r.instanceId);
+      if (target && isUserScriptType(target.type) !== user)
+        return 'Scripts and built-in indicators cannot use each other as sources';
     }
-    const refs = sourceRefs(def, inst.inputs);
-    if (refs.length && timeframeInputValue(def, inst.inputs))
+    let inputs = inst.inputs;
+    if (user) {
+      // Stored inputs of a script that may have changed since: never an error.
+      inputs = coerceInputs(def, inst.inputs);
+    } else {
+      try {
+        resolveInputs(def, inst.inputs);
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+      }
+    }
+    const refs = sourceRefs(def, inputs);
+    if ((refs.length || externalSymbols(def, inputs).length) && timeframeInputValue(def, inputs))
       return 'Indicators on another timeframe can only use price sources';
     deps.set(
       inst.id,
@@ -276,6 +296,8 @@ export const SOURCE_LABELS: Record<PriceSource, string> = {
 export type InstanceLookup = (id: string) => IndicatorState | undefined;
 
 export function outputRefLabel(ref: OutputSourceRef, lookup: InstanceLookup): string {
+  if (ref.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX))
+    return `${externalRefSymbol(ref)}: ${SOURCE_LABELS[ref.outputId as PriceSource] ?? ref.outputId}`;
   const inst = lookup(ref.instanceId);
   const def = inst ? getIndicator(inst.type) : undefined;
   if (!def) return 'removed source';
@@ -304,6 +326,9 @@ export function inputsTitle(
         break;
       case 'enum':
         parts.push(d.optionLabels?.[v as string] ?? String(v));
+        break;
+      case 'symbol':
+        if (v) parts.push(String(v));
         break;
       case 'timeframe':
         if (v) parts.push(v === 'auto' ? 'Auto' : String(v));

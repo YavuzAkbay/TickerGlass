@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR, change, trueRange } from './common';
 
-/** Directional Movement Index: +DI, -DI and ADX (Wilder smoothing, standard built-in). */
+/** Directional Movement Index: +DI, -DI and ADX (Wilder smoothing). */
 export const DMI = defineIndicator({
   id: 'dmi',
   name: 'Directional Movement Index',
@@ -25,7 +25,7 @@ export const DMI = defineIndicator({
     const plusRma = ta.rma(n);
     const minusRma = ta.rma(n);
     const adx = ta.rma(inputs.adxSmoothing);
-    // standard fixnan: last non-NaN DI values.
+    // Carry forward the last non-NaN DI values.
     const last = ta.vars({ plus: NaN, minus: NaN });
     return (c) => {
       const up = change(c.high, c.i);

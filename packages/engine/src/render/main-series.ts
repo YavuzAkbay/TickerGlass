@@ -116,6 +116,9 @@ export class VolumeSeries implements PaneSeries {
     return this.overlay;
   }
 
+  /** Always drawn first (behind candles and studies). */
+  readonly behind = true;
+
   priceRange(from: number, to: number): { min: number; max: number } | null {
     if (this.overlay) return null;
     const max = this.maxVolume(from, to);

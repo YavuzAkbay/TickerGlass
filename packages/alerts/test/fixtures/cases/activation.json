@@ -1,0 +1,767 @@
+{
+  "area": "activation",
+  "note": "seed.state is the persisted state of the same revision; seriesKey of the default alert is TEST|1m|rth.",
+  "cases": [
+    {
+      "name": "state condition already true at activation fires on the first sample",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": null,
+        "ctx": {
+          "now": 0,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "edge condition needs a second sample",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": null,
+        "ctx": {
+          "now": 0,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 1000,
+          "values": {
+            "x": 9,
+            "y": 10,
+            "open": 9,
+            "high": 9,
+            "low": 9,
+            "close": 9,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 2000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [2]
+    },
+    {
+      "name": "restored prev from bar n-3 is discarded",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": {
+            "barTime": 0,
+            "kind": "close",
+            "values": {
+              "x": 9,
+              "y": 10,
+              "open": 9,
+              "high": 9,
+              "low": 9,
+              "close": 9,
+              "volume": 0
+            }
+          },
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": 0
+        },
+        "ctx": {
+          "now": 0,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "restored prev from bar n-2 is kept",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": {
+            "barTime": 60,
+            "kind": "close",
+            "values": {
+              "x": 9,
+              "y": 10,
+              "open": 9,
+              "high": 9,
+              "low": 9,
+              "close": 9,
+              "volume": 0
+            }
+          },
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": 60
+        },
+        "ctx": {
+          "now": 0,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "restored prev with NaN values (JSON null) breaks the edge",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": {
+            "barTime": 120,
+            "kind": "tick",
+            "values": {
+              "x": null,
+              "y": 10,
+              "open": 0,
+              "high": 0,
+              "low": 0,
+              "close": 0,
+              "volume": 0
+            }
+          },
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": 60
+        },
+        "ctx": {
+          "now": 0,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "state of another series is ignored",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "OTHER|1m|rth",
+          "prev": {
+            "barTime": 120,
+            "kind": "tick",
+            "values": {
+              "x": 9,
+              "y": 10,
+              "open": 9,
+              "high": 9,
+              "low": 9,
+              "close": 9,
+              "volume": 0
+            }
+          },
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": null
+        },
+        "ctx": {
+          "now": 0,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 0,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "oncePerBar restart: restored lastFiredBarTime blocks a second fire in the same bar",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBar"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": {
+            "barTime": 120,
+            "kind": "tick",
+            "values": {
+              "x": 11,
+              "y": 10,
+              "open": 11,
+              "high": 11,
+              "low": 11,
+              "close": 11,
+              "volume": 0
+            }
+          },
+          "lastFiredBarTime": 120,
+          "lastFiredAt": 1000,
+          "lastClosedBarTime": 60
+        },
+        "ctx": {
+          "now": 5000,
+          "lastBarTime": 120,
+          "previousBarTime": 60
+        }
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 5000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 3,
+          "barTime": 180,
+          "now": 61000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "close mode: p is the last closed bar from history; the next close crosses",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBarClose"
+      },
+      "alert": {
+        "updatedAt": "1970-01-01T00:02:00Z"
+      },
+      "seed": {
+        "state": null,
+        "ctx": {
+          "now": 125000,
+          "lastBarTime": 120,
+          "previousBarTime": 60,
+          "lastClosed": {
+            "barIndex": 1,
+            "barTime": 60,
+            "closedAt": 120000,
+            "values": {
+              "x": 9,
+              "y": 10,
+              "open": 9,
+              "high": 9,
+              "low": 9,
+              "close": 9,
+              "volume": 0
+            }
+          }
+        }
+      },
+      "expectSeed": null,
+      "samples": [
+        {
+          "kind": "close",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 180000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "close mode: a bar that closed before updatedAt is not evaluated",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBarClose"
+      },
+      "alert": {
+        "updatedAt": "1970-01-01T00:02:00Z"
+      },
+      "samples": [
+        {
+          "kind": "close",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 125000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          },
+          "eventAt": 100000
+        },
+        {
+          "kind": "close",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 180000,
+          "values": {
+            "x": 11,
+            "y": 10,
+            "open": 11,
+            "high": 11,
+            "low": 11,
+            "close": 11,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [1]
+    },
+    {
+      "name": "close mode catch-up after a restart: the newest closed bar alone, delayed",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "crossingUp",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBarClose"
+      },
+      "alert": {
+        "updatedAt": "1970-01-01T00:00:30Z"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": null,
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": 0
+        },
+        "ctx": {
+          "now": 900000,
+          "lastBarTime": 840,
+          "previousBarTime": 780,
+          "lastClosed": {
+            "barIndex": 13,
+            "barTime": 780,
+            "closedAt": 600000,
+            "values": {
+              "x": 11,
+              "y": 10,
+              "open": 11,
+              "high": 11,
+              "low": 11,
+              "close": 11,
+              "volume": 0
+            }
+          },
+          "beforeLastClosed": {
+            "barIndex": 12,
+            "barTime": 720,
+            "values": {
+              "x": 9,
+              "y": 10,
+              "open": 9,
+              "high": 9,
+              "low": 9,
+              "close": 9,
+              "volume": 0
+            }
+          }
+        }
+      },
+      "expectSeed": {
+        "final": false,
+        "delayed": true,
+        "barTime": 780
+      },
+      "samples": [
+        {
+          "kind": "close",
+          "barIndex": 13,
+          "barTime": 780,
+          "now": 901000,
+          "values": {
+            "x": 12,
+            "y": 10,
+            "open": 12,
+            "high": 12,
+            "low": 12,
+            "close": 12,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "close mode catch-up of a recent close is not delayed",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBarClose"
+      },
+      "alert": {
+        "updatedAt": "1970-01-01T00:00:30Z"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": null,
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": 0
+        },
+        "ctx": {
+          "now": 900000,
+          "lastBarTime": 840,
+          "previousBarTime": 780,
+          "lastClosed": {
+            "barIndex": 13,
+            "barTime": 780,
+            "closedAt": 850000,
+            "values": {
+              "x": 11,
+              "y": 10,
+              "open": 11,
+              "high": 11,
+              "low": 11,
+              "close": 11,
+              "volume": 0
+            }
+          }
+        }
+      },
+      "expectSeed": {
+        "final": false,
+        "delayed": false,
+        "barTime": 780
+      },
+      "samples": [],
+      "expect": []
+    },
+    {
+      "name": "close mode: state already saw the newest closed bar, no catch-up",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "greater",
+          "right": {
+            "kind": "value",
+            "value": 10
+          }
+        },
+        "trigger": "oncePerBarClose"
+      },
+      "alert": {
+        "updatedAt": "1970-01-01T00:00:30Z"
+      },
+      "seed": {
+        "state": {
+          "v": 1,
+          "seriesKey": "TEST|1m|rth",
+          "prev": null,
+          "lastFiredBarTime": null,
+          "lastFiredAt": null,
+          "lastClosedBarTime": 780
+        },
+        "ctx": {
+          "now": 900000,
+          "lastBarTime": 840,
+          "previousBarTime": 780,
+          "lastClosed": {
+            "barIndex": 13,
+            "barTime": 780,
+            "closedAt": 850000,
+            "values": {
+              "x": 11,
+              "y": 10,
+              "open": 11,
+              "high": 11,
+              "low": 11,
+              "close": 11,
+              "volume": 0
+            }
+          }
+        }
+      },
+      "expectSeed": null,
+      "samples": [],
+      "expect": []
+    }
+  ]
+}

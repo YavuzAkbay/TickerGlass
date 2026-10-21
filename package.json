@@ -1,10 +1,10 @@
 {
-  "name": "investopen",
+  "name": "tickerglass",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @investopen/web dev",
+    "dev": "pnpm --filter @tickerglass/web dev",
     "build": "pnpm -r build",
     "lint": "eslint .",
     "format": "prettier --write .",

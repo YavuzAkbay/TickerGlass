@@ -8,7 +8,7 @@
   height: 38px;
   padding: 0 4px 0 2px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--popover);
   box-shadow: var(--shadow);
   user-select: none;
@@ -32,7 +32,7 @@
   min-width: 30px;
   height: 30px;
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 .drw-tb-width {
   font-size: 12px;
@@ -99,4 +99,19 @@
 }
 .drw-template-save .io-input {
   width: 160px;
+}
+.drw-image {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.drw-image-input {
+  display: none;
+}
+.drw-image-preview {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
 }

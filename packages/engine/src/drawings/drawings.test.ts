@@ -4,9 +4,18 @@ import { PriceScale } from '../scale/price-scale';
 import { TimeScale } from '../scale/time-scale';
 import type { DrawingPane } from './geometry';
 import { HANDLE_RADIUS } from './draw-utils';
-import { DrawingInteraction, ERASER_TOOL, type DrawingPointerMods } from './interaction';
+import {
+  DrawingInteraction,
+  ERASER_TOOL,
+  MEASURE_TOOL,
+  PICK_TOOL,
+  ZOOM_TOOL,
+  type DrawingPointerMods,
+} from './interaction';
 import { DrawingLayer, type DrawingHost } from './layer';
 import type { AnchorTimeline } from './mapping';
+import { defineDrawingTool, registerDrawingTool } from './registry';
+import { polylineDistance } from './shape-utils';
 import type { Drawing, DrawingAxisLabel, DrawingEvents } from './types';
 import { trendLine } from './tools';
 
@@ -20,6 +29,7 @@ type Ev = { [K in keyof DrawingEvents]: [K, DrawingEvents[K]] }[keyof DrawingEve
 let ts: TimeScale;
 let pane: DrawingPane;
 let events: Ev[];
+let zooms: unknown[][];
 let layer: DrawingLayer;
 let input: DrawingInteraction;
 /** Mutable host state (symbol/interval/magnet) read through getters. */
@@ -71,6 +81,7 @@ beforeEach(() => {
     endTime: START + (N - 1) * D,
   };
   events = [];
+  zooms = [];
   env = { symbol: 'TEST', interval: '1D', magnet: 'off', values: () => [] };
   const host: DrawingHost = {
     timeScale: ts,
@@ -90,6 +101,7 @@ beforeEach(() => {
     pane: (id) => (id === pane.id ? pane : null),
     format: () => ({ price: (v) => v.toFixed(2), percent: (v) => `${v}%`, time: String }),
     invalidate: () => undefined,
+    zoomTo: (...a) => zooms.push(a),
     emit: (k, p) => events.push([k, p] as Ev),
   };
   layer = new DrawingLayer(host);
@@ -468,6 +480,19 @@ describe('clone (Alt+drag)', () => {
     ]);
   });
 
+  it('keeps the chart binding of the cloned drawings', () => {
+    const a = line(20, 40, 20, 60, { chartId: 'chart-a' });
+    const b = line(60, 70, 10, 10);
+    layer.setSelection([a.id, b.id]);
+    events = [];
+    downM(X(30), Y(40), ALT);
+    input.pointerMove(X(40), Y(40), NO);
+    input.pointerUp(X(40), Y(40), NO);
+    const created = of('drawingCreated').map((e) => e.drawing);
+    expect(created[0]!.chartId).toBe('chart-a');
+    expect(created[1]).not.toHaveProperty('chartId');
+  });
+
   it('Esc during a clone drag removes the clones without mutation events', () => {
     const a = line();
     click(X(30), Y(40));
@@ -681,6 +706,94 @@ describe('eraser', () => {
   });
 });
 
+describe('zoom-in mode', () => {
+  it('drags a box, zooms to its bars and prices, then returns to the cursor', () => {
+    input.setActiveTool(ZOOM_TOOL);
+    expect(input.activeTool).toBe('zoom-in');
+    down(X(20), Y(80));
+    move(X(40), Y(30));
+    expect(layer.marquee).not.toBeNull();
+    up(X(40), Y(30));
+    expect(layer.marquee).toBeNull();
+    expect(zooms).toHaveLength(1);
+    const [id, from, to, lo, hi] = zooms[0] as [string, number, number, number, number];
+    expect(id).toBe('main');
+    expect(from).toBeCloseTo(20, 6);
+    expect(to).toBeCloseTo(40, 6);
+    expect(lo).toBeCloseTo(30, 6);
+    expect(hi).toBeCloseTo(80, 6);
+    expect(of('toolFinished')[0]).toEqual({ type: 'zoom-in', drawingId: null, active: false });
+    expect(input.activeTool).toBeNull();
+    expect(of('drawingCreated')).toHaveLength(0);
+  });
+
+  it('Esc cancels the drag, a second Esc leaves the mode; a click does nothing', () => {
+    input.setActiveTool(ZOOM_TOOL);
+    down(X(20), Y(80));
+    move(X(40), Y(30));
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.marquee).toBeNull();
+    expect(input.activeTool).toBe('zoom-in');
+    click(X(20), Y(80));
+    expect(zooms).toHaveLength(0);
+    expect(input.activeTool).toBe('zoom-in');
+    expect(input.key('Escape')).toBe(true);
+    expect(input.activeTool).toBeNull();
+  });
+});
+
+describe('pick-point mode', () => {
+  it('reports the clicked bar time and price once, then returns to the cursor', () => {
+    input.setActiveTool(PICK_TOOL);
+    click(X(30) + 2, Y(40));
+    expect(of('pointPicked')).toEqual([{ time: START + 30 * D, price: 40, paneId: 'main' }]);
+    expect(of('toolFinished')[0]).toEqual({ type: 'pick-point', drawingId: null, active: false });
+    expect(input.activeTool).toBeNull();
+    expect(layer.items.size).toBe(0);
+  });
+});
+
+describe('measure mode', () => {
+  it('shows a transient date and price range without drawing events, cleared by the next click', () => {
+    input.setActiveTool(MEASURE_TOOL);
+    down(X(10), Y(20));
+    move(X(30), Y(60));
+    up(X(30), Y(60));
+    expect(layer.measure?.type).toBe('price-time-measure');
+    expect(layer.measure?.points.map((p) => p.price)).toEqual([20, 60]);
+    expect(layer.items.size).toBe(0);
+    expect(layer.draft).toBeNull();
+    expect(names()).toEqual(['toolFinished']);
+    expect(input.activeTool).toBeNull();
+    // The next click clears it and is an ordinary click.
+    expect(input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO)).toBe(false);
+    expect(layer.measure).toBeNull();
+  });
+
+  it('click-click measures, Esc clears the result', () => {
+    input.setActiveTool(MEASURE_TOOL);
+    click(X(10), Y(20));
+    hover(X(20), Y(50));
+    click(X(20), Y(50));
+    expect(layer.measure?.points).toHaveLength(2);
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.measure).toBeNull();
+    expect(of('drawingCreated')).toHaveLength(0);
+  });
+
+  it('Shift+click on empty space quick-measures from the cursor tool', () => {
+    const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
+    input.pointerDown(target(X(10), Y(20)), X(10), Y(20), SH);
+    input.pointerUp(X(10), Y(20), SH);
+    expect(layer.draft?.type).toBe('price-time-measure');
+    hover(X(25), Y(70));
+    click(X(25), Y(70));
+    expect(layer.measure?.points.map((p) => p.price)).toEqual([20, 70]);
+    expect(layer.items.size).toBe(0);
+    expect(of('drawingCreated')).toHaveLength(0);
+  });
+});
+
 describe('box select (Shift+drag on empty space)', () => {
   const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
   const box = (x0: number, y0: number, x1: number, y1: number) => {
@@ -703,15 +816,59 @@ describe('box select (Shift+drag on empty space)', () => {
     box(X(80), Y(95), X(85), Y(85));
     expect([...layer.selection].sort()).toEqual([a.id, h.id].sort());
     expect(layer.selection.has(b.id)).toBe(false);
-    // A Shift-click (no drag) keeps the selection; Esc cancels a box without changes.
+    // A Shift-click (no drag) with a selection is multi-select: no quick measure.
     input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
     input.pointerUp(X(5), Y(5), SH);
     expect(layer.selection.size).toBe(2);
+    expect(layer.draft).toBeNull();
+    expect(input.busy).toBe(false);
+    // Esc cancels a box without changes.
     input.pointerDown(target(X(5), Y(5)), X(5), Y(5), SH);
     input.pointerMove(X(75), Y(5), SH);
     expect(input.key('Escape')).toBe(true);
     expect(layer.marquee).toBeNull();
     expect(input.busy).toBe(false);
+  });
+});
+
+describe('quick measure (Shift+click on empty space)', () => {
+  const SH: DrawingPointerMods = { shift: true, alt: false, mod: false };
+  const shiftClick = (x: number, y: number) => {
+    input.pointerDown(target(x, y), x, y, SH);
+    input.pointerUp(x, y, SH);
+  };
+
+  it('starts only with an empty selection; Esc cancels without toolFinished', () => {
+    shiftClick(X(5), Y(5));
+    expect(layer.draft?.type).toBe('price-time-measure');
+    expect(input.key('Escape')).toBe(true);
+    expect(input.busy).toBe(false);
+    expect(input.activeTool).toBeNull();
+    expect(of('toolFinished')).toEqual([]);
+  });
+
+  it('finishing it leaves the tool alone and emits no toolFinished', () => {
+    shiftClick(X(5), Y(5));
+    input.pointerDown(target(X(20), Y(20)), X(20), Y(20), NO);
+    input.pointerUp(X(20), Y(20), NO);
+    expect(layer.measure).not.toBeNull();
+    expect(input.activeTool).toBeNull();
+    expect(of('toolFinished')).toEqual([]);
+  });
+
+  it('the Measure tool reports MEASURE_TOOL on cancel and on finish', () => {
+    input.setActiveTool(MEASURE_TOOL);
+    input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO);
+    input.pointerUp(X(5), Y(5), NO);
+    input.key('Escape');
+    expect(of('toolFinished')).toEqual([{ type: MEASURE_TOOL, drawingId: null, active: false }]);
+    events = [];
+    input.setActiveTool(MEASURE_TOOL);
+    input.pointerDown(target(X(5), Y(5)), X(5), Y(5), NO);
+    input.pointerUp(X(5), Y(5), NO);
+    input.pointerDown(target(X(20), Y(20)), X(20), Y(20), NO);
+    input.pointerUp(X(20), Y(20), NO);
+    expect(of('toolFinished')).toEqual([{ type: MEASURE_TOOL, drawingId: null, active: false }]);
   });
 });
 
@@ -842,5 +999,319 @@ describe('performance', () => {
       render.mockRestore();
       hit.mockRestore();
     }
+  });
+});
+
+// ------------------------------------------------- framework extensions (Phase 11)
+
+/** Fixture tools (test-only types, not built-ins). */
+const fixture = {
+  defaults: { lineColor: '#ff0000' },
+  properties: [],
+  render: () => undefined,
+  hitTest: (
+    g: { points: readonly { x: number; y: number }[] },
+    _s: unknown,
+    x: number,
+    y: number,
+  ) => (polylineDistance(g.points, x, y) <= 4 ? ({ kind: 'body' } as const) : null),
+};
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-multi',
+    name: 'Multi',
+    group: 'shapes',
+    creation: { kind: 'multi', min: 3, max: 5 },
+  }),
+);
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-closable',
+    name: 'Closable',
+    group: 'shapes',
+    creation: { kind: 'multi', min: 2, closable: true },
+  }),
+);
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-pane',
+    name: 'Pane',
+    group: 'annotation',
+    creation: { kind: 'points', count: 2 },
+    coords: 'pane',
+  }),
+);
+registerDrawingTool(
+  defineDrawingTool({
+    ...fixture,
+    type: 'test-main',
+    name: 'Main only',
+    group: 'forecasting',
+    creation: { kind: 'click' },
+    panes: 'main',
+    // Asks for a redraw like an image tool waiting for its decode.
+    render: (rc) => rc.invalidate(),
+  }),
+);
+
+describe('multi-point creation', () => {
+  const pts = () => of('drawingCreated')[0]!.drawing.points;
+  const at = (i: number, p: number) => ({ time: START + i * D, price: p });
+  const dbl = (x: number, y: number) => {
+    click(x, y);
+    click(x, y);
+    return input.doubleClick(target(x, y), x, y);
+  };
+
+  it('each click adds an anchor; a double-click finishes (second click dropped)', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    expect(layer.draft?.points).toHaveLength(2); // anchor 2 floats
+    click(X(20), Y(30));
+    hover(X(25), Y(40));
+    expect(layer.draft?.points).toEqual([at(10, 10), at(20, 30), at(25, 40)]);
+    expect(dbl(X(30), Y(20))).toBe(true);
+    expect(pts()).toEqual([at(10, 10), at(20, 30), at(30, 20)]);
+    expect(of('toolFinished')[0]).toMatchObject({ type: 'test-multi', active: false });
+    expect(layer.draft).toBeNull();
+  });
+
+  it('a double-click with fewer than min anchors keeps creating', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    dbl(X(20), Y(20));
+    expect(of('drawingCreated')).toHaveLength(0);
+    // Two fixed anchors and a floating one; the next clicks continue.
+    expect(layer.draft?.points).toHaveLength(3);
+    click(X(30), Y(30));
+    input.key('Enter');
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+  });
+
+  it('Enter finishes with >= min anchors and is ignored below', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(input.key('Enter')).toBe(true);
+    expect(layer.draft?.points).toHaveLength(3);
+    click(X(30), Y(30));
+    hover(X(40), Y(40));
+    input.key('Enter');
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+  });
+
+  it('Esc and right-click finish with >= min anchors, else cancel', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    input.key('Escape');
+    expect(of('toolFinished')).toEqual([{ type: 'test-multi', drawingId: null, active: false }]);
+    expect(layer.items.size).toBe(0);
+    expect(input.activeTool).toBeNull();
+
+    events = [];
+    input.setActiveTool('test-multi');
+    for (const i of [10, 20, 30]) click(X(i), Y(i));
+    input.contextMenu(target(X(40), Y(40)), 0, 0);
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+    expect(of('toolFinished')[0]!.drawingId).toBe(of('drawingCreated')[0]!.drawing.id);
+
+    events = [];
+    input.setActiveTool('test-multi');
+    for (const i of [10, 20, 30, 40]) click(X(i), Y(i));
+    input.key('Escape');
+    expect(pts()).toHaveLength(4);
+  });
+
+  it('finishes when max anchors are placed', () => {
+    input.setActiveTool('test-multi');
+    for (const i of [10, 20, 30, 40]) click(X(i), Y(50));
+    expect(layer.items.size).toBe(0);
+    click(X(50), Y(50));
+    expect(pts().map((p) => p.time)).toEqual([10, 20, 30, 40, 50].map((i) => START + i * D));
+  });
+
+  it('a double-click drops a trailing anchor within the drag slop, not only an exact one', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(30));
+    click(X(30), Y(20));
+    click(X(30) + 2, Y(20) + 1); // second click of a jittery double-click
+    input.doubleClick(target(X(30), Y(20)), X(30), Y(20));
+    expect(pts()).toEqual([at(10, 10), at(20, 30), at(30, 20)]);
+  });
+
+  it('a click on the first anchor appends unless the tool is closable', () => {
+    input.setActiveTool('test-multi');
+    click(X(10), Y(10));
+    click(X(20), Y(40));
+    click(X(30), Y(10));
+    click(X(10) + 3, Y(10) - 2);
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(layer.draft?.points).toHaveLength(5);
+  });
+
+  it('a click on the first anchor closes: the last anchor copies anchor 0', () => {
+    input.setActiveTool('test-closable');
+    click(X(10), Y(10));
+    click(X(20), Y(40));
+    click(X(30), Y(10));
+    // Within handle reach, off the bar slot: still an exact copy.
+    click(X(10) + 3, Y(10) - 2);
+    expect(pts()).toEqual([at(10, 10), at(20, 40), at(30, 10), at(10, 10)]);
+  });
+
+  it('closing needs at least three placed anchors (no degenerate shape)', () => {
+    input.setActiveTool('test-closable');
+    click(X(10), Y(10));
+    click(X(10), Y(10)); // fixes anchor 2 on anchor 1, does not close
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(layer.draft?.points).toHaveLength(3);
+    click(X(10), Y(10)); // only two anchors were placed: still appends
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(layer.draft?.points).toHaveLength(4);
+  });
+
+  it('press-drag-release places anchor 2, then clicks continue', () => {
+    input.setActiveTool('test-multi');
+    down(X(10), Y(10));
+    move(X(15), Y(20));
+    up(X(20), Y(20));
+    expect(layer.draft?.points).toEqual([at(10, 10), at(20, 20), at(20, 20)]);
+    click(X(30), Y(30));
+    input.key('Enter');
+    expect(pts()).toEqual([at(10, 10), at(20, 20), at(30, 30)]);
+  });
+});
+
+describe('pane coordinates', () => {
+  // X(i) = 10 i - 195, Y(p) = 400 - 4 p on the 800 x 400 pane.
+  const create = () => {
+    input.setActiveTool('test-pane');
+    click(X(50), Y(40)); // (305, 240)
+    click(X(60) + 3, Y(60) + 1); // (408, 161): no bar snapping
+    return of('drawingCreated')[0]!.drawing;
+  };
+
+  it('stores x/y fractions of the pane, unsnapped and without magnet', () => {
+    env.magnet = 'strong';
+    env.values = () => [50];
+    const d = create();
+    expect(d.points).toEqual([
+      { time: 305 / 800, price: 240 / 400 },
+      { time: 408 / 800, price: 161 / 400 },
+    ]);
+  });
+
+  it('stays put on screen across pan and zoom, and is never culled', () => {
+    const d = create();
+    const g = () => {
+      layer.refreshView();
+      return layer.geometry(layer.items.get(d.id)!, pane)!.points.map((p) => ({ ...p }));
+    };
+    const before = g();
+    expect(before[0]!.x).toBeCloseTo(305);
+    expect(before[0]!.y).toBeCloseTo(240);
+    ts.rightOffset = -300; // the anchors' bars are far off screen now
+    ts.barSpacing = 3;
+    expect(g()).toEqual(before);
+    expect(layer.hitTest(pane, 305, 240).strong?.id).toBe(d.id);
+  });
+
+  it('body drags and nudges move by px, kept inside the pane', () => {
+    const d = create();
+    layer.setSelection([]);
+    // Press on the body (midpoint), drag 17 px right, 9 px down.
+    const mx = (305 + 408) / 2;
+    const my = (240 + 161) / 2;
+    down(mx, my);
+    move(mx + 17, my + 9);
+    up(mx + 17, my + 9);
+    const p = layer.items.get(d.id)!.points;
+    expect(p[0]!.time * 800).toBeCloseTo(322);
+    expect(p[0]!.price * 400).toBeCloseTo(249);
+    expect(p[1]!.time * 800).toBeCloseTo(425);
+    events = [];
+    input.key('ArrowLeft'); // 1 px, not 1 bar
+    expect(layer.items.get(d.id)!.points[0]!.time * 800).toBeCloseTo(321);
+    input.key('ArrowUp', { ...NO, shift: true }); // 10 px
+    expect(layer.items.get(d.id)!.points[0]!.price * 400).toBeCloseTo(239);
+    expect(of('drawingChanged')).toHaveLength(2);
+    // Dragging far right stops when the right-most anchor reaches the edge.
+    layer.refreshView();
+    const q = layer.geometry(layer.items.get(d.id)!, pane)!.points;
+    const [hx, hy] = [(q[0]!.x + q[1]!.x) / 2, (q[0]!.y + q[1]!.y) / 2];
+    down(hx, hy);
+    move(hx + 2000, hy);
+    up(hx + 2000, hy);
+    const r = layer.items.get(d.id)!.points;
+    expect(r[1]!.time).toBeCloseTo(1);
+    expect((r[1]!.time - r[0]!.time) * 800).toBeCloseTo(103);
+  });
+
+  it('handle drags follow the raw pointer; no default axis labels', () => {
+    const d = create();
+    down(305, 240); // handle 0
+    move(311, 231);
+    up(311, 231);
+    expect(layer.items.get(d.id)!.points[0]).toEqual({ time: 311 / 800, price: 231 / 400 });
+    const out: DrawingAxisLabel[] = [];
+    layer.axisLabels('price', pane, out);
+    layer.axisLabels('time', null, out);
+    expect(out).toEqual([]);
+  });
+});
+
+describe('tool options and pane restrictions', () => {
+  it('a preset style reaches the created drawing and leaves with the tool', () => {
+    input.setActiveTool('trend-line', { style: { lineColor: '#00ff00', glyph: 'x' } });
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(of('drawingCreated')[0]!.drawing.style).toMatchObject({
+      lineColor: '#00ff00',
+      glyph: 'x',
+      lineWidth: 2,
+    });
+    input.setActiveTool('trend-line');
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(of('drawingCreated')[1]!.drawing.style.lineColor).toBe('#6E9BD6');
+  });
+
+  it('stay mode keeps the preset style for the next drawing', () => {
+    layer.options.stayInDrawingMode = true;
+    input.setActiveTool('horizontal-line', { style: { lineColor: '#123456' } });
+    click(X(10), Y(10));
+    click(X(20), Y(20));
+    expect(of('drawingCreated').map((e) => e.drawing.style.lineColor)).toEqual([
+      '#123456',
+      '#123456',
+    ]);
+  });
+
+  it("panes: 'main' tools are not created on study panes", () => {
+    const ps = new PriceScale();
+    ps.height = 100;
+    const study: DrawingPane = { id: 'pane-rsi', priceScale: ps, height: 100, top: 400 };
+    input.setActiveTool('test-main');
+    expect(input.pointerDown({ pane: study, drawing: null }, 100, 450, NO)).toBe(true);
+    input.pointerUp(100, 450, NO);
+    expect(layer.draft).toBeNull();
+    expect(of('drawingCreated')).toHaveLength(0);
+    expect(input.activeTool).toBe('test-main');
+    click(X(10), Y(10));
+    expect(of('drawingCreated')[0]!.drawing.paneId).toBe('main');
+  });
+
+  it('rc.invalidate requests an overlay redraw', () => {
+    const inv = vi.spyOn(layer.host, 'invalidate');
+    layer.insert(layer.build({ type: 'test-main', points: [{ time: START + 50 * D, price: 1 }] }));
+    inv.mockClear();
+    const ctx = new Proxy({}, { get: () => () => undefined, set: () => true });
+    layer.render(pane, ctx as CanvasRenderingContext2D, 1);
+    expect(inv).toHaveBeenCalledTimes(1);
   });
 });

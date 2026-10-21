@@ -8,7 +8,7 @@ export type StudyHitLayer = 'all' | 'marks' | 'fills';
 
 /**
  * Output of `study` under CSS point (x, y), or null. Lines, marks, bars,
- * hlines and shapes win over fills; bgcolor is never hit, nor is anything
+ * hlines and shapes win over fills; bgcolor and volume profiles are never hit, nor is anything
  * drawn with "no colour" (`STUDY_COLOR_NONE`), which renders nothing. `layer` limits the
  * test to marks or fills (the chart tests marks of all series before fills).
  */
@@ -83,6 +83,7 @@ function hitOutput(
       return Math.abs(ts.indexToX(p) - x) <= s / 2 + 1 && Math.abs(cy - y) <= s / 2 + tol;
     }
     case 'bgcolor':
+    case 'volumeProfile':
       return false;
   }
 }

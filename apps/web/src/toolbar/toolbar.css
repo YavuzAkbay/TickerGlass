@@ -1,10 +1,10 @@
-/* ---- left drawing toolbar ---- */
-.left-toolbar {
+/* ---- right-edge drawing tool rail ---- */
+.tool-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 52px;
-  flex: 0 0 52px;
+  width: var(--rail-w);
+  flex: 0 0 var(--rail-w);
   padding: 4px 0;
   background: var(--panel);
   user-select: none;
@@ -12,29 +12,31 @@
 
 .lt-group {
   position: relative;
-  width: 52px;
+  width: var(--rail-w);
   display: flex;
   justify-content: center;
   flex: 0 0 auto;
 }
 
 .io-icon-btn.lt-btn {
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  margin: 1px 0;
   padding: 0;
-  border-radius: 4px;
-  color: var(--text);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
 }
 .io-icon-btn.lt-btn:hover {
   background: var(--hover);
+  color: var(--text);
 }
 .io-icon-btn.lt-btn.active {
   color: var(--accent-text);
-  background: var(--active-bg);
+  background: var(--accent-soft);
 }
 .io-icon-btn.lt-btn.active:hover {
-  background: var(--active-bg);
+  background: var(--accent-soft);
 }
 .lt-group.open .io-icon-btn.lt-btn {
   background: var(--hover);
@@ -43,14 +45,14 @@
 /* corner arrow that opens the group's flyout */
 .lt-arrow {
   position: absolute;
-  right: 2px;
+  left: 0;
   bottom: 0;
-  width: 10px;
+  width: 8px;
   height: 14px;
   display: flex;
   align-items: flex-end;
-  justify-content: flex-end;
-  padding: 0 1px 3px 0;
+  justify-content: flex-start;
+  padding: 0 0 3px 1px;
   border: 0;
   border-radius: 2px;
   background: transparent;
@@ -64,6 +66,9 @@
 .lt-arrow:focus-visible {
   opacity: 1;
 }
+.lt-arrow svg {
+  transform: scaleX(-1);
+}
 .lt-arrow:hover {
   color: var(--text-strong);
   background: var(--hover);
@@ -74,9 +79,9 @@
 
 .lt-sep {
   flex: 0 0 auto;
-  width: 32px;
+  width: calc(var(--rail-w) - 16px);
   height: 1px;
-  margin: 6px 0;
+  margin: 4px 0;
   background: var(--border);
 }
 .lt-spacer {
@@ -91,19 +96,10 @@
 
 @media (max-height: 780px) {
   .io-icon-btn.lt-btn {
-    height: 34px;
+    margin: 0;
   }
   .lt-sep {
     margin: 3px 0;
-  }
-}
-@media (max-height: 660px) {
-  .io-icon-btn.lt-btn {
-    height: 30px;
-  }
-  .io-icon-btn.lt-btn svg {
-    width: 24px;
-    height: 24px;
   }
 }
 
@@ -127,6 +123,8 @@
   letter-spacing: 0.04em;
 }
 .lt-fly-row {
+  margin: 0 4px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -146,6 +144,8 @@
 }
 .lt-fly-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
 }
@@ -166,7 +166,7 @@
   margin-left: 4px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -221,7 +221,7 @@
 .lt-icons-cell {
   height: 36px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   font-size: 20px;
   line-height: 1;
@@ -247,7 +247,7 @@
   padding: 3px 4px 3px 2px;
   background: var(--popover);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow);
   user-select: none;
 }

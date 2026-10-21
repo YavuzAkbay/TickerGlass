@@ -1,4 +1,5 @@
 import type { BarColumns, Interval, UTCTimestamp } from '../types';
+import { type ZoneOffsets, zoneOffsets } from '../scale/timezone';
 import { intervalSeconds } from './intervals';
 
 const DAY = 86_400;
@@ -15,78 +16,18 @@ export interface BucketOptions {
 // Timezone offsets
 // ---------------------------------------------------------------------------
 
-/**
- * UTC offsets of one IANA zone, memoized per UTC hour. DST transitions happen on
- * (UTC) hour boundaries for practically every zone, so one Intl call per hour of
- * data is enough; 100k 1m bars need ~1.7k Intl calls instead of 100k.
- */
-class ZoneOffsets {
-  private readonly fmt: Intl.DateTimeFormat;
-  private readonly cache = new Map<number, number>();
-
-  constructor(timeZone: string) {
-    this.fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      hourCycle: 'h23',
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      second: 'numeric',
-    });
-  }
-
-  /** Offset (seconds, local - UTC) in effect during the UTC hour `key`. */
-  offsetForHour(key: number): number {
-    const hit = this.cache.get(key);
-    if (hit !== undefined) return hit;
-    const t = key * HOUR;
-    let y = 1970;
-    let mo = 1;
-    let d = 1;
-    let h = 0;
-    let mi = 0;
-    let s = 0;
-    for (const p of this.fmt.formatToParts(new Date(t * 1000))) {
-      switch (p.type) {
-        case 'year':
-          y = Number(p.value);
-          break;
-        case 'month':
-          mo = Number(p.value);
-          break;
-        case 'day':
-          d = Number(p.value);
-          break;
-        case 'hour':
-          h = Number(p.value) % 24;
-          break;
-        case 'minute':
-          mi = Number(p.value);
-          break;
-        case 'second':
-          s = Number(p.value);
-          break;
-        default:
-          break;
-      }
-    }
-    const off = Date.UTC(y, mo - 1, d, h, mi, s) / 1000 - t;
-    this.cache.set(key, off);
-    return off;
-  }
-}
-
 const zones = new Map<string, ZoneOffsets | null>();
 
-/** Shared per-zone cache. Unknown zones resolve to null, i.e. UTC. */
-function zoneOffsets(timeZone: string | null): ZoneOffsets | null {
+/**
+ * Shared per-zone offset cache (exact transitions, see `ZoneOffsets`). Unknown
+ * zones resolve to null, i.e. UTC.
+ */
+function zoneOffsetsOrUtc(timeZone: string | null): ZoneOffsets | null {
   if (timeZone === null || timeZone === 'UTC' || timeZone === 'Etc/UTC') return null;
   let z = zones.get(timeZone);
   if (z === undefined) {
     try {
-      z = new ZoneOffsets(timeZone);
+      z = zoneOffsets(timeZone);
     } catch (err) {
       // Intl throws RangeError for zones it does not know. Bucketing in UTC is a
       // usable degradation for charting; anything else is a real bug.
@@ -156,25 +97,17 @@ export class BucketContext {
    */
   readonly dayAnchors = new Map<number, number>();
   private readonly zone: ZoneOffsets | null;
-  private lastKey = NaN;
-  private lastOff = 0;
 
   constructor(opts: BucketOptions) {
     this.timezone = opts.timezone;
     this.session = opts.session;
     this.sess = parseSession(opts.session);
-    this.zone = zoneOffsets(opts.timezone);
+    this.zone = zoneOffsetsOrUtc(opts.timezone);
   }
 
   /** UTC offset (seconds, local - UTC) at UTC time `t`. */
   offset(t: number): number {
-    if (this.zone === null) return 0;
-    const key = Math.floor(t / HOUR);
-    if (key === this.lastKey) return this.lastOff;
-    const off = this.zone.offsetForHour(key);
-    this.lastKey = key;
-    this.lastOff = off;
-    return off;
+    return this.zone === null ? 0 : this.zone.offset(t);
   }
 
   /** UTC time of a local wall-clock time (seconds). Gaps resolve forward. */

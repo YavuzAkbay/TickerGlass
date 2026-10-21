@@ -1,9 +1,10 @@
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { ChevronDown } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import type { Fundamentals, FundamentalsInfo, Performance, SymbolMeta } from '../../api/types';
 import { useLiveQuote, useQuoteMissing } from '../../quotes/hooks';
 import { useQuoteStore } from '../../quotes/store';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 import {
   changeClass,
   decimalsForTick,
@@ -14,6 +15,7 @@ import {
   isNum,
 } from '../format';
 import { useApi, useNow } from '../hooks';
+import { eventsPath, EVENTS_TTL_MS, type EventsResponse } from '../../events/api';
 import { useFlash } from '../watchlist/columns';
 
 const TEN_MIN = 10 * 60 * 1000;
@@ -30,10 +32,6 @@ type DetailsInfo = FundamentalsInfo & {
   earningsTimestampEnd?: number | null;
   isEarningsDateEstimate?: boolean | null;
 };
-
-interface EventsResponse {
-  earnings?: { t: number; epsActual?: number | null }[];
-}
 
 /** Unix seconds (milliseconds are tolerated) to a short date. */
 function fmtDate(t: number): string {
@@ -191,11 +189,28 @@ function hostOf(url: string): string {
 }
 
 export function Details() {
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
+  // No quote, fundamentals or events exist for an expression: mount nothing that fetches.
+  if (isExpressionSymbol(symbol))
+    return (
+      <div className="rs-details">
+        <div className="rs-det-head">
+          <div className="rs-det-ticker">
+            <span className="rs-det-symbol">{symbol}</span>
+            <span className="rs-badge">expression</span>
+          </div>
+        </div>
+        <div className="rs-pad rs-muted">Not available for symbol expressions</div>
+      </div>
+    );
+  return <SymbolDetails symbol={symbol} />;
+}
+
+function SymbolDetails({ symbol }: { symbol: string }) {
   const enc = encodeURIComponent(symbol);
   const meta = useApi<SymbolMeta>(`/symbols/${enc}`, TEN_MIN);
   const fund = useApi<Fundamentals>(`/fundamentals/${enc}`, TEN_MIN);
-  const events = useApi<EventsResponse>(`/events/${enc}`, TEN_MIN);
+  const events = useApi<EventsResponse>(eventsPath(symbol), EVENTS_TTL_MS);
   const q = useLiveQuote(symbol);
   const now = useNow();
   const quoteError = useQuoteStore((s) => s.error);

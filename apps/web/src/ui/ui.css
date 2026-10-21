@@ -9,7 +9,7 @@
   height: 32px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text);
   cursor: pointer;
@@ -19,6 +19,7 @@
   background: var(--hover);
 }
 .io-icon-btn.active {
+  background: var(--accent-soft);
   color: var(--accent-text);
 }
 .io-icon-btn:disabled {
@@ -31,9 +32,9 @@
   position: absolute;
   z-index: 1000;
   padding: 4px 8px;
-  border-radius: 4px;
-  background: #000000e6;
-  color: #fff;
+  border-radius: var(--radius-control);
+  background: var(--tip-bg);
+  color: var(--tip-text);
   font-size: 12px;
   font-weight: 400;
   white-space: pre;
@@ -79,7 +80,7 @@
   z-index: 900;
   background: var(--popover);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow);
   max-height: calc(100vh - 16px);
   overflow: auto;
@@ -98,6 +99,10 @@
   padding: 0 12px 0 8px;
   cursor: pointer;
   white-space: nowrap;
+}
+.io-menu-item {
+  margin: 0 4px;
+  border-radius: var(--radius-control);
 }
 .io-menu-item.active {
   background: var(--hover);
@@ -165,7 +170,7 @@
   max-height: calc(100vh - 64px);
   background: var(--popover);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow);
 }
 .io-modal-header {
@@ -178,9 +183,9 @@
 }
 .io-modal-title {
   flex: 1;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--text);
 }
 .io-modal-body {
   flex: 1;
@@ -197,9 +202,9 @@
 
 /* ---- buttons + inputs ---- */
 .io-btn {
-  height: 34px;
+  height: 32px;
   padding: 0 16px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: transparent;
   cursor: pointer;
@@ -210,15 +215,16 @@
 .io-btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .io-btn-primary:hover {
-  background: #1e53e5;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .io-input {
-  height: 34px;
+  height: 32px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--input-bg);
   outline: none;
@@ -244,7 +250,7 @@
   min-width: 240px;
   max-width: 420px;
   padding: 8px 8px 8px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--popover);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
@@ -265,17 +271,24 @@
 }
 
 /* ---- prompt / confirm ---- */
+.io-prompt .io-modal-body {
+  padding: 16px 20px;
+}
 .io-prompt-input {
   width: 100%;
 }
 .io-prompt-message {
   margin: 0;
+  color: var(--text);
   line-height: 1.5;
+}
+.io-prompt .io-modal-footer {
+  justify-content: flex-end;
 }
 .io-btn-danger {
   background: var(--down);
   border-color: var(--down);
-  color: #fff;
+  color: var(--on-accent);
 }
 .io-spacer {
   flex: 1;

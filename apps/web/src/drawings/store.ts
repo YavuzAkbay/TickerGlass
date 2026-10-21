@@ -1,13 +1,16 @@
-import type { Drawing, DrawingStyle } from '@investopen/engine';
+import { resolveDrawingType, type Drawing, type DrawingStyle } from '@tickerglass/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createStore, type StoreApi } from 'zustand/vanilla';
+import { createActiveFacade } from '../chart/facade';
+import { stripPerDrawingStyle } from './per-drawing';
 
 /**
  * Drawings of every symbol (docs/drawings.md §6). The app owns them; the
  * engine only holds the current chart's list (see ./attach). Mutate through
  * ./actions so changes are undoable.
  */
-export const STORAGE_KEY = 'investopen-drawings';
+export const STORAGE_KEY = 'tickerglass-drawings';
 
 export interface DrawingBuckets {
   /** Scope 'symbol' drawings by `Drawing.symbol`. */
@@ -41,10 +44,11 @@ function isDrawing(v: unknown): v is Drawing {
   );
 }
 
-/** Fill fields older or hand-edited data may lack. */
+/** Fill fields older or hand-edited data may lack; renamed tool ids map to the current one. */
 function normalize(d: Drawing): Drawing {
   return {
     ...d,
+    type: resolveDrawingType(d.type),
     text: typeof d.text === 'string' ? d.text : '',
     locked: !!d.locked,
     hidden: !!d.hidden,
@@ -236,9 +240,15 @@ export const useDrawingStore = create<DrawingStore>()((set) => ({
   replaceAll: (data) => set({ bySymbol: data.bySymbol, synced: data.synced }),
 }));
 
-/** Drawings shown on `symbol`: its own plus the synced ones. */
-export function drawingsFor(s: DrawingBuckets, symbol: string): Drawing[] {
-  return [...(s.bySymbol[symbol] ?? []), ...s.synced];
+/**
+ * Drawings shown on chart `chartId` for `symbol`: its own plus the synced
+ * ones, minus those bound to another chart (`Drawing.chartId`, set when
+ * drawing sync is off). Unbound drawings show on every chart.
+ */
+export function drawingsFor(s: DrawingBuckets, symbol: string, chartId: string): Drawing[] {
+  return [...(s.bySymbol[symbol] ?? []), ...s.synced].filter(
+    (d) => d.chartId === undefined || d.chartId === chartId,
+  );
 }
 
 export function findStoredDrawing(id: string): Drawing | undefined {
@@ -359,8 +369,8 @@ export interface TextEdit {
   created: boolean;
 }
 
-/** Live UI state of the drawing layer (not persisted). */
-interface DrawingRuntime {
+/** Live UI state of one chart's drawing layer (not persisted). */
+export interface DrawingRuntime {
   /** Engine selection. */
   selection: string[];
   /** A drawing drag is in progress (the mini-toolbar hides). */
@@ -368,15 +378,28 @@ interface DrawingRuntime {
   /** Last pointer release over the chart (viewport px): mini-toolbar anchor. */
   pointer: { x: number; y: number } | null;
   textEdit: TextEdit | null;
-  /** Copied drawings (Ctrl+C), as JSON. */
-  clipboard: string | null;
 }
 
-export const useDrawingRuntime = create<DrawingRuntime>()(() => ({
-  selection: [],
-  dragging: false,
-  pointer: null,
-  textEdit: null,
+export const createDrawingRuntimeStore = (): StoreApi<DrawingRuntime> =>
+  createStore<DrawingRuntime>()(() => ({
+    selection: [],
+    dragging: false,
+    pointer: null,
+    textEdit: null,
+  }));
+
+/**
+ * The active chart's drawing runtime (selection, drag, text editor). Each
+ * chart has its own, so a gesture on one never leaks to another. Per-chart
+ * code uses `session.drawingRuntime` instead.
+ */
+export const useDrawingRuntime = createActiveFacade(
+  (s) => s.drawingRuntime,
+  createDrawingRuntimeStore,
+);
+
+/** Copied drawings (Ctrl+C), as JSON: shared by all charts. */
+export const useDrawingClipboard = create<{ clipboard: string | null }>()(() => ({
   clipboard: null,
 }));
 
@@ -397,6 +420,33 @@ interface DrawingTemplates {
   clearDefault: (type: string) => void;
 }
 
+/**
+ * Key tool-keyed records by current tool id: entries stored under a renamed id
+ * move to the new one (an entry already under the new id wins).
+ */
+export function mapToolKeys<V>(record: Record<string, V>): Record<string, V> {
+  const out: Record<string, V> = {};
+  for (const [type, v] of Object.entries(record)) {
+    const now = resolveDrawingType(type);
+    if (now === type || !(now in record)) out[now] = v;
+  }
+  return out;
+}
+
+/** Stored templates and default styles with their tool ids mapped to the current ones. */
+export function migrateTemplates(
+  persisted: unknown,
+): Pick<DrawingTemplates, 'byType' | 'defaults'> {
+  const p = isObj(persisted) ? persisted : {};
+  return {
+    byType: isObj(p.byType) ? mapToolKeys(p.byType as DrawingTemplates['byType']) : {},
+    defaults: isObj(p.defaults) ? mapToolKeys(p.defaults as DrawingTemplates['defaults']) : {},
+  };
+}
+
+/** Persisted `tickerglass-drawing-templates` version: 2 = renamed tool ids. */
+export const TEMPLATES_STORE_VERSION = 2;
+
 export const useDrawingTemplates = create<DrawingTemplates>()(
   persist(
     (set) => ({
@@ -406,20 +456,34 @@ export const useDrawingTemplates = create<DrawingTemplates>()(
         set((s) => ({
           byType: {
             ...s.byType,
-            [type]: [...(s.byType[type] ?? []).filter((t) => t.name !== name), { name, style }],
+            [type]: [
+              ...(s.byType[type] ?? []).filter((t) => t.name !== name),
+              { name, style: stripPerDrawingStyle(type, style) },
+            ],
           },
         })),
       removeTemplate: (type, name) =>
         set((s) => ({
           byType: { ...s.byType, [type]: (s.byType[type] ?? []).filter((t) => t.name !== name) },
         })),
-      saveDefault: (type, style) => set((s) => ({ defaults: { ...s.defaults, [type]: style } })),
+      saveDefault: (type, style) =>
+        set((s) => ({ defaults: { ...s.defaults, [type]: stripPerDrawingStyle(type, style) } })),
       clearDefault: (type) =>
         set((s) => {
           const { [type]: _dropped, ...rest } = s.defaults;
           return { defaults: rest };
         }),
     }),
-    { name: 'investopen-drawing-templates', version: 1 },
+    {
+      name: 'tickerglass-drawing-templates',
+      version: TEMPLATES_STORE_VERSION,
+      migrate: (persisted) => migrateTemplates(persisted) as DrawingTemplates,
+    },
   ),
 );
+
+/** The stored drawing with this id (any symbol bucket), if any. */
+export function lookupDrawing(s: DrawingBuckets, id: unknown): Drawing | undefined {
+  if (typeof id !== 'string') return undefined;
+  return allDrawings(s).find((d) => d.id === id);
+}

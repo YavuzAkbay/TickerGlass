@@ -235,6 +235,148 @@ describe('session-aware extrapolation past the last bar', () => {
     expect(logicalToTime(tl, bars.length)).toEqual({ time: bars.at(-1)! - 1435 * 60 + D });
   });
 
+  describe('learned holidays', () => {
+    const utcDay = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) / 1000;
+    /** Day number of the nth (1-based; -1 = last) weekday `wd` of a month. */
+    const nthWeekday = (y: number, m: number, wd: number, nth: number) => {
+      if (nth > 0) {
+        const first = new Date(utcDay(y, m, 1) * 1000).getUTCDay();
+        return utcDay(y, m, 1 + ((wd - first + 7) % 7) + 7 * (nth - 1));
+      }
+      const last = new Date(utcDay(y, m + 1, 0) * 1000);
+      return utcDay(y, m + 1, 0) - ((last.getUTCDay() - wd + 7) % 7) * D;
+    };
+    /** Easter Sunday (Gregorian), unix s. */
+    const easter = (y: number) => {
+      const a = y % 19;
+      const b = Math.floor(y / 100);
+      const c = y % 100;
+      const h =
+        (19 * a + b - Math.floor(b / 4) - Math.floor((b - Math.floor((b + 8) / 25) + 1) / 3) + 15) %
+        30;
+      const l = (32 + 2 * (b % 4) + 2 * Math.floor(c / 4) - h - (c % 4)) % 7;
+      const m = Math.floor((a + 11 * h + 22 * l) / 451);
+      const n = h + l - 7 * m + 114;
+      return utcDay(y, Math.floor(n / 31), (n % 31) + 1);
+    };
+    /** A US-style exchange schedule (fixed dates with weekend observance, nth weekdays, Good Friday). */
+    const holidays = (y: number): Set<number> => {
+      const out = new Set<number>();
+      const observed = (t: number, satToFri: boolean) => {
+        const wd = new Date(t * 1000).getUTCDay();
+        if (wd === 6) {
+          if (satToFri) out.add(t - D);
+        } else if (wd === 0) out.add(t + D);
+        else out.add(t);
+      };
+      observed(utcDay(y, 1, 1), false); // New Year: no Friday before
+      observed(utcDay(y, 7, 4), true);
+      observed(utcDay(y, 12, 25), true);
+      out.add(nthWeekday(y, 1, 1, 3)); // third Monday of January
+      out.add(nthWeekday(y, 5, 1, -1)); // last Monday of May
+      out.add(nthWeekday(y, 9, 1, 1)); // first Monday of September
+      out.add(nthWeekday(y, 11, 4, 4)); // fourth Thursday of November
+      out.add(easter(y) - 2 * D); // Good Friday
+      return out;
+    };
+    /** Weekday UTC midnights in [from, to) that are not holidays. */
+    const sessions = (from: number, to: number) => {
+      const out: number[] = [];
+      const off = new Map<number, Set<number>>();
+      for (let t = from; t < to; t += D) {
+        const d = new Date(t * 1000);
+        const wd = d.getUTCDay();
+        if (wd === 0 || wd === 6) continue;
+        const y = d.getUTCFullYear();
+        if (!off.has(y)) off.set(y, holidays(y));
+        if (!off.get(y)!.has(t)) out.push(t);
+      }
+      return out;
+    };
+
+    const history = sessions(utcDay(2018, 1, 1), utcDay(2024, 12, 21)); // last: Fri 2024-12-20
+    const future = sessions(utcDay(2024, 12, 21), utcDay(2028, 1, 1));
+
+    it('skips recurring holidays learned from missing weekdays in daily data', () => {
+      const tl = withCalendar(history, DAY);
+      const n = history.length;
+      // Every projected slot through 2027 is a session of the schedule.
+      for (let k = 1; k <= future.length; k++) {
+        expect(logicalToTime(tl, n - 1 + k)).toEqual({ time: future[k - 1] });
+        expect(timeToLogical(tl, { time: future[k - 1]! })).toBe(n - 1 + k);
+      }
+      // Spot checks: Christmas, Good Friday 2025, Jul 4 2026 (Sat) observed Fri Jul 3.
+      expect(future).not.toContain(utcDay(2024, 12, 25));
+      expect(future).not.toContain(utcDay(2025, 4, 18));
+      expect(future).not.toContain(utcDay(2026, 7, 3));
+      expect(future).toContain(utcDay(2027, 12, 31)); // Jan 1 2028 is a Saturday: no Friday off
+      // A holiday anchor maps to the next session (gap rule).
+      const after = future.indexOf(utcDay(2024, 12, 26));
+      expect(timeToLogical(tl, { time: utcDay(2024, 12, 25) + 12 * H })).toBe(n + after);
+    });
+
+    it('skips learned holidays on intraday charts', () => {
+      const bars = history.flatMap((d) =>
+        Array.from({ length: 7 }, (_, k) => d + 14.5 * H + k * H),
+      );
+      const cal = buildTradingCalendar(Float64Array.from(bars), bars.length, HOUR, 'UTC')!;
+      const last = bars.at(-1)!;
+      for (let j = 0; j < 30; j++) expect(cal.step(last, 1 + 7 * j)).toBe(future[j]! + 14.5 * H);
+    });
+
+    /** The `count`-th plain weekday (no holidays) after UTC midnight `t`. */
+    const plusWeekdays = (t: number, count: number) => {
+      let d = t;
+      for (let left = count; left > 0;) {
+        d += D;
+        const wd = new Date(d * 1000).getUTCDay();
+        if (wd !== 0 && wd !== 6) left--;
+      }
+      return d;
+    };
+
+    it.each([2, 3])('learns no holidays from %iD bars (missing weekdays are not closures)', (n) => {
+      // Every n-th session of the schedule, as a resampled multi-day chart has.
+      const bars = history.filter((_, i) => (history.length - 1 - i) % n === 0);
+      const iv: Interval = { unit: 'day', count: n };
+      const tl = withCalendar(bars, iv);
+      const last = bars.at(-1)!;
+      for (let k = 1; k <= 400; k++)
+        expect(logicalToTime(tl, bars.length - 1 + k)).toEqual({
+          time: plusWeekdays(last, n * k),
+        });
+    });
+
+    it('learns no holidays from sparse intraday bars', () => {
+      // Thin trading: a quarter of the sessions have no hourly bar at all.
+      const thin = history.filter((_, i) => (i * 7919) % 4 !== 0);
+      const bars = thin.flatMap((d) => Array.from({ length: 7 }, (_, k) => d + 14.5 * H + k * H));
+      const cal = buildTradingCalendar(Float64Array.from(bars), bars.length, HOUR, 'UTC')!;
+      const last = bars.at(-1)!;
+      const lastDay = Math.floor(last / D) * D;
+      for (let j = 0; j < 300; j++)
+        expect(cal.step(last, 1 + 7 * j)).toBe(plusWeekdays(lastDay, j + 1) + 14.5 * H);
+    });
+
+    it('learns nothing from complete data or less than a year of it', () => {
+      const plain = dailyBars(600); // every weekday for over two years
+      const tl = withCalendar(plain, DAY);
+      for (let i = 1; i <= 40; i++) {
+        const t = logicalToTime(tl, plain.length - 1 + i)!.time;
+        const wd = new Date(t * 1000).getUTCDay();
+        expect(wd === 0 || wd === 6).toBe(false);
+        expect(timeToLogical(tl, { time: t })).toBe(plain.length - 1 + i);
+      }
+      expect(logicalToTime(tl, plain.length - 1 + 5)!.time).toBe(plain.at(-1)! + 7 * D);
+      // Under a year of the schedule: Christmas 2024 is not known to be a holiday.
+      const short = withCalendar(
+        history.filter((t) => t >= utcDay(2024, 3, 1)),
+        DAY,
+      );
+      expect(logicalToTime(short, short.length - 1 + 3)).toEqual({ time: utcDay(2024, 12, 25) });
+    });
+  });
+
   it('keeps plain stepping for round-the-clock data and weekly bars', () => {
     const all = Array.from({ length: 200 }, (_, i) => MON + i * H);
     expect(buildTradingCalendar(Float64Array.from(all), all.length, HOUR, 'UTC')).toBeNull();

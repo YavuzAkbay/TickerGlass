@@ -7,7 +7,8 @@
  * The socket is fully mocked (no backend behind it). It answers `subscribe`
  * like the real hub (`{type:'subscribed'}`, then status "connected"), and
  * the test pushes frames with `pushTick` or drops the connection with
- * `close()`. After `close()` new connections are refused (so the client
+ * `close()`. `op: events` is answered like the hub does (topics recorded in
+ * `eventTopics`) and `pushAlertFired` sends an `alert.fired` frame. After `close()` new connections are refused (so the client
  * stays in its polling fallback) until `reopen()`.
  */
 import type { Page, Route, WebSocketRoute } from '@playwright/test';
@@ -81,6 +82,10 @@ export interface MockMarket {
   push(frame: Json): void;
   /** Send a `tick` frame; `extra` overrides fields (e.g. `{marketHours: 2}`). */
   pushTick(symbol: string, price: number, extra?: Json): void;
+  /** Topic sets of every `op: events` frame received (all sockets, in order). */
+  eventTopics: string[][];
+  /** Send an `alert.fired` frame of topic `alerts` (docs/alerts.md section 1.6). */
+  pushAlertFired(entry: Json, alert: Json): void;
   /** Close every socket and refuse new ones until `reopen()`. */
   close(): void;
   reopen(): void;
@@ -93,6 +98,7 @@ export async function mockMarket(page: Page, opts: MarketOptions = {}): Promise<
     quoteRequests: [],
     extendedRequests: [],
     subscribed: [],
+    eventTopics: [],
     get sockets() {
       return sockets.size;
     },
@@ -100,6 +106,8 @@ export async function mockMarket(page: Page, opts: MarketOptions = {}): Promise<
       for (const ws of sockets) ws.send(JSON.stringify(frame));
     },
     pushTick: (symbol, price, extra) => m.push(tick(symbol, price, extra)),
+    pushAlertFired: (entry, alert) =>
+      m.push({ type: 'alert.fired', topic: 'alerts', entry, alert }),
     close: () => {
       refuse = true;
       for (const ws of [...sockets]) void ws.close();
@@ -166,7 +174,7 @@ export async function mockMarket(page: Page, opts: MarketOptions = {}): Promise<
     sockets.add(ws);
     ws.onClose(() => sockets.delete(ws));
     ws.onMessage((raw) => {
-      let msg: { op?: string; symbols?: string[] };
+      let msg: { op?: string; symbols?: string[]; topics?: string[] };
       try {
         msg = JSON.parse(String(raw));
       } catch {
@@ -176,6 +184,10 @@ export async function mockMarket(page: Page, opts: MarketOptions = {}): Promise<
         m.subscribed.push(...(msg.symbols ?? []));
         ws.send(JSON.stringify({ type: 'subscribed', symbols: msg.symbols ?? [] }));
         ws.send(JSON.stringify({ type: 'status', upstream: 'connected' }));
+      } else if (msg.op === 'events') {
+        const topics = msg.topics ?? [];
+        m.eventTopics.push(topics);
+        ws.send(JSON.stringify({ type: 'events', topics }));
       }
     });
     ws.send(JSON.stringify({ type: 'status', upstream: 'connected' }));

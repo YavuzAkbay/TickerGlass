@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { GENERAL_NOTE, noteKey, useNotesStore } from '../../persist/notes';
 import { useLayoutStatus } from '../../persist/layouts';
-import { useAppStore } from '../../store/app';
+import { useChartView } from '../../store/chartView';
 
 /** Notes for the current symbol and a general note, saved to the server (offline: this browser). */
 export function Notes() {
-  const symbol = useAppStore((s) => s.symbol);
+  const symbol = useChartView((s) => s.symbol);
   const [scope, setScope] = useState<'symbol' | 'general'>('symbol');
   const key = scope === 'general' ? GENERAL_NOTE : noteKey(symbol);
   const note = useNotesStore((s) => s.notes[key]);

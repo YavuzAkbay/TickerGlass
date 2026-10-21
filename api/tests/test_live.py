@@ -10,10 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 
-from investopen_api.app import create_app
-from investopen_api.live import LiveHub, MessageHandler, normalize_message
-from investopen_api.providers.base import BAR_COLUMNS
-from investopen_api.settings import get_settings
+from tickerglass_api.app import create_app
+from tickerglass_api.live import LiveHub, MessageHandler, normalize_message
+from tickerglass_api.providers.base import BAR_COLUMNS
+from tickerglass_api.settings import get_settings
 
 
 class FakeProvider:
