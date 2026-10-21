@@ -15,6 +15,7 @@ import {
   isNum,
 } from '../format';
 import { useApi, useNow } from '../hooks';
+import { eventsPath, EVENTS_TTL_MS, type EventsResponse } from '../../events/api';
 import { useFlash } from '../watchlist/columns';
 
 const TEN_MIN = 10 * 60 * 1000;
@@ -31,10 +32,6 @@ type DetailsInfo = FundamentalsInfo & {
   earningsTimestampEnd?: number | null;
   isEarningsDateEstimate?: boolean | null;
 };
-
-interface EventsResponse {
-  earnings?: { t: number; epsActual?: number | null }[];
-}
 
 /** Unix seconds (milliseconds are tolerated) to a short date. */
 function fmtDate(t: number): string {
@@ -213,7 +210,7 @@ function SymbolDetails({ symbol }: { symbol: string }) {
   const enc = encodeURIComponent(symbol);
   const meta = useApi<SymbolMeta>(`/symbols/${enc}`, TEN_MIN);
   const fund = useApi<Fundamentals>(`/fundamentals/${enc}`, TEN_MIN);
-  const events = useApi<EventsResponse>(`/events/${enc}`, TEN_MIN);
+  const events = useApi<EventsResponse>(eventsPath(symbol), EVENTS_TTL_MS);
   const q = useLiveQuote(symbol);
   const now = useNow();
   const quoteError = useQuoteStore((s) => s.error);

@@ -110,14 +110,25 @@ describe('layoutMarkers culling', () => {
     expect(only).toEqual([]);
   });
 
-  it('drops above/below markers outside the data but keeps price markers', () => {
+  it('drops above/below markers before the data but keeps price markers', () => {
     const before = START - 3 * D;
-    const after = START + 400 * D;
     const out = layoutMarkers(
-      groups(m('a', before), m('b', after), m('c', before, { position: 'price', price: 100 })),
+      groups(m('a', before), m('c', before, { position: 'price', price: 100 })),
       input(times, iv, { indexToX: (i) => (i + 10) * 10 }),
     );
     expect(out.map((p) => p.marker.id)).toEqual(['c']);
+  });
+
+  it('puts a future marker past the last bar at the last bar extreme', () => {
+    const after = START + 205 * D;
+    const out = layoutMarkers(
+      groups(m('f', after, { position: 'belowBar', shape: 'letter', text: 'E' })),
+      input(times, iv, { indexToX: (i) => i * 10 + 5 }),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.x).toBe(205 * 10 + 5);
+    // low 90 -> y 110, plus gap and half marker.
+    expect(out[0]!.y).toBe(110 + 6 + MARKER_SIZE / 2);
   });
 
   it('drops markers whose y is outside the pane and handles empty data', () => {

@@ -286,14 +286,18 @@ Phase 14 notes:
 - "Open in new chart" in the watchlist adds a chart to the layout (disabled at 16).
 - e2e: `e2e/multichart.spec.ts` (templates, splitters, focus, per-chart state, sync flags, request budget) and a two-chart case in `e2e/replay.spec.ts`. Remaining limitations: [LIMITATIONS.md](LIMITATIONS.md#app--ui).
 
-### Phase 15: Polish & parity sweep
+### Phase 15: Polish & completeness sweep
 
-- [ ] Chart settings dialog parity: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
-- [ ] Events on chart: dividends, splits, earnings markers with tooltips
+- [ ] Chart settings dialog completeness: Symbol, Status line, Scales & lines, Canvas, Trading, Alerts, Events
+- [x] Events on chart: dividends, splits, earnings markers with tooltips
 - [ ] Data window; screenshot (PNG download/copy); fullscreen; full keyboard shortcut list + help dialog
 - [ ] Performance pass (worker offload, render profiling, memory), error states (Yahoo down, symbol not found, rate-limited)
 - [ ] Accessibility basics, i18n scaffolding
 - [ ] Optional: screener (yfinance `screen`), economic/earnings calendar, financials view
+
+Phase 15 notes:
+
+- Events on chart: `apps/web/src/events/` (`api.ts` shares one 10-minute cache of `GET /api/events/{symbol}` with the Details panel, `attach.ts` builds the `events` marker group, `prefs.ts` holds the per-type toggles synced as `events.prefs`, `EventsTab.tsx` is the Settings tab). Badges D (dividend amount), S (split n:m) and E (earnings estimate, actual, surprise) sit below the bars; an upcoming earnings date is drawn past the last bar; nothing is drawn for symbol expressions, and during replay events after the clock are hidden. Engine: marker `shape: 'letter'` with `text`. e2e: `e2e/events.spec.ts`.
 
 ### Phase 16: AI analysis integration point (feature built separately)
 

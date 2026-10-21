@@ -3,6 +3,7 @@ import { DARK_THEME, LIGHT_THEME } from '@investopen/engine';
 import { feed } from './feed';
 import { PRIMARY_CHART_ID, createChartSession, type ChartSession } from './session';
 import { attachAlerts } from '../alerts/attach';
+import { attachEvents } from '../events/attach';
 import { attachCompares } from '../compare/attach';
 import { CompareLegends } from '../compare/Legend';
 import { attachDrawings } from '../drawings/attach';
@@ -109,6 +110,7 @@ export function ChartView({ id }: { id: string }) {
       attachIndicators(s, feed),
       attachCompares(s, feed),
       attachAlerts(s),
+      attachEvents(s),
       attachReplay(s),
       attachSync(s),
     ];
