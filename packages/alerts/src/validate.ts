@@ -11,6 +11,7 @@ import {
   isExternalRef,
   isOutputRef,
   resolveInputs,
+  usesEvents,
   type IndicatorRegistry,
   type InputValueMap,
 } from '@investopen/indicators';
@@ -569,7 +570,15 @@ function checkRegistry(
       continue;
     }
     try {
-      resolveInputs(def, inst.inputs);
+      const resolved = resolveInputs(def, inst.inputs);
+      if (usesEvents(def, resolved)) {
+        c.err(
+          `${inst.path}.inputs`,
+          'unsupported_indicator',
+          `${def.name} with these inputs needs dividend, split or earnings events, which alerts do not have`,
+        );
+        defsOk = false;
+      }
     } catch (e) {
       c.err(`${inst.path}.inputs`, 'invalid_inputs', e instanceof Error ? e.message : String(e));
       defsOk = false;

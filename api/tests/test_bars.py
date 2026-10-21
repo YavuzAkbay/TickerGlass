@@ -1,3 +1,4 @@
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -301,7 +302,13 @@ def test_call_raises_rate_limited_after_retries(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.parametrize(
-    "error", [curl_exc.ConnectionError("down"), curl_exc.Timeout("slow"), TimeoutError("t")]
+    "error",
+    [
+        curl_exc.ConnectionError("down"),
+        curl_exc.Timeout("slow"),
+        TimeoutError("t"),
+        socket.gaierror("dns"),
+    ],
 )
 def test_call_raises_unavailable_on_connection_failure(
     monkeypatch: pytest.MonkeyPatch, error: Exception
@@ -313,6 +320,20 @@ def test_call_raises_unavailable_on_connection_failure(
 
     with pytest.raises(UpstreamUnavailable):
         _fast_provider()._call(fn)
+
+
+@pytest.mark.parametrize("error", [PermissionError("cache"), FileNotFoundError("cache")])
+def test_call_disk_errors_are_not_unavailable(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    monkeypatch.setattr("investopen_api.providers.yahoo.time.sleep", lambda _: None)
+
+    def fn() -> int:
+        raise error
+
+    with pytest.raises(ProviderError) as info:
+        _fast_provider()._call(fn)
+    assert type(info.value) is ProviderError
 
 
 def test_call_other_failures_stay_provider_errors(monkeypatch: pytest.MonkeyPatch) -> None:

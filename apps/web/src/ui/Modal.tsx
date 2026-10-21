@@ -48,6 +48,13 @@ export function Modal({
   const drag = useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const offset = useRef({ x: 0, y: 0 });
 
+  // Read through a ref so a parent passing a fresh closure each render does not
+  // re-register this dialog as the top of the stack.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     const token = {};
     stack.push(token);
@@ -55,7 +62,7 @@ export function Modal({
       if (stack.at(-1) !== token) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       const root = ref.current;
@@ -78,7 +85,7 @@ export function Modal({
       const i = stack.indexOf(token);
       if (i >= 0) stack.splice(i, 1);
     };
-  }, [onClose]);
+  }, []);
 
   // Initial focus (unless a field inside already took it) and restore on close.
   useEffect(() => {

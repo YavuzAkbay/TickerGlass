@@ -37,6 +37,40 @@ test('modal has dialog semantics, traps Tab and restores focus on close', async 
   await expect(opener).toBeFocused();
 });
 
+test('a re-rendering parent does not take Escape or Tab from the nested modal', async ({
+  page,
+}) => {
+  // Hold the template list so the Settings dialog re-renders (new onClose closure)
+  // after the "Save chart template" prompt has opened on top of it.
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/chart-templates', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await held;
+    await route.fulfill({ json: [] });
+  });
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  await page.getByRole('button', { name: 'Template', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Save as…' }).click();
+  const prompt = page.getByRole('dialog', { name: 'Save chart template' });
+  await expect(prompt).toBeVisible();
+
+  release();
+  await page.waitForTimeout(300);
+
+  const inPrompt = () => page.evaluate(() => !!document.activeElement?.closest('.io-prompt'));
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press('Tab');
+    expect(await inPrompt()).toBe(true);
+  }
+
+  // Escape closes the prompt only; Settings stays.
+  await page.keyboard.press('Escape');
+  await expect(prompt).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+});
+
 test('dock tabs use tablist semantics and arrow keys', async ({ page }) => {
   await expect(page.getByRole('tablist', { name: 'Panels' })).toBeVisible();
   const watchlist = page.getByRole('tab', { name: 'Watchlist' });

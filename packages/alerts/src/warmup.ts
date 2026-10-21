@@ -113,8 +113,8 @@ export function instanceWarmup(inst: IndicatorRefInstance, opts: WarmupOptions =
     );
     own = 10 * lengths + intInput(inst, 'displacement', 26);
   } else if (VWAP_TYPES.has(inst.type) && isEventAnchor(inst.inputs['anchor'])) {
-    // Earnings/Dividends/Splits anchors: the service has no event data, so the
-    // VWAP accumulates over all loaded bars (load as many as cumulative ones).
+    // Earnings/Dividends/Splits anchors: alert validation rejects these (no event
+    // data in the service); kept as the maximum in case an old alert still has one.
     own = maxBars;
   } else if (VWAP_TYPES.has(inst.type)) {
     // Since the start of the anchor period before the current one.

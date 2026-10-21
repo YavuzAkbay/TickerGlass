@@ -319,6 +319,19 @@ describe('indicators that alerts cannot evaluate', () => {
     expect(errors(withLeft(chain, 'm', 'ma')).map((e) => e[1])).toEqual(['unsupported_indicator']);
   });
 
+  it('rejects event-anchored VWAP, accepts calendar anchors', () => {
+    const run = (anchor: string) => {
+      const b = withLeft([{ id: 'v', type: 'vwap', inputs: { anchor } }], 'v', 'vwap');
+      const r = validateAlert(b);
+      return r.ok ? [] : r.errors.map((e) => [e.path, e.code]);
+    };
+    expect(run('Earnings')).toEqual([
+      ['spec.left.ref.instances.0.inputs', 'unsupported_indicator'],
+    ]);
+    expect(run('Dividends')).toHaveLength(1);
+    expect(run('Session')).toEqual([]);
+  });
+
   it('rejects symbol inputs and sources on another symbol', () => {
     expect(errors(withLeft([{ id: 'c', type: 'corr', inputs: {} }], 'c', 'v'))).toEqual([
       [

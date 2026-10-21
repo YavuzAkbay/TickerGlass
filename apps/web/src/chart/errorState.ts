@@ -21,3 +21,27 @@ export function retryDelaySeconds(retryAfter: number | undefined): number {
   if (retryAfter === undefined || !Number.isFinite(retryAfter)) return DEFAULT_RETRY_SECONDS;
   return Math.min(MAX_RETRY_SECONDS, Math.max(1, Math.ceil(retryAfter)));
 }
+
+/** Upper bound for the backed-off wait, before jitter. */
+export const MAX_BACKOFF_SECONDS = 120;
+/** Automatic retries per session before only the manual Retry button remains. */
+export const MAX_AUTO_RETRIES = 5;
+/** Jitter added on top of the backed-off wait, as a fraction of it. */
+export const RETRY_JITTER = 0.2;
+
+/**
+ * Whole seconds to wait before automatic retry number `attempt` (1-based):
+ * the server's wait doubled per earlier attempt, capped, plus 0 to 20% random
+ * jitter so charts of one grid do not reload in lockstep. `null` once the
+ * attempts are used up. `random` is injectable for tests (returns [0, 1)).
+ */
+export function autoRetryDelaySeconds(
+  retryAfter: number | undefined,
+  attempt: number,
+  random: () => number = Math.random,
+): number | null {
+  if (attempt > MAX_AUTO_RETRIES) return null;
+  const base = retryDelaySeconds(retryAfter);
+  const backed = Math.min(MAX_BACKOFF_SECONDS, base * 2 ** Math.max(0, attempt - 1));
+  return Math.ceil(backed * (1 + RETRY_JITTER * random()));
+}

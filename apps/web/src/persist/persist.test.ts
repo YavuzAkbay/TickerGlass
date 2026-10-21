@@ -1567,6 +1567,12 @@ describe('drawing templates sync', () => {
 });
 
 describe('offline templates', () => {
+  const deferred = () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+
   function fakeServer() {
     const rows = new Map<string, TemplateRow<string>>();
     let seq = 0;
@@ -1637,6 +1643,58 @@ describe('offline templates', () => {
     expect(server.rows.size).toBe(0);
   });
 
+  it('a save issued during a sync keeps the queued item', async () => {
+    const server = fakeServer();
+    const store = new OfflineTemplates('k', server.api, memStorage());
+    server.setDown(true);
+    await store.save('Queued', 'q', 1);
+    server.setDown(false);
+    const gate = deferred();
+    const entered = deferred();
+    const realSave = server.api.save;
+    (server.api.save as ReturnType<typeof vi.fn>).mockImplementationOnce(async (b) => {
+      const saved = await realSave(b);
+      entered.resolve();
+      await gate.promise;
+      return saved;
+    });
+    const syncing = store.sync();
+    await entered.promise;
+    server.setDown(true);
+    const saving = store.save('Later', 'l', 1);
+    gate.resolve();
+    await syncing;
+    expect(await saving).toEqual({ offline: true });
+    expect(
+      store
+        .cached()
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual(['Later', 'Queued']);
+    expect(store.hasPending()).toBe(true);
+    server.setDown(false);
+    await store.sync();
+    expect([...server.rows.keys()].sort()).toEqual(['Later', 'Queued']);
+  });
+
+  it('list does not drop items queued while it runs', async () => {
+    const server = fakeServer();
+    const store = new OfflineTemplates('k', server.api, memStorage());
+    const gate = deferred();
+    (server.api.list as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      await gate.promise;
+      return [];
+    });
+    const listing = store.list();
+    server.setDown(true);
+    const saving = store.save('Mid', 'm', 1);
+    gate.resolve();
+    await listing;
+    await saving;
+    expect(store.cached().map((r) => r.name)).toEqual(['Mid']);
+    expect(store.hasPending()).toBe(true);
+  });
+
   it('permanent API errors are thrown, not cached', async () => {
     const server = fakeServer();
     (server.api.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
@@ -1701,6 +1759,14 @@ describe('status line settings', () => {
     const s = parseLayoutState(stored, 4)!;
     expect(first(s).chartSettings.statusLine).toEqual(DEFAULT_STATUS_LINE);
     expect(first(s).chartSettings.chartType).toBe('line');
+    // Without a stored status line the slot keeps the chart's current one.
+    const current = { ...DEFAULT_STATUS_LINE, ohlc: false };
+    useChartView.setState({ statusLine: current });
+    try {
+      expect(first(parseLayoutState(stored, 4)!).chartSettings.statusLine).toEqual(current);
+    } finally {
+      useChartView.setState({ statusLine: DEFAULT_STATUS_LINE });
+    }
     const custom = {
       ...stored,
       chartSettings: { ...stored.chartSettings, statusLine: { ohlc: false } },

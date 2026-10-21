@@ -75,6 +75,14 @@ export function IndicatorTemplatesButton() {
   const rename = async (t: Template) => {
     const name = await promptName({ title: 'Rename template', initial: t.name, okLabel: 'Rename' });
     if (!name || name === t.name) return;
+    // Save-then-delete would silently replace a template that already has this name.
+    const taken = [...(templates ?? []), ...indicatorTemplates.cached()].some(
+      (x) => x.name === name && x.id !== t.id,
+    );
+    if (taken) {
+      toast(`Template could not be renamed: "${name}" already exists`, 'error', 6000);
+      return;
+    }
     try {
       await indicatorTemplates.save(name, t.data, t.schemaVersion);
       await indicatorTemplates.remove(t);
