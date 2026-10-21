@@ -1,5 +1,6 @@
+import { activeChartId, syncBus } from '../layout/sync';
 import { getChart } from '../store/chart';
-import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 
 export interface RangePreset {
   label: string;
@@ -17,33 +18,26 @@ function monthsBack(last: number, months: number): number {
   return d.getTime() / 1000;
 }
 
-// Same interval pairing as the common bottom-bar ranges.
+// Interval pairing for each bottom-bar range (default list: 1D .. Max).
 export const RANGE_PRESETS: RangePreset[] = [
   { label: '1D', title: '1 day in 1 minute intervals', interval: '1m', from: (l) => l - DAY },
-  { label: '5D', title: '5 days in 5 minute intervals', interval: '5m', from: (l) => l - 5 * DAY },
+  {
+    label: '1W',
+    title: '1 week in 15 minute intervals',
+    interval: '15m',
+    from: (l) => l - 7 * DAY,
+  },
   {
     label: '1M',
-    title: '1 month in 30 minute intervals',
-    interval: '30m',
+    title: '1 month in 1 hour intervals',
+    interval: '1h',
     from: (l) => monthsBack(l, 1),
   },
   {
     label: '3M',
-    title: '3 months in 1 hour intervals',
-    interval: '1h',
+    title: '3 months in 4 hour intervals',
+    interval: '4h',
     from: (l) => monthsBack(l, 3),
-  },
-  {
-    label: '6M',
-    title: '6 months in 2 hour intervals',
-    interval: '2h',
-    from: (l) => monthsBack(l, 6),
-  },
-  {
-    label: 'YTD',
-    title: 'Year to date in 1 day intervals',
-    interval: '1D',
-    from: (l) => Date.UTC(new Date(l * 1000).getUTCFullYear(), 0, 1) / 1000,
   },
   {
     label: '1Y',
@@ -52,24 +46,27 @@ export const RANGE_PRESETS: RangePreset[] = [
     from: (l) => monthsBack(l, 12),
   },
   {
-    label: '5Y',
-    title: '5 years in 1 week intervals',
+    label: '3Y',
+    title: '3 years in 1 week intervals',
     interval: '1W',
-    from: (l) => monthsBack(l, 60),
+    from: (l) => monthsBack(l, 36),
   },
-  { label: 'All', title: 'All data in 1 month intervals', interval: '1M', from: null },
+  { label: 'Max', title: 'All data in 1 month intervals', interval: '1M', from: null },
 ];
 
 export async function applyRangePreset(preset: RangePreset): Promise<void> {
   const chart = getChart();
   if (!chart) return;
-  const { symbol, setInterval } = useAppStore.getState();
+  const { symbol, setInterval } = useChartView.getState();
   // Load first, then sync the store (the chart treats the repeat as a no-op).
   const loading = chart.setSymbolAndInterval(symbol, preset.interval);
   setInterval(preset.interval);
   await loading;
   const n = chart.store.length;
   if (!n) return;
-  if (preset.from === null) await chart.showAllHistory();
-  else await chart.setVisibleTimeRange(preset.from(chart.store.time[n - 1]!));
+  const from = activeChartId();
+  if (from === null) return;
+  // The range is worked out on this chart's data; with date-range sync the others show the same dates.
+  if (preset.from === null) await syncBus.range(from, 'all');
+  else await syncBus.range(from, { from: preset.from(chart.store.time[n - 1]!), to: Infinity });
 }

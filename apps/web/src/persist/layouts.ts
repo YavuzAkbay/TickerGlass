@@ -13,21 +13,29 @@ import {
   applyLayoutState,
   captureLayoutState,
   parseLayoutState,
+  rekeyChartIds,
   stateKey,
   type LayoutState,
 } from './layoutState';
 import { isNotFound, isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
-/** The state key without the time scale (view position/zoom). */
+/** The state key without any chart's time scale (view position/zoom). */
 function viewKey(key: string): string {
-  const s = JSON.parse(key) as { chart?: { timeScale?: unknown } | null };
-  if (s.chart) delete s.chart.timeScale;
+  const s = JSON.parse(key) as { charts?: { chart?: { timeScale?: unknown } | null }[] };
+  for (const c of s.charts ?? []) if (c.chart) delete c.chart.timeScale;
   return JSON.stringify(s);
 }
 
-export const LAYOUT_CACHE_KEY = 'investopen-layout';
+/** The state key without the focused chart id (focus is view-only: it rides along with the next save). */
+function focusKey(key: string): string {
+  const s = JSON.parse(key) as { activeChartId?: unknown };
+  delete s.activeChartId;
+  return JSON.stringify(s);
+}
+
+export const LAYOUT_CACHE_KEY = 'tickerglass-layout';
 /** Unsaved state of a layout that no longer exists on the server (kept for "Save as new"). */
-export const LAYOUT_ORPHAN_KEY = 'investopen-layout.orphan';
+export const LAYOUT_ORPHAN_KEY = 'tickerglass-layout.orphan';
 /** After applying a layout, view-only changes (the chart settling) are not edits for this long. */
 const SETTLE_MS = 1500;
 export const DEFAULT_LAYOUT_NAME = 'Untitled';
@@ -41,7 +49,6 @@ export type LayoutApi = Pick<
   | 'saveLayout'
   | 'listLayouts'
   | 'renameLayout'
-  | 'duplicateLayout'
   | 'deleteLayout'
   | 'exportLayout'
   | 'importLayout'
@@ -344,6 +351,8 @@ export class LayoutSession {
     if (key === this.lastKey) return;
     const prev = this.lastKey;
     this.lastKey = key;
+    // Moving focus between charts is not an edit: no dirty flag, no save of its own.
+    if (prev !== null && focusKey(key) === focusKey(prev)) return;
     // Right after a layout was applied the chart settles (data loads, the view
     // clamps): view-only differences then are not the user's edits.
     if (this.now() < this.settleUntil && prev !== null && viewKey(key) === viewKey(prev)) return;
@@ -504,7 +513,8 @@ export class LayoutSession {
   async saveAs(name: string): Promise<void> {
     this.requireOnline();
     await this.settle();
-    const state = this.capture();
+    // Fresh chart ids: chart-bound drawings stay with the source layout.
+    const state = rekeyChartIds(this.capture());
     const layout = await this.api.createLayout({
       name,
       state,
@@ -523,11 +533,17 @@ export class LayoutSession {
 
   /** Copy the current layout (after saving it) and switch to the copy. */
   async copy(name: string): Promise<void> {
-    const saver = this.requireOnline();
+    this.requireOnline();
     await this.settle();
-    const layout = await this.api.duplicateLayout(saver.id, name);
+    // Fresh chart ids: chart-bound drawings stay with the source layout.
+    const state = rekeyChartIds(this.capture());
+    const layout = await this.api.createLayout({
+      name,
+      state,
+      schemaVersion: LAYOUT_SCHEMA_VERSION,
+    });
     await this.api.setLastUsedLayout(layout.id);
-    await this.open(layout, this.capture(), layout.revision);
+    await this.open(layout, state, layout.revision);
   }
 
   /**

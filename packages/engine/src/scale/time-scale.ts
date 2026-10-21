@@ -88,6 +88,22 @@ export class TimeScale {
     this.clamp();
   }
 
+  /**
+   * Show logical indices [from, to] (fractional) across the width: spacing =
+   * width / (to - from), clamped to the spacing limits (then centred on the
+   * range). Returns false (no change) unless both are finite and from < to.
+   */
+  setVisibleLogicalRange(from: number, to: number): boolean {
+    if (!Number.isFinite(from) || !Number.isFinite(to) || !(from < to) || this.width <= 0)
+      return false;
+    this.barSpacing = clampSpacing(this.width / (to - from));
+    // Centre of the range at x = width / 2 (see xToLogical).
+    const mid = (from + to) / 2;
+    this.rightOffset = mid - this.baseIndex - 0.5 + this.width / 2 / this.barSpacing;
+    this.clamp();
+    return true;
+  }
+
   clamp(): void {
     if (this.width <= 0 || this.baseIndex < 0) return;
     // Keep at least a couple of bars on screen at either edge.

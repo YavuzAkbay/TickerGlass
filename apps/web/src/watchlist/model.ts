@@ -189,15 +189,16 @@ function mapSymbol(raw: string): { symbol: string; mapped: boolean } {
   return { symbol: ticker, mapped: false }; // EURONEXT and unknown exchanges
 }
 
-/** Yahoo symbol for a standard `EXCHANGE:TICKER` (or plain) symbol; null if unusable. */
+/** Yahoo symbol for a `EXCHANGE:TICKER` (or plain) symbol; null if unusable. */
 export function toYahooSymbol(raw: string): string | null {
   const { symbol } = mapSymbol(raw);
   return SYMBOL_RE.test(symbol) ? symbol : null;
 }
 
 /**
- * Parse a standard export: entries split on commas/newlines,
- * `###Title` = section, `EXCHANGE:TICKER` mapped to Yahoo symbols. `unmapped`
+ * Parse the TickerGlass plain-text watchlist format: one `EXCHANGE:TICKER` per
+ * entry, comma or newline separated, optional `###Section` headers. Entries
+ * are mapped to Yahoo symbols. `unmapped`
  * lists entries whose prefix could not be mapped (ticker kept); `skipped`
  * counts entries that are not valid symbols.
  */
@@ -232,7 +233,7 @@ export function parseTxt(text: string): {
   return { items, unmapped, skipped };
 }
 
-/** One line, comma separated, sections as `###Title`; no trailing newline. */
+/** TickerGlass plain-text watchlist format: one line, comma separated, sections as `###Title`; no trailing newline. */
 export const formatTxt = (items: WatchlistItem[]): string =>
   items.map((i) => (i.type === 'section' ? `###${i.title}` : i.symbol)).join(',');
 

@@ -1,4 +1,4 @@
-/** Minimal typed client for the InvestOpen REST API (proxied at /api). */
+/** Minimal typed client for the TickerGlass REST API (proxied at /api). */
 
 export class ApiError extends Error {
   readonly status: number;

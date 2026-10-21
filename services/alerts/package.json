@@ -1,5 +1,5 @@
 {
-  "name": "@investopen/alerts",
+  "name": "@tickerglass/alerts-service",
   "version": "0.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -12,7 +12,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@investopen/indicators": "workspace:*"
+    "@tickerglass/alerts": "workspace:*",
+    "@tickerglass/engine": "workspace:*",
+    "@tickerglass/indicators": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

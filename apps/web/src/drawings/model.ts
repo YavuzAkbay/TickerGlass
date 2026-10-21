@@ -5,7 +5,7 @@ import {
   type DrawingIntervalVisibility,
   type DrawingPatch,
   type Interval,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
   VISIBILITY_UNITS,
   defaultVisibility,
@@ -66,7 +66,7 @@ export function visibilityPoint(interval: string): { unit: VisibilityUnit; count
   return { unit: UNIT_TO_VIS[iv.unit], count: iv.count };
 }
 
-/** the common "Visibility on intervals" presets relative to the current interval. */
+/** "Visibility on intervals" presets relative to the current interval. */
 export function visibilityPreset(
   interval: string,
   preset: VisibilityPreset,

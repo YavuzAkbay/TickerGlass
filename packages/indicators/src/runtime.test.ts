@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defineIndicator, IndicatorRegistry } from './registry';
 import { IndicatorRuntime } from './runtime';
-import { EMA, PIVOT_POINTS, SMA, VWAP } from './builtins';
+import { CORRELATION, EMA, PIVOT_POINTS, SMA, VWAP } from './builtins';
 import { calendarPeriod, tzOffset } from './calendar';
 import { resolveOutputs } from './resolve';
 import { barAt, randomBars, slice } from './test-utils';
@@ -470,5 +470,151 @@ describe('bars context (timezone, session, interval)', () => {
     expect(out.map((o) => (o.type === 'bgcolor' || o.type === 'shape' ? o.offset : null))).toEqual([
       3, -1,
     ]);
+  });
+});
+
+describe('external symbols', () => {
+  const n = 60;
+  const chart = randomBars(n, 3, 1_700_000_000, 900);
+  const other = randomBars(n, 11, 1_700_000_000, 900);
+  const reg = () => {
+    const r = registry();
+    r.register(CORRELATION);
+    return r;
+  };
+  const make = (): IndicatorRuntime => {
+    const rt = new IndicatorRuntime({ registry: reg() });
+    rt.add({ id: 'cc', type: 'correlation', inputs: { symbol: 'GOOG', length: 5 } });
+    rt.add({
+      id: 'ov',
+      type: 'sma',
+      inputs: { length: 4, source: { instanceId: 'sym:GOOG', outputId: 'close' } },
+    });
+    rt.add({
+      id: 'cc-sma',
+      type: 'sma',
+      inputs: { length: 3, source: { instanceId: 'cc', outputId: 'cc' } },
+    });
+    return rt;
+  };
+
+  it('lists required symbols and waits with the symbol until bars cover the chart', () => {
+    const rt = make();
+    expect(rt.requiredSymbols()).toEqual(['GOOG']);
+    rt.setBars(chart);
+    for (const id of ['cc', 'ov', 'cc-sma'])
+      expect(rt.status(id)).toEqual({ state: 'waiting', timeframe: '', symbol: 'GOOG' });
+    rt.setExternal('GOOG', slice(other, 0, n - 1));
+    expect(rt.status('cc')).toEqual({ state: 'waiting', timeframe: '', symbol: 'GOOG' });
+    const ch = rt.setExternal('GOOG', other);
+    expect(ch.map((c) => c.id).sort()).toEqual(['cc', 'cc-sma', 'ov']);
+    for (const id of ['cc', 'ov', 'cc-sma']) expect(rt.status(id)).toEqual({ state: 'ok' });
+  });
+
+  it('computes from the aligned columns like the same data as chart bars', () => {
+    const rt = make();
+    rt.setBars(chart);
+    rt.setExternal('GOOG', other);
+    const ref = new IndicatorRuntime({ registry: reg() });
+    ref.add({ id: 'ov', type: 'sma', inputs: { length: 4 } });
+    ref.setBars(other);
+    expect(Array.from(rt.result('ov')!.values['ma']!.subarray(0, n))).toEqual(
+      Array.from(ref.result('ov')!.values['ma']!.subarray(0, n)),
+    );
+    // Correlation of identical series is 1.
+    const same = new IndicatorRuntime({ registry: reg() });
+    same.add({ id: 'cc', type: 'correlation', inputs: { symbol: 'X', length: 5 } });
+    same.setBars(chart);
+    same.setExternal('X', chart);
+    expect(same.result('cc')!.values['cc']![n - 1]).toBeCloseTo(1, 12);
+  });
+
+  it('gives NaN for any window containing a missing bar of either series', () => {
+    const rt = new IndicatorRuntime({ registry: reg() });
+    rt.add({ id: 'cc', type: 'correlation', inputs: { symbol: 'X', length: 5 } });
+    const gappy = slice(other, 0, n);
+    const close = Float64Array.from(gappy.close as Float64Array);
+    close[30] = NaN;
+    rt.setBars(chart);
+    rt.setExternal('X', { ...gappy, close });
+    const cc = rt.result('cc')!.values['cc']!;
+    for (let i = 0; i < n; i++) {
+      const hasGap = i >= 30 && i < 35;
+      expect(Number.isNaN(cc[i]!), `bar ${i}`).toBe(i < 4 || hasGap);
+    }
+  });
+
+  it('recomputes dependents from the first changed index on an external update', () => {
+    const rt = make();
+    rt.setBars(chart);
+    rt.setExternal('GOOG', other);
+    const edit = (from: number) => {
+      const cols = slice(other, from, n);
+      const close = Float64Array.from(cols.close as Float64Array).map((x) => x + 1);
+      return { ...cols, close };
+    };
+    const last = rt.updateExternal('GOOG', n - 1, edit(n - 1));
+    expect(last.map((c) => c.id).sort()).toEqual(['cc', 'cc-sma', 'ov']);
+    expect(last.every((c) => c.from >= n - 1)).toBe(true);
+    const past = rt.updateExternal('GOOG', 20, edit(20));
+    expect(past.every((c) => c.from === 0)).toBe(true);
+    // Equals a fresh runtime fed the final external bars.
+    const fresh = make();
+    fresh.setBars(chart);
+    const finalExt = slice(other, 0, n);
+    const close = Float64Array.from(finalExt.close as Float64Array);
+    for (let i = 20; i < n; i++) close[i]! += 1;
+    fresh.setExternal('GOOG', { ...finalExt, close });
+    expect(dump(rt)).toEqual(dump(fresh));
+    expect(() => rt.updateExternal('GOOG', n + 5, slice(other, 0, 1))).toThrow(RangeError);
+  });
+
+  it('waits again when the chart appends before the external series, then recovers', () => {
+    const rt = make();
+    rt.setBars(slice(chart, 0, n - 1));
+    rt.setExternal('GOOG', slice(other, 0, n - 1));
+    expect(rt.status('cc')).toEqual({ state: 'ok' });
+    rt.updateBar(n - 1, barAt(chart, n - 1));
+    expect(rt.status('cc')).toMatchObject({ state: 'waiting', symbol: 'GOOG' });
+    rt.updateExternal('GOOG', n - 1, slice(other, n - 1, n));
+    expect(rt.status('cc')).toEqual({ state: 'ok' });
+    const full = make();
+    full.setBars(chart);
+    full.setExternal('GOOG', other);
+    expect(dump(rt)).toEqual(dump(full));
+  });
+
+  it('accepts an external series ahead of the chart (live update before the append)', () => {
+    const rt = make();
+    rt.setBars(slice(chart, 0, n - 1));
+    rt.setExternal('GOOG', slice(other, 0, n - 1));
+    rt.updateExternal('GOOG', n - 1, slice(other, n - 1, n));
+    expect(rt.status('cc')).toEqual({ state: 'ok' });
+    rt.updateBar(n - 1, barAt(chart, n - 1));
+    const full = make();
+    full.setBars(chart);
+    full.setExternal('GOOG', other);
+    expect(dump(rt)).toEqual(dump(full));
+  });
+
+  it('drops external data with the chart data and rejects the reserved id prefix', () => {
+    const rt = make();
+    rt.setBars(chart);
+    rt.setExternal('GOOG', other);
+    rt.clearData();
+    rt.setBars(chart);
+    expect(rt.status('cc')).toMatchObject({ state: 'waiting', symbol: 'GOOG' });
+    expect(() => rt.add({ id: 'sym:GOOG', type: 'sma' })).toThrow(/reserved/);
+  });
+
+  it('keeps symbol and ref inputs off timeframe instances', () => {
+    const rt = new IndicatorRuntime({ registry: reg() });
+    expect(() =>
+      rt.add({
+        id: 'x',
+        type: 'pivot-points',
+        inputs: { source: { instanceId: 'sym:GOOG', outputId: 'close' } },
+      }),
+    ).toThrow();
   });
 });

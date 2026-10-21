@@ -29,10 +29,10 @@ function levelSpan(g: DrawingGeometry): typeof xs | null {
   return xs;
 }
 
-/** Trend-based fib extension: the move anchor 1 -> 2 projected from anchor 3 (`c + (b - a) * level`). */
+/** Fib extension: the move anchor 1 -> 2 projected from anchor 3 (`c + (b - a) * level`). */
 export const fibExtension = defineDrawingTool({
   type: 'fib-extension',
-  name: 'Trend-based fib extension',
+  name: 'Fib extension',
   group: 'fib',
   creation: { kind: 'points', count: 3 },
   defaults: FIB_EXTENSION_DEFAULTS,

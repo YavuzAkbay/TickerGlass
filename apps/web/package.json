@@ -1,5 +1,5 @@
 {
-  "name": "@investopen/web",
+  "name": "@tickerglass/web",
   "version": "0.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -18,8 +18,11 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
-    "@investopen/engine": "workspace:*",
-    "@investopen/indicators": "workspace:*",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@tickerglass/alerts": "workspace:*",
+    "@tickerglass/engine": "workspace:*",
+    "@tickerglass/indicators": "workspace:*",
+    "acorn": "^8.19.0",
     "lucide-react": "^1.55.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

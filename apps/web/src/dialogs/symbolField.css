@@ -1,0 +1,22 @@
+.sym-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.sym-field .io-input {
+  width: 100%;
+}
+
+.sym-field-list {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}

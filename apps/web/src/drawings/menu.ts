@@ -1,6 +1,8 @@
-import { getDrawingTool, type DrawingStyle } from '@investopen/engine';
+import { CHANNEL_TOOLS, LINE_TOOLS } from '@tickerglass/alerts';
+import { getDrawingTool, type DrawingStyle } from '@tickerglass/engine';
 import {
   ArrowDownToLine,
+  Bell,
   ArrowUpToLine,
   ClipboardCopy,
   Copy,
@@ -14,7 +16,9 @@ import {
   Trash2,
   Unlock,
 } from 'lucide-react';
-import { useAppStore } from '../store/app';
+import { openAlertDialog } from '../alerts/dialog/open';
+import { isBrickType } from '../alerts/dialog/sources';
+import { useChartView } from '../store/chartView';
 import { getChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import type { MenuItem } from '../ui/Menu';
@@ -125,7 +129,7 @@ export function drawingMenuItems(ids: readonly string[]): MenuItem[] {
   const locked = list.every((d) => d.locked);
   const hidden = list.every((d) => d.hidden);
   const synced = list.every((d) => d.scope === 'all');
-  const interval = useAppStore.getState().interval;
+  const interval = useChartView.getState().interval;
   const preset = currentPreset(first.visibility, interval);
   const items: MenuItem[] = [];
   if (single)
@@ -135,6 +139,16 @@ export function drawingMenuItems(ids: readonly string[]): MenuItem[] {
       disabled: !getDrawingTool(first.type),
       onSelect: () => openDrawingSettings(first.id),
     });
+  if (single && (LINE_TOOLS.includes(first.type) || CHANNEL_TOOLS.includes(first.type))) {
+    const brick = isBrickType(useChartView.getState().chartType);
+    items.push({
+      label: 'Add alert…',
+      icon: Bell,
+      disabled: brick,
+      ...(brick ? { title: 'Drawing alerts are not available on this chart type' } : {}),
+      onSelect: () => openAlertDialog({ drawingId: first.id }),
+    });
+  }
   items.push(
     { label: 'Clone', icon: Copy, shortcut: 'Alt+drag', onSelect: () => void cloneDrawings(sel) },
     {

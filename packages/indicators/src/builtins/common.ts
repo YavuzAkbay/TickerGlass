@@ -1,23 +1,23 @@
 import type { StepContext, Streaming, Ta, WeightedStreaming } from '../types';
 
-/** Default colours shared by the built-ins (reference palette). */
+/** Default colours shared by the built-ins (mirrors the engine's PALETTE). */
 export const COLOR = {
-  blue: '#2962ff',
-  orange: '#ff6d00',
-  purple: '#7e57c2',
-  red: '#b71c1c',
-  pink: '#f50057',
-  green: '#4caf50',
-  brightRed: '#ff5252',
-  yellow: '#ffeb3b',
-  level: '#787b86',
-  levelMiddle: 'rgba(120, 123, 134, 0.5)',
-  blueFill: 'rgba(33, 150, 243, 0.1)',
-  blueFillLight: 'rgba(33, 150, 243, 0.05)',
-  purpleFill: 'rgba(126, 87, 194, 0.1)',
+  blue: '#6E9BD6',
+  orange: '#E0A93B',
+  purple: '#8e5cf6',
+  red: '#DE6A4F',
+  pink: '#e8618c',
+  green: '#8bc34a',
+  brightRed: '#DE6A4F',
+  yellow: '#E0A93B',
+  level: '#A39E8F',
+  levelMiddle: 'rgba(154, 164, 178, 0.5)',
+  blueFill: 'rgba(110, 155, 214, 0.1)',
+  blueFillLight: 'rgba(110, 155, 214, 0.05)',
+  purpleFill: 'rgba(142, 92, 246, 0.1)',
 } as const;
 
-/** Moving-average choices offered by inputs (standard names). */
+/** Moving-average choices offered by inputs (conventional names). */
 export const MA_TYPES = ['SMA', 'EMA', 'SMMA (RMA)', 'WMA', 'VWMA'] as const;
 export type MaType = (typeof MA_TYPES)[number];
 
@@ -42,7 +42,7 @@ type Ohlc = Pick<StepContext, 'i' | 'high' | 'low' | 'close'>;
 
 /**
  * True range of bar `c.i`. On the first bar (no previous close) it is NaN, or
- * high - low with `handleNa` (standard `ta.tr(true)`, used by `ta.atr`).
+ * high - low with `handleNa` (used by `ta.atr`).
  */
 export function trueRange(c: Ohlc, handleNa: boolean): number {
   const h = c.high[c.i]!;
@@ -58,7 +58,7 @@ export function change(arr: Float64Array, i: number): number {
 }
 
 /**
- * standard `ta.rsi` (Wilder): rma of gains / losses seeded with their SMA. Feed
+ * Wilder RSI: rma of gains / losses seeded with their SMA. Feed
  * the bar-to-bar change of the source. Must be called in `setup`.
  */
 export function rsiOf(ta: Ta, length: number): Streaming {
@@ -73,7 +73,7 @@ export function rsiOf(ta: Ta, length: number): Streaming {
   };
 }
 
-/** standard `ta.stoch`: position of x in [lo, hi] in percent (NaN for an empty range). */
+/** Stochastic position of x in [lo, hi] in percent (NaN for an empty range). */
 export function stochValue(x: number, hi: number, lo: number): number {
   const range = hi - lo;
   return range === 0 ? NaN : (100 * (x - lo)) / range;

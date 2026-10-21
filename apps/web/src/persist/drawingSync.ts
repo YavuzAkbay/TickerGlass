@@ -6,7 +6,7 @@
  * `POST /drawings/batch`. On 409 the server copies of the conflicting ids are
  * adopted and the rest is retried.
  */
-import type { Drawing } from '@investopen/engine';
+import { resolveDrawingType, type Drawing } from '@tickerglass/engine';
 import { createAutosaver, type Autosaver } from '../api/autosave';
 import { errorMessage, isRetryable } from '../api/client';
 import * as persistence from '../api/persistence';
@@ -22,8 +22,9 @@ import {
 } from '../drawings/store';
 import { isObj, readJson, safeStorage, type SafeStorage } from './net';
 
-export const DRAWING_SYNC_KEY = 'investopen-drawings-sync';
-export const DRAWING_SCHEMA_VERSION = 1;
+export const DRAWING_SYNC_KEY = 'tickerglass-drawings-sync';
+/** 2: renamed tool ids (v1 rows still load, `resolveDrawingType` maps them and they are re-saved). */
+export const DRAWING_SCHEMA_VERSION = 2;
 
 export type DrawingApi = Pick<typeof persistence, 'getDrawings' | 'batchDrawings'>;
 
@@ -379,6 +380,7 @@ export class DrawingSync {
     const upserts: Drawing[] = [];
     const removes: string[] = [];
     const remote = new Set<string>();
+    const legacy: string[] = [];
     for (const row of rows) {
       remote.add(row.id);
       const known = this.meta.revisions[row.id];
@@ -386,18 +388,26 @@ export class DrawingSync {
         if (this.meta.pending[row.id] === 'unknown') this.meta.pending[row.id] = row.revision;
         continue;
       }
+      const stored = isObj(row.data) ? row.data.type : undefined;
+      const isLegacy = typeof stored === 'string' && resolveDrawingType(stored) !== stored;
       // Older than what this tab already saw (e.g. a batch landed after the read).
-      if (known !== undefined && row.revision <= known) continue;
+      if (known !== undefined && row.revision <= known) {
+        if (isLegacy && row.revision === known && local.has(row.id)) legacy.push(row.id);
+        continue;
+      }
       const d = sanitizeDrawing(row.data);
       if (!d) continue;
       this.meta.revisions[row.id] = row.revision;
+      if (isLegacy) legacy.push(row.id);
       const cur = local.get(row.id);
       if (!cur || !deepEqual(cur, d)) upserts.push(d);
     }
     const scope = symbol
       ? [...(state.bySymbol[symbol] ?? []), ...state.synced]
       : allDrawings(state);
-    let push = false;
+    let push = legacy.length > 0;
+    // Rows stored under an old tool id are saved back under the current one.
+    for (const id of legacy) this.markPending(id, true);
     for (const d of scope) {
       if (remote.has(d.id) || d.id in this.meta.pending) continue;
       const before = knownBefore[d.id];

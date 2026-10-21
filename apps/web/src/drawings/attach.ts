@@ -1,9 +1,26 @@
-import { getDrawingTool, type Chart } from '@investopen/engine';
-import { useHistory } from '../commands/history';
-import { useAppStore } from '../store/app';
+import {
+  ERASER_TOOL,
+  MEASURE_TOOL,
+  PICK_TOOL,
+  ZOOM_TOOL,
+  getDrawingTool,
+  type Drawing,
+  type DrawingStyle,
+} from '@tickerglass/engine';
+import { useLayoutGrid } from '../layout/store';
+import { addIndicator } from '../indicators/actions';
+import type { ChartSession } from '../chart/session';
+import { runInSession, scopedOn } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { toHideMode } from '../toolbar/commands';
-import { isCursorTool, resetToCursor } from '../toolbar/tools';
+import {
+  ANCHORED_VWAP_ID,
+  findSticker,
+  isCursorTool,
+  isToolAvailable,
+  resetToCursor,
+} from '../toolbar/tools';
+import { REPLAY_PICK_ID, SCISSORS_CURSOR } from '../replay/tool';
 import { openContextMenu } from '../ui/ContextMenu';
 import { toast } from '../ui/Toast';
 import {
@@ -17,14 +34,27 @@ import {
 } from './actions';
 import { drawingMenuItems, openDrawingSettings, openTextEditor } from './menu';
 import { toolName } from './model';
+import { keepPerDrawingStyle } from './per-drawing';
+
+export { keepPerDrawingStyle };
 import {
   drawingsFor,
   startDrawingPersistence,
-  useDrawingRuntime,
   useDrawingStore,
   useDrawingTemplates,
 } from './store';
 import { reconcileDrawings, replaceDrawings, type SyncedDrawings } from './sync';
+
+/**
+ * With drawing sync off a new drawing belongs to the chart it was made on
+ * (also a paste of another chart's drawing); with it on, to no chart.
+ */
+function bindToChart(d: Drawing, chartId: string): Drawing {
+  const want = useLayoutGrid.getState().sync.drawings ? undefined : chartId;
+  if (d.chartId === want) return d;
+  const { chartId: _old, ...rest } = d;
+  return want === undefined ? rest : { ...rest, chartId: want };
+}
 
 type UiSnapshot = ReturnType<typeof useUiStore.getState>;
 
@@ -32,10 +62,28 @@ type UiSnapshot = ReturnType<typeof useUiStore.getState>;
 const drawingsHidden = (s: UiSnapshot) =>
   s.hideAll && ['drawings', 'all'].includes(toHideMode(s.groupTools.hide));
 
-/** Engine tool for a left-toolbar tool id: a registered type, 'eraser', or null (cursors). */
-function engineTool(id: string): string | null {
-  if (getDrawingTool(id)) return id;
-  if (id === 'eraser') return id;
+/** Engine tool for a left-toolbar tool id and the preset style it is armed with. */
+export interface EngineTool {
+  type: string;
+  style?: DrawingStyle;
+  /** CSS cursor and cut preview (the replay scissors). */
+  cursor?: string;
+  cutPreview?: boolean;
+}
+
+/**
+ * Engine tool for a left-toolbar tool id: a registered type, an engine mode
+ * ('eraser', 'measure', 'zoom-in'; Anchored VWAP arms the pick-point mode), the
+ * engine `icon` tool preset with the glyph for emoji-*, sticker-* and icon-* ids,
+ * or null (cursors).
+ */
+export function engineTool(id: string): EngineTool | null {
+  if (getDrawingTool(id)) return { type: id };
+  if (id === ERASER_TOOL || id === MEASURE_TOOL || id === ZOOM_TOOL) return { type: id };
+  if (id === REPLAY_PICK_ID) return { type: PICK_TOOL, cursor: SCISSORS_CURSOR, cutPreview: true };
+  if (id === ANCHORED_VWAP_ID) return isToolAvailable(id) ? { type: PICK_TOOL } : null;
+  const sticker = findSticker(id);
+  if (sticker && getDrawingTool('icon')) return { type: 'icon', style: { glyph: sticker.glyph } };
   return null;
 }
 
@@ -44,9 +92,14 @@ function engineTool(id: string): string | null {
  * toolbar, turn engine events into undo steps, and persist the store.
  * Attach before the indicators so a pane removal folds both into one step.
  */
-export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
+export function attachDrawings(
+  session: Pick<ChartSession, 'id' | 'chart' | 'view' | 'history' | 'drawingRuntime'>,
+  host: HTMLElement,
+): () => void {
+  const { chart, drawingRuntime: runtime } = session;
+  const on = scopedOn(session);
   const persistence = startDrawingPersistence(undefined, 300, (m) => toast(m, 'error'));
-  const symbol = () => useAppStore.getState().symbol;
+  const symbol = () => session.view.getState().symbol;
   let shownSymbol: string | null = null;
   let dirty = false;
   const synced: SyncedDrawings = new Map();
@@ -58,7 +111,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
 
   const syncOnce = () => {
     const sym = symbol();
-    const wanted = drawingsFor(useDrawingStore.getState(), sym);
+    const wanted = drawingsFor(useDrawingStore.getState(), sym, session.id);
     if (sym !== shownSymbol) {
       shownSymbol = sym;
       replaceDrawings(chart, wanted, synced);
@@ -74,7 +127,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
   };
 
   const sync = () => {
-    if (useDrawingRuntime.getState().dragging) {
+    if (runtime.getState().dragging) {
       dirty = true;
       return;
     }
@@ -94,12 +147,23 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
     }
   };
 
+  // Tool + preset glyph last armed: stickers share the engine `icon` type.
+  let armed: string | null = null;
   const syncTool = () => {
     const ui = useUiStore.getState();
     const want = engineTool(ui.activeTool);
-    if (chart.getActiveTool() === want) return;
+    const key = want
+      ? `${want.type}:${String(want.style?.glyph ?? '')}:${want.cursor ? 'cut' : ''}`
+      : null;
+    if (chart.getActiveTool() === (want?.type ?? null) && key === armed) return;
     try {
-      chart.setActiveTool(want);
+      const opts = {
+        ...(want?.style ? { style: want.style } : {}),
+        ...(want?.cursor ? { cursor: want.cursor } : {}),
+        ...(want?.cutPreview ? { cutPreview: true } : {}),
+      };
+      chart.setActiveTool(want?.type ?? null, Object.keys(opts).length ? opts : undefined);
+      armed = key;
     } catch {
       toast('This tool is not available yet');
       resetToCursor();
@@ -128,7 +192,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
 
   const onPointerUp = (e: PointerEvent) => {
     if (host.contains(e.target as Node))
-      useDrawingRuntime.setState({ pointer: { x: e.clientX, y: e.clientY } });
+      runtime.setState({ pointer: { x: e.clientX, y: e.clientY } });
   };
   const onPageHide = () => persistence.flush();
   window.addEventListener('pointerup', onPointerUp, true);
@@ -140,7 +204,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
 
   const offs = [
     useDrawingStore.subscribe(sync),
-    useAppStore.subscribe((s, prev) => {
+    session.view.subscribe((s, prev) => {
       if (s.symbol !== prev.symbol) sync();
     }),
     useUiStore.subscribe(() => {
@@ -148,7 +212,7 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
       syncOptions();
     }),
 
-    chart.on('drawingCreated', ({ drawing }) => {
+    on('drawingCreated', ({ drawing }) => {
       const name = toolName(drawing.type);
       const clone = !!dragEnded?.has(drawing.id);
       const label = !clone
@@ -161,75 +225,85 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
       // the create with its final scope; the store -> engine sync then updates
       // the engine copy, so persistence (which follows the store) never sees
       // a symbol-scoped intermediate.
-      const after =
+      const synced =
         !clone &&
         !inLabelledGesture() &&
         drawing.scope === 'symbol' &&
         useUiStore.getState().syncNewDrawings
           ? { ...drawing, scope: 'all' as const }
           : drawing;
+      const after = bindToChart(synced, session.id);
       recordGesture(label, [{ before: null, after }]);
     }),
-    chart.on('drawingChanged', ({ changes }) =>
+    on('drawingChanged', ({ changes }) =>
       recordGesture(
         changes.length === 1 ? `Move ${toolName(changes[0]!.after.type)}` : 'Move drawings',
         changes as Change[],
       ),
     ),
-    chart.on('drawingsRemoved', ({ drawings }) =>
+    on('drawingsRemoved', ({ drawings }) =>
       recordGesture(
         drawings.length === 1 ? `Remove ${toolName(drawings[0]!.type)}` : 'Remove drawings',
         drawings.map((d) => ({ before: d, after: null })),
       ),
     ),
-    chart.on('selectionChanged', ({ ids }) => {
-      const textEdit = useDrawingRuntime.getState().textEdit;
-      useDrawingRuntime.setState({
+    on('selectionChanged', ({ ids }) => {
+      const textEdit = runtime.getState().textEdit;
+      runtime.setState({
         selection: ids,
         ...(textEdit && !ids.includes(textEdit.id) ? { textEdit: null } : {}),
       });
     }),
-    chart.on('drawingDrag', ({ ids, phase }) => {
-      useDrawingRuntime.setState({ dragging: phase === 'start' });
+    on('drawingDrag', ({ ids, phase }) => {
+      runtime.setState({ dragging: phase === 'start' });
       if (phase === 'end') {
         dragEnded = new Set(ids);
         queueMicrotask(() => (dragEnded = null));
         if (dirty) sync();
       }
     }),
-    chart.on('drawingContextMenu', (e) =>
+    on('drawingContextMenu', (e) =>
       openContextMenu(e.clientX, e.clientY, drawingMenuItems(chart.getSelection())),
     ),
-    chart.on('drawingDoubleClick', (e) => {
+    on('drawingDoubleClick', (e) => {
       const d = chart.getDrawing(e.id);
       const def = d && getDrawingTool(d.type);
       if (def?.text && (e.part.kind === 'text' || def.group === 'annotation'))
         openTextEditor(e.id, e.clientX, e.clientY, false);
       else openDrawingSettings(e.id);
     }),
-    chart.on('toolFinished', ({ type, drawingId, active }) => {
+    on('toolFinished', ({ type, drawingId, active }) => {
       if (drawingId) {
         // The user's saved default style applies to drawings made with the tool.
         const style = useDrawingTemplates.getState().defaults[type];
-        if (style) amendGesture(drawingId, { style });
         const def = getDrawingTool(type);
         const d = chart.getDrawing(drawingId);
-        const at = useDrawingRuntime.getState().pointer;
+        // A saved icon default must not replace the sticker that was just placed,
+        // nor a saved path-sketch default the random seed of this drawing.
+        if (style) amendGesture(drawingId, { style: keepPerDrawingStyle(type, style, d?.style) });
+        const at = runtime.getState().pointer;
         if (def?.text && def.group === 'annotation' && d && !d.text && at)
           openTextEditor(drawingId, at.x, at.y, true);
       }
       if (!active && !isCursorTool(useUiStore.getState().activeTool)) resetToCursor();
     }),
-    chart.on('paneRemoved', ({ paneId }) => {
+    on('pointPicked', ({ time }) => {
+      // Anchored VWAP entry: the clicked bar is the anchor.
+      if (useUiStore.getState().activeTool === ANCHORED_VWAP_ID)
+        addIndicator(ANCHORED_VWAP_ID, { inputs: { anchor: time } });
+    }),
+    on('paneRemoved', ({ paneId }) => {
       // An undo/redo removed the pane: its entry restores everything itself.
-      if (useHistory.getState().applying) return;
+      if (session.history.getState().applying) return;
       // The indicator controller pushes its own step for the pane's studies
       // in this same dispatch; fold it and the drawings into one step.
       const mark = historyMark();
-      queueMicrotask(() => {
-        removePaneDrawings(paneId);
-        foldHistorySince(mark, 'Remove pane');
-      });
+      queueMicrotask(() =>
+        runInSession(session.id, () => {
+          removePaneDrawings(paneId);
+          foldHistorySince(mark, 'Remove pane');
+        }),
+      );
     }),
   ];
 
@@ -239,6 +313,6 @@ export function attachDrawings(chart: Chart, host: HTMLElement): () => void {
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onPageHide);
     persistence.stop();
-    useDrawingRuntime.setState({ selection: [], dragging: false, textEdit: null });
+    runtime.setState({ selection: [], dragging: false, textEdit: null });
   };
 }

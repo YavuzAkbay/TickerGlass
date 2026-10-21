@@ -4,8 +4,8 @@ import { trueRange } from './common';
 const nz = (x: number) => (Number.isNaN(x) ? 0 : x);
 
 /**
- * Supertrend (standard `ta.supertrend` on hl2 with `ta.atr`). The first bar is
- * hidden like the common built-in; the line is split into up/down plots.
+ * Supertrend (on hl2 with ATR). The first bar is
+ * hidden (no prior bar to trail); the line is split into up/down plots.
  */
 export const SUPERTREND = defineIndicator({
   id: 'supertrend',
@@ -19,14 +19,14 @@ export const SUPERTREND = defineIndicator({
     factor: { kind: 'float', label: 'Factor', default: 3, min: 0.01, step: 0.01 },
   },
   outputs: [
-    { type: 'plot', id: 'up', title: 'Up Trend', kind: 'line', color: '#4caf50' },
-    { type: 'plot', id: 'down', title: 'Down Trend', kind: 'line', color: '#ff5252' },
+    { type: 'plot', id: 'up', title: 'Up Trend', kind: 'line', color: '#8bc34a' },
+    { type: 'plot', id: 'down', title: 'Down Trend', kind: 'line', color: '#DE6A4F' },
     {
       type: 'plot',
       id: 'middle',
       title: 'Body Middle',
       kind: 'line',
-      color: '#787b86',
+      color: '#A39E8F',
       visible: false,
       showLastValue: false,
     },
@@ -35,14 +35,14 @@ export const SUPERTREND = defineIndicator({
       id: 'upFill',
       title: 'Uptrend Highlighter',
       between: ['middle', 'up'],
-      color: 'rgba(76, 175, 80, 0.1)',
+      color: 'rgba(139, 195, 74, 0.1)',
     },
     {
       type: 'fill',
       id: 'downFill',
       title: 'Downtrend Highlighter',
       between: ['middle', 'down'],
-      color: 'rgba(255, 82, 82, 0.1)',
+      color: 'rgba(222, 106, 79, 0.1)',
     },
   ],
   setup({ inputs, ta }) {

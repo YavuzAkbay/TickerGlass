@@ -1,0 +1,58 @@
+{
+  "name": "AAPL crossing 190",
+  "symbol": "AAPL",
+  "interval": "1D",
+  "prepost": false,
+  "spec": {
+    "schemaVersion": 1,
+    "left": {
+      "kind": "indicator",
+      "ref": {
+        "instances": [
+          {
+            "id": "a",
+            "type": "sma",
+            "inputs": {
+              "length": 20,
+              "source": "close"
+            }
+          },
+          {
+            "id": "b",
+            "type": "ema",
+            "inputs": {
+              "length": 9,
+              "source": {
+                "instanceId": "a",
+                "outputId": "ma"
+              }
+            }
+          }
+        ],
+        "instanceId": "b",
+        "outputId": "ema",
+        "title": "EMA 9 of SMA 20"
+      }
+    },
+    "condition": {
+      "op": "less",
+      "right": {
+        "kind": "price",
+        "field": "hl2"
+      }
+    },
+    "trigger": "everyTime"
+  },
+  "message": "",
+  "notify": {
+    "toast": true,
+    "sound": true,
+    "browser": false,
+    "webhook": false,
+    "webhookUrl": null,
+    "webhookRaw": false,
+    "telegram": false,
+    "email": false
+  },
+  "expiresAt": null
+}

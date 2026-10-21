@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Bar } from '../types';
-import { FeedError, HttpDataFeed, type LiveStatus } from './http-feed';
+import { FeedError, HttpDataFeed, parseRetryAfter, type LiveStatus } from './http-feed';
 import { parseInterval } from './intervals';
 
 const z = (iso: string): number => Date.parse(iso) / 1000;
@@ -129,6 +129,33 @@ describe('HttpDataFeed HTTP', () => {
     const p = feed.getBars({ symbol: 'NOPE', interval: parseInterval('1D'), limit: 10 });
     await expect(p).rejects.toBeInstanceOf(FeedError);
     await expect(p).rejects.toMatchObject({ status: 404, message: 'symbol not found: NOPE' });
+  });
+
+  it('parses Retry-After seconds into FeedError.retryAfter', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ detail: 'slow down' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '7' },
+        }),
+    );
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    await expect(
+      feed.getBars({ symbol: 'A', interval: parseInterval('1D'), limit: 1 }),
+    ).rejects.toMatchObject({ status: 429, retryAfter: 7 });
+  });
+
+  it('leaves retryAfter unset without a usable header', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ detail: 'x' }, 503));
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    const err = await feed
+      .getBars({ symbol: 'A', interval: parseInterval('1D'), limit: 1 })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FeedError);
+    expect((err as FeedError).retryAfter).toBeUndefined();
+    expect(parseRetryAfter('soon')).toBeUndefined();
+    expect(parseRetryAfter(null)).toBeUndefined();
+    expect(parseRetryAfter('Thu, 01 Jan 1970 00:00:10 GMT', 0)).toBe(10);
   });
 
   it('joins FastAPI validation details', async () => {
@@ -261,6 +288,29 @@ describe('HttpDataFeed live', () => {
     expect(ws.sent.at(-1)).toEqual({ op: 'ping' });
     vi.advanceTimersByTime(25_000);
     expect(ws.sent.filter((m) => (m as { op: string }).op === 'ping')).toHaveLength(2);
+    feed.dispose();
+  });
+
+  it('never sends symbols the server would reject (one bad symbol rejects the frame)', () => {
+    const feed = makeFeed();
+    const i1 = parseInterval('1m');
+    feed.subscribe({ symbol: 'M&M.NS', interval: i1, ...NY }, null, () => {});
+    feed.subscribe({ symbol: 'AAPL', interval: i1, ...NY }, null, () => {});
+    feed.subscribe({ symbol: 'BRK/B', interval: i1, ...NY }, null, () => {});
+    feed.subscribe({ symbol: '^GSPC', interval: i1, ...NY }, null, () => {});
+    const ws = FakeWebSocket.last();
+    ws.open();
+    expect(ws.sent).toEqual([{ op: 'subscribe', symbols: ['AAPL', '^GSPC'] }]);
+    // Live subscribe after open and the final unsubscribe skip them too.
+    const u = feed.subscribe({ symbol: 'A&B', interval: i1, ...NY }, null, () => {});
+    u();
+    expect(ws.sent).toHaveLength(1);
+    // Reconnect re-subscribes only valid symbols.
+    ws.drop();
+    vi.advanceTimersByTime(500);
+    const ws2 = FakeWebSocket.last();
+    ws2.open();
+    expect(ws2.sent).toEqual([{ op: 'subscribe', symbols: ['AAPL', '^GSPC'] }]);
     feed.dispose();
   });
 

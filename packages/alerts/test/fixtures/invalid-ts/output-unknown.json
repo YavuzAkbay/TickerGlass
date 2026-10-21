@@ -1,0 +1,44 @@
+{
+  "name": "AAPL crossing 190",
+  "symbol": "AAPL",
+  "interval": "1D",
+  "prepost": false,
+  "spec": {
+    "schemaVersion": 1,
+    "left": {
+      "kind": "indicator",
+      "ref": {
+        "instances": [
+          {
+            "id": "r",
+            "type": "rsi",
+            "inputs": {}
+          }
+        ],
+        "instanceId": "r",
+        "outputId": "nope",
+        "title": "RSI"
+      }
+    },
+    "condition": {
+      "op": "crossing",
+      "right": {
+        "kind": "value",
+        "value": 190
+      }
+    },
+    "trigger": "oncePerBar"
+  },
+  "message": "",
+  "notify": {
+    "toast": true,
+    "sound": true,
+    "browser": false,
+    "webhook": false,
+    "webhookUrl": null,
+    "webhookRaw": false,
+    "telegram": false,
+    "email": false
+  },
+  "expiresAt": null
+}

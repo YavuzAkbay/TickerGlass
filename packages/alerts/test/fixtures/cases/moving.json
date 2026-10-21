@@ -1,0 +1,432 @@
+{
+  "area": "moving",
+  "note": "ref = the left operand at the close of bar i - N; the service sends null when i - N < 0.",
+  "cases": [
+    {
+      "name": "closes 100, 102, forming tick 105, N = 2, 5 % -> true",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUpPercent",
+          "amount": 5,
+          "bars": 2
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "close",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 100,
+            "ref": null,
+            "open": 100,
+            "high": 100,
+            "low": 100,
+            "close": 100,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "close",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 102,
+            "ref": null,
+            "open": 102,
+            "high": 102,
+            "low": 102,
+            "close": 102,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 105,
+            "ref": 100,
+            "open": 105,
+            "high": 105,
+            "low": 105,
+            "close": 105,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [2]
+    },
+    {
+      "name": "forming tick 104.99 -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUpPercent",
+          "amount": 5,
+          "bars": 2
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "close",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 100,
+            "ref": null,
+            "open": 100,
+            "high": 100,
+            "low": 100,
+            "close": 100,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "close",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 102,
+            "ref": null,
+            "open": 102,
+            "high": 102,
+            "low": 102,
+            "close": 102,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 2,
+          "barTime": 120,
+          "now": 120000,
+          "values": {
+            "x": 104.99,
+            "ref": 100,
+            "open": 104.99,
+            "high": 104.99,
+            "low": 104.99,
+            "close": 104.99,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "ref 0 -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUpPercent",
+          "amount": 5,
+          "bars": 2
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 105,
+            "ref": 0,
+            "open": 105,
+            "high": 105,
+            "low": 105,
+            "close": 105,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "i - N < 0 (no ref) -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUpPercent",
+          "amount": 5,
+          "bars": 2
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 1000,
+            "ref": null,
+            "open": 1000,
+            "high": 1000,
+            "low": 1000,
+            "close": 1000,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    },
+    {
+      "name": "movingDownPercent 100 -> 95 at 5 % -> true; 95.01 -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingDownPercent",
+          "amount": 5,
+          "bars": 1
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 95,
+            "ref": 100,
+            "open": 95,
+            "high": 95,
+            "low": 95,
+            "close": 95,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 95.01,
+            "ref": 100,
+            "open": 95.01,
+            "high": 95.01,
+            "low": 95.01,
+            "close": 95.01,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "movingUpPercent on a negative ref uses abs(ref)",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUpPercent",
+          "amount": 5,
+          "bars": 1
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": -95,
+            "ref": -100,
+            "open": -95,
+            "high": -95,
+            "low": -95,
+            "close": -95,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": -105,
+            "ref": -100,
+            "open": -105,
+            "high": -105,
+            "low": -105,
+            "close": -105,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "movingUp 5: 105 vs ref 100 -> true, 104.99 -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUp",
+          "amount": 5,
+          "bars": 3
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 105,
+            "ref": 100,
+            "open": 105,
+            "high": 105,
+            "low": 105,
+            "close": 105,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 104.99,
+            "ref": 100,
+            "open": 104.99,
+            "high": 104.99,
+            "low": 104.99,
+            "close": 104.99,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "movingDown 5: 95 vs ref 100 -> true, 96 -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingDown",
+          "amount": 5,
+          "bars": 3
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": 95,
+            "ref": 100,
+            "open": 95,
+            "high": 95,
+            "low": 95,
+            "close": 95,
+            "volume": 0
+          }
+        },
+        {
+          "kind": "tick",
+          "barIndex": 1,
+          "barTime": 60,
+          "now": 60000,
+          "values": {
+            "x": 96,
+            "ref": 100,
+            "open": 96,
+            "high": 96,
+            "low": 96,
+            "close": 96,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": [0]
+    },
+    {
+      "name": "movingUp with an invalid x -> false",
+      "spec": {
+        "schemaVersion": 1,
+        "left": {
+          "kind": "price",
+          "field": "close"
+        },
+        "condition": {
+          "op": "movingUp",
+          "amount": 1,
+          "bars": 1
+        },
+        "trigger": "everyTime"
+      },
+      "samples": [
+        {
+          "kind": "tick",
+          "barIndex": 0,
+          "barTime": 0,
+          "now": 0,
+          "values": {
+            "x": null,
+            "ref": 100,
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 0,
+            "volume": 0
+          }
+        }
+      ],
+      "expect": []
+    }
+  ]
+}

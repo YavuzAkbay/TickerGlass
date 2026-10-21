@@ -3,7 +3,22 @@ services:
     build: ./api
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/investopen.db}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/tickerglass.db}
+      # Alert notifications (docs/alerts.md section 4.1); all optional, empty = unset.
+      ALERTS_WEBHOOK_URL: ${ALERTS_WEBHOOK_URL:-}
+      ALERTS_WEBHOOK_SECRET: ${ALERTS_WEBHOOK_SECRET:-}
+      ALERTS_WEBHOOK_ALLOW_PRIVATE: ${ALERTS_WEBHOOK_ALLOW_PRIVATE:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TO: ${SMTP_TO:-}
+      SMTP_TLS: ${SMTP_TLS:-starttls}
+      ALERTS_LOG_MAX: ${ALERTS_LOG_MAX:-5000}
+      ALERTS_INTERNAL_TOKEN: ${ALERTS_INTERNAL_TOKEN:-}
     volumes:
       - api-data:/data
     ports:
@@ -43,6 +58,14 @@ services:
         condition: service_healthy
     environment:
       API_URL: http://api:8000
+      ALERTS_INTERNAL_TOKEN: ${ALERTS_INTERNAL_TOKEN:-}
+      ALERTS_POLL_MS: ${ALERTS_POLL_MS:-30000}
+      ALERTS_CLOSE_GRACE_S: ${ALERTS_CLOSE_GRACE_S:-60}
+      ALERTS_MIN_REFIRE_S: ${ALERTS_MIN_REFIRE_S:-60}
+      ALERTS_STATE_FLUSH_MS: ${ALERTS_STATE_FLUSH_MS:-5000}
+      ALERTS_MAX_BARS: ${ALERTS_MAX_BARS:-5000}
+      ALERTS_MAX_DRAWING_BARS: ${ALERTS_MAX_DRAWING_BARS:-20000}
+      ALERTS_LOG_LEVEL: ${ALERTS_LOG_LEVEL:-info}
 
   # Optional: `docker compose --profile postgres up` and set DATABASE_URL in .env.
   postgres:
@@ -50,8 +73,8 @@ services:
     profiles: [postgres]
     restart: unless-stopped
     environment:
-      POSTGRES_USER: investopen
-      POSTGRES_DB: investopen
+      POSTGRES_USER: tickerglass
+      POSTGRES_DB: tickerglass
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       - pg-data:/var/lib/postgresql/data

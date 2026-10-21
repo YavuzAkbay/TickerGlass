@@ -24,6 +24,8 @@ const DIALOGS: Record<DialogId, DialogComponent | RetryableLazy<DialogComponent>
   shortcuts: retryableLazy(() => import('./ShortcutsDialog')),
   loadLayout: retryableLazy(() => import('./LoadLayoutDialog')),
   dataTransfer: retryableLazy(() => import('./DataTransferDialog')),
+  alert: retryableLazy(() => import('./AlertDialog')),
+  scriptEditor: retryableLazy(() => import('./ScriptEditorDialog')),
 };
 
 /** What renders for each dialog now (a lazy one is replaced after a failed load). */
@@ -53,7 +55,7 @@ export function reportDialogError(id: DialogId, arg: unknown, error: Error): voi
   );
 }
 
-/** Renders the single open dialog (one at a time, like reference). */
+/** Renders the single open dialog (one at a time). */
 export function DialogHost() {
   const dialog = useUiStore((s) => s.dialog);
   const arg = useUiStore((s) => s.dialogArg);

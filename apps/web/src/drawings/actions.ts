@@ -3,14 +3,14 @@
 // dialogs, object tree) call the functions below. The store is the source of
 // truth: ./attach reconciles the engine with it after every change, so undo
 // and redo only touch the store (docs/drawings.md §5).
-import type { Drawing, DrawingPatch, DrawingStyle } from '@investopen/engine';
+import type { Drawing, DrawingPatch, DrawingStyle } from '@tickerglass/engine';
 import { useHistory, type UndoEntry } from '../commands/history';
 import { useIndicatorStore } from '../indicators/store';
-import { useAppStore } from '../store/app';
-import { getChart } from '../store/chart';
+import { useChartView } from '../store/chartView';
+import { getActiveSession, getChart } from '../store/chart';
 import { toast } from '../ui/Toast';
 import { deepEqual, patchDrawing, toolName } from './model';
-import { drawingsFor, findStoredDrawing, useDrawingRuntime, useDrawingStore } from './store';
+import { drawingsFor, findStoredDrawing, useDrawingClipboard, useDrawingStore } from './store';
 
 /** One drawing before/after an action; null = absent (created / removed). */
 export interface Change {
@@ -21,9 +21,9 @@ export interface Change {
 const store = () => useDrawingStore.getState();
 const idOf = (c: Change) => (c.after ?? c.before)!.id;
 
-/** Drawings of the current chart (current symbol + synced). */
+/** Drawings of the current chart (current symbol + synced, minus those bound to other charts). */
 export function currentDrawings(): Drawing[] {
-  return drawingsFor(store(), useAppStore.getState().symbol);
+  return drawingsFor(store(), useChartView.getState().symbol, getActiveSession()?.id ?? '');
 }
 
 export function findDrawing(id: string): Drawing | undefined {
@@ -288,7 +288,7 @@ export function toggleHidden(ids: readonly string[]): void {
 
 /** Patch moving `d` to `scope`: a per-symbol drawing without a symbol takes the current one. */
 export function scopePatch(d: Drawing, scope: Drawing['scope']): Pick<Drawing, 'scope' | 'symbol'> {
-  const symbol = useAppStore.getState().symbol;
+  const symbol = useChartView.getState().symbol;
   return { scope, symbol: scope === 'symbol' && !d.symbol ? symbol : d.symbol };
 }
 
@@ -397,7 +397,7 @@ export function copyDrawings(ids: readonly string[]): boolean {
   if (!list.length || !chart) return false;
   const json = chart.copyDrawings(list.map((d) => d.id));
   pastes = { json, count: 0 };
-  useDrawingRuntime.setState({ clipboard: json });
+  useDrawingClipboard.setState({ clipboard: json });
   return true;
 }
 
@@ -423,7 +423,7 @@ function insertCopies(json: string, label: string, offset: number): string[] {
 
 /** Paste the app clipboard (Ctrl+V), one bar right of the previous paste (n bars for the nth). */
 export function pasteDrawings(): string[] {
-  const json = useDrawingRuntime.getState().clipboard;
+  const json = useDrawingClipboard.getState().clipboard;
   if (!json) return [];
   pastes = pastes.json === json ? { json, count: pastes.count + 1 } : { json, count: 1 };
   return insertCopies(json, 'Paste drawings', pastes.count);

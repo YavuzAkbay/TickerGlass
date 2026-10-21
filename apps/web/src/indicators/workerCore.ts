@@ -1,4 +1,4 @@
-import { IndicatorRuntime, type Change, type IndicatorRegistry } from '@investopen/indicators';
+import { IndicatorRuntime, type Change, type IndicatorRegistry } from '@tickerglass/indicators/core';
 import type { FromWorker, ResultChange, ToWorker } from './protocol';
 
 export type Post = (msg: FromWorker, transfer: Transferable[]) => void;
@@ -15,6 +15,10 @@ export class WorkerCore {
   /** `bars` messages handled (echoed in resync). */
   private barsSeen = 0;
   private tfMap: Record<string, string> = {};
+  /** Profiling on (see the `profile` message). */
+  private profile = false;
+  /** Start of the message being handled (profiling only). */
+  private started = 0;
 
   constructor(
     private readonly post: Post,
@@ -30,7 +34,16 @@ export class WorkerCore {
   /** Never throws: unexpected failures are posted as a fatal (id-less) error. */
   handle(msg: ToWorker): void {
     try {
+      if (!this.profile) {
+        this.dispatch(msg);
+        return;
+      }
+      this.started = performance.now();
       this.dispatch(msg);
+      performance.measure(`tickerglass:indicators ${msg.type}`, {
+        start: this.started,
+        end: performance.now(),
+      });
     } catch (err) {
       this.post({ type: 'error', message: `Indicator worker: ${message(err)}` }, []);
     }
@@ -97,8 +110,20 @@ export class WorkerCore {
       case 'tfBar':
         this.emit(this.runtime.updateTimeframeBar(msg.tf, msg.bar));
         return;
+      case 'extBars':
+        // Aligned to another series of displayed bars (a reset follows with new ones).
+        if (msg.revision !== this.revision) return;
+        this.emit(this.runtime.setExternal(msg.symbol, msg.bars));
+        return;
+      case 'extUpdate':
+        if (msg.revision !== this.revision) return;
+        this.emit(this.runtime.updateExternal(msg.symbol, msg.from, msg.bars));
+        return;
       case 'clear':
         this.emit(this.runtime.clearData());
+        return;
+      case 'profile':
+        this.profile = msg.on;
         return;
     }
   }
@@ -117,12 +142,15 @@ export class WorkerCore {
 
   private emitTimeframes(): void {
     this.post({ type: 'timeframes', timeframes: this.runtime.requiredTimeframes() }, []);
+    this.post({ type: 'symbols', symbols: this.runtime.requiredSymbols() }, []);
   }
 
   /** Copy the changed tails out of the runtime (its arrays are reused) and transfer them. */
   private emit(changes: Change[]): void {
     if (!changes.length) return;
     const length = this.runtime.length;
+    // Compute time only: copying the results out is not the runtime's.
+    const ms = this.profile ? performance.now() - this.started : undefined;
     const transfer: Transferable[] = [];
     const out: ResultChange[] = [];
     for (const ch of changes) {
@@ -145,7 +173,16 @@ export class WorkerCore {
       out.push({ id: ch.id, from, status: res.status, values, colors });
     }
     if (out.length)
-      this.post({ type: 'results', revision: this.revision, length, changes: out }, transfer);
+      this.post(
+        {
+          type: 'results',
+          revision: this.revision,
+          length,
+          changes: out,
+          ...(ms !== undefined ? { ms } : {}),
+        },
+        transfer,
+      );
   }
 }
 

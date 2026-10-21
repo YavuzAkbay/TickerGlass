@@ -3,10 +3,12 @@
 // (computation), fetches higher-timeframe series and routes results.
 import {
   intervalSeconds,
+  isExpressionSymbol,
   parseInterval,
   type Bar,
   type BarColumns,
   type ChartEvents,
+  type ChartType,
   type DataFeed,
   type SeriesChange,
   type SeriesStore,
@@ -15,14 +17,20 @@ import {
   type StudyTarget,
   type SymbolInfo,
   type Unsubscribe,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
+  externalSymbols,
   getIndicator,
+  isUserScriptType,
+  resolveIndicatorId,
   resolveOutputs,
+  coerceInputs,
+  usesEvents,
   type AnyIndicatorDefinition,
+  type BarsEvents,
   type InstanceStatus,
   type RuntimeContext,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import {
   sourceRefOf,
   studyTitle,
@@ -30,8 +38,13 @@ import {
   visibleOnInterval,
   type IndicatorState,
 } from './model';
+import { BRICK_MESSAGE, ExternalSymbols } from './external';
+import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './sandbox/limits';
+import { userScriptProblem } from '../scripts/definitions';
+import type { EventsResponse } from '../events/api';
 import type { FromWorker, ToWorker } from './protocol';
-import { useIndicatorRuntime } from './store';
+import type { StoreApi } from 'zustand/vanilla';
+import type { IndicatorRuntimeState } from './store';
 
 /** What the controller needs from the engine chart (Chart implements it). */
 export interface ChartHost extends StudyApi {
@@ -73,6 +86,8 @@ export function createIndicatorWorker(): WorkerPort {
 export interface ControllerOptions {
   chart: ChartHost;
   feed: DataFeed;
+  /** The chart's live per-instance state (statuses, panes) the legends read. */
+  runtime: StoreApi<IndicatorRuntimeState>;
   worker: WorkerPort;
   /** Coalesces live bars (requestAnimationFrame in the app). */
   schedule?: (fn: () => void) => void;
@@ -82,6 +97,19 @@ export interface ControllerOptions {
   onStudiesLost?: (ids: string[]) => void;
   /** Extended hours for timeframe requests. */
   prepost?: () => boolean;
+  /** Chart type the app shows (external symbols are unavailable on brick types). Default: candles. */
+  chartType?: () => ChartType;
+  /** Bumps whenever fetched data must be refetched (replay start/seek/stop). Default: constant. */
+  dataEpoch?: () => number;
+  /**
+   * The symbol's dividends, splits and earnings, for indicators that reset at
+   * events (VWAP anchors). Default: none (such indicators get no events).
+   */
+  loadEvents?: (symbol: string) => Promise<EventsResponse>;
+  /** Profile the worker (`?perf=1`): performance measures and compute times. Default: off. */
+  profile?: boolean;
+  /** While profiling: ms the worker spent computing each batch of results. */
+  onComputeTime?: (ms: number) => void;
 }
 
 interface Applied {
@@ -98,21 +126,45 @@ interface TfSeries {
   loaded: boolean;
   /** First bar time (meaningful once loaded). */
   first: number;
-  /** No older history available (or the request cap was hit). */
+  /** No older history available. */
   complete: boolean;
+  /** The bars sent to the worker, kept current with live bars (resent after a page). */
+  bars: BarColumns | null;
+  /** An older page is in flight. */
+  busy: boolean;
+  /** Older pages fetched since the chart's series last reset. */
+  pages: number;
   unsub: Unsubscribe | null;
 }
 
 /** Bars of warm-up requested before the chart's first bar for timeframe series. */
 const TF_WARMUP = 300;
+/** Bars per timeframe request (the first one and each older page). */
 const TF_MAX_BARS = 5000;
+/** Older pages per timeframe series and chart reset (bounds requests when history is long). */
+const TF_MAX_PAGES = 10;
 /** Consecutive resyncs of one series revision before the worker is given up on. */
 const MAX_RESYNCS = 3;
 
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/**
+ * Event times by kind from an events response. Times past the last bar never
+ * reset anything (resets happen at bars), so during replay future events have
+ * no effect without being clipped here.
+ */
+export function eventTimesOf(res: EventsResponse): BarsEvents {
+  const times = (list: readonly { t: number }[] | undefined) =>
+    (list ?? []).map((e) => e.t).filter((t) => typeof t === 'number' && Number.isFinite(t));
+  return {
+    dividends: times(res.dividends),
+    splits: times(res.splits),
+    earnings: times(res.earnings),
+  };
+}
+
 /** Interval in seconds, 0 when the string does not parse. */
-function secondsOf(interval: string): number {
+export function secondsOf(interval: string): number {
   try {
     return intervalSeconds(parseInterval(interval));
   } catch {
@@ -121,15 +173,59 @@ function secondsOf(interval: string): number {
   }
 }
 
-function copyColumns(src: ChartHost['store'] | BarColumns, n: number): BarColumns {
+/** Copies of bars `[from, n)` of the columns (the script editor's Check uses the latest ones). */
+export function copyColumns(src: ChartHost['store'] | BarColumns, n: number, from = 0): BarColumns {
   return {
-    time: src.time.slice(0, n),
-    open: src.open.slice(0, n),
-    high: src.high.slice(0, n),
-    low: src.low.slice(0, n),
-    close: src.close.slice(0, n),
-    volume: src.volume.slice(0, n),
+    time: src.time.slice(from, n),
+    open: src.open.slice(from, n),
+    high: src.high.slice(from, n),
+    low: src.low.slice(from, n),
+    close: src.close.slice(from, n),
+    volume: src.volume.slice(from, n),
   };
+}
+
+/** Bars `[0, n)` of `older` followed by all of `newer`. */
+function concatColumns(older: BarColumns, n: number, newer: BarColumns): BarColumns {
+  const join = (a: Float64Array, b: Float64Array) => {
+    const out = new Float64Array(n + b.length);
+    out.set(a.subarray(0, n));
+    out.set(b, n);
+    return out;
+  };
+  return {
+    time: join(older.time, newer.time),
+    open: join(older.open, newer.open),
+    high: join(older.high, newer.high),
+    low: join(older.low, newer.low),
+    close: join(older.close, newer.close),
+    volume: join(older.volume, newer.volume),
+  };
+}
+
+/** The columns with a live bar applied: same time as the last = update, later = append. */
+export function upsertBar(cols: BarColumns, bar: Bar): BarColumns {
+  const n = cols.time.length;
+  const lastTime = n ? cols.time[n - 1]! : -Infinity;
+  if (bar.time < lastTime) return cols;
+  const out =
+    bar.time === lastTime
+      ? cols
+      : concatColumns(cols, n, {
+          time: Float64Array.of(bar.time),
+          open: new Float64Array(1),
+          high: new Float64Array(1),
+          low: new Float64Array(1),
+          close: new Float64Array(1),
+          volume: new Float64Array(1),
+        });
+  const i = out.time.length - 1;
+  out.open[i] = bar.open;
+  out.high[i] = bar.high;
+  out.low[i] = bar.low;
+  out.close[i] = bar.close;
+  out.volume[i] = bar.volume;
+  return out;
 }
 
 const buffers = (c: BarColumns): Transferable[] => [
@@ -149,6 +245,11 @@ export class IndicatorController {
   private readonly onError: (message: string) => void;
   private list: readonly IndicatorState[] = [];
   private readonly applied = new Map<string, Applied>();
+  /**
+   * Applied script instances whose definition went away (script deleted or
+   * broken): the router stopped their sandbox, so they hold no cap slot.
+   */
+  private readonly stalled = new Set<string>();
   private hidden = false;
   private sentRevision = -1;
   private symbol: string | null = null;
@@ -160,6 +261,10 @@ export class IndicatorController {
   private deferContext = false;
   private required: string[] = [];
   private readonly tfSeries = new Map<string, TfSeries>();
+  private readonly external: ExternalSymbols;
+  private dataEpoch = 0;
+  /** External symbols that failed to load, with the message. */
+  private readonly symbolProblems = new Map<string, string>();
   private pending = new Map<number, Bar>();
   private flushQueued = false;
   private offs: (() => void)[] = [];
@@ -170,6 +275,12 @@ export class IndicatorController {
   private resyncs = 0;
   /** A fatal worker error was reported: no more resyncs, no repeated toasts. */
   private failed = false;
+  /** Symbol whose events are loaded or loading (null: none requested). */
+  private eventsSymbol: string | null = null;
+  /** Its events once loaded (sent with the context). */
+  private events: BarsEvents | null = null;
+  /** Bumped per events request; stale responses are dropped. */
+  private eventsToken = 0;
 
   constructor(private readonly opts: ControllerOptions) {
     this.chart = opts.chart;
@@ -177,7 +288,18 @@ export class IndicatorController {
     this.worker = opts.worker;
     this.schedule = opts.schedule ?? ((fn) => queueMicrotask(fn));
     this.onError = opts.onError ?? ((m) => console.error(m));
+    this.external = new ExternalSymbols({
+      chart: this.chart,
+      feed: this.feed,
+      post: (msg, transfer) => this.worker.post(msg, transfer),
+      schedule: this.schedule,
+      chartType: opts.chartType ?? (() => 'candles'),
+      prepost: () => this.opts.prepost?.() ?? false,
+      dataEpoch: () => this.opts.dataEpoch?.() ?? 0,
+      onProblem: (symbol, message) => this.onSymbolProblem(symbol, message),
+    });
     this.worker.listen((msg) => this.onMessage(msg));
+    if (opts.profile) this.worker.post({ type: 'profile', on: true });
     this.offs.push(
       this.chart.on('seriesChange', (c) => this.onSeriesChange(c)),
       this.chart.on('paneRemoved', () => this.onPaneRemoved()),
@@ -185,7 +307,10 @@ export class IndicatorController {
     );
     this.interval = this.chart.getInterval();
     this.sendContext();
-    if (this.chart.store.length) this.sendBars(this.chart.seriesRevision);
+    if (this.chart.store.length) {
+      this.sendBars(this.chart.seriesRevision);
+      this.external.reset(this.chart.seriesRevision);
+    }
   }
 
   destroy(): void {
@@ -194,8 +319,9 @@ export class IndicatorController {
     this.offs = [];
     for (const s of this.tfSeries.values()) s.unsub?.();
     this.tfSeries.clear();
+    this.external.destroy();
     this.worker.terminate();
-    useIndicatorRuntime.setState({ status: {}, panes: {} });
+    this.opts.runtime.setState({ status: {}, panes: {} });
   }
 
   /** Global "hide indicators" (left toolbar hide button). */
@@ -206,25 +332,68 @@ export class IndicatorController {
   }
 
   /** Mirror the store's instance list into the engine and the worker. */
-  sync(list: readonly IndicatorState[]): void {
+  sync(input: readonly IndicatorState[]): void {
     if (this.destroyed) return;
+    // Last resort: an instance that still carries a renamed built-in's old id.
+    const list = input.some((i) => resolveIndicatorId(i.type) !== i.type)
+      ? input.map((i) => ({ ...i, type: resolveIndicatorId(i.type) }))
+      : input;
     this.list = list;
     const ids = new Set(list.map((i) => i.id));
     for (const id of [...this.applied.keys()]) {
       if (ids.has(id)) continue;
       this.applied.delete(id);
+      this.stalled.delete(id);
       this.worker.post({ type: 'remove', id });
       this.engine(() => this.chart.removeStudy(id));
       this.forget(id);
     }
     this.sendTimeframeMap(false);
+    // Script instances already running keep their slot; others (new, or whose
+    // definition just came back) start only while fewer than the cap run.
+    let scripts = 0;
+    for (const inst of list)
+      if (
+        isUserScriptType(inst.type) &&
+        getIndicator(inst.type) &&
+        this.applied.has(inst.id) &&
+        !this.stalled.has(inst.id)
+      )
+        scripts++;
     for (const inst of list) {
       const def = getIndicator(inst.type);
       if (!def) {
-        this.setStatus(inst.id, { state: 'error', message: `Unknown indicator "${inst.type}"` });
+        // Its sandbox is stopped: no slot while the definition is gone.
+        if (this.applied.has(inst.id)) this.stalled.add(inst.id);
+        const problem = userScriptProblem(inst.type);
+        // A user script before the scripts are loaded: no error, the load syncs again.
+        if (problem === undefined && isUserScriptType(inst.type)) {
+          this.clearStatus(inst.id);
+          continue;
+        }
+        this.setStatus(inst.id, {
+          state: 'error',
+          message: problem ?? `Unknown indicator "${inst.type}"`,
+        });
         continue;
       }
       const prev = this.applied.get(inst.id);
+      if (isUserScriptType(inst.type) && (!prev || this.stalled.has(inst.id))) {
+        if (scripts >= MAX_SCRIPT_INSTANCES_PER_CHART) {
+          if (prev) {
+            // Its definition came back with no slot free: take it off the chart (and
+            // the router), so a later sync adds it afresh once there is room.
+            this.applied.delete(inst.id);
+            this.stalled.delete(inst.id);
+            this.worker.post({ type: 'remove', id: inst.id });
+            this.engine(() => this.chart.removeStudy(inst.id));
+          }
+          this.setStatus(inst.id, { state: 'error', message: SCRIPT_INSTANCE_CAP_MESSAGE });
+          continue;
+        }
+        scripts++;
+        this.stalled.delete(inst.id);
+      }
       const next = this.describe(inst, def);
       if (!prev) {
         this.add(inst, def, next);
@@ -246,6 +415,7 @@ export class IndicatorController {
         this.engine(() => this.chart.updateStudySpec(inst.id, { priceScale: next.priceScale }));
       this.applied.set(inst.id, next);
     }
+    this.ensureEvents();
   }
 
   // ------------------------------------------------------------- instances
@@ -264,7 +434,7 @@ export class IndicatorController {
   }
 
   /**
-   * 'none' (own scale at the bottom of the pane, like the common volume
+   * 'none' (own scale at the bottom of the pane, like a volume
    * overlay) for volume-scaled studies in the price pane and for studies that
    * plot them (e.g. an SMA on Volume), so they never squash the price scale.
    */
@@ -273,7 +443,7 @@ export class IndicatorController {
     const placed = this.applied.get(inst.id)?.targetKey === inst.placement;
     const target = this.target(inst, def);
     const paneId = placed
-      ? useIndicatorRuntime.getState().panes[inst.id]
+      ? this.opts.runtime.getState().panes[inst.id]
       : 'paneId' in target
         ? target.paneId
         : null;
@@ -303,7 +473,7 @@ export class IndicatorController {
     if (inst.placement === 'main') return { paneId: 'main' };
     if (inst.placement === 'own') return own;
     const ref = sourceRefOf(inst);
-    const srcPane = ref ? useIndicatorRuntime.getState().panes[ref.instanceId] : undefined;
+    const srcPane = ref ? this.opts.runtime.getState().panes[ref.instanceId] : undefined;
     if (srcPane) return { paneId: srcPane };
     return def.overlay ? { paneId: 'main' } : own;
   }
@@ -342,15 +512,23 @@ export class IndicatorController {
   }
 
   private setPane(id: string, paneId: string): void {
-    useIndicatorRuntime.setState((s) => ({ panes: { ...s.panes, [id]: paneId } }));
+    this.opts.runtime.setState((s) => ({ panes: { ...s.panes, [id]: paneId } }));
   }
 
   private setStatus(id: string, status: InstanceStatus): void {
-    useIndicatorRuntime.setState((s) => ({ status: { ...s.status, [id]: status } }));
+    this.opts.runtime.setState((s) => ({ status: { ...s.status, [id]: status } }));
+  }
+
+  private clearStatus(id: string): void {
+    if (!(id in this.opts.runtime.getState().status)) return;
+    this.opts.runtime.setState((s) => {
+      const { [id]: _s, ...status } = s.status;
+      return { status };
+    });
   }
 
   private forget(id: string): void {
-    useIndicatorRuntime.setState((s) => {
+    this.opts.runtime.setState((s) => {
       const { [id]: _s, ...status } = s.status;
       const { [id]: _p, ...panes } = s.panes;
       return { status, panes };
@@ -360,7 +538,7 @@ export class IndicatorController {
   private onPaneRemoved(): void {
     const panes: Record<string, string> = {};
     for (const s of this.chart.getStudies()) panes[s.id] = s.paneId;
-    useIndicatorRuntime.setState({ panes });
+    this.opts.runtime.setState({ panes });
     const lost = [...this.applied.keys()].filter((id) => !(id in panes));
     if (!lost.length) return;
     for (const id of lost) {
@@ -404,7 +582,10 @@ export class IndicatorController {
     if (this.destroyed) return;
     const pending = this.pending;
     this.pending = new Map();
-    for (const index of [...pending.keys()].sort((a, b) => a - b))
+    const indices = [...pending.keys()].sort((a, b) => a - b);
+    // External bars first: the worker waits when the chart is ahead of them.
+    if (indices.length) this.external.onBars(indices[0]!);
+    for (const index of indices)
       this.worker.post({
         type: 'bar',
         revision: this.sentRevision,
@@ -418,6 +599,15 @@ export class IndicatorController {
     const interval = this.chart.getInterval();
     if (this.symbol !== null && symbol !== this.symbol) {
       this.worker.post({ type: 'clear' });
+      this.dropTimeframes();
+    }
+    // The new symbol's events go out with a later context; the old ones are dropped now.
+    if (this.eventsSymbol !== null && this.eventsSymbol !== symbol) this.dropEvents();
+    this.ensureEvents();
+    const epoch = this.opts.dataEpoch?.() ?? 0;
+    if (epoch !== this.dataEpoch) {
+      // Replay started, seeked or stopped: timeframe series hold stale (or future) data.
+      this.dataEpoch = epoch;
       this.dropTimeframes();
     }
     this.symbol = symbol;
@@ -436,6 +626,8 @@ export class IndicatorController {
     // With the bars (not before them), so period-anchored indicators compute once,
     // with the right timezone, instead of first on the old bars.
     this.sendBars(revision, this.takeContext());
+    this.external.reset(revision);
+    this.applyProblems();
     for (const tf of this.required) this.ensureTimeframe(tf);
   }
 
@@ -481,11 +673,55 @@ export class IndicatorController {
       session: info?.session ?? null,
       intervalSeconds: secondsOf(this.chart.getInterval()),
       timeframeSeconds,
+      events: this.events,
     };
     const key = JSON.stringify(context);
     if (key === this.contextKey) return null;
     this.contextKey = key;
     return context;
+  }
+
+  // ---------------------------------------------------------------- events
+
+  /** Some instance resets at events (e.g. VWAP anchored to earnings). */
+  private needsEvents(): boolean {
+    return this.list.some((inst) => {
+      const def = getIndicator(inst.type);
+      return def !== undefined && usesEvents(def, coerceInputs(def, inst.inputs));
+    });
+  }
+
+  /** Load the chart symbol's events once an instance needs them; they reach the worker with the context. */
+  private ensureEvents(): void {
+    const load = this.opts.loadEvents;
+    if (!load || !this.needsEvents()) return;
+    const symbol = this.chart.getSymbol();
+    if (symbol === this.eventsSymbol) return;
+    this.dropEvents();
+    this.eventsSymbol = symbol;
+    // No events exist for an expression or spread.
+    if (isExpressionSymbol(symbol)) return;
+    const mine = this.eventsToken;
+    load(symbol).then(
+      (res) => {
+        if (mine !== this.eventsToken || this.destroyed) return;
+        this.events = eventTimesOf(res);
+        this.sendContext();
+      },
+      () => {
+        // Unknown symbol or provider down: event anchors accumulate over the whole
+        // series (the chart's event markers and the Details panel show the error).
+        // Forget the symbol so the next chart reset or indicator change retries; there
+        // is no timer, so a down provider cannot cause a retry loop.
+        if (mine === this.eventsToken && this.eventsSymbol === symbol) this.eventsSymbol = null;
+      },
+    );
+  }
+
+  private dropEvents(): void {
+    this.eventsToken++;
+    this.eventsSymbol = null;
+    this.events = null;
   }
 
   private dropTimeframes(): void {
@@ -510,8 +746,12 @@ export class IndicatorController {
     if (!n) return;
     const chartFirst = store.time[0]!;
     const cur = this.tfSeries.get(tf);
-    if (cur && (!cur.loaded || cur.complete || cur.first <= chartFirst)) return;
-    cur?.unsub?.();
+    if (cur) {
+      // The chart's series reset (e.g. older history loaded): page older bars again.
+      cur.pages = 0;
+      this.extendTimeframe(tf, cur);
+      return;
+    }
     let interval;
     try {
       interval = parseInterval(tf);
@@ -519,7 +759,15 @@ export class IndicatorController {
       this.onError(errText(err));
       return;
     }
-    const entry: TfSeries = { loaded: false, first: Infinity, complete: false, unsub: null };
+    const entry: TfSeries = {
+      loaded: false,
+      first: Infinity,
+      complete: false,
+      bars: null,
+      busy: false,
+      pages: 0,
+      unsub: null,
+    };
     this.tfSeries.set(tf, entry);
     const end = Math.max(store.time[n - 1]!, Date.now() / 1000);
     const limit = Math.min(
@@ -541,10 +789,11 @@ export class IndicatorController {
         }
         entry.loaded = true;
         entry.first = res.bars.time[0]!;
-        entry.complete = !res.hasMore || len < limit || limit >= TF_MAX_BARS;
+        entry.complete = !res.hasMore;
         // Copies: the feed may cache the arrays it returned.
         const bars = copyColumns(res.bars, len);
-        this.worker.post({ type: 'tfBars', tf, bars }, buffers(bars));
+        entry.bars = bars;
+        this.sendTimeframeBars(tf, bars);
         const last = {
           time: bars.time[len - 1]!,
           open: bars.open[len - 1]!,
@@ -564,9 +813,12 @@ export class IndicatorController {
           },
           last,
           (bar) => {
-            if (current()) this.worker.post({ type: 'tfBar', tf, bar });
+            if (!current()) return;
+            if (entry.bars) entry.bars = upsertBar(entry.bars, bar);
+            this.worker.post({ type: 'tfBar', tf, bar });
           },
         );
+        this.extendTimeframe(tf, entry);
       })
       .catch((err: unknown) => {
         if (!current()) return;
@@ -576,11 +828,110 @@ export class IndicatorController {
       });
   }
 
+  /** A copy of the series to the worker (the posted arrays are transferred). */
+  private sendTimeframeBars(tf: string, src: BarColumns): void {
+    const bars = copyColumns(src, src.time.length);
+    this.worker.post({ type: 'tfBars', tf, bars }, buffers(bars));
+  }
+
+  /**
+   * Page older bars of a loaded timeframe series with `getBars({ to })` while
+   * the chart starts before it, then resend the whole series. Stops when the
+   * provider has no more (or returns nothing older) and after `TF_MAX_PAGES`.
+   */
+  private extendTimeframe(tf: string, entry: TfSeries): void {
+    if (this.destroyed || !entry.loaded || entry.complete || entry.busy || !entry.bars) return;
+    if (entry.pages >= TF_MAX_PAGES) return;
+    const store = this.chart.store;
+    if (!store.length) return;
+    const chartFirst = store.time[0]!;
+    if (entry.first <= chartFirst) return;
+    let interval;
+    try {
+      interval = parseInterval(tf);
+    } catch {
+      // Unreachable: the series was loaded with this interval.
+      return;
+    }
+    entry.busy = true;
+    entry.pages++;
+    const to = entry.first;
+    const limit = Math.min(
+      TF_MAX_BARS,
+      Math.ceil((to - chartFirst) / intervalSeconds(interval)) + TF_WARMUP,
+    );
+    const prepost = this.opts.prepost?.() ?? false;
+    const current = () => !this.destroyed && this.tfSeries.get(tf) === entry;
+    this.feed
+      .getBars({ symbol: this.chart.getSymbol(), interval, to, limit, prepost })
+      .then((res) => {
+        entry.busy = false;
+        if (!current() || !entry.bars) return;
+        let len = res.bars.time.length;
+        // Only bars strictly older than the series (a provider may include `to`).
+        while (len > 0 && res.bars.time[len - 1]! >= to) len--;
+        // Nothing older came back: stop, even if the provider claims more.
+        entry.complete = !res.hasMore || len === 0;
+        if (!len) return;
+        entry.bars = concatColumns(res.bars, len, entry.bars);
+        entry.first = entry.bars.time[0]!;
+        this.sendTimeframeBars(tf, entry.bars);
+        this.extendTimeframe(tf, entry);
+      })
+      .catch((err: unknown) => {
+        entry.busy = false;
+        if (!current()) return;
+        // Keep what is loaded; older bars are retried after the next reset.
+        entry.pages = TF_MAX_PAGES;
+        this.onError(`Could not load older ${tf} bars: ${errText(err)}`);
+      });
+  }
+
+  // ------------------------------------------------------ external symbols
+
+  private onSymbolProblem(symbol: string, message: string | null): void {
+    if (message === null) this.symbolProblems.delete(symbol);
+    else {
+      this.symbolProblems.set(symbol, message);
+      this.onError(`Could not load ${symbol}: ${message}`);
+    }
+    this.applyProblems();
+  }
+
+  /** Error status of an instance that reads a symbol which cannot be shown, else null. */
+  private externalError(inst: IndicatorState): InstanceStatus | null {
+    const def = getIndicator(inst.type);
+    if (!def) return null;
+    for (const symbol of externalSymbols(def, inst.inputs)) {
+      const message =
+        this.external.unavailableReason === BRICK_MESSAGE
+          ? BRICK_MESSAGE
+          : (this.symbolProblems.get(symbol) ?? this.external.unavailableReason);
+      if (message) return { state: 'error', message: `${symbol}: ${message}` };
+    }
+    return null;
+  }
+
+  /** Show load failures / unavailability on the instances that read those symbols. */
+  private applyProblems(): void {
+    if (this.destroyed) return;
+    const status: Record<string, InstanceStatus> = {};
+    for (const inst of this.list) {
+      const err = this.externalError(inst);
+      if (err) status[inst.id] = err;
+    }
+    if (Object.keys(status).length)
+      this.opts.runtime.setState((s) => ({ status: { ...s.status, ...status } }));
+  }
+
   // --------------------------------------------------------------- results
 
   private onMessage(msg: FromWorker): void {
     if (this.destroyed) return;
     switch (msg.type) {
+      case 'symbols':
+        this.external.setRequired(msg.symbols);
+        return;
       case 'results':
         this.onResults(msg);
         return;
@@ -625,14 +976,26 @@ export class IndicatorController {
   }
 
   private onResults(msg: Extract<FromWorker, { type: 'results' }>): void {
-    // A live bar applied cleanly: the worker is in step again.
-    if (msg.revision === this.sentRevision && msg.changes.every((c) => c.from > 0))
+    if (msg.ms !== undefined) this.opts.onComputeTime?.(msg.ms);
+    // A live bar applied cleanly: the worker is in step again. Only the
+    // indicator worker's own (non-script) results count: sandboxes have their
+    // own resync budget in the router, and must not reset this one.
+    const builtin = msg.changes.filter((c) => {
+      const inst = this.lookup(c.id);
+      return inst !== undefined && !isUserScriptType(inst.type);
+    });
+    if (
+      msg.revision === this.sentRevision &&
+      builtin.length > 0 &&
+      builtin.every((c) => c.from > 0)
+    )
       this.resyncs = 0;
     if (msg.revision !== this.chart.seriesRevision) return;
     const status: Record<string, InstanceStatus> = {};
     for (const ch of msg.changes) {
       if (!this.applied.has(ch.id)) continue;
-      status[ch.id] = ch.status;
+      const inst = this.lookup(ch.id);
+      status[ch.id] = (inst && this.externalError(inst)) || ch.status;
       const { revision, length } = msg;
       this.engine(() => {
         if (ch.from === 0)
@@ -652,7 +1015,7 @@ export class IndicatorController {
           });
       });
     }
-    useIndicatorRuntime.setState((s) => ({
+    this.opts.runtime.setState((s) => ({
       status: { ...s.status, ...status },
       tick: s.tick + 1,
     }));

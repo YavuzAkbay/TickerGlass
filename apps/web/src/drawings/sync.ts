@@ -1,4 +1,4 @@
-import { getDrawingTool, type Drawing, type DrawingApi } from '@investopen/engine';
+import { getDrawingTool, type Drawing, type DrawingApi } from '@tickerglass/engine';
 import { deepEqual } from './model';
 
 export type DrawingSink = Pick<

@@ -7,7 +7,7 @@
  * survives page reloads within a test. e2e never reaches a real user-data
  * database: only market-data routes pass through; anything else fails the test.
  */
-import type { Page, Route } from '@playwright/test';
+import { expect, type Page, type Route } from '@playwright/test';
 
 type Json = Record<string, unknown>;
 type Reply = [number, unknown];
@@ -52,6 +52,16 @@ interface WatchlistRow extends Json {
   createdAt: string;
   updatedAt: string;
 }
+interface UserScriptRow extends Json {
+  id: string;
+  name: string;
+  source: string;
+  manifest: Json | null;
+  apiVersion: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
 interface FlagRow extends Json {
   symbol: string;
   color: string;
@@ -59,11 +69,34 @@ interface FlagRow extends Json {
   updatedAt: string;
 }
 
+interface AlertRow extends Json {
+  id: string;
+  name: string;
+  status: string;
+  statusReason: string | null;
+  revision: number;
+  fireCount: number;
+  lastFiredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+interface AlertLogRow extends Json {
+  id: number;
+  alertId: string | null;
+  read: boolean;
+}
+
+/** First chart of a saved layout state (schema v5: `{ grid, charts: [...] }`). */
+export function firstChart(state: Json | undefined): Json | undefined {
+  const charts = state?.charts;
+  return Array.isArray(charts) ? (charts[0] as Json | undefined) : undefined;
+}
+
 /** Routes that may reach the real backend (read-only market data). */
 const MARKET =
   /^\/api\/(bars|quotes|quotes\/extended|health|news)$|^\/api\/(symbols|events|news|fundamentals|performance)\//;
 const USER_DATA =
-  /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|export|import)(\/|$)/;
+  /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|alerts|user-scripts|export|import)(\/|$)/;
 const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
 const SAFE_ID = /^[A-Za-z0-9_-]{1,36}$/;
 const WL_SYMBOL = /^[A-Z0-9.\-=^/&_]{1,32}$/;
@@ -75,10 +108,27 @@ const detail = (status: number, message: string): Reply => [status, { detail: me
 export class MockServer {
   layouts = new Map<string, Layout>();
   lastUsed: string | null = null;
+  /** The layout the app has open (the last-used one); undefined before the first boot has created it. */
+  current(): Layout | undefined {
+    return this.lastUsed ? this.layouts.get(this.lastUsed) : undefined;
+  }
   drawings = new Map<string, DrawingRow>();
   settings = new Map<string, unknown>();
   notes = new Map<string, Note>();
   watchlists = new Map<string, WatchlistRow>();
+  userScripts = new Map<string, UserScriptRow>();
+  /** Alerts (docs/alerts.md §1.4), the notification log and the service status. */
+  alerts = new Map<string, AlertRow>();
+  alertLog: AlertLogRow[] = [];
+  alertService: Json = {
+    online: true,
+    lastHeartbeatAt: new Date(Date.UTC(2026, 0, 1)).toISOString(),
+  };
+  alertChannels: Json = {
+    webhook: { configured: false, url: null },
+    telegram: { configured: false },
+    email: { configured: false, to: null },
+  };
   /** Global symbol flags, keyed by upper-case symbol. */
   flags = new Map<string, FlagRow>();
   indicatorTemplates = new Map<string, Template>();
@@ -226,6 +276,7 @@ export class MockServer {
     copy.settings = structuredClone(this.settings);
     copy.notes = structuredClone(this.notes);
     copy.watchlists = structuredClone(this.watchlists);
+    copy.userScripts = structuredClone(this.userScripts);
     copy.flags = structuredClone(this.flags);
     copy.indicatorTemplates = structuredClone(this.indicatorTemplates);
     copy.drawingTemplates = structuredClone(this.drawingTemplates);
@@ -240,6 +291,146 @@ export class MockServer {
     if (head === 'drawing-templates') return this.drawingTemplates;
     if (head === 'chart-templates') return this.chartTemplates;
     return null;
+  }
+
+  /** The first drawing operand of a spec, like the server derives `drawing_id` (alerts.md section 1.1). */
+  private specDrawingId(spec: unknown): string | null {
+    let found: string | null = null;
+    const walk = (v: unknown) => {
+      if (found || !v || typeof v !== 'object') return;
+      const o = v as Json;
+      if (o.kind === 'drawing' && typeof o.drawingId === 'string') found = o.drawingId;
+      else Object.values(o).forEach(walk);
+    };
+    walk(spec);
+    return found;
+  }
+
+  private alertConflict(row: AlertRow): Reply {
+    return [409, { detail: { message: `alert ${row.id} changed elsewhere`, current: row } }];
+  }
+
+  /** `/alerts*`: CRUD with revisions, log, channels and service status (no evaluation). */
+  private handleAlerts(
+    method: string,
+    id: string | undefined,
+    sub: string | undefined,
+    query: URLSearchParams,
+    b: Json,
+  ): Reply {
+    const unread = () => this.alertLog.filter((e) => !e.read).length;
+    if (id === 'log') {
+      if (method === 'GET') {
+        const limit = Number(query.get('limit') ?? 100);
+        const before = query.get('before');
+        const after = query.get('after');
+        const alertId = query.get('alertId');
+        const rows = [...this.alertLog]
+          .sort((x, y) => y.id - x.id)
+          .filter(
+            (e) =>
+              (before === null || e.id < Number(before)) &&
+              (after === null || e.id > Number(after)) &&
+              (alertId === null || e.alertId === alertId),
+          );
+        return [
+          200,
+          { entries: rows.slice(0, limit), hasMore: rows.length > limit, unread: unread() },
+        ];
+      }
+      if (sub === 'read' && method === 'POST') {
+        const ids = Array.isArray(b.ids) ? (b.ids as number[]) : [];
+        const upTo = typeof b.upTo === 'number' ? b.upTo : null;
+        if (upTo === null && !ids.length) return detail(422, "give 'upTo' and/or 'ids'");
+        for (const e of this.alertLog)
+          if ((upTo !== null && e.id <= upTo) || ids.includes(e.id)) e.read = true;
+        return [200, { unread: unread() }];
+      }
+      if (!sub && method === 'DELETE') {
+        const alertId = query.get('alertId');
+        this.alertLog = alertId ? this.alertLog.filter((e) => e.alertId !== alertId) : [];
+        return [204, undefined];
+      }
+      return [-1, undefined];
+    }
+    if (id === 'channels' && !sub && method === 'GET') return [200, this.alertChannels];
+    if (id === 'service' && !sub && method === 'GET') return [200, this.alertService];
+    if (id === 'states' || id === 'channels' || id === 'service') return [-1, undefined];
+
+    if (!id && method === 'GET') {
+      const status = query.get('status');
+      const symbol = query.get('symbol');
+      return [
+        200,
+        [...this.alerts.values()]
+          .filter((a) => (!status || a.status === status) && (!symbol || a.symbol === symbol))
+          .sort((x, y) => y.createdAt.localeCompare(x.createdAt) || x.id.localeCompare(y.id)),
+      ];
+    }
+    if (!id && method === 'POST') {
+      if (b.id !== undefined && b.id !== null && (typeof b.id !== 'string' || !SAFE_ID.test(b.id)))
+        return detail(422, 'invalid alert id');
+      if (typeof b.name !== 'string' || !b.name.trim() || b.name.length > 200)
+        return detail(422, 'name required');
+      if (typeof b.symbol !== 'string' || !b.symbol.trim()) return detail(422, 'symbol required');
+      if (!b.spec || typeof b.spec !== 'object') return detail(422, 'spec required');
+      const aid = typeof b.id === 'string' ? b.id : this.id('A');
+      const existing = this.alerts.get(aid);
+      if (existing) return this.alertConflict(existing);
+      const t = this.now();
+      const row: AlertRow = {
+        ...b,
+        drawingId: this.specDrawingId(b.spec),
+        id: aid,
+        name: b.name.trim(),
+        status: b.status === 'paused' ? 'paused' : 'active',
+        statusReason: null,
+        revision: 1,
+        fireCount: 0,
+        lastFiredAt: null,
+        createdAt: t,
+        updatedAt: t,
+      };
+      this.alerts.set(aid, row);
+      return [201, row];
+    }
+    const row = this.alerts.get(id!);
+    if (!row) return detail(404, `not found: alert ${id}`);
+    if (!sub && method === 'GET') return [200, row];
+    if (!sub && method === 'PUT') {
+      if (typeof b.name !== 'string' || !b.name.trim()) return detail(422, 'name required');
+      if (b.revision !== undefined && b.revision !== null && b.revision !== row.revision)
+        return this.alertConflict(row);
+      const { revision: _r, status, ...fields } = b;
+      const keep = row.status === 'active' || row.status === 'paused' ? row.status : 'active';
+      Object.assign(row, fields, {
+        drawingId: 'spec' in b ? this.specDrawingId(b.spec) : row.drawingId,
+        name: b.name.trim(),
+        status: status === 'active' || status === 'paused' ? status : keep,
+        statusReason: null,
+        revision: row.revision + 1,
+        updatedAt: this.now(),
+      });
+      return [200, row];
+    }
+    if (!sub && method === 'PATCH') {
+      if (b.status !== 'active' && b.status !== 'paused') return detail(422, 'invalid status');
+      if (b.revision !== undefined && b.revision !== null && b.revision !== row.revision)
+        return this.alertConflict(row);
+      Object.assign(row, {
+        status: b.status,
+        statusReason: null,
+        revision: row.revision + 1,
+        updatedAt: this.now(),
+        ...('expiresAt' in b ? { expiresAt: b.expiresAt } : {}),
+      });
+      return [200, row];
+    }
+    if (!sub && method === 'DELETE') {
+      this.alerts.delete(row.id);
+      return [204, undefined];
+    }
+    return [-1, undefined];
   }
 
   /** Handle one request: [status, body]. */
@@ -502,6 +693,68 @@ export class MockServer {
       }
     }
 
+    if (head === 'user-scripts') {
+      const conflict = (row: UserScriptRow): Reply => [
+        409,
+        { detail: { message: `user script ${row.id} changed elsewhere`, current: row } },
+      ];
+      const fields = (): string | { name: string; source: string; manifest: Json | null } => {
+        const name = typeof b.name === 'string' ? b.name.trim() : '';
+        if (!name || name.length > 100) return 'name required';
+        if (typeof b.source !== 'string' || b.source.length > 200_000) return 'invalid source';
+        const m = b.manifest;
+        if (m !== null && (typeof m !== 'object' || Array.isArray(m))) return 'invalid manifest';
+        return { name, source: b.source, manifest: (m ?? null) as Json | null };
+      };
+      if (!id && method === 'GET')
+        return [
+          200,
+          [...this.userScripts.values()].sort(
+            (x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id),
+          ),
+        ];
+      if (!id && method === 'POST') {
+        if (typeof b.id !== 'string' || !SAFE_ID.test(b.id))
+          return detail(422, 'invalid script id');
+        const f = fields();
+        if (typeof f === 'string') return detail(422, f);
+        const existing = this.userScripts.get(b.id);
+        if (existing) return conflict(existing);
+        const t = this.now();
+        const row: UserScriptRow = {
+          id: b.id,
+          ...f,
+          apiVersion: typeof b.apiVersion === 'number' ? b.apiVersion : 1,
+          revision: 1,
+          createdAt: t,
+          updatedAt: t,
+        };
+        this.userScripts.set(b.id, row);
+        return [201, row];
+      }
+      const row = this.userScripts.get(id!);
+      if (!row || sub) return notFound;
+      if (method === 'GET') return [200, row];
+      if (method === 'PUT') {
+        const f = fields();
+        if (typeof f === 'string') return detail(422, f);
+        if (b.revision !== undefined && b.revision !== null && b.revision !== row.revision)
+          return conflict(row);
+        Object.assign(row, f, {
+          apiVersion: typeof b.apiVersion === 'number' ? b.apiVersion : row.apiVersion,
+          revision: row.revision + 1,
+          updatedAt: this.now(),
+        });
+        return [200, row];
+      }
+      if (method === 'DELETE') {
+        this.userScripts.delete(row.id);
+        return [204, undefined];
+      }
+    }
+
+    if (head === 'alerts') return this.handleAlerts(method, id, sub, query, b);
+
     if (head === 'flags' && !id) {
       if (method === 'GET') return [200, this.flagList()];
       if (method === 'PATCH') {
@@ -522,7 +775,7 @@ export class MockServer {
         200,
         {
           version: 1,
-          app: 'investopen',
+          app: 'tickerglass',
           exportedAt: this.now(),
           layouts: [...this.layouts.values()].map((l) => this.full(l)),
           drawings: [...this.drawings.values()],
@@ -532,6 +785,7 @@ export class MockServer {
           settings: Object.fromEntries(this.settings),
           notes: [...this.notes.values()],
           watchlists: [...this.watchlists.values()],
+          userScripts: [...this.userScripts.values()],
           flags: this.flagList(),
         },
       ];
@@ -596,7 +850,7 @@ export class MockServer {
 
   /** store.import_bundle: merge by id/name/key (matches overwritten, revision bumped) or replace present sections. */
   private importBundle(b: Json, mode: string): Json | Reply {
-    if (b.app !== 'investopen') return detail(422, 'app must be "investopen"');
+    if (b.app !== 'tickerglass') return detail(422, 'app must be "tickerglass"');
     if (typeof b.version !== 'number' || b.version < 1 || b.version > 1)
       return detail(422, 'unsupported bundle version');
     const zero = () => ({ created: 0, updated: 0, deleted: 0 });
@@ -798,4 +1052,17 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
     return route.fulfill({ status, json: out });
   });
   return server;
+}
+
+/**
+ * Open `url` with empty browser storage. The first boot creates the layout and
+ * then marks it last-used; clearing storage and reloading before that finished
+ * would make the second boot create another layout. So wait for the first boot
+ * to settle on the server, then clear and reload.
+ */
+export async function freshBoot(page: Page, server: MockServer, url: string): Promise<void> {
+  await page.goto(url);
+  await expect.poll(() => server.lastUsed).not.toBeNull();
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
 }

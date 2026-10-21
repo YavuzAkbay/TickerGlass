@@ -3,7 +3,7 @@ import { defineDrawingTool } from '../registry';
 import type { DrawingLineStyle } from '../types';
 
 export const CROSS_LINE_DEFAULTS = {
-  lineColor: '#2962ff',
+  lineColor: '#6E9BD6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   showPriceLabel: true,

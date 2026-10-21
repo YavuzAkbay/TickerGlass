@@ -5,7 +5,7 @@ import {
   resolveInputs,
   type InputValueMap,
   type OutputSourceRef,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { useHistory } from '../commands/history';
 import { toast } from '../ui/Toast';
 import {

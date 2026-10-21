@@ -1,9 +1,10 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { firstChart, freshBoot } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
     lastStudyHover?: string | null;
   }
 }
@@ -44,9 +45,7 @@ test('new charts show Volume as an indicator: click, menus, hide, remove, undo, 
   page,
   server,
 }) => {
-  await page.goto('/?feed=synthetic');
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await freshBoot(page, server, '/?feed=synthetic');
   await restored(page);
 
   // A legend row with values; the engine's built-in volume is off (one volume display).
@@ -108,10 +107,10 @@ test('new charts show Volume as an indicator: click, menus, hide, remove, undo, 
   await expect(row).toHaveCount(0);
   await expect
     .poll(() => {
-      const l = [...server.layouts.values()][0]!;
-      return [l.schemaVersion, (l.state.indicators as unknown[]).length];
+      const l = server.current()!;
+      return [l.schemaVersion, (firstChart(l.state)!.indicators as unknown[]).length];
     })
-    .toEqual([2, 0]);
+    .toEqual([5, 0]);
   await saved(page);
   await page.evaluate(() => localStorage.clear());
   await page.reload();

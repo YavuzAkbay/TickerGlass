@@ -1,5 +1,8 @@
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { commands, type Command } from '../commands/registry';
-import { normalizeSymbol, useAppStore } from '../store/app';
+import { addChartWithSymbol, canAddChart } from '../layout/actions';
+import { normalizeSymbol } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useUiStore } from '../store/ui';
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
@@ -48,8 +51,12 @@ export function listSymbols(ref: ListRef | null): string[] {
 }
 
 function addSymbol(arg: unknown): void {
-  const sym = normalizeSymbol(typeof arg === 'string' ? arg : useAppStore.getState().symbol);
+  const sym = normalizeSymbol(typeof arg === 'string' ? arg : useChartView.getState().symbol);
   if (!sym) return;
+  if (isExpressionSymbol(sym)) {
+    toast("Symbol expressions can't be added to watchlists", 'error');
+    return;
+  }
   if (!validSymbol(sym)) {
     toast(`Invalid symbol: ${sym}`, 'error');
     return;
@@ -140,7 +147,7 @@ function pickFile(): void {
 function step(dir: 1 | -1): void {
   const syms = listSymbols(activeRef());
   if (!syms.length) return;
-  const cur = syms.indexOf(useAppStore.getState().symbol);
+  const cur = syms.indexOf(useChartView.getState().symbol);
   const next = cur < 0 ? (dir > 0 ? 0 : syms.length - 1) : cur + dir;
   const sym = syms[next];
   if (sym) commands.execute('chart.setSymbol', sym);
@@ -299,7 +306,13 @@ export function registerWatchlistCommands(): () => void {
       title: 'Open symbol in new chart',
       category,
       hidden: true,
-      run: () => toast('Multi-chart layouts arrive in Phase 14'),
+      enabled: canAddChart,
+      run: (arg) => {
+        const symbol = normalizeSymbol(
+          typeof arg === 'string' ? arg : useChartView.getState().symbol,
+        );
+        if (symbol) addChartWithSymbol(symbol);
+      },
     },
     { id: 'watchlist.next', title: 'Next symbol in watchlist', category, run: () => step(1) },
     { id: 'watchlist.prev', title: 'Previous symbol in watchlist', category, run: () => step(-1) },

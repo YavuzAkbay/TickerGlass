@@ -1,0 +1,54 @@
+import type { ChartSession } from '../chart/session';
+import { getActiveSession } from '../store/chart';
+import { useUiStore } from '../store/ui';
+import { resetToCursor } from '../toolbar/tools';
+import { pinReplayChart, replay } from './instance';
+import { useReplayStore } from './store';
+import { REPLAY_PICK_ID, barAtOrBefore } from './tool';
+
+/**
+ * Scissors bar picker: the replay store's 'picking' status arms the pick tool,
+ * the picked bar starts (or moves) the replay, and leaving the tool cancels.
+ */
+export function attachReplay(session: Pick<ChartSession, 'id' | 'chart'>): () => void {
+  const { chart } = session;
+  const ui = () => useUiStore.getState();
+  const armed = () => ui().activeTool === REPLAY_PICK_ID;
+  const offs = [
+    useReplayStore.subscribe((s, prev) => {
+      if (s.status === prev.status) return;
+      if (s.status === 'off' && ui().navSection === 'replayTrading')
+        ui().set({ navSection: 'watchlist' });
+      if (s.status === 'picking') ui().set({ activeTool: REPLAY_PICK_ID });
+      else if (prev.status === 'picking' && armed()) resetToCursor();
+    }),
+    useUiStore.subscribe((s) => {
+      // Another tool (or Escape) was chosen while waiting for the bar.
+      if (useReplayStore.getState().status === 'picking' && s.activeTool !== REPLAY_PICK_ID)
+        replay.cancelPick();
+    }),
+    chart.on('pointPicked', ({ time }) => {
+      // The pick tool is armed on the active chart only.
+      if (getActiveSession()?.id !== session.id) return;
+      if (!armed() || useReplayStore.getState().status !== 'picking') return;
+      // One clock per layout: only the replay chart may start or move it.
+      if (!pinReplayChart(session.id)) {
+        replay.cancelPick();
+        return;
+      }
+      const bar = barAtOrBefore(chart.store.time, chart.store.length, time);
+      if (bar === null) {
+        replay.cancelPick();
+        return;
+      }
+      void replay.start(bar);
+    }),
+  ];
+  return () => {
+    offs.forEach((off) => off());
+    // The chart is going away: stop the play loop, drop the feed's replay state and listeners.
+    // Other charts leaving (layout change) do not stop the replay.
+    const pinned = useReplayStore.getState().chartId;
+    if (pinned === null || pinned === session.id) replay.detach();
+  };
+}

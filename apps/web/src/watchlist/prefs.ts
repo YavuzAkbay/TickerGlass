@@ -15,7 +15,7 @@ const SORT_KEYS: readonly string[] = ['symbol', ...ALL_COLUMNS];
 
 export const DEFAULT_PREFS: WatchlistPrefs = {
   activeId: null,
-  columns: ['last', 'change', 'changePercent'],
+  columns: ['last', 'change', 'changePercent', 'volume'],
   sort: null,
 };
 
@@ -65,7 +65,7 @@ export const useWatchlistPrefs = create<PrefsState>()(
       setSort: (sort) => set({ sort }),
     }),
     {
-      name: 'investopen-watchlist-prefs',
+      name: 'tickerglass-watchlist-prefs',
       version: 1,
       partialize: (s) => ({ activeId: s.activeId, columns: s.columns, sort: s.sort }),
       merge: (persisted, current) => ({ ...current, ...parsePrefs(persisted) }),

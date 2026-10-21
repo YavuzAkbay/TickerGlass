@@ -5,7 +5,7 @@
   align-items: center;
   gap: 2px;
   min-width: 0;
-  height: 38px;
+  height: var(--bar-h);
   padding: 0 6px;
   background: var(--panel);
   user-select: none;
@@ -27,7 +27,7 @@
   padding: 0 10px 0 8px;
 }
 .tb-label {
-  font-size: 14px;
+  font-size: 13px;
 }
 .tb-muted {
   color: var(--text-muted);
@@ -56,10 +56,10 @@
   min-width: 28px;
   padding: 0 7px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -78,18 +78,6 @@
   outline-offset: -2px;
 }
 
-.tb-symbol {
-  padding: 0 10px 0 8px;
-  color: var(--text-strong);
-}
-.tb-symbol svg {
-  color: var(--text-muted);
-}
-.tb-symbol-text {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
 .top-bar .tb-compare {
   min-width: 30px;
   padding: 0 5px;
@@ -106,7 +94,9 @@
   padding: 0 6px;
   font-weight: 500;
 }
-.tb-interval.active {
+.tb-interval.active,
+.tb-btn.active {
+  background: var(--accent-soft);
   color: var(--accent-text);
 }
 .tb-chevron {
@@ -120,7 +110,7 @@
 }
 
 .tb-ivmenu {
-  /* Favorite star, the one accent reference keeps yellow in both themes. */
+  /* Favorite star, the one accent that stays yellow in both themes. */
   --tb-star: var(--star);
   width: 220px;
   padding: 6px 0;
@@ -192,7 +182,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -252,7 +242,7 @@
   padding: 0 8px;
 }
 .tb-layout-name {
-  font-size: 14px;
+  font-size: 13px;
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -274,13 +264,13 @@
   align-items: center;
 }
 .top-bar .tb-split .io-icon-btn {
-  border-radius: 4px 0 0 4px;
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
   padding-right: 4px;
 }
 .tb-split-chevron {
   min-width: 18px;
   padding: 0 2px;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
   color: var(--text-muted);
 }
 
@@ -292,6 +282,112 @@
 @media (max-width: 980px) {
   .tb-layout-name,
   .tb-label {
+    display: none;
+  }
+}
+
+/* ---- chart layout picker ---- */
+.lp-panel {
+  padding: 10px 12px;
+  width: 292px;
+}
+.lp-group + .lp-group {
+  margin-top: 10px;
+}
+.lp-heading {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.lp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lp-item {
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  cursor: pointer;
+}
+.lp-item:hover {
+  background: var(--hover);
+}
+.lp-item.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.lp-thumb {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 26px;
+}
+.lp-thumb-cell {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--muted);
+  background: var(--raised);
+}
+.lp-sync {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 8px;
+}
+.lp-sync .lp-heading {
+  grid-column: 1 / -1;
+}
+.lp-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+/* ---- palette button ---- */
+.tb-palette {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  width: 200px;
+  height: 26px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.tb-palette:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.tb-palette:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.tb-palette-text {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+.tb-palette-hint {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (max-width: 1180px) {
+  .tb-palette {
+    width: 140px;
+  }
+  .tb-palette-hint {
     display: none;
   }
 }

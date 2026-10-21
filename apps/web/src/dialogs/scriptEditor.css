@@ -1,0 +1,186 @@
+/* ---- script editor ---- */
+.se-body {
+  display: flex;
+  height: 600px;
+  max-height: calc(100vh - 160px);
+}
+.se-side {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 220px;
+  border-right: 1px solid var(--border);
+}
+.se-side-tools {
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.se-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.se-script {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.se-script:hover {
+  background: var(--hover);
+}
+.se-script.active {
+  background: var(--active-bg);
+  color: var(--accent-text);
+}
+.se-script-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.se-script-flag {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.se-script-flag.error {
+  color: var(--down);
+}
+.se-empty {
+  padding: 16px 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.se-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.se-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.se-toolbar .io-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.se-status {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.se-editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: var(--input-bg);
+}
+.se-gutter,
+.se-text {
+  margin: 0;
+  padding: 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 18px;
+  tab-size: 2;
+}
+.se-gutter {
+  flex: none;
+  min-width: 44px;
+  /* Room for the textarea's horizontal scrollbar, so both can scroll to the end. */
+  padding: 8px 8px 24px;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+}
+.se-text {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  white-space: pre;
+  overflow: auto;
+}
+.se-diags {
+  flex: none;
+  height: 140px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+.se-diags-title {
+  padding: 6px 12px 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.se-diag {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  line-height: 1.4;
+}
+button.se-diag {
+  cursor: pointer;
+}
+button.se-diag:hover {
+  background: var(--hover);
+}
+.se-diag-sev {
+  flex: none;
+  width: 56px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.se-diag.error .se-diag-sev {
+  color: var(--down);
+}
+.se-diag.warning .se-diag-sev {
+  color: var(--star);
+}
+.se-diag.info .se-diag-sev {
+  color: var(--up);
+}
+.se-diag-pos {
+  flex: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.se-diag-msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.se-delete-list {
+  margin: 8px 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+}

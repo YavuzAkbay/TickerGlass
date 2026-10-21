@@ -1,0 +1,124 @@
+{
+  "name": "AAPL crossing 190",
+  "symbol": "AAPL",
+  "interval": "1D",
+  "prepost": false,
+  "spec": {
+    "schemaVersion": 1,
+    "left": {
+      "kind": "indicator",
+      "ref": {
+        "instances": [
+          {
+            "id": "i0",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i1",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i2",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i3",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i4",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i5",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i6",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i7",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i8",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i9",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i10",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i11",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i12",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i13",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i14",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i15",
+            "type": "sma",
+            "inputs": {}
+          },
+          {
+            "id": "i16",
+            "type": "sma",
+            "inputs": {}
+          }
+        ],
+        "instanceId": "i0",
+        "outputId": "sma",
+        "title": "x"
+      }
+    },
+    "condition": {
+      "op": "crossing",
+      "right": {
+        "kind": "value",
+        "value": 190
+      }
+    },
+    "trigger": "oncePerBar"
+  },
+  "message": "",
+  "notify": {
+    "toast": true,
+    "sound": true,
+    "browser": false,
+    "webhook": false,
+    "webhookUrl": null,
+    "webhookRaw": false,
+    "telegram": false,
+    "email": false
+  },
+  "expiresAt": null
+}

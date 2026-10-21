@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronRight, Plus, Star, X } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent } from 'react';
-import type { IntervalUnit } from '@investopen/engine';
+import type { IntervalUnit } from '@tickerglass/engine';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { Popover } from '../ui/Popover';
 import {
   INTERVAL_GROUPS,
@@ -27,7 +28,7 @@ const setInterval = (iv: string) => commands.execute('chart.setInterval', iv);
 
 /** Favorite interval quick buttons plus the full interval dropdown. */
 export function IntervalControl() {
-  const interval = useAppStore((s) => s.interval);
+  const interval = useChartView((s) => s.interval);
   const favorites = useAppStore((s) => s.favoriteIntervals);
   const [open, setOpen] = useState(false);
   const [chevron, setChevron] = useState<HTMLButtonElement | null>(null);
@@ -83,7 +84,7 @@ export function IntervalControl() {
 }
 
 function IntervalMenu({ onClose }: { onClose: () => void }) {
-  const interval = useAppStore((s) => s.interval);
+  const interval = useChartView((s) => s.interval);
   const favorites = useAppStore((s) => s.favoriteIntervals);
   const custom = useAppStore((s) => s.customIntervals);
   const toggleFavorite = useAppStore((s) => s.toggleFavoriteInterval);
@@ -127,7 +128,10 @@ function IntervalMenu({ onClose }: { onClose: () => void }) {
         </button>
       )}
       {INTERVAL_GROUPS.map((g) => {
-        const extra = custom.filter((c) => unitOf(c) === g.unit && !isBuiltinInterval(c));
+        const extra = custom.filter((c) => {
+          const u = unitOf(c);
+          return u !== null && g.units.includes(u) && !isBuiltinInterval(c);
+        });
         const list = sortIntervals([...g.intervals, ...extra]);
         const isCollapsed = collapsed[g.unit] ?? false;
         return (

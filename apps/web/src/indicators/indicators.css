@@ -13,7 +13,7 @@
   padding: 0 4px;
   margin-left: -4px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--text);
   white-space: nowrap;
   cursor: default;
@@ -75,14 +75,16 @@
 
 /* ---- indicators picker ---- */
 .ind-list {
-  padding: 4px 0;
+  padding: 4px 0 8px;
 }
 .ind-row {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 36px;
-  padding: 0 16px 0 12px;
+  margin: 0 8px;
+  padding: 0 8px 0 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 .ind-row.active {
@@ -108,7 +110,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -118,6 +120,47 @@
 }
 .ind-star.on {
   color: var(--star);
+}
+.ind-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ind-edit:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.ind-scripts-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 16px 0;
+}
+.ind-scripts-head .io-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+}
+.ind-row-broken {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  margin: 0 8px;
+  padding: 0 8px 0 40px;
+  color: var(--text-muted);
+}
+.ind-row-broken .ind-row-name {
+  color: var(--text);
 }
 .ind-picker-note {
   padding: 8px 16px;

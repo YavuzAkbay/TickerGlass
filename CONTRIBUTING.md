@@ -14,8 +14,8 @@ git commit -s -m "feat(engine): add log price scale"
 
 ## Workflow
 
-1. Pick an unchecked item in [docs/ROADMAP.md](docs/ROADMAP.md), or open an issue first for
-   anything larger.
+1. Open an issue first for anything larger than a small fix (see
+   [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for known gaps).
 2. Keep pull requests focused. Include tests: Vitest for TypeScript packages, pytest for the API.
 3. Before pushing, all of these must pass:
    ```sh
@@ -26,7 +26,7 @@ git commit -s -m "feat(engine): add log price scale"
 
 ## Ground rules
 
-- Do not copy code, icons, or assets from reference or other proprietary products.
+- Do not copy code, icons, or assets from proprietary products.
   Implement features from public descriptions and your own work.
-- No script compatibility. Custom indicators use our own documented API.
+- Custom indicators use our own documented API.
 - All Yahoo Finance access goes through the API's provider adapter, never the browser.

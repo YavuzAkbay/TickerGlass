@@ -1,18 +1,22 @@
 import { useEffect } from 'react';
-import { BottomBar } from './bottombar/BottomBar';
-import { ChartView } from './chart/ChartView';
+import { SymbolHeader } from './center/SymbolHeader';
+import { RangeStrip } from './bottombar/RangeStrip';
+import { ChartGrid } from './layout/ChartGrid';
+import { registerGridCommands } from './layout/commands';
 import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
 import { registerIndicatorCommands } from './indicators/commands';
+import { registerReplayCommands } from './replay/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
-import { RightSidebar } from './sidebar/RightSidebar';
+import { Inspector } from './inspector/Inspector';
+import { Navigator } from './navigator/Navigator';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
-import { LeftToolbar } from './toolbar/LeftToolbar';
+import { ToolRail } from './toolbar/ToolRail';
 import { TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
 import { PromptHost } from './ui/Prompt';
@@ -22,6 +26,8 @@ import './App.css';
 
 export function App() {
   const theme = useAppStore((s) => s.theme);
+  const railHidden = useUiStore((s) => s.toolRailHidden);
+  const inspectorOpen = useUiStore((s) => s.inspector !== null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -32,8 +38,10 @@ export function App() {
     const unregisterIndicators = registerIndicatorCommands();
     const unregisterDrawings = registerDrawingCommands();
     const unregisterLayouts = registerLayoutCommands();
+    const unregisterGrid = registerGridCommands();
     const unregisterWatchlist = registerWatchlistCommands();
-    // Digits open the interval input, anything else symbol search .
+    const unregisterReplay = registerReplayCommands();
+    // Digits open the interval input, anything else symbol search.
     const uninstall = installShortcuts((initial) =>
       useUiStore
         .getState()
@@ -44,7 +52,9 @@ export function App() {
       unregisterIndicators();
       unregisterDrawings();
       unregisterLayouts();
+      unregisterGrid();
       unregisterWatchlist();
+      unregisterReplay();
       uninstall();
     };
   }, []);
@@ -53,21 +63,23 @@ export function App() {
   useEffect(() => startPersistence(), []);
 
   return (
-    <div className="app">
+    <div className={`app${inspectorOpen ? '' : ' no-inspector'}`}>
       <header className="app-top">
         <TopBar />
       </header>
-      <aside className="app-left">
-        <LeftToolbar />
-      </aside>
+      <Navigator />
       <main className="center">
-        <div className="chart-area">
-          <ChartView />
+        <SymbolHeader />
+        <div className="chart-pane">
+          <div className="chart-area">
+            <ChartGrid />
+          </div>
+          <RangeStrip />
         </div>
-        <BottomBar />
       </main>
-      <aside className="app-right">
-        <RightSidebar />
+      <Inspector />
+      <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
+        <ToolRail />
       </aside>
       <DialogHost />
       <ContextMenuHost />

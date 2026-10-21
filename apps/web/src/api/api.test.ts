@@ -106,16 +106,16 @@ describe('persistence endpoints', () => {
     expect(calls[3]!.init.method).toBe('POST');
 
     respond = () => json({ mode: 'replace', dryRun: true });
-    await importAll({ version: 1, app: 'investopen' }, { mode: 'replace', dryRun: true });
+    await importAll({ version: 1, app: 'tickerglass' }, { mode: 'replace', dryRun: true });
     expect(calls[4]!.url).toBe('/api/import?mode=replace&dryRun=true');
 
     await importLayout({ version: 1, kind: 'layout', layout: { name: 'n', state: {}, schemaVersion: 1 } });
     expect(calls[5]!.url).toBe('/api/layouts/import');
 
     // A real replace carries the explicit confirmation; merge never does.
-    await importAll({ version: 1, app: 'investopen' }, { mode: 'replace', confirm: true });
+    await importAll({ version: 1, app: 'tickerglass' }, { mode: 'replace', confirm: true });
     expect(calls[6]!.url).toBe('/api/import?mode=replace&confirm=true');
-    await importAll({ version: 1, app: 'investopen' }, { mode: 'merge', confirm: true });
+    await importAll({ version: 1, app: 'tickerglass' }, { mode: 'merge', confirm: true });
     expect(calls[7]!.url).toBe('/api/import?mode=merge');
 
     respond = () => json({ a: 1 });

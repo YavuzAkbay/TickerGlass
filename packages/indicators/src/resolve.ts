@@ -1,16 +1,20 @@
 import type { AnyIndicatorDefinition } from './registry';
 import {
+  EXTERNAL_SOURCE_PREFIX,
   PRICE_SOURCES,
+  VOLUME_PROFILE_COLOR_KEYS,
   type ColorSpec,
   type InputValueMap,
   type InputValues,
   type InputsSchema,
+  type OutputDef,
   type OutputSourceRef,
   type OutputStyleOverrides,
   type PriceSource,
   type ResolvedOutput,
   type SourceValue,
 } from './types';
+import { isSafeColor, isUserScriptType } from './user-script';
 
 export function isOutputRef(v: unknown): v is OutputSourceRef {
   return (
@@ -19,6 +23,11 @@ export function isOutputRef(v: unknown): v is OutputSourceRef {
     typeof (v as OutputSourceRef).instanceId === 'string' &&
     typeof (v as OutputSourceRef).outputId === 'string'
   );
+}
+
+/** A source ref to an external symbol's price column (`sym:<SYMBOL>`), not an instance. */
+export function isExternalRef(v: unknown): v is OutputSourceRef {
+  return isOutputRef(v) && v.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX);
 }
 
 export function isPriceSource(v: unknown): v is PriceSource {
@@ -69,10 +78,45 @@ export function resolveInputs(
         break;
       case 'color':
       case 'timeframe':
+      case 'symbol':
         if (typeof v !== 'string') throw bad();
         out[key] = v;
         break;
     }
+  }
+  return out;
+}
+
+/**
+ * Like `resolveInputs` but never throws: a missing or invalid value falls back
+ * to the input's default; valid values are kept (clamped/rounded the same
+ * way); unknown keys are dropped. For user script types (`user:`) `source`
+ * inputs accept only price sources and `color` inputs only safe colours. For
+ * stored inputs of definitions that may have changed since (user scripts).
+ */
+export function coerceInputs(
+  def: AnyIndicatorDefinition,
+  given: InputValueMap = {},
+): InputValueMap {
+  const user = isUserScriptType(def.id);
+  const out: InputValueMap = {};
+  for (const [key, d] of Object.entries(def.inputs)) {
+    const v = Object.hasOwn(given, key) ? given[key] : undefined;
+    let ok = v !== undefined;
+    if (ok && user && d.kind === 'source') ok = isPriceSource(v);
+    if (ok && user && d.kind === 'color') ok = isSafeColor(v);
+    if (ok) {
+      try {
+        const r = resolveInputs(def, { [key]: v } as InputValueMap)[key];
+        if (r !== undefined) {
+          out[key] = r;
+          continue;
+        }
+      } catch {
+        // Wrong type for this input: use the default below.
+      }
+    }
+    out[key] = d.default;
   }
   return out;
 }
@@ -86,6 +130,12 @@ export function timeframeInputValue(def: AnyIndicatorDefinition, inputs: InputVa
     }
   }
   return '';
+}
+
+/** Whether an instance with these (resolved) inputs reads `env.events` (`def.usesEvents`). */
+export function usesEvents(def: AnyIndicatorDefinition, inputs: InputValueMap): boolean {
+  const u = def.usesEvents;
+  return typeof u === 'function' ? u(inputs as InputValues<InputsSchema>) : u === true;
 }
 
 /**
@@ -103,14 +153,40 @@ export function waitsForTimeframeClose(
   return false;
 }
 
-/** Output references among the `source` inputs. */
+/** Output references to other instances among the `source` inputs (not external symbols). */
 export function sourceRefs(def: AnyIndicatorDefinition, inputs: InputValueMap): OutputSourceRef[] {
   const refs: OutputSourceRef[] = [];
   for (const [key, d] of Object.entries(def.inputs)) {
     const v = inputs[key] as SourceValue | undefined;
-    if (d.kind === 'source' && isOutputRef(v)) refs.push(v);
+    if (d.kind === 'source' && isOutputRef(v) && !isExternalRef(v)) refs.push(v);
   }
   return refs;
+}
+
+/** Symbol of an external source ref (`sym:GOOG` -> 'GOOG'). */
+export function externalRefSymbol(ref: OutputSourceRef): string {
+  return ref.instanceId.slice(EXTERNAL_SOURCE_PREFIX.length);
+}
+
+/**
+ * External symbols an instance needs: `symbol` inputs (non-empty) and `sym:`
+ * source refs. Unique, in input order.
+ */
+export function externalSymbols(def: AnyIndicatorDefinition, inputs: InputValueMap): string[] {
+  const out = new Set<string>();
+  for (const [key, d] of Object.entries(def.inputs)) {
+    const v = inputs[key];
+    if (d.kind === 'symbol' && typeof v === 'string' && v !== '') out.add(v);
+    else if (d.kind === 'source' && isExternalRef(v)) out.add(externalRefSymbol(v));
+  }
+  return [...out];
+}
+
+/** Outputs with a per-bar values array: plots, shapes, background, volume profile period marks. */
+export function isValueOutput(o: OutputDef): boolean {
+  return (
+    o.type === 'plot' || o.type === 'shape' || o.type === 'bgcolor' || o.type === 'volumeProfile'
+  );
 }
 
 function palette(c: ColorSpec): string[] {
@@ -147,6 +223,7 @@ export function resolveOutputs(
           base: o.base === undefined ? 0 : o.base,
           offset: o.offset === undefined ? 0 : val(o.offset),
           showLastValue: o.showLastValue ?? true,
+          connectGaps: o.connectGaps ?? false,
         };
       case 'hline':
         return {
@@ -188,8 +265,24 @@ export function resolveOutputs(
           size: ov.size ?? o.size ?? 'small',
           colors: ov.colors ?? palette(o.color),
           text: o.text ?? '',
+          textFromValue: o.textFromValue ?? false,
           textColor: ov.textColor ?? o.textColor ?? palette(o.color)[0] ?? '',
           offset: o.offset === undefined ? 0 : val(o.offset),
+        };
+      case 'volumeProfile':
+        return {
+          type: 'volumeProfile',
+          id: o.id,
+          title: o.title,
+          visible,
+          mode: o.mode,
+          rowsLayout: val(o.rowsLayout),
+          rows: val(o.rows),
+          rowSize: val(o.rowSize),
+          valueArea: val(o.valueArea),
+          widthPercent: val(o.widthPercent),
+          placement: val(o.placement),
+          colors: ov.colors ?? VOLUME_PROFILE_COLOR_KEYS.map((k) => o[k]),
         };
     }
   });

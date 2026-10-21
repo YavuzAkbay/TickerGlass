@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { OhlcvSource } from '../chart-types';
 import { DARK_THEME } from '../options';
 import { PriceScale } from '../scale/price-scale';
@@ -8,12 +8,16 @@ import { hitTestStudy, segmentDistance } from './hit';
 import { dataRange, drawSpan, drawStudy, type StudyDrawContext } from './render';
 import { diffTail, snapshotSeries } from './series-diff';
 import { Study, studyValueRange } from './study';
+import { clearVolumeProfileCache } from '../drawings/tools/volume-profile';
+import { sessionPeriods, studyProfiles } from './volume-profile';
 import { StudySeries, type StudyHost } from './study-series';
 import {
   STUDY_COLOR_NONE,
   type StudyOutputMeta,
   type StudyPlotMeta,
+  type StudyShapeMeta,
   type StudySpec,
+  type StudyVolumeProfileMeta,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -83,9 +87,12 @@ class RecCtx {
   fillRect(x: number, y: number, w: number, h: number): void {
     this.rec('fillRect', [x, y, w, h]);
   }
-  fillText(_t: string, x: number, y: number): void {
+  texts: string[] = [];
+  fillText(t: string, x: number, y: number): void {
+    this.texts.push(t);
     this.rec('fillText', [x, y]);
   }
+  scale(): void {}
   measureText(t: string): { width: number } {
     return { width: t.length * 6 };
   }
@@ -104,7 +111,7 @@ function plot(id: string, extra: Partial<StudyPlotMeta> = {}): StudyPlotMeta {
     title: id.toUpperCase(),
     visible: true,
     kind: 'line',
-    colors: ['#2962ff'],
+    colors: ['#6E9BD6'],
     lineWidth: 1,
     lineStyle: 'solid',
     base: null,
@@ -266,7 +273,7 @@ describe('Study data', () => {
     s.setStyle('a', { color: '#123456', lineWidth: 3, kind: 'step', visible: false });
     const o = s.output('a') as StudyPlotMeta;
     expect(o).toMatchObject({ colors: ['#123456'], lineWidth: 3, kind: 'step', visible: false });
-    expect((original.outputs[0] as StudyPlotMeta).colors).toEqual(['#2962ff']);
+    expect((original.outputs[0] as StudyPlotMeta).colors).toEqual(['#6E9BD6']);
     expect(s.setStyle('nope', { visible: false })).toBe(false);
     s.updateSpec({ title: 'New', scaleRange: { min: 0, max: 100 } });
     expect(s.spec.title).toBe('New');
@@ -747,7 +754,13 @@ describe('StudySeries', () => {
     ts.barSpacing = 10;
     ts.baseIndex = n - 1;
     ts.rightOffset = 0;
-    return { store: flatBars(n), timeScale: ts, seriesRevision: revision, theme: DARK_THEME };
+    return {
+      store: flatBars(n),
+      timeScale: ts,
+      seriesRevision: revision,
+      theme: DARK_THEME,
+      compareReference: () => null,
+    };
   }
 
   it('uses the fixed scale range and skips stale or hidden studies', () => {
@@ -819,7 +832,7 @@ describe('StudySeries', () => {
     );
     const h = host(3);
     const ser = new StudySeries(s, h);
-    expect(ser.lastValues()).toEqual([{ outputId: 'a', price: 30, color: '#f00' }]);
+    expect(ser.lastValues()).toEqual([{ outputId: 'a', price: 30, raw: 30, color: '#f00' }]);
     expect(ser.valuesAt(1)).toEqual([20, 2]);
     expect(ser.hitTestPx(0, 0)).toBeNull(); // not drawn yet
     const ps = new PriceScale();
@@ -838,6 +851,158 @@ describe('StudySeries', () => {
       to: 2,
     });
     expect(ser.hitTestPx(h.timeScale.indexToX(2), ps.priceToY(30))).toBe('a');
+  });
+});
+
+describe('StudySeries compare and own scale', () => {
+  /** Host whose main series closes are `closes` (compare reference = close). */
+  function refHost(closes: number[]): StudyHost {
+    const n = closes.length;
+    const ts = new TimeScale();
+    ts.width = 400;
+    ts.barSpacing = 10;
+    ts.baseIndex = n - 1;
+    ts.rightOffset = 0;
+    const store = flatBars(n);
+    (store.close as Float64Array).set(closes);
+    return {
+      store,
+      timeScale: ts,
+      seriesRevision: 1,
+      theme: DARK_THEME,
+      compareReference: (i) => store.close[Math.max(0, Math.min(i, n - 1))] ?? null,
+    };
+  }
+
+  function rc(h: StudyHost, ps: PriceScale, from: number, to: number, ctx = new RecCtx()) {
+    return {
+      ctx: ctx as unknown as CanvasRenderingContext2D,
+      dpr: 1,
+      width: 400,
+      height: ps.height,
+      timeScale: h.timeScale,
+      priceScale: ps,
+      theme: DARK_THEME,
+      from,
+      to,
+    };
+  }
+
+  function percentScale(base: number): PriceScale {
+    const ps = new PriceScale();
+    ps.height = 200;
+    ps.mode = 'percent';
+    ps.base = base;
+    ps.min = -50;
+    ps.max = 50;
+    return ps;
+  }
+
+  const closes = [10, 12, 15, 18];
+
+  it('rescales a same-% overlay to the main series at the first visible bar', () => {
+    const s = withData([plot('close')], { close: f64([50, 55, 60, 54]) }, {}, { compare: true });
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.excludeFromAutoscale).toBe(false);
+    expect(ser.behind).toBe(false);
+    const f = ser.compareFactor(1, 3);
+    expect(f).toBe(12 / 55);
+    // Auto-scale gets the scaled range of [1, 3].
+    expect(ser.priceRange(1, 3)).toEqual({ min: 54 * f, max: 60 * f });
+    const drawn = ser.valuesAt(3)[0]!;
+    expect(drawn).toBe(54 * (12 / 55)); // golden 11.781818181818182 (same double)
+    const ps = percentScale(12); // main baseValue(from = 1)
+    expect(ps.toInternal(drawn)).toBeCloseTo(-20 / 11, 12); // -1.8181818181818181 (golden)
+    // Drawn and hit-tested on the scaled y.
+    const ctx = new RecCtx();
+    ser.draw(rc(refHost(closes), ps, 1, 3, ctx));
+    const line = ctx.of('stroke')[0]!;
+    const pts = line.path!.filter((p) => p.op === 'moveTo' || p.op === 'lineTo');
+    const h = refHost(closes);
+    const p3 = pts.find((p) => Math.abs(p.args[0]! - h.timeScale.indexToX(3)) < 1e-9)!;
+    expect(p3.args[1]).toBeCloseTo(ps.priceToY(drawn), 9);
+    expect(ser.hitTestPx(h.timeScale.indexToX(3), ps.priceToY(drawn))).toBe('close');
+    expect(ser.hitTestPx(h.timeScale.indexToX(3), ps.priceToY(54))).toBeNull();
+    // Last value: scaled price for the axis, raw value kept.
+    expect(ser.lastValues()).toEqual([
+      { outputId: 'close', price: drawn, raw: 54, color: '#6E9BD6' },
+    ]);
+    // Legends stay raw.
+    expect(s.legendValues(3, 1, 2)[0]!.value).toBe(54);
+  });
+
+  it('skips leading NaN overlay values for the reference bar', () => {
+    const s = withData([plot('close')], { close: f64([50, NaN, 60, 54]) }, {}, { compare: true });
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.compareFactor(1, 3)).toBe(0.25);
+    const ps = percentScale(12);
+    expect(ps.toInternal(ser.valuesAt(2)[0]!)).toBe(25);
+    expect(ps.toInternal(ser.valuesAt(3)[0]!)).toBe(12.5);
+  });
+
+  it('draws nothing when the first visible overlay value is not positive', () => {
+    const s = withData([plot('close')], { close: f64([-3, 55, 60, 54]) }, {}, { compare: true });
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.compareFactor(0, 3)).toBeNaN();
+    expect(ser.priceRange(0, 3)).toBeNull();
+    const ctx = new RecCtx();
+    ser.draw(rc(refHost(closes), percentScale(10), 0, 3, ctx));
+    expect(ctx.calls).toHaveLength(0);
+    expect(ser.valuesAt(2)).toEqual([]);
+    expect(ser.lastValues()).toEqual([]);
+    expect(ser.hitTestPx(0, 0)).toBeNull();
+  });
+
+  it('recomputes the cached factor when data or the reference changes', () => {
+    const s = withData([plot('close')], { close: f64([50, 55, 60, 54]) }, {}, { compare: true });
+    const h = refHost(closes);
+    const ser = new StudySeries(s, h);
+    expect(ser.compareFactor(1, 3)).toBe(12 / 55);
+    (h.store.close as Float64Array)[1] = 11; // live update of the reference bar
+    expect(ser.compareFactor(1, 3)).toBe(11 / 55);
+    s.values.close![1] = NaN;
+    ser.dataVersion++;
+    expect(ser.compareFactor(1, 3)).toBe(0.25);
+  });
+
+  it('ignores compare off the main pane or on other scales', () => {
+    const s = withData([plot('close')], { close: f64([50, 55, 60, 54]) }, {}, { compare: true });
+    s.paneId = 'p2';
+    const ser = new StudySeries(s, refHost(closes));
+    expect(ser.isCompare).toBe(false);
+    expect(ser.valuesAt(3)).toEqual([54]);
+  });
+
+  it("draws 'own' studies on a full-height linear scale outside the pane's auto-scale", () => {
+    const s = withData([plot('close')], { close: f64([5, 10]) }, {}, { priceScale: 'own' });
+    const h = refHost([100, 100]);
+    const ser = new StudySeries(s, h);
+    expect(ser.excludeFromAutoscale).toBe(true);
+    expect(ser.behind).toBe(false);
+    expect(ser.priceRange(0, 1)).toBeNull();
+    expect(ser.baseValue(0)).toBeNull();
+    expect(ser.valuesAt(1)).toEqual([]); // no magnet
+    expect(ser.lastValues()).toEqual([]); // not drawn yet
+    const ps = percentScale(100);
+    ps.height = 100;
+    const ctx = new RecCtx();
+    ser.draw(rc(h, ps, 0, 1, ctx));
+    const pts = ctx.of('stroke')[0]!.path!.filter((p) => p.op !== 'arc');
+    const y = (i: number) =>
+      pts.find((p) => Math.abs(p.args[0]! - h.timeScale.indexToX(i)) < 1e-9)!.args[1]!;
+    expect(y(1)).toBeCloseTo(10, 9);
+    expect(y(0)).toBeCloseTo(92, 9);
+    expect(ser.lastValues()).toEqual([
+      { outputId: 'close', price: 10, raw: 10, y: 10, color: '#6E9BD6' },
+    ]);
+    expect(ser.hitTestPx(h.timeScale.indexToX(0), 92)).toBe('close');
+  });
+
+  it("keeps 'none' studies behind without last values", () => {
+    const s = withData([plot('v')], { v: f64([1, 2]) }, {}, { priceScale: 'none' });
+    const ser = new StudySeries(s, refHost([1, 2]));
+    expect(ser.behind).toBe(true);
+    expect(ser.lastValues()).toEqual([]);
   });
 });
 
@@ -914,5 +1079,253 @@ describe('formatting', () => {
     expect(formatStudyValue(NaN, 'price', 2, 2)).toBe('');
     expect(formatStudyTick(50, 'percent', 0)).toBe('50%');
     expect(formatStudyTick(50, 'price', 0)).toBeNull();
+  });
+});
+
+describe('connectGaps', () => {
+  it('joins values across NaN bars instead of breaking the line', () => {
+    const s = withData([plot('a', { connectGaps: true })], { a: f64([10, 20, NaN, NaN, 30, 40]) });
+    const { ctx, dc, ts, ps } = setup(6);
+    drawStudy(dc, s);
+    const st = ctx.of('stroke');
+    expect(st).toHaveLength(1);
+    expect(pathOps(st[0]!, 'moveTo')).toHaveLength(1);
+    const lines = pathOps(st[0]!, 'lineTo');
+    expect(lines).toHaveLength(3);
+    // The third segment spans the gap: bar 1 -> bar 4.
+    expect(lines[1]!.args[0]).toBeCloseTo(ts.indexToX(4));
+    expect(lines[1]!.args[1]).toBeCloseTo(ps.priceToY(30));
+  });
+
+  it('joins steps too, and the default still breaks', () => {
+    const vals = f64([10, 20, NaN, 30, 40]);
+    const a = setup(5);
+    drawStudy(a.dc, withData([plot('a', { kind: 'step', connectGaps: true })], { a: vals }));
+    expect(pathOps(a.ctx.of('stroke')[0]!, 'moveTo')).toHaveLength(1);
+    const b = setup(5);
+    drawStudy(b.dc, withData([plot('a', { kind: 'step' })], { a: vals }));
+    expect(pathOps(b.ctx.of('stroke')[0]!, 'moveTo')).toHaveLength(2);
+  });
+});
+
+describe('shape textFromValue', () => {
+  const shape = (extra: Partial<StudyShapeMeta>): StudyShapeMeta => ({
+    type: 'shape',
+    id: 'sh',
+    title: 'SH',
+    visible: true,
+    shape: 'labelDown',
+    location: 'absolute',
+    size: 'small',
+    colors: ['#f00'],
+    text: 'fixed',
+    textColor: '#fff',
+    ...extra,
+  });
+
+  it('labels with the value formatted by the study format', () => {
+    const s = withData([shape({ textFromValue: true })], { sh: f64([NaN, 12.5, NaN]) });
+    const { ctx, dc } = setup(3);
+    drawStudy(dc, s);
+    expect(ctx.texts).toEqual(['12.50']);
+  });
+
+  it('uses the study format and works above bars and for plain shapes', () => {
+    const a = withData(
+      [shape({ textFromValue: true, location: 'aboveBar' })],
+      { sh: f64([NaN, 1500, NaN]) },
+      {},
+      { format: 'volume' },
+    );
+    const c1 = setup(3);
+    drawStudy(c1.dc, a);
+    expect(c1.ctx.texts).toEqual(['1.5K']);
+    const b = withData([shape({ shape: 'circle', textFromValue: true })], { sh: f64([50]) });
+    const c2 = setup(1);
+    c2.dc.symbolDecimals = 3;
+    b.updateSpec({ precision: null });
+    drawStudy(c2.dc, b);
+    expect(c2.ctx.texts).toEqual(['50.000']);
+  });
+
+  it('keeps the static text without textFromValue', () => {
+    const s = withData([shape({})], { sh: f64([50]) });
+    const { ctx, dc } = setup(1);
+    drawStudy(dc, s);
+    expect(ctx.texts).toEqual(['fixed']);
+  });
+});
+
+describe('volume profile output', () => {
+  const vp = (extra: Partial<StudyVolumeProfileMeta> = {}): StudyVolumeProfileMeta => ({
+    type: 'volumeProfile',
+    id: 'vp',
+    title: 'VP',
+    visible: true,
+    mode: 'visible',
+    rowsLayout: 'count',
+    rows: 8,
+    rowSize: 1,
+    valueArea: 70,
+    widthPercent: 30,
+    placement: 'right',
+    colors: ['#01', '#02', '#03', '#04', '#05'],
+    ...extra,
+  });
+
+  /** Ramping bars: bar i spans [i, i + 2], volume 10 + i. */
+  function rampBars(n: number): OhlcvSource {
+    const mk = (f: (i: number) => number) => Float64Array.from({ length: n }, (_, i) => f(i));
+    return {
+      time: mk((i) => i * 60),
+      open: mk((i) => i + 0.5),
+      high: mk((i) => i + 2),
+      low: mk((i) => i),
+      close: mk((i) => i + 1.5),
+      volume: mk((i) => 10 + i),
+      length: n,
+    };
+  }
+
+  function starts(n: number, at: number[]): Float64Array {
+    const v = new Float64Array(n).fill(NaN);
+    for (const i of at) v[i] = 1;
+    return v;
+  }
+
+  beforeEach(() => clearVolumeProfileCache());
+
+  it('visible mode profiles the visible logical range only', () => {
+    const n = 100;
+    const s = withData([vp()], { vp: new Float64Array(n).fill(NaN) });
+    const { dc, ts } = setup(n);
+    dc.bars = rampBars(n);
+    const p = studyProfiles(
+      s,
+      vp(),
+      dc,
+      Math.floor(ts.xToLogical(0)),
+      Math.ceil(ts.xToLogical(400)),
+    )[0]!;
+    expect(p.from).toBeGreaterThanOrEqual(58);
+    expect(p.from).toBeLessThanOrEqual(61);
+    expect(p.to).toBe(99);
+    expect(p.low).toBe(p.from);
+  });
+
+  it('draws rows, the POC line and no value area lines, in device px', () => {
+    const n = 30;
+    const s = withData([vp()], { vp: new Float64Array(n).fill(NaN) });
+    const { ctx, dc } = setup(n);
+    dc.bars = rampBars(n);
+    dc.dpr = 2;
+    drawStudy(dc, s);
+    expect(ctx.of('fillRect').length).toBeGreaterThan(0);
+    expect(ctx.of('stroke')).toHaveLength(1); // POC only
+    expect(ctx.of('stroke')[0]!.strokeStyle).toBe('#05');
+    const fills = new Set(ctx.of('fillRect').map((c) => c.fillStyle));
+    expect([...fills].every((f) => ['#01', '#02', '#03', '#04'].includes(f))).toBe(true);
+  });
+
+  it('is excluded from autoscale and hit testing and has no legend value', () => {
+    const n = 30;
+    const s = withData([vp(), plot('a')], { vp: starts(n, [0]), a: f64(new Array(n).fill(40)) });
+    expect(studyValueRange(s, 0, n, n)).toEqual({ min: 40, max: 40 });
+    expect(s.legendValues(5, 1, 2).map((l) => l.outputId)).toEqual(['a']);
+    const { dc } = setup(n);
+    expect(hitTestStudy(dc, withData([vp()], { vp: starts(n, [0]) }), 395, 100)).toBeNull();
+  });
+
+  it('session mode: one profile per period, periods from non-NaN values', () => {
+    const n = 30;
+    expect(sessionPeriods(starts(n, [10, 20]), n)).toEqual([
+      [0, 9],
+      [10, 19],
+      [20, 29],
+    ]);
+    expect(sessionPeriods(starts(n, [0, 10]), n)).toEqual([
+      [0, 9],
+      [10, 29],
+    ]);
+    expect(sessionPeriods(undefined, n)).toEqual([[0, n - 1]]);
+    expect(sessionPeriods(undefined, 0)).toEqual([]);
+    const o = vp({ mode: 'session' });
+    const s = withData([o], { vp: starts(n, [10, 20]) });
+    const { dc } = setup(n);
+    dc.bars = rampBars(n);
+    const ps = studyProfiles(s, o, dc, 0, 29);
+    expect(ps.map((p) => [p.from, p.to])).toEqual([
+      [0, 9],
+      [10, 19],
+      [20, 29],
+    ]);
+    // Only periods overlapping the view.
+    expect(studyProfiles(s, o, dc, 12, 15).map((p) => [p.from, p.to])).toEqual([[10, 19]]);
+  });
+
+  it('session mode draws every period; far-out zoom skips tiny ones', () => {
+    const n = 30;
+    const o = vp({ mode: 'session', placement: 'left' });
+    const s = withData([o], { vp: starts(n, [10, 20]) });
+    const { ctx, dc } = setup(n);
+    dc.bars = rampBars(n);
+    drawStudy(dc, s);
+    expect(ctx.of('stroke')).toHaveLength(3);
+    const z = setup(n, n, 0.3);
+    z.dc.bars = rampBars(n);
+    drawStudy(z.dc, s);
+    expect(z.ctx.of('stroke')).toHaveLength(0);
+  });
+
+  it('caches profiles; a live tick recomputes only the last period', () => {
+    const n = 30;
+    const o = vp({ mode: 'session' });
+    const s = withData([o], { vp: starts(n, [10, 20]) });
+    const { dc } = setup(n);
+    const bars = rampBars(n);
+    dc.bars = bars;
+    const a = studyProfiles(s, o, dc, 0, 29);
+    const b = studyProfiles(s, o, dc, 0, 29);
+    expect(b.every((p, i) => p === a[i])).toBe(true);
+    // Tick: last bar's close/volume change in place.
+    (bars.volume as Float64Array)[29] = 999;
+    (bars.high as Float64Array)[29] = 40;
+    const c = studyProfiles(s, o, dc, 0, 29);
+    expect(c[0]).toBe(a[0]);
+    expect(c[1]).toBe(a[1]);
+    expect(c[2]).not.toBe(a[2]);
+    expect(c[2]!.totalVolume).toBeGreaterThan(a[2]!.totalVolume);
+    // A different row setting recomputes everything.
+    const d = studyProfiles(s, { ...o, rows: 4 }, dc, 0, 29);
+    expect(d[0]).not.toBe(c[0]);
+    expect(d[0]!.rows).toBe(4);
+  });
+
+  it('caches the visible profile per range and the last bar', () => {
+    const n = 30;
+    const o = vp();
+    const s = withData([o], { vp: new Float64Array(n).fill(NaN) });
+    const { dc } = setup(n);
+    const bars = rampBars(n);
+    dc.bars = bars;
+    const a = studyProfiles(s, o, dc, 0, 29)[0]!;
+    expect(studyProfiles(s, o, dc, 0, 29)[0]).toBe(a);
+    expect(studyProfiles(s, o, dc, 5, 29)[0]).not.toBe(a);
+    (bars.volume as Float64Array)[29] = 5;
+    expect(studyProfiles(s, o, dc, 5, 29)[0]).not.toBe(a);
+  });
+
+  it('style patches recolour entries one by one', () => {
+    const s = withData([vp()], { vp: new Float64Array(3).fill(NaN) });
+    s.setStyle('vp', { colors: ['#a', '#b'] });
+    expect((s.output('vp') as StudyVolumeProfileMeta).colors).toEqual([
+      '#a',
+      '#b',
+      '#03',
+      '#04',
+      '#05',
+    ]);
+    s.setStyle('vp', { visible: false });
+    expect(s.output('vp')!.visible).toBe(false);
   });
 });

@@ -23,6 +23,11 @@ export class IndicatorRegistry {
     this.defs.set(def.id, def);
   }
 
+  /** Removes a definition (user script deleted or replaced). False if it was not registered. */
+  unregister(id: string): boolean {
+    return this.defs.delete(id);
+  }
+
   get(id: string): AnyIndicatorDefinition | undefined {
     return this.defs.get(id);
   }
@@ -63,6 +68,8 @@ export function validateDefinition(def: AnyIndicatorDefinition): void {
   }
   const tfInputs = Object.values(def.inputs).filter((i) => i.kind === 'timeframe');
   if (tfInputs.length > 1) throw new Error(`${def.id}: at most one timeframe input is allowed`);
+  if (def.repaints && tfInputs.length)
+    throw new Error(`${def.id}: repainting indicators cannot have a timeframe input`);
   for (const [key, input] of Object.entries(def.inputs)) {
     if (input.kind === 'enum' && !input.options.includes(input.default))
       throw new Error(`${def.id}: enum input "${key}" default is not an option`);

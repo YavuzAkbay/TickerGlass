@@ -5,19 +5,25 @@ Run from the repo root without touching the API project:
     uv run --no-project --python 3.11 --with ta-lib --with pandas --with numpy \
         packages/indicators/scripts/golden.py
 
-Writes `bars.csv` (1000 seeded random-walk hourly OHLCV bars) and one
-`<id>[-<variant>].csv` per case: first line `# inputs: {json} ref: talib|numpy`,
-then `time,<outputId>...` (`<outputId>.color` = palette index), empty cell = NaN,
-floats as `repr`.
+Writes the bar series (`bars.csv`: 1000 seeded random-walk hourly OHLCV bars;
+`bars-daily.csv`: ~6 years of seeded weekday daily bars; see golden_common.py)
+and one `<id>[-<variant>].csv` per case: first line
+`# inputs: {json} ref: talib|numpy[ bars: <file>][ extra: <file>]` (bars/extra
+only when not the default hourly series / when the case has a second series),
+then `time,<outputId>...` (`<outputId>.color` = palette index), empty cell =
+NaN, floats as `repr`.
 
-Target semantics are reference / standard. TA-Lib is used where its output,
-including the warm-up, matches standard (SMA, EMA, WMA, RSI, Bollinger, Williams %R,
-CCI, MFI). Everything else is a plain numpy port of the textbook / standard
+Cases: the pre-Phase-12 built-ins below, plus one module per Phase 12 group
+(`golden_<group>.py`, each exposing `cases()`; see GROUPS).
+
+Target semantics are the common charting-platform conventions. TA-Lib is used where its output,
+including the warm-up, matches them (SMA, EMA, WMA, RSI, Bollinger, Williams %R,
+CCI, MFI). Everything else is a plain numpy port of the textbook
 reference formula (ref: numpy). Where TA-Lib differs only in the warm-up or
 seeding, the script cross-checks the numpy reference against TA-Lib after the
 point where they must agree (see `cross_check`).
 
-Conventions mirrored from standard: warm-up is NaN; ema/rma seed with the SMA of
+Conventions mirrored: warm-up is NaN; ema/rma seed with the SMA of
 the first `length` values; stdev is population; leading NaNs are skipped.
 """
 
@@ -25,186 +31,63 @@ from __future__ import annotations
 
 import json
 import math
-from pathlib import Path
 
 import numpy as np
 import talib
 
-OUT = Path(__file__).resolve().parent.parent / "test" / "golden"
-N = 1000
-START = 1704286800  # 2024-01-03 13:00 UTC (Wednesday, mid-week, mid-month)
-STEP = 3600  # hourly bars: ~41 sessions, 7 weeks, 2 months
-NAN = float("nan")
+import golden_external
+import golden_momentum
+import golden_other
+import golden_trend_ma
+import golden_volatility
+import golden_volume
+from golden_common import (
+    DAILY,
+    HL2,
+    HLC3,
+    HOURLY,
+    NAN,
+    OUT,
+    Case,
+    Cases,
+    C,
+    H,
+    L,
+    N,
+    O,
+    T,
+    V,
+    change,
+    cross_check,
+    ema,
+    highest,
+    lowest,
+    ma_by_type,
+    mean_dev,
+    nans,
+    rma,
+    rsi_np,
+    shift1,
+    sma,
+    stdev,
+    stoch_np,
+    true_range,
+    vwma,
+    wma,
+    write_csv,
+)
+
+# ---------------------------------------------- pre-Phase-12 built-ins
+
+CORE = Cases()
+case = CORE.add
 
 
-# ---------------------------------------------------------------- bars
-
-
-def make_bars() -> dict[str, np.ndarray]:
-    rng = np.random.default_rng(42)
-    time = START + STEP * np.arange(N, dtype=np.float64)
-    close = np.empty(N)
-    open_ = np.empty(N)
-    price = 100.0
-    for i in range(N):
-        o = price + rng.normal(0, 0.05)
-        c = o * (1 + rng.normal(0, 0.006))
-        open_[i] = round(o, 4)
-        close[i] = round(c, 4)
-        price = c
-    wick_hi = np.abs(rng.normal(0, 0.25, N))
-    wick_lo = np.abs(rng.normal(0, 0.25, N))
-    high = np.round(np.maximum(open_, close) + wick_hi, 4)
-    low = np.round(np.minimum(open_, close) - wick_lo, 4)
-    volume = rng.integers(1_000, 10_000, N).astype(np.float64)
-    return {"time": time, "open": open_, "high": high, "low": low, "close": close, "volume": volume}
-
-
-B = make_bars()
-T, O, H, L, C, V = (B[k] for k in ("time", "open", "high", "low", "close", "volume"))
-HL2 = (H + L) / 2
-HLC3 = (H + L + C) / 3
-
-
-# ----------------------------------------------------- textbook primitives
-
-
-def nans() -> np.ndarray:
-    return np.full(N, NAN)
-
-
-def first_valid(x: np.ndarray) -> int:
-    idx = np.flatnonzero(~np.isnan(x))
-    return int(idx[0]) if len(idx) else N
-
-
-def windowed(x: np.ndarray, n: int, fn) -> np.ndarray:
-    """fn(window) for every full window after the leading NaNs."""
-    out = nans()
-    s = first_valid(x)
-    for i in range(s + n - 1, N):
-        w = x[i - n + 1 : i + 1]
-        assert not np.isnan(w).any(), "unexpected NaN inside a window"
-        out[i] = fn(w)
-    return out
-
-
-def sma(x, n):
-    return windowed(x, n, np.mean)
-
-
-def wsum(x, n):
-    return windowed(x, n, np.sum)
-
-
-def stdev(x, n):
-    return windowed(x, n, lambda w: np.sqrt(np.mean((w - w.mean()) ** 2)))
-
-
-def mean_dev(x, n):
-    return windowed(x, n, lambda w: np.mean(np.abs(w - w.mean())))
-
-
-def highest(x, n):
-    return windowed(x, n, np.max)
-
-
-def lowest(x, n):
-    return windowed(x, n, np.min)
-
-
-def wma(x, n):
-    weights = np.arange(1, n + 1, dtype=np.float64)
-    return windowed(x, n, lambda w: np.dot(w, weights) / weights.sum())
-
-
-def smoothed(x, n, alpha):
-    """Exponential smoothing seeded with the SMA of the first n values."""
-    out = nans()
-    s = first_valid(x)
-    if s + n - 1 >= N:
-        return out
-    prev = np.mean(x[s : s + n])
-    out[s + n - 1] = prev
-    for i in range(s + n, N):
-        prev = alpha * x[i] + (1 - alpha) * prev
-        out[i] = prev
-    return out
-
-
-def ema(x, n):
-    return smoothed(x, n, 2 / (n + 1))
-
-
-def rma(x, n):
-    return smoothed(x, n, 1 / n)
-
-
-def vwma(x, v, n):
-    return wsum(x * v, n) / wsum(v, n)
-
-
-def change(x):
-    out = nans()
-    out[1:] = x[1:] - x[:-1]
-    return out
-
-
-def true_range(handle_na: bool):
-    pc = np.concatenate([[NAN], C[:-1]])
-    tr = np.maximum(np.maximum(H - L, np.abs(H - pc)), np.abs(L - pc))
-    tr[0] = H[0] - L[0] if handle_na else NAN
-    return tr
-
-
-def ma_by_type(kind, x, n):
-    return (
-        {"SMA": sma, "EMA": ema, "SMMA (RMA)": rma, "WMA": wma}[kind](x, n)
-        if kind != "VWMA"
-        else vwma(x, V, n)
-    )
-
-
-def rsi_np(x, n):
-    ch = change(x)
-    up = rma(np.maximum(ch, 0), n)  # np.maximum keeps NaN
-    down = rma(-np.minimum(ch, 0), n)
-    out = nans()
-    for i in range(N):
-        u, d = up[i], down[i]
-        if np.isnan(u) or np.isnan(d):
-            continue
-        out[i] = 100.0 if d == 0 else 0.0 if u == 0 else 100 - 100 / (1 + u / d)
-    return out
-
-
-def stoch_np(x, hi, lo, n):
-    hh, ll = highest(hi, n), lowest(lo, n)
-    return 100 * (x - ll) / (hh - ll)
-
-
-# --------------------------------------------------------- cross checks
-
-
-def cross_check(name, ours, ref, start):
-    """numpy reference vs TA-Lib from index `start` on (where they must agree)."""
-    a, b = ours[start:], ref[start:]
-    ok = np.allclose(a, b, rtol=1e-9, atol=1e-9, equal_nan=True)
-    assert ok, f"{name}: numpy and TA-Lib disagree after index {start}"
-
-
-# --------------------------------------------------------- indicators
-
-CASES: list[tuple[str, dict, str, dict[str, np.ndarray]]] = []
-
-
-def case(name, inputs, ref, outputs):
-    CASES.append((name, inputs, ref, outputs))
-
-
-# Moving averages (TA-Lib matches standard including warm-up).
+# Moving averages (TA-Lib matches including warm-up).
 case("sma", {}, "talib", {"ma": talib.SMA(C, 9)})
 case("sma-hlc3-20", {"length": 20, "source": "hlc3"}, "talib", {"ma": talib.SMA(HLC3, 20)})
+# Exercises the ` bars:` header (daily series).
+case("sma-daily", {"length": 20}, "talib", {"ma": talib.SMA(DAILY.close, 20)}, bars=DAILY)
 case("ema", {}, "talib", {"ema": talib.EMA(C, 9)})
 case("ema-50", {"length": 50}, "talib", {"ema": talib.EMA(C, 50)})
 cross_check("ema", ema(C, 50), talib.EMA(C, 50), 0)
@@ -221,7 +104,7 @@ case("hma", {}, "numpy", {"hma": hma(C, 9)})
 case("hma-20", {"length": 20, "source": "hl2"}, "numpy", {"hma": hma(HL2, 20)})
 
 
-# VWAP: standard ta.vwap, UTC session/week (Monday)/month boundaries.
+# VWAP: UTC session/week (Monday)/month boundaries.
 def period_key(t, anchor):
     day = int(t // 86400)
     if anchor == "Session":
@@ -356,7 +239,7 @@ case(
 )
 
 
-# Parabolic SAR: literal port of the standard ta.sar reference implementation.
+# Parabolic SAR: literal port of the standard SAR recursion.
 def sar_pine(start, inc, mx):
     out = nans()
     result = max_min = acc = NAN
@@ -410,7 +293,7 @@ case(
 )
 
 
-# Supertrend: port of the standard ta.supertrend; the built-in hides the first bar.
+# Supertrend: port of the standard Supertrend; the built-in hides the first bar.
 def supertrend_pine(factor, atr_len):
     atr = rma(true_range(True), atr_len)
     up_out, down_out, mid = nans(), nans(), nans()
@@ -446,7 +329,7 @@ case("supertrend", {}, "numpy", supertrend_pine(3.0, 10))
 case("supertrend-7-2", {"atrLength": 7, "factor": 2.0}, "numpy", supertrend_pine(2.0, 7))
 
 
-# DMI / ADX (standard built-in "Directional Movement Index")
+# DMI / ADX (Directional Movement Index)
 def dmi(adx_len, di_len):
     up_, down_ = change(H), -change(L)
     plus_dm, minus_dm = nans(), nans()
@@ -620,7 +503,7 @@ volume_case("volume", {}, 20, False)
 volume_case("volume-prev-close", {"maLength": 10, "prevClose": True}, 10, True)
 
 
-# Pivot Points Standard (Traditional) from the previous period's H/L/C.
+# Pivot Points (Traditional) from the previous period's H/L/C.
 def pivot_levels(h, l, c):
     p = (h + l + c) / 3
     return {
@@ -636,10 +519,6 @@ def pivot_levels(h, l, c):
         "r5": 4 * p + (h - 4 * l),
         "s5": 4 * p - (4 * h - l),
     }
-
-
-def shift1(x):
-    return np.concatenate([[NAN], x[:-1]])
 
 
 # On chart bars ('' timeframe): pivots of the previous bar.
@@ -661,31 +540,46 @@ case("pivot-points", {"timeframe": "1D"}, "numpy", {k: v[pos] for k, v in lv.ite
 
 # --------------------------------------------------------------- output
 
+GROUPS = (
+    golden_trend_ma,
+    golden_momentum,
+    golden_volume,
+    golden_volatility,
+    golden_other,
+    golden_external,
+)
 
-def cell(x: float) -> str:
-    return "" if math.isnan(x) else repr(float(x))
 
-
-def write_csv(path: Path, header: str | None, cols: dict[str, np.ndarray]):
-    lines = [] if header is None else [header]
-    lines.append(",".join(["time", *cols]))
-    for i in range(N):
-        row = [repr(float(T[i]))]
-        for k, v in cols.items():
-            row.append(str(int(v[i])) if k.endswith(".color") else cell(v[i]))
-        lines.append(",".join(row))
-    path.write_text("\n".join(lines) + "\n")
+def header(c: Case) -> str:
+    h = f"# inputs: {json.dumps(c.inputs)} ref: {c.ref}"
+    if c.bars is not HOURLY:
+        h += f" bars: {c.bars.file}"
+    if c.extra is not None:
+        h += f" extra: {c.extra.file}"
+    return h
 
 
 def main():
+    cases = list(CORE.items)
+    for g in GROUPS:
+        cases.extend(g.cases())
+    names = [c.name for c in cases]
+    dupes = sorted({n for n in names if names.count(n) > 1})
+    assert not dupes, f"duplicate golden case names: {dupes}"
+    series = {HOURLY.file: HOURLY, DAILY.file: DAILY}
+    for c in cases:
+        for s in (c.bars, c.extra):
+            if s is not None:
+                assert series.setdefault(s.file, s) is s, f"two series named {s.file}"
+    assert all(f.startswith("bars") for f in series), "series files must be named bars*.csv"
     OUT.mkdir(parents=True, exist_ok=True)
     for old in OUT.glob("*.csv"):
         old.unlink()
-    write_csv(OUT / "bars.csv", None, {k: B[k] for k in ("open", "high", "low", "close", "volume")})
-    for name, inputs, ref, outputs in CASES:
-        header = f"# inputs: {json.dumps(inputs)} ref: {ref}"
-        write_csv(OUT / f"{name}.csv", header, outputs)
-    print(f"wrote {len(CASES)} cases + bars.csv to {OUT}")
+    for s in series.values():
+        write_csv(OUT / s.file, None, s.time, s.columns())
+    for c in cases:
+        write_csv(OUT / f"{c.name}.csv", header(c), c.bars.time, c.outputs)
+    print(f"wrote {len(cases)} cases + {len(series)} bar series to {OUT}")
 
 
 if __name__ == "__main__":

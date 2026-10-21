@@ -2,7 +2,7 @@
  * Study (indicator display) contract — Phase 5.
  *
  * The engine draws indicator results but never computes them and never
- * imports @investopen/indicators. The output metadata below mirrors that
+ * imports @tickerglass/indicators. The output metadata below mirrors that
  * package's `ResolvedOutput` structurally; apps/web asserts the two stay
  * compatible at compile time (apps/web/src/indicators/contract.ts).
  *
@@ -38,8 +38,8 @@ export type StudyValueFormat = 'inherit' | 'price' | 'volume' | 'percent';
 /**
  * Colours: `colors` is a palette. Outputs with more than one entry receive a
  * per-bar palette index in `StudyData.colors[id]`; otherwise entry 0 is used.
- * Index `STUDY_COLOR_NONE` (255) means "no colour" for that bar (standard `na`
- * colour): the bar's segment/mark/fill/background is not drawn. Any other
+ * Index `STUDY_COLOR_NONE` (255) means "no colour" for that bar (missing value,
+ * NaN): the bar's segment/mark/fill/background is not drawn. Any other
  * out-of-range index falls back to entry 0.
  */
 export const STUDY_COLOR_NONE = 255;
@@ -59,6 +59,8 @@ export interface StudyPlotMeta {
   offset: number;
   /** Last-value label on the price axis. */
   showLastValue: boolean;
+  /** Lines/steps/area skip NaN bars and join the neighbouring values (additive; default false = break). */
+  connectGaps?: boolean;
 }
 
 export interface StudyHLineMeta {
@@ -103,15 +105,48 @@ export interface StudyShapeMeta {
   size: StudyShapeSize;
   colors: string[];
   text: string;
+  /** Label text = the value formatted with the study's format/precision instead
+   * of `text` (additive; default false). Labels and the text under other shapes. */
+  textFromValue?: boolean;
   textColor: string;
   /** Draw value[i] at bar i + offset (additive; default 0). aboveBar/belowBar
    * anchor to the bar at the drawn position; past the last bar they are not drawn. */
   offset?: number;
 }
 
+/**
+ * Volume profile computed by the engine from the displayed bars (never from
+ * `values`). 'visible': one profile of the visible bars. 'session': one per
+ * period overlapping the view; `values[id][i]` non-NaN marks the first bar of
+ * a period. Not part of autoscale, legends, magnet or hit testing.
+ */
+export interface StudyVolumeProfileMeta {
+  type: 'volumeProfile';
+  id: string;
+  title: string;
+  visible: boolean;
+  mode: 'visible' | 'session';
+  rowsLayout: 'count' | 'size';
+  rows: number;
+  /** Row height in price units ('size' layout). */
+  rowSize: number;
+  /** Value area, % of the volume. */
+  valueArea: number;
+  /** Histogram width in % of the profile's width. */
+  widthPercent: number;
+  placement: 'left' | 'right';
+  /** Up, down, value-area up, value-area down, POC. */
+  colors: string[];
+}
+
 /** Draw order = array order (later on top). */
 export type StudyOutputMeta =
-  StudyPlotMeta | StudyHLineMeta | StudyFillMeta | StudyBgColorMeta | StudyShapeMeta;
+  | StudyPlotMeta
+  | StudyHLineMeta
+  | StudyFillMeta
+  | StudyBgColorMeta
+  | StudyShapeMeta
+  | StudyVolumeProfileMeta;
 
 /** Where a study is drawn. */
 export type StudyTarget =
@@ -138,10 +173,21 @@ export interface StudySpec {
   /**
    * 'pane' shares and auto-scales the pane's price scale. 'none' draws on an
    * implicit own scale excluded from auto-scale (like the volume overlay).
+   * 'own' draws on a full-height implicit linear scale (pane margins),
+   * auto-scaled to the study alone and excluded from the pane's auto-scale.
    */
-  priceScale: 'pane' | 'none';
+  priceScale: 'pane' | 'none' | 'own';
+  /**
+   * Compare overlay ("same % scale"): values are rescaled so that the first
+   * visible value meets the main series' base value there. Only with
+   * priceScale 'pane' on the main pane; default false. Legends stay raw.
+   */
+  compare?: boolean;
   visible: boolean;
 }
+
+/** Legend containers of a pane: compare rows, then study rows. */
+export type LegendSlotKind = 'studies' | 'compare';
 
 /**
  * Computed values. Arrays may be longer than `length`; read [0, length).
@@ -153,7 +199,7 @@ export interface StudyData {
    * revision is not drawn (indices would not line up after a reset). */
   revision: number;
   length: number;
-  /** Plots, shapes and bgcolor outputs by id; NaN = no value. */
+  /** Plots, shapes, bgcolor and volume profile (period starts) outputs by id; NaN = no value. */
   values: Record<string, Float64Array>;
   /** Per-bar palette index for outputs with a multi-colour palette (incl. fills). */
   colors: Record<string, Uint8Array>;
@@ -283,6 +329,7 @@ export interface StudyApi {
   /** Values of visible plots at displayed bar `index` (crosshair or last bar). */
   getStudyValues(id: string, index: number): StudyLegendValue[];
   /** DOM container in the pane's legend that the app renders study legend
-   * rows into (the engine never writes to it). Null for an unknown pane. */
-  getLegendSlot(paneId: string): HTMLElement | null;
+   * rows ('studies', default) or compare overlay rows ('compare', above the
+   * study rows) into (the engine never writes to it). Null for an unknown pane. */
+  getLegendSlot(paneId: string, kind?: LegendSlotKind): HTMLElement | null;
 }

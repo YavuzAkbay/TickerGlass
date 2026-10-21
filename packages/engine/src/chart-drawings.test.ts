@@ -3,6 +3,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Chart } from './chart';
 import type { DrawingHost } from './drawings/layer';
 import { logicalToTime, timeToLogical } from './drawings/mapping';
+import { PICK_TOOL, type DrawingPointerTarget } from './drawings/interaction';
+import { defineDrawingTool, registerDrawingTool } from './drawings/registry';
 import type {
   Bar,
   BarListener,
@@ -175,7 +177,7 @@ describe('Chart drawing API', () => {
     chart.on('selectionChanged', (e) => sel.push(e.ids));
     const d = chart.addDrawing({ type: 'trend-line', points: [{ time: START, price: 1 }] });
     expect(d).toMatchObject({ symbol: 'TEST', paneId: 'main', scope: 'symbol', zIndex: 1 });
-    expect(d.style.lineColor).toBe('#2962ff');
+    expect(d.style.lineColor).toBe('#6E9BD6');
     expect(() => chart.addDrawing({ ...d })).toThrow();
     expect(() => chart.addDrawing({ type: 'nope', points: [] })).toThrow();
     chart.updateDrawing(d.id, { text: 'hi', style: { lineWidth: 3 } });
@@ -266,6 +268,22 @@ describe('Chart drawing API', () => {
     expect(chart.pasteDrawings(foreign)).toEqual([]);
     expect(() => chart.pasteDrawings('nope')).toThrow();
     expect(() => chart.pasteDrawings('{"version":2}')).toThrow();
+  });
+
+  it('keeps the chart binding through add, copy and paste', async () => {
+    const { chart } = await load(50);
+    const points = [
+      { time: START + 10 * DAY, price: 100 },
+      { time: START + 20 * DAY, price: 110 },
+    ];
+    const bound = chart.addDrawing({ type: 'trend-line', points, chartId: 'chart-a' });
+    const free = chart.addDrawing({ type: 'trend-line', points });
+    expect(bound.chartId).toBe('chart-a');
+    expect(chart.getDrawing(bound.id)!.chartId).toBe('chart-a');
+    expect(free).not.toHaveProperty('chartId');
+    const [p, q] = chart.pasteDrawings(chart.copyDrawings([bound.id, free.id]), { offset: 1 });
+    expect(p!.chartId).toBe('chart-a');
+    expect(q).not.toHaveProperty('chartId');
   });
 
   it('z-order methods return changes without events', async () => {
@@ -368,6 +386,38 @@ describe('Chart drawing API', () => {
     expect(chart.getAnchorTimeline().calendar).not.toBe(cal);
   });
 
+  it('builds a missing intraday calendar once two full days of live bars arrived', async () => {
+    const { Chart } = await import('./chart');
+    const H = 3600;
+    // Hourly 14:30..20:30 UTC: one full day loaded, the next two arrive live.
+    const day = (d: number) =>
+      makeBars(7, START + d * DAY + 14.5 * H).map((b, k) => ({
+        ...b,
+        time: b.time - k * DAY + k * H,
+      }));
+    const feed = new FakeFeed(day(0));
+    const chart = new Chart(new FakeEl() as unknown as HTMLElement, feed);
+    charts.push(chart);
+    await chart.setInterval('1h');
+    await chart.setSymbol('TEST');
+    expect(chart.getAnchorTimeline().calendar).toBeNull(); // one full day: no shape yet
+    // Read per bar, as frames do: retried on day 2's first bar only, then kept.
+    for (const b of day(1)) {
+      feed.tick(b);
+      expect(chart.getAnchorTimeline().calendar).toBeNull();
+    }
+    const [first, ...rest] = day(2);
+    feed.tick(first!);
+    const cal = chart.getAnchorTimeline().calendar;
+    expect(cal).toBeTruthy(); // first bar of day 3: two full days, built once
+    for (const b of rest) {
+      feed.tick(b);
+      expect(chart.getAnchorTimeline().calendar).toBe(cal);
+    }
+    // Friday's close steps to Monday's open.
+    expect(cal!.step(START + 2 * DAY + 20.5 * H, 1)).toBe(START + 5 * DAY + 14.5 * H);
+  });
+
   it('pointercancel aborts a drawing gesture instead of committing it', async () => {
     const { chart } = await load(10);
     vi.stubGlobal('Element', FakeEl);
@@ -407,5 +457,103 @@ describe('Chart drawing API', () => {
     expect(chart.getDrawings()).toHaveLength(1); // kept, not shown
     chart.setActiveTool('eraser');
     expect(chart.getActiveTool()).toBe('eraser');
+  });
+
+  it('getMeasure returns a copy of the transient measurement, else null', async () => {
+    const { chart } = await load(10);
+    expect(chart.getMeasure()).toBeNull();
+    const points = [
+      { time: 1, price: 2 },
+      { time: 3, price: 4 },
+    ];
+    const layer = (chart as unknown as { drawingLayer: { measure: unknown } }).drawingLayer;
+    layer.measure = { type: 'price-time-measure', points };
+    const m = chart.getMeasure()!;
+    expect(m).toEqual(points);
+    expect(m[0]).not.toBe(points[0]);
+    layer.measure = null;
+    expect(chart.getMeasure()).toBeNull();
+  });
+
+  it('setActiveTool forwards a preset style', async () => {
+    const { chart } = await load(10);
+    chart.setActiveTool('horizontal-line', { style: { lineColor: '#abcdef' } });
+    expect(chart.getActiveTool()).toBe('horizontal-line');
+    chart.setActiveTool(null);
+    expect(chart.getActiveTool()).toBeNull();
+  });
+
+  it('pick tool: custom cursor and cut preview follow the pointer', async () => {
+    const { chart } = await load(10);
+    const layer = (chart as unknown as { drawingLayer: { cutX: number | null } }).drawingLayer;
+    const mods = { shift: false, alt: false, mod: false };
+    // The harness has no layout: a stand-in pane is enough for the preview.
+    const target = {
+      pane: { id: 'main', top: 0, height: 300 },
+      drawing: null,
+    } as unknown as DrawingPointerTarget;
+    const input = chart.drawingInput;
+
+    chart.setActiveTool(PICK_TOOL);
+    expect(input.cursor(target)).toBe('crosshair');
+    input.hover(target, 100, 50, mods);
+    expect(layer.cutX).toBeNull();
+
+    chart.setActiveTool(PICK_TOOL, { cursor: 'url(x.svg) 4 4, crosshair', cutPreview: true });
+    expect(input.cursor(target)).toBe('url(x.svg) 4 4, crosshair');
+    expect(input.cursor(null)).toBeNull();
+    input.hover(target, 100, 50, mods);
+    expect(layer.cutX).toBeTypeOf('number');
+    input.hover(null, 0, 0, mods);
+    expect(layer.cutX).toBeNull();
+
+    input.hover(target, 100, 50, mods);
+    expect(layer.cutX).not.toBeNull();
+    chart.setActiveTool(null);
+    expect(layer.cutX).toBeNull();
+    expect(input.cursor(target)).toBeNull();
+  });
+
+  it('pastes pane-coordinate drawings in place (offset/at ignored)', async () => {
+    registerDrawingTool(
+      defineDrawingTool({
+        type: 'test-pane-coords',
+        name: 'Pane',
+        group: 'annotation',
+        creation: { kind: 'click' },
+        coords: 'pane',
+        defaults: {},
+        properties: [],
+        render: () => undefined,
+        hitTest: () => null,
+      }),
+    );
+    const { chart } = await load(50);
+    const a = chart.addDrawing({ type: 'test-pane-coords', points: [{ time: 0.25, price: 0.5 }] });
+    const t = chart.addDrawing({
+      type: 'trend-line',
+      points: [{ time: START + 10 * DAY, price: 1 }],
+    });
+    const json = chart.copyDrawings([a.id, t.id]);
+    const [p, q] = chart.pasteDrawings(json, {
+      offset: 3,
+      at: { time: START + 20 * DAY, price: 9 },
+    });
+    expect(p!.points).toEqual([{ time: 0.25, price: 0.5 }]);
+    expect(q!.points).toEqual([{ time: START + 23 * DAY, price: 9 }]);
+  });
+
+  it('setVisibleLogicalRange shows the given bar span and emits state', async () => {
+    const { chart } = await load(50);
+    const states: unknown[] = [];
+    chart.on('stateChange', (s) => states.push(s));
+    chart.timeScale.width = 700; // no layout in this harness
+    chart.setVisibleLogicalRange(10, 30);
+    const r = chart.timeScale.logicalRange();
+    expect(r.from).toBeCloseTo(10);
+    expect(r.to).toBeCloseTo(30);
+    expect(states).toHaveLength(1);
+    chart.setVisibleLogicalRange(30, 10); // ignored
+    expect(states).toHaveLength(1);
   });
 });

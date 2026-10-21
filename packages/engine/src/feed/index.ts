@@ -27,5 +27,22 @@ export {
   type LiveStatusListener,
   type UpstreamStatus,
 } from './http-feed';
+export { ExpressionFeed } from './expression-feed';
+export * from './expression';
 export { ResamplingFeed } from './resampling-feed';
 export { SyntheticFeed } from './synthetic-feed';
+export {
+  chooseTick,
+  ReplayFeed,
+  tickIntervals,
+  type ChooseTickOptions,
+  type ReplayClock,
+  type ReplayFeedEvents,
+  type ReplayFeedOptions,
+  type ReplayInfo,
+  type ReplayMode,
+  type ReplayStartOptions,
+  type ReplayUpdate,
+  type TickChoice,
+} from './replay-feed';
+export { CoalescingFeed, type CoalescingFeedOptions } from './coalescing-feed';

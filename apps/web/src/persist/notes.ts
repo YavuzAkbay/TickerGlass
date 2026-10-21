@@ -38,7 +38,7 @@ export const useNotesStore = create<NotesState>()(
           return { notes: { ...s.notes, [key]: { ...cur, text, dirty: true } } };
         }),
     }),
-    { name: 'investopen-notes', version: 1, partialize: (s) => ({ notes: s.notes }) },
+    { name: 'tickerglass-notes', version: 1, partialize: (s) => ({ notes: s.notes }) },
   ),
 );
 

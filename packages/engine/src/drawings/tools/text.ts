@@ -7,14 +7,14 @@ const PAD = 4;
 export const TEXT_PLACEHOLDER = 'Text';
 
 export const TEXT_DEFAULTS = {
-  textColor: '#2962ff',
+  textColor: '#6E9BD6',
   fontSize: 14,
   bold: false,
   italic: false,
   fillBackground: false,
-  backgroundColor: 'rgba(41, 98, 255, 0.2)',
+  backgroundColor: 'rgba(110, 155, 214, 0.2)',
   showBorder: false,
-  borderColor: '#2962ff',
+  borderColor: '#6E9BD6',
 };
 
 type TextStyle = typeof TEXT_DEFAULTS;

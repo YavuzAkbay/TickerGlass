@@ -1,7 +1,7 @@
 import { defineIndicator } from '../registry';
 import { COLOR } from './common';
 
-/** Volume-weighted moving average (standard `ta.vwma`). */
+/** Volume-weighted moving average. */
 export const VWMA = defineIndicator({
   id: 'vwma',
   name: 'Volume Weighted Moving Average',

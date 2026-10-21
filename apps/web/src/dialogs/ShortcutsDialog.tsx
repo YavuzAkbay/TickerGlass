@@ -1,6 +1,8 @@
+import { KEY_BINDINGS } from '@tickerglass/engine';
 import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { formatShortcut } from '../commands/registry';
+import { normalize } from '../commands/shortcuts';
 import { Modal } from '../ui/Modal';
 import { useCommandList } from './useCommandList';
 import './dialogs.css';
@@ -31,6 +33,18 @@ export default function ShortcutsDialog({ onClose }: { onClose: () => void; arg?
     const items = groups.get(cat) ?? [];
     items.push({ title: c.title, keys: list.map((s) => formatShortcut(s)) });
     groups.set(cat, items);
+  }
+  // Built-in chart keys (from the engine's own table), unless a command already lists the combo.
+  const listed = new Set(
+    all
+      .flatMap((c) => (Array.isArray(c.shortcut) ? c.shortcut : c.shortcut ? [c.shortcut] : []))
+      .map(normalize),
+  );
+  for (const b of KEY_BINDINGS) {
+    if (listed.has(normalize(b.key))) continue;
+    const items = groups.get(b.group) ?? [];
+    items.push({ title: b.description, keys: [b.key] });
+    groups.set(b.group, items);
   }
   groups.set('General', [...GENERAL, ...(groups.get('General') ?? [])]);
 

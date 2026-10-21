@@ -1,6 +1,6 @@
 import { commands, isMac } from './registry';
 
-function comboFromEvent(e: KeyboardEvent): string {
+export function comboFromEvent(e: KeyboardEvent): string {
   const parts: string[] = [];
   if (isMac ? e.metaKey : e.ctrlKey) parts.push('Mod');
   if (isMac && e.ctrlKey) parts.push('Ctrl');
@@ -10,12 +10,16 @@ function comboFromEvent(e: KeyboardEvent): string {
   let key = e.key;
   if (e.code.startsWith('Key')) key = e.code.slice(3).toLowerCase();
   else if (e.code.startsWith('Digit')) key = e.code.slice(5);
+  else if (key === ' ') key = 'Space';
+  // Option changes the typed character on some layouts; the brackets keep their key.
+  else if (e.code === 'BracketLeft') key = '[';
+  else if (e.code === 'BracketRight') key = ']';
   else if (key.length === 1) key = key.toLowerCase();
   parts.push(key);
   return parts.join('+');
 }
 
-function normalize(shortcut: string): string {
+export function normalize(shortcut: string): string {
   const parts = shortcut.split('+');
   const key = parts.pop()!;
   const mods = ['Mod', 'Ctrl', 'Alt', 'Shift'].filter((m) => parts.includes(m));

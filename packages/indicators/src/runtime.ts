@@ -1,19 +1,29 @@
 import { BarStore } from './bars';
 import { DEFAULT_ENV, IndicatorInstance, type RefResolver } from './instance';
 import { defaultRegistry, type AnyIndicatorDefinition, type IndicatorRegistry } from './registry';
-import { resolveInputs, sourceRefs, timeframeInputValue, waitsForTimeframeClose } from './resolve';
+import {
+  externalSymbols,
+  resolveInputs,
+  sourceRefs,
+  timeframeInputValue,
+  usesEvents,
+  waitsForTimeframeClose,
+} from './resolve';
 import type {
   BarArrays,
   BarInput,
   BarsEnv,
+  BarsEvents,
   IndicatorResult,
   InputValueMap,
   InstanceStatus,
+  PriceSource,
 } from './types';
+import { EXTERNAL_SOURCE_PREFIX } from './types';
 
 /** Serialisable description of one indicator on a chart (persisted in layouts). */
 export interface InstanceSpec {
-  /** Unique per chart; also the engine study id. Not 'main'/'volume*'. */
+  /** Unique per chart; also the engine study id. Not 'main'/'volume*' or 'sym:*' (external sources). */
   id: string;
   /** Definition id in the registry. */
   type: string;
@@ -41,10 +51,32 @@ export interface RuntimeOptions {
 /**
  * Host facts about the chart's bars (all optional; omitted fields keep their
  * value). `timeframeSeconds` maps a resolved timeframe ('1W') to its interval
- * for timeframe instances' `env.intervalSeconds` (0 when missing).
+ * for timeframe instances' `env.intervalSeconds` (0 when missing). `events`:
+ * the symbol's event times (any order; non-finite times are dropped), null to
+ * clear them.
  */
-export interface RuntimeContext extends Partial<BarsEnv> {
+export interface RuntimeContext extends Partial<Omit<BarsEnv, 'events'>> {
   timeframeSeconds?: Record<string, number>;
+  events?: BarsEvents | null;
+}
+
+/** Finite times, sorted ascending, frozen. */
+function eventTimes(times: readonly number[]): readonly number[] {
+  return Object.freeze(times.filter((t) => Number.isFinite(t)).sort((a, b) => a - b));
+}
+
+function sameTimes(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
+function sameEvents(a: BarsEvents | undefined, b: BarsEvents | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    sameTimes(a.dividends, b.dividends) &&
+    sameTimes(a.splits, b.splits) &&
+    sameTimes(a.earnings, b.earnings)
+  );
 }
 
 interface Node {
@@ -53,6 +85,10 @@ interface Node {
   /** Resolved timeframe; '' = chart bars. */
   tf: string;
   deps: Set<string>;
+  /** External symbols read directly (`symbol` inputs, `sym:` source refs). */
+  ext: string[];
+  /** Computed state is out of date (the instance was waiting for an external symbol). */
+  stale: boolean;
   /** Chart-aligned outputs for timeframe instances. */
   aligned: IndicatorResult | null;
 }
@@ -70,6 +106,8 @@ type BarChange = 'none' | 'full' | 'update' | 'append';
 export class IndicatorRuntime {
   private readonly bars = new BarStore();
   private readonly tfBars = new Map<string, BarStore>();
+  /** External symbols' bars aligned to the chart bars, by symbol. */
+  private readonly externals = new Map<string, BarStore>();
   private readonly nodes = new Map<string, Node>();
   private order: Node[] = [];
   private readonly registry: IndicatorRegistry;
@@ -100,27 +138,47 @@ export class IndicatorRuntime {
   }
 
   private applyContext(ctx: RuntimeContext): void {
+    let events = this.env.events;
+    if (ctx.events === null) events = undefined;
+    else if (ctx.events) {
+      const next: BarsEvents = Object.freeze({
+        dividends: eventTimes(ctx.events.dividends),
+        splits: eventTimes(ctx.events.splits),
+        earnings: eventTimes(ctx.events.earnings),
+      });
+      // Same times keep the old object, so instances using them see no change.
+      if (!sameEvents(events, next)) events = next;
+    }
     this.env = Object.freeze({
       timezone: ctx.timezone ?? this.env.timezone,
       session: ctx.session !== undefined ? ctx.session : this.env.session,
       intervalSeconds: ctx.intervalSeconds ?? this.env.intervalSeconds,
+      ...(events ? { events } : {}),
     });
     if (ctx.timeframeSeconds) this.tfSeconds = { ...ctx.timeframeSeconds };
   }
 
-  /** Give the node's instance the env for its series; true when it changed. */
+  /**
+   * Give the node's instance the env for its series; true when it changed.
+   * Events only reach instances that use them, so other instances do not
+   * recompute when the events change.
+   */
   private syncEnv(node: Node): boolean {
-    const want = node.tf
-      ? { ...this.env, intervalSeconds: this.tfSeconds[node.tf] ?? 0 }
-      : this.env;
+    const { events, ...base } = this.env;
+    const want: BarsEnv = {
+      ...base,
+      ...(node.tf ? { intervalSeconds: this.tfSeconds[node.tf] ?? 0 } : {}),
+      ...(events && usesEvents(node.inst.def, node.spec.inputs ?? {}) ? { events } : {}),
+    };
     const cur = node.inst.env;
     if (
       cur.timezone === want.timezone &&
       cur.session === want.session &&
-      cur.intervalSeconds === want.intervalSeconds
+      cur.intervalSeconds === want.intervalSeconds &&
+      cur.events === want.events
     )
       return false;
-    node.inst.setEnv(Object.freeze({ ...want }));
+    node.inst.setEnv(Object.freeze(want));
     return true;
   }
 
@@ -132,6 +190,10 @@ export class IndicatorRuntime {
 
   /** Throws for an unknown type, invalid inputs, a cycle or an MTF+ref mix. */
   add(spec: InstanceSpec): Change[] {
+    if (spec.id.startsWith(EXTERNAL_SOURCE_PREFIX))
+      throw new Error(
+        `Instance id "${spec.id}" uses the reserved "${EXTERNAL_SOURCE_PREFIX}" prefix`,
+      );
     if (this.nodes.has(spec.id)) throw new Error(`Instance "${spec.id}" already exists`);
     const def = this.definition(spec.type);
     const inputs = resolveInputs(def, spec.inputs);
@@ -140,6 +202,8 @@ export class IndicatorRuntime {
       inst: new IndicatorInstance(def, inputs),
       tf: '',
       deps: new Set(),
+      ext: [],
+      stale: false,
       aligned: null,
     };
     this.configure(node, inputs);
@@ -152,7 +216,7 @@ export class IndicatorRuntime {
   setInputs(id: string, inputs: InputValueMap): Change[] {
     const node = this.node(id);
     const resolved = resolveInputs(node.inst.def, inputs);
-    const prev = { spec: node.spec, tf: node.tf, deps: node.deps };
+    const prev = { spec: node.spec, tf: node.tf, deps: node.deps, ext: node.ext };
     try {
       this.configure(node, resolved);
       this.reorder();
@@ -186,6 +250,8 @@ export class IndicatorRuntime {
   result(id: string): IndicatorResult | null {
     const node = this.nodes.get(id);
     if (!node) return null;
+    const symbol = this.waitingSymbol(node);
+    if (symbol !== null) return this.emptyResult(node, symbol);
     return node.tf ? (node.aligned ?? this.emptyResult(node)) : node.inst.result();
   }
 
@@ -214,7 +280,80 @@ export class IndicatorRuntime {
   clearData(): Change[] {
     this.bars.clear();
     this.tfBars.clear();
+    this.externals.clear();
     return this.recompute(new Set(), 'full');
+  }
+
+  // ----------------------------------------------------- external symbols
+
+  /** External symbols the host must provide via `setExternal`. */
+  requiredSymbols(): string[] {
+    return [...new Set(this.order.flatMap((n) => n.ext))];
+  }
+
+  /**
+   * Bars of external `symbol` aligned to the chart bars: `cols.time` holds the
+   * chart's times and prices are NaN where the symbol has no bar. Instances
+   * stay 'waiting' until the series covers every chart bar (it may be longer:
+   * send a live update before the chart's append).
+   */
+  setExternal(symbol: string, cols: BarArrays): Change[] {
+    let store = this.externals.get(symbol);
+    if (!store) {
+      store = new BarStore();
+      this.externals.set(symbol, store);
+    }
+    store.setAll(cols);
+    return this.recompute(this.dependentsOfSymbol(symbol));
+  }
+
+  /**
+   * Replace the aligned bars of `symbol` from chart index `from` on with
+   * `cols` (the aligned slice, `cols.time.length` bars). Throws RangeError
+   * when `from` is past the end of the series sent so far. Dependents
+   * recompute from `from`.
+   */
+  updateExternal(symbol: string, from: number, cols: BarArrays): Change[] {
+    const store = this.externals.get(symbol);
+    if (!store) return [];
+    if (!Number.isInteger(from) || from < 0 || from > store.length)
+      throw new RangeError(
+        `External "${symbol}" update from ${from} is outside 0..${store.length}`,
+      );
+    store.length = from;
+    for (let k = 0; k < cols.time.length; k++)
+      store.setBar(from + k, {
+        time: cols.time[k]!,
+        open: cols.open[k]!,
+        high: cols.high[k]!,
+        low: cols.low[k]!,
+        close: cols.close[k]!,
+        volume: cols.volume[k]!,
+      });
+    const seeds = new Map<string, number>();
+    for (const id of this.dependentsOfSymbol(symbol)) seeds.set(id, from);
+    return this.propagate(seeds, 'none');
+  }
+
+  private dependentsOfSymbol(symbol: string): Set<string> {
+    return new Set(this.order.filter((n) => n.ext.includes(symbol)).map((n) => n.spec.id));
+  }
+
+  /** First external symbol the instance (or an instance it reads) still lacks bars for. */
+  private waitingSymbol(node: Node, seen = new Set<string>()): string | null {
+    if (seen.has(node.spec.id)) return null;
+    seen.add(node.spec.id);
+    const n = this.bars.length;
+    for (const sym of node.ext) {
+      const store = this.externals.get(sym);
+      if (!store || store.length < n) return sym;
+    }
+    for (const dep of node.deps) {
+      const d = this.nodes.get(dep);
+      const sym = d ? this.waitingSymbol(d, seen) : null;
+      if (sym !== null) return sym;
+    }
+    return null;
   }
 
   // ---------------------------------------------------------- timeframes
@@ -257,11 +396,7 @@ export class IndicatorRuntime {
     const kind = store.upsert(bar);
     if (kind === 'ignored') return [];
     const seeds = new Map<string, number>();
-    // First chart bar inside the (new) last timeframe bar. (Subtracting an
-    // epsilon from the start time is a no-op at unix-second magnitudes.)
-    const start = store.time[store.length - 1]!;
-    let from = this.bars.indexAtOrBefore(start) + 1;
-    while (from > 0 && this.bars.time[from - 1]! >= start) from--;
+    const from = this.formingStart(store);
     for (const node of this.order) {
       if (node.tf !== tf) continue;
       node.inst.computeLast(store, kind);
@@ -270,6 +405,16 @@ export class IndicatorRuntime {
     // Only chart bars whose aligned values actually changed propagate (Pivot
     // Points and confirmed alignment ignore ticks of the forming bar).
     return this.propagate(seeds, 'none', true);
+  }
+
+  /** First chart bar inside the last (forming) bar of a timeframe series; Infinity if empty. */
+  private formingStart(store: BarStore | undefined): number {
+    if (!store || !store.length) return Infinity;
+    // (Subtracting an epsilon from the start time is a no-op at unix-second magnitudes.)
+    const start = store.time[store.length - 1]!;
+    let from = this.bars.indexAtOrBefore(start) + 1;
+    while (from > 0 && this.bars.time[from - 1]! >= start) from--;
+    return from;
   }
 
   // ------------------------------------------------------------ internals
@@ -289,10 +434,12 @@ export class IndicatorRuntime {
   private configure(node: Node, inputs: InputValueMap): void {
     const refs = sourceRefs(node.inst.def, inputs);
     const tf = this.resolveTf(timeframeInputValue(node.inst.def, inputs));
-    if (tf && refs.length)
+    const ext = externalSymbols(node.inst.def, inputs);
+    if (tf && (refs.length || ext.length))
       throw new Error('Indicators on another timeframe can only use price sources');
     node.tf = tf;
     node.deps = new Set(refs.map((r) => r.instanceId));
+    node.ext = ext;
   }
 
   /** Topological order; throws on a cycle (state is left unchanged). */
@@ -334,16 +481,38 @@ export class IndicatorRuntime {
    * Walk instances in dependency order. `seeds` hold the first index already
    * known to change per instance (timeframe instances: re-align from there;
    * chart instances: 0 forces a full compute).
+   *
+   * Chart instances that read a timeframe instance (directly or through
+   * others) checkpoint their state at the first chart bar of its forming
+   * timeframe bar, so a change there re-runs only the bars from that one.
    */
   private propagate(seeds: Map<string, number>, bars: BarChange, diff = false): Change[] {
     const n = this.bars.length;
     const changed = new Map<string, number>();
-    const refs: RefResolver = (ref) => this.result(ref.instanceId)?.values[ref.outputId];
+    /** Per instance: first chart bar of the forming bar of the timeframes it reads. */
+    const forming = new Map<string, number>();
+    const starts = new Map<string, number>();
+    const refs: RefResolver = (ref) => {
+      if (!ref.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX))
+        return this.result(ref.instanceId)?.values[ref.outputId];
+      const store = this.externals.get(ref.instanceId.slice(EXTERNAL_SOURCE_PREFIX.length));
+      return store?.source(ref.outputId as PriceSource);
+    };
     for (const node of this.order) {
       const id = node.spec.id;
       let from = seeds.get(id) ?? Infinity;
-      for (const dep of node.deps) from = Math.min(from, changed.get(dep) ?? Infinity);
+      let checkpointAt = Infinity;
+      for (const dep of node.deps) {
+        from = Math.min(from, changed.get(dep) ?? Infinity);
+        checkpointAt = Math.min(checkpointAt, forming.get(dep) ?? Infinity);
+      }
       if (node.tf) {
+        let start = starts.get(node.tf);
+        if (start === undefined) {
+          start = this.formingStart(this.tfBars.get(node.tf));
+          starts.set(node.tf, start);
+        }
+        forming.set(id, start);
         if (bars === 'append') from = Math.min(from, n - 1);
         if (from === Infinity) continue;
         from = Math.max(0, from);
@@ -351,10 +520,26 @@ export class IndicatorRuntime {
         if (first < n || first === 0) changed.set(id, first);
         continue;
       }
-      // A change before the last bar (inputs, upstream history) needs a full pass.
-      if (bars === 'full' || from < n - 1) {
+      node.inst.checkpointAt = checkpointAt;
+      if (checkpointAt !== Infinity) forming.set(id, checkpointAt);
+      if (this.waitingSymbol(node) !== null) {
+        node.stale = true;
+        if (from !== Infinity || bars !== 'none') changed.set(id, 0);
+        continue;
+      }
+      if (node.stale) {
+        node.stale = false;
         node.inst.computeAll(this.bars, refs);
         changed.set(id, 0);
+        continue;
+      }
+      // A change before the last bar (inputs, upstream history) needs a full
+      // pass, unless it is at or after the instance's checkpoint.
+      if (bars === 'full' || from <= 0) {
+        node.inst.computeAll(this.bars, refs);
+        changed.set(id, 0);
+      } else if (from < n - 1) {
+        changed.set(id, node.inst.computeFrom(this.bars, from, refs));
       } else if (bars === 'update' || bars === 'append' || from === n - 1) {
         const kind = bars === 'append' ? 'append' : 'update';
         changed.set(id, node.inst.computeLast(this.bars, kind, refs));
@@ -397,11 +582,11 @@ export class IndicatorRuntime {
       diff && JSON.stringify(res.status) === prevStatus ? Math.max(from, prevLength) : from;
     // Confirmed alignment: a chart bar shows the timeframe bar before the one containing it.
     const back = waitsForTimeframeClose(node.inst.def, node.spec.inputs ?? {}) ? 1 : 0;
-    // Values hold across every chart bar of a timeframe bar; shapes and
-    // background only mark its first chart bar.
+    // Values hold across every chart bar of a timeframe bar; shapes,
+    // background and volume profile period marks only mark its first chart bar.
     const spanOnly = new Set(
       node.inst.def.outputs
-        .filter((o) => o.type === 'shape' || o.type === 'bgcolor')
+        .filter((o) => o.type === 'shape' || o.type === 'bgcolor' || o.type === 'volumeProfile')
         .map((o) => o.id),
     );
     let prevK = from > 0 && store ? store.indexAtOrBefore(this.bars.time[from - 1]!) : -1;
@@ -424,11 +609,13 @@ export class IndicatorRuntime {
     return first;
   }
 
-  private emptyResult(node: Node): IndicatorResult {
+  private emptyResult(node: Node, symbol?: string): IndicatorResult {
     const values: Record<string, Float64Array> = {};
     const colors: Record<string, Uint8Array> = {};
     for (const id of Object.keys(node.inst.values)) values[id] = new Float64Array(0);
     for (const id of Object.keys(node.inst.colors)) colors[id] = new Uint8Array(0);
-    return { length: 0, values, colors, status: { state: 'waiting', timeframe: node.tf } };
+    const status: InstanceStatus = { state: 'waiting', timeframe: node.tf };
+    if (symbol !== undefined) status.symbol = symbol;
+    return { length: 0, values, colors, status };
   }
 }

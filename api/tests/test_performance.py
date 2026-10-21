@@ -7,9 +7,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from investopen_api.app import create_app
-from investopen_api.providers.base import BAR_COLUMNS, ProviderError, SymbolNotFound
-from investopen_api.services.performance import compute_performance
+from tickerglass_api.app import create_app
+from tickerglass_api.providers.base import BAR_COLUMNS, ProviderError, SymbolNotFound
+from tickerglass_api.services.performance import compute_performance
 
 NY = "America/New_York"
 KEYS = ["1W", "1M", "3M", "6M", "YTD", "1Y", "5Y"]

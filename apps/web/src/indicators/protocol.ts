@@ -1,16 +1,19 @@
 // Messages between the main thread and the indicator worker (docs/indicators.md §5).
-import type { Bar, BarColumns } from '@investopen/engine';
+import type { Bar, BarColumns } from '@tickerglass/engine';
 import type {
   InputValueMap,
   InstanceSpec,
   InstanceStatus,
   RuntimeContext,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 
 export type ToWorker =
   /** Raw timeframe input value -> resolved ('' = chart bars). */
   | { type: 'timeframeMap'; map: Record<string, string> }
-  /** Exchange timezone/session and bar intervals (symbol/interval change); recomputes as needed. */
+  /**
+   * Exchange timezone/session and bar intervals (symbol/interval change) and the
+   * symbol's event times (null = none; event-anchored VWAP); recomputes as needed.
+   */
   | { type: 'context'; context: RuntimeContext }
   | { type: 'add'; spec: InstanceSpec }
   | { type: 'setInputs'; id: string; inputs: InputValueMap }
@@ -25,8 +28,20 @@ export type ToWorker =
   | { type: 'bar'; revision: number; index: number; bar: Bar }
   | { type: 'tfBars'; tf: string; bars: BarColumns }
   | { type: 'tfBar'; tf: string; bar: Bar }
+  /**
+   * An external symbol's bars aligned to the displayed bars of series
+   * `revision` (time = the displayed times; prices NaN where it has no bar).
+   */
+  | { type: 'extBars'; revision: number; symbol: string; bars: BarColumns }
+  /** Aligned rows [from, from + bars length) of an external symbol (live). */
+  | { type: 'extUpdate'; revision: number; symbol: string; from: number; bars: BarColumns }
   /** Symbol change: drop all bar data, keep instances. */
-  | { type: 'clear' };
+  | { type: 'clear' }
+  /**
+   * Profiling on/off (`?perf=1`): the worker records a `performance.measure`
+   * per handled message and reports compute times in `results.ms`.
+   */
+  | { type: 'profile'; on: boolean };
 
 export interface ResultChange {
   id: string;
@@ -38,9 +53,18 @@ export interface ResultChange {
 }
 
 export type FromWorker =
-  | { type: 'results'; revision: number; length: number; changes: ResultChange[] }
+  | {
+      type: 'results';
+      revision: number;
+      length: number;
+      changes: ResultChange[];
+      /** While profiling: ms the runtime spent computing these changes. */
+      ms?: number;
+    }
   /** Timeframe series the runtime needs (after add/setInputs/timeframeMap). */
   | { type: 'timeframes'; timeframes: string[] }
+  /** External symbols the runtime needs (after add/setInputs/remove). */
+  | { type: 'symbols'; symbols: string[] }
   /**
    * A `bar` index did not fit the worker's series (RangeError from
    * `updateBar`): the host resends all bars. `bars` = number of `bars`

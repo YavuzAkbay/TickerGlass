@@ -27,6 +27,8 @@ export interface PaneSeries {
   readonly title: string;
   /** Drawn on its own implicit scale; ignored by the pane's auto-scale. */
   readonly excludeFromAutoscale?: boolean;
+  /** Drawn behind the other series and hit-tested after them (e.g. the volume overlay). */
+  readonly behind?: boolean;
   /** Price range (price units) over bar indices [from, to], or null if empty. */
   priceRange(from: number, to: number): { min: number; max: number } | null;
   /** Price used as base for percent/indexed modes. */
@@ -130,7 +132,7 @@ export class LineSeries implements PaneSeries {
     readonly title: string,
     private readonly values: () => Float64Array,
     private readonly length: () => number,
-    public color = '#2962ff',
+    public color = '#6E9BD6',
     public lineWidth = 1.5,
   ) {}
 

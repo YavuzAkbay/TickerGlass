@@ -1,15 +1,16 @@
 import { useState } from 'react';
+import { activeChartId, syncBus } from '../layout/sync';
 import { getChart } from '../store/chart';
 import { Modal } from '../ui/Modal';
 import { toast } from '../ui/Toast';
-import './BottomBar.css';
+import './RangeStrip.css';
 
 type Tab = 'date' | 'range';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 function toUnix(date: string, time: string): number {
-  // Interpreted in the browser's local zone, like the common picker.
+  // Interpreted in the browser's local zone.
   return new Date(`${date}T${time || '00:00'}`).getTime() / 1000;
 }
 
@@ -26,10 +27,11 @@ export default function GoToDateDialog({ onClose }: { onClose: () => void; arg?:
 
   const go = async () => {
     const chart = getChart();
-    if (!chart) return;
+    const id = activeChartId();
+    if (!chart || id === null) return;
     onClose();
     try {
-      if (tab === 'date') await chart.scrollToTime(toUnix(date, time));
+      if (tab === 'date') await syncBus.goTo(id, toUnix(date, time));
       else {
         const a = toUnix(from, '00:00');
         const b = toUnix(to, '23:59');
@@ -37,7 +39,7 @@ export default function GoToDateDialog({ onClose }: { onClose: () => void; arg?:
           toast('Start must be before end', 'error');
           return;
         }
-        await chart.setVisibleTimeRange(a, b);
+        await syncBus.range(id, { from: a, to: b });
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), 'error');

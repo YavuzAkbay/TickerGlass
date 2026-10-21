@@ -17,11 +17,11 @@ from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, create_engine, event, insert, inspect, text, update
 
-from investopen_api import models
-from investopen_api.app import create_app
-from investopen_api.db import Base
-from investopen_api.providers.base import BAR_COLUMNS, SymbolNotFound
-from investopen_api.userdata.schemas import MAX_STATE_BYTES
+from tickerglass_api import models
+from tickerglass_api.app import create_app
+from tickerglass_api.db import Base
+from tickerglass_api.providers.base import BAR_COLUMNS, SymbolNotFound
+from tickerglass_api.userdata.schemas import MAX_STATE_BYTES
 
 
 class NullProvider:
@@ -200,6 +200,23 @@ def test_drawings_batch_and_query(client: TestClient) -> None:
     assert res.json()["drawings"][0]["revision"] == 2
     assert res.json()["drawings"][0]["symbol"] is None
     assert ids(client.get("/api/drawings", params={"symbol": "MSFT"})) == ["d1", "s1"]
+
+
+def test_drawing_chart_id_round_trips_inside_data(client: TestClient) -> None:
+    # Chart-bound drawings keep their chart id in the drawing JSON; the API stores it as sent.
+    batch(
+        client,
+        upserts=[
+            {"drawing": drawing("b1", chartId="chart-uuid-1")},
+            {"drawing": drawing("u1")},
+        ],
+    )
+    out = {d["id"]: d for d in client.get("/api/drawings").json()["drawings"]}
+    assert out["b1"]["data"]["chartId"] == "chart-uuid-1"
+    assert "chartId" not in out["u1"]["data"]
+    batch(client, upserts=[{"drawing": drawing("b1", chartId="chart-uuid-2"), "baseRevision": 1}])
+    got = client.get("/api/drawings").json()["drawings"]
+    assert {d["id"]: d["data"].get("chartId") for d in got} == {"b1": "chart-uuid-2", "u1": None}
 
 
 def test_drawings_conflicts_are_all_or_nothing(client: TestClient) -> None:
@@ -389,6 +406,127 @@ def test_notes(client: TestClient) -> None:
     assert client.get(f"/api/notes/{sym['id']}").status_code == 404
 
 
+def script_body(**kw: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "My RSI",
+        "source": "export default defineIndicator({})",
+        "manifest": {"id": "x", "outputs": []},
+        "apiVersion": 1,
+    }
+    return {**body, **kw}
+
+
+def test_user_scripts(client: TestClient) -> None:
+    res = client.post("/api/user-scripts", json=script_body(id="s-1_A"))
+    assert res.status_code == 201
+    one = res.json()
+    assert one["id"] == "s-1_A" and one["revision"] == 1 and one["apiVersion"] == 1
+    assert one["manifest"] == {"id": "x", "outputs": []} and "source" in one
+    gen = client.post("/api/user-scripts", json=script_body(manifest=None, name="  Broken  "))
+    assert gen.status_code == 201 and gen.json()["manifest"] is None
+    assert gen.json()["name"] == "Broken" and len(gen.json()["id"]) == 36
+    assert [x["id"] for x in client.get("/api/user-scripts").json()] == [
+        one["id"],
+        gen.json()["id"],
+    ]
+    assert client.get("/api/user-scripts").json()[0]["source"] == one["source"]
+
+    # Duplicate id -> 409 with the stored script (names are not unique).
+    dup = client.post("/api/user-scripts", json=script_body(id="s-1_A", source="other"))
+    assert dup.status_code == 409 and dup.json()["detail"]["current"]["source"] == one["source"]
+    assert client.post("/api/user-scripts", json=script_body(id="s-2")).status_code == 201
+
+    url = "/api/user-scripts/s-1_A"
+    res = client.put(url, json=script_body(source="v2", manifest=None, revision=1))
+    assert res.status_code == 200 and res.json()["revision"] == 2
+    assert res.json()["manifest"] is None and res.json()["source"] == "v2"
+    res = client.put(url, json=script_body(source="stale", revision=1))
+    assert res.status_code == 409 and res.json()["detail"]["current"]["source"] == "v2"
+    res = client.put(url, json=script_body(source="forced", apiVersion=2))
+    assert res.status_code == 200 and res.json()["revision"] == 3 and res.json()["apiVersion"] == 2
+    assert client.get(url).json()["source"] == "forced"
+    assert client.put("/api/user-scripts/nope", json=script_body()).status_code == 404
+    assert client.get("/api/user-scripts/nope").status_code == 404
+    assert client.delete(url).status_code == 204
+    assert client.get(url).status_code == 404
+    assert client.delete(url).status_code == 404
+
+
+def test_user_script_validation(client: TestClient) -> None:
+    def post(**kw: Any) -> int:
+        return client.post("/api/user-scripts", json=script_body(**kw)).status_code
+
+    assert post(id="a" * 36) == 201
+    assert post(id="a" * 37) == 422
+    for bad in ("", "has space", "a/b", "é", "a.b"):
+        assert post(id=bad) == 422, bad
+    assert post(name="") == 422 and post(name="   ") == 422
+    assert post(name="n" * 100) == 201 and post(name="n" * 101) == 422
+    assert post(apiVersion=0) == 422
+    assert post(source="x" * 200_000) == 201 and post(source="x" * 200_001) == 422
+    assert post(manifest={"k": "m" * 63_000}) == 201
+    assert post(manifest={"k": "m" * 64_001}) == 422
+    assert post(manifest=[1]) == 422
+    assert (
+        client.put("/api/user-scripts/x", json=script_body(source="x" * 200_001)).status_code == 422
+    )
+    body = script_body()
+    del body["source"]
+    assert client.post("/api/user-scripts", json=body).status_code == 422
+
+
+def test_user_scripts_bundle(client: TestClient, tmp_path: Path) -> None:
+    client.post("/api/user-scripts", json=script_body(id="a"))
+    client.post("/api/user-scripts", json=script_body(id="b", manifest=None))
+    bundle = client.get("/api/export").json()
+    assert bundle["version"] == 1
+    assert [u["id"] for u in bundle["userScripts"]] == ["a", "b"]
+    assert bundle["userScripts"][1]["manifest"] is None
+
+    app2 = create_app(provider=NullProvider(), database_url=f"sqlite:///{tmp_path}/o.db")
+    with TestClient(app2) as c2:
+        res = c2.post("/api/import", json=bundle).json()
+        assert res["userScripts"] == {"created": 2, "updated": 0, "deleted": 0}
+        assert [(u["id"], u["source"]) for u in c2.get("/api/user-scripts").json()] == [
+            (u["id"], u["source"]) for u in bundle["userScripts"]
+        ]
+
+    # Merge by id: matches updated (revision bumped), others created.
+    bundle["userScripts"][0]["source"] = "changed"
+    bundle["userScripts"].append({**bundle["userScripts"][0], "id": "c"})
+    res = client.post("/api/import", json=bundle).json()
+    assert res["userScripts"] == {"created": 1, "updated": 2, "deleted": 0}
+    got = {u["id"]: u for u in client.get("/api/user-scripts").json()}
+    assert got["a"]["source"] == "changed" and got["a"]["revision"] == 2 and "c" in got
+
+    # Absent key: untouched even in replace. Present and empty: wiped.
+    res = client.post(
+        "/api/import",
+        params={"mode": "replace", "confirm": True},
+        json={"version": 1, "app": "tickerglass"},
+    )
+    assert (
+        res.json()["userScripts"]["deleted"] == 0
+        and len(client.get("/api/user-scripts").json()) == 3
+    )
+    res = client.post(
+        "/api/import",
+        params={"mode": "replace", "confirm": True},
+        json={"version": 1, "app": "tickerglass", "userScripts": []},
+    )
+    assert res.json()["userScripts"]["deleted"] == 3 and res.json()["notes"]["deleted"] == 0
+    assert client.get("/api/user-scripts").json() == []
+
+    # Validation: duplicate ids and bad ids are 422; nothing is written.
+    one = bundle["userScripts"][0]
+    for scripts in ([one, one], [{**one, "id": "bad id"}]):
+        res = client.post(
+            "/api/import", json={"version": 1, "app": "tickerglass", "userScripts": scripts}
+        )
+        assert res.status_code == 422
+    assert client.get("/api/user-scripts").json() == []
+
+
 # ------------------------------------------------------------ import/export
 
 
@@ -404,13 +542,14 @@ def seed(client: TestClient) -> None:
     client.post("/api/chart-templates", json={"name": "C", "data": {"bg": "#111"}})
     client.patch("/api/settings", json={"favorites": ["sma"], "ui": {"x": 1}})
     client.post("/api/notes", json={"text": "note", "symbol": "AAPL"})
+    client.post("/api/user-scripts", json=script_body(id="us1"))
 
 
 def strip_volatile(bundle: dict[str, Any]) -> dict[str, Any]:
     out = dict(bundle)
     out.pop("exportedAt")
     for key in ("layouts", "drawings", "indicatorTemplates", "drawingTemplates",
-                "chartTemplates", "notes", "watchlists", "flags"):  # fmt: skip
+                "chartTemplates", "notes", "watchlists", "flags", "userScripts"):  # fmt: skip
         out[key] = [
             {k: v for k, v in x.items() if k not in ("updatedAt", "revision")} for x in out[key]
         ]
@@ -420,7 +559,7 @@ def strip_volatile(bundle: dict[str, Any]) -> dict[str, Any]:
 def test_export_import_round_trip(client: TestClient, tmp_path: Path) -> None:
     seed(client)
     bundle = client.get("/api/export").json()
-    assert bundle["version"] == 1 and bundle["app"] == "investopen"
+    assert bundle["version"] == 1 and bundle["app"] == "tickerglass"
     assert len(bundle["layouts"]) == 1 and bundle["layouts"][0]["isLastUsed"] is True
     assert {d["id"] for d in bundle["drawings"]} == {"d1", "s1"}
     assert bundle["settings"] == {"favorites": ["sma"], "ui": {"x": 1}}
@@ -475,8 +614,8 @@ def test_import_validation(client: TestClient) -> None:
     def status(body: dict[str, Any], **params: Any) -> int:
         return int(client.post("/api/import", params=params, json=body).status_code)
 
-    app = {"version": 1, "app": "investopen"}
-    assert status({"version": 2, "app": "investopen"}) == 422
+    app = {"version": 1, "app": "tickerglass"}
+    assert status({"version": 2, "app": "tickerglass"}) == 422
     assert status({"version": 1, "app": "other"}) == 422
     assert status({"version": 1}) == 422  # `app` is required
     assert status(app, mode="wipe") == 422
@@ -500,14 +639,14 @@ def test_import_replace_keeps_absent_sections(client: TestClient) -> None:
     res = client.post(
         "/api/import",
         params={"mode": "replace", "confirm": True},
-        json={"version": 1, "app": "investopen"},
+        json={"version": 1, "app": "tickerglass"},
     )
     assert res.status_code == 200
     assert all(c["deleted"] == 0 for k, c in res.json().items() if isinstance(c, dict))
     assert strip_volatile(client.get("/api/export").json()) == strip_volatile(before)
 
     # Only `notes` (explicitly empty) is replaced; everything else is untouched.
-    body = {"version": 1, "app": "investopen", "notes": []}
+    body = {"version": 1, "app": "tickerglass", "notes": []}
     res = client.post("/api/import", params={"mode": "replace", "confirm": True}, json=body)
     assert res.json()["notes"]["deleted"] == 1 and res.json()["layouts"]["deleted"] == 0
     after = strip_volatile(client.get("/api/export").json())
@@ -521,7 +660,7 @@ def test_import_regenerates_reserved_layout_ids(client: TestClient) -> None:
         {"id": "a/b", "name": "C", "state": STATE},
         {"id": "keep-me", "name": "D", "state": STATE},
     ]
-    res = client.post("/api/import", json={"version": 1, "app": "investopen", "layouts": layouts})
+    res = client.post("/api/import", json={"version": 1, "app": "tickerglass", "layouts": layouts})
     assert res.status_code == 200 and res.json()["layouts"]["created"] == 4
     ids = {x["name"]: x["id"] for x in client.get("/api/layouts").json()}
     assert ids["D"] == "keep-me"
@@ -607,6 +746,30 @@ def test_layout_save_race_is_a_conflict(race_client: TestClient) -> None:
     assert client.get(f"/api/layouts/{lid}").json()["state"] == theirs
 
 
+def test_template_upsert_retries_after_integrity_error(race_client: TestClient) -> None:
+    client = race_client
+    body = {"name": "Trend", "instances": [{"type": "sma", "inputs": {"length": 20}}]}
+
+    def other(conn: Connection) -> None:
+        conn.execute(
+            insert(models.IndicatorTemplate).values(
+                id="theirs",
+                name="Trend",
+                instances=[],
+                schema_version=1,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    # A competing writer takes the name between our lookup and insert: the retry
+    # sees the row and replaces it (200), instead of a 409/500.
+    with interleave(client, "INSERT INTO indicator_templates", other):
+        res = client.post("/api/indicator-templates", json=body)
+    assert res.status_code == 200 and res.json()["id"] == "theirs"
+    assert client.get("/api/indicator-templates").json()[0]["instances"] == body["instances"]
+
+
 def test_note_update_race_is_a_conflict(race_client: TestClient) -> None:
     client = race_client
     nid = client.post("/api/notes", json={"text": "v1"}).json()["id"]
@@ -683,8 +846,15 @@ def test_template_name_race_is_a_conflict(race_client: TestClient) -> None:
             )
         )
 
-    with interleave(client, "INSERT INTO indicator_templates", create):
-        res = client.post("/api/indicator-templates", json={"name": "Trend", "instances": []})
+    # POST retries once and replaces the racing row (see the retry test above); PUT by
+    # id does not retry, so the same race is a 409.
+    tid_it = client.post("/api/indicator-templates", json={"name": "Osc", "instances": []}).json()[
+        "id"
+    ]
+    with interleave(client, "UPDATE indicator_templates", create):
+        res = client.put(
+            f"/api/indicator-templates/{tid_it}", json={"name": "Trend", "instances": []}
+        )
     assert res.status_code == 409
 
     def create_ct(conn: Connection) -> None:
@@ -722,6 +892,7 @@ USER_TABLES = {
     "notes",
     "watchlists",
     "symbol_flags",
+    "user_scripts",
 }
 
 
@@ -741,4 +912,19 @@ def test_migration_upgrade_downgrade(tmp_path: Path) -> None:
     assert not tables & USER_TABLES and "bars" in tables
     command.upgrade(cfg, "head")
     assert set(inspect(engine).get_table_names()) >= USER_TABLES
+    engine.dispose()
+
+
+def test_migration_user_scripts_is_head(tmp_path: Path) -> None:
+    from alembic.script import ScriptDirectory
+
+    url = f"sqlite:///{tmp_path}/h.db"
+    cfg = alembic_config(url)
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["3f8a6c1d9e47"]
+    engine = create_engine(url)
+    command.upgrade(cfg, "head")
+    assert "user_scripts" in inspect(engine).get_table_names()
+    command.downgrade(cfg, "7c3e91d4a8b2")
+    assert "user_scripts" not in inspect(engine).get_table_names()
+    assert "alerts" in inspect(engine).get_table_names()
     engine.dispose()

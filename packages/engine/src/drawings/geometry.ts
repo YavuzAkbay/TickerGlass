@@ -2,6 +2,7 @@ import { intervalSeconds } from '../feed/intervals';
 import type { PriceScale } from '../scale/price-scale';
 import type { TimeScale } from '../scale/time-scale';
 import { logicalToTime, timeToLogical, type AnchorTimeline } from './mapping';
+import { getDrawingTool } from './registry';
 import type {
   Drawing,
   DrawingBarData,
@@ -55,11 +56,14 @@ export class Geometry implements DrawingGeometry {
   intervalSeconds = 0;
   format!: DrawingFormat;
   bars: DrawingBarData = NO_BARS;
+  /** Anchors are pane fractions (`coords: 'pane'`). */
+  private pane = false;
   private ts!: TimeScale;
   private ps!: PriceScale;
   private tl!: AnchorTimeline;
 
-  /** Map `drawing` into `pane`. Returns false when there are no bars to anchor to. */
+  /** Map `drawing` into `pane`. Returns false when there are no bars to anchor to
+   * (pane-coordinate drawings map without bars). */
   update(
     drawing: Readonly<Drawing>,
     pane: DrawingPane,
@@ -76,6 +80,7 @@ export class Geometry implements DrawingGeometry {
     this.intervalSeconds = intervalSeconds(view.timeline.interval);
     this.format = format;
     this.bars = view.bars ?? NO_BARS;
+    this.pane = isPaneCoords(drawing.type);
     const pts = drawing.points;
     const n = pts.length;
     while (this.points.length < n) this.points.push({ x: NaN, y: NaN });
@@ -83,20 +88,30 @@ export class Geometry implements DrawingGeometry {
     this.logical.length = n;
     for (let i = 0; i < n; i++) {
       const p = pts[i]!;
+      const px = this.points[i]!;
+      if (this.pane) {
+        px.x = p.time * this.width;
+        px.y = p.price * this.height;
+        this.logical[i] = this.ts.xToLogical(px.x);
+        continue;
+      }
       const l = timeToLogical(this.tl, p);
       this.logical[i] = l;
-      const px = this.points[i]!;
       px.x = this.ts.indexToX(l);
       px.y = this.ps.priceToY(p.price);
     }
-    return view.timeline.length > 0;
+    return this.pane || view.timeline.length > 0;
   }
 
+  /** Anchor -> pane px (pane fractions for `coords: 'pane'` tools). */
   toPixel(p: DrawingPoint): PixelPoint {
+    if (this.pane) return { x: p.time * this.width, y: p.price * this.height };
     return { x: this.ts.indexToX(timeToLogical(this.tl, p)), y: this.ps.priceToY(p.price) };
   }
 
+  /** Pane px -> anchor (clamped pane fractions for `coords: 'pane'` tools). */
   toPoint(x: number, y: number): DrawingPoint {
+    if (this.pane) return panePoint(x, y, this.width, this.height);
     return pointAt(this.tl, this.ts, this.ps, x, y);
   }
 
@@ -129,6 +144,17 @@ export function pointAt(
   const price = ps.yToPrice(y);
   if (!t) return { time: NaN, price };
   return t.brick ? { time: t.time, price, brick: t.brick } : { time: t.time, price };
+}
+
+/** Whether drawings of `type` store pane fractions (`coords: 'pane'`). */
+export function isPaneCoords(type: string): boolean {
+  return getDrawingTool(type)?.coords === 'pane';
+}
+
+/** Pane-local pixel (x, y) as a `coords: 'pane'` anchor: fractions clamped to 0..1. */
+export function panePoint(x: number, y: number, width: number, height: number): DrawingPoint {
+  const f = (v: number, size: number) => (size > 0 ? Math.min(1, Math.max(0, v / size)) : 0);
+  return { time: f(x, width), price: f(y, height) };
 }
 
 /** Anchor `p` with its price replaced (time and brick kept). */

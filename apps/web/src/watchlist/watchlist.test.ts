@@ -28,9 +28,10 @@ const symbols = (items: WatchlistItem[]) =>
   items.map((i) => (i.type === 'symbol' ? i.symbol : `#${i.id}`));
 
 describe('txt', () => {
-  const reference = '###INDICES,SP:SPX,NASDAQ:AAPL,BIST:THYAO,BINANCE:BTCUSDT,CME_MINI:ES1!,FX:EURUSD';
-  it('parses a reference export', () => {
-    const r = parseTxt;
+  const SAMPLE_EXPORT =
+    '###INDICES,SP:SPX,NASDAQ:AAPL,BIST:THYAO,BINANCE:BTCUSDT,CME_MINI:ES1!,FX:EURUSD';
+  it('parses an exported watchlist', () => {
+    const r = parseTxt(SAMPLE_EXPORT);
     expect(symbols(r.items)).toEqual([
       '#' + (r.items[0] as { id: string }).id,
       '^GSPC',
@@ -176,6 +177,14 @@ describe('watchlist store', () => {
     st().setFlag('A B', 'red');
     expect(st().flags).toEqual({});
     expect(st().flagsDirty).toEqual({});
+  });
+
+  it('rejects symbol expressions', () => {
+    const id = st().createList('l', [S('AAPL/MSFT'), S('AAPL'), S('(A+B)')]);
+    expect(items(id)).toEqual(['AAPL']);
+    expect(st().addSymbols(id, ['AAPL/MSFT', 'BRK-B'])).toEqual(['BRK-B']);
+    st().setFlag('AAPL/MSFT', 'red');
+    expect(st().flags).toEqual({});
   });
 
   it('creates normalized, de-duplicated, dirty lists and rejects duplicates on add', () => {

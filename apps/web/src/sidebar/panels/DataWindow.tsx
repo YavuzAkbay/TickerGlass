@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { useAppStore } from '../../store/app';
+import { isCompareId } from '../../compare/model';
+import { useChartView } from '../../store/chartView';
 import { useChartStore } from '../../store/chart';
 import {
   changeClass,
@@ -23,13 +24,16 @@ function Row({ label, value, cls }: { label: string; value: string; cls?: string
   );
 }
 
+const valueText = (values: readonly number[]): string =>
+  values.length ? values.map((v) => fmtAuto(v)).join('  ') : '—';
+
 /** Values under the crosshair (or for the last bar). */
 export function DataWindow() {
   const chart = useChartStore((s) => s.chart);
   const symbolInfo = useChartStore((s) => s.symbolInfo);
   const crosshair = useChartStore((s) => s.crosshair);
-  const tzSetting = useAppStore((s) => s.timezone);
-  const interval = useAppStore((s) => s.interval);
+  const tzSetting = useChartView((s) => s.timezone);
+  const interval = useChartView((s) => s.interval);
   useChartTick(chart, ['dataLoaded', 'stateChange', 'barUpdate']);
 
   const intraday = !/[DWM]$/.test(interval);
@@ -46,6 +50,7 @@ export function DataWindow() {
   const change = bar && prev ? bar.close - prev.close : null;
   const changePct = change !== null && prev && prev.close ? (change / prev.close) * 100 : null;
   const cls = changeClass(change);
+  const compares = chart.panes.flatMap((p) => p.series.filter((s) => isCompareId(s.id)));
 
   return (
     <div className="rs-datawin">
@@ -61,8 +66,16 @@ export function DataWindow() {
       <Row label="Change" value={fmtSigned(change, d)} cls={cls} />
       <Row label="Change %" value={fmtSigned(changePct, 2, '%')} cls={cls} />
       <Row label="Volume" value={fmtCompact(bar?.volume)} />
+      {bar && compares.length > 0 ? (
+        <div>
+          <div className="rs-section-title">Compare</div>
+          {compares.map((s) => (
+            <Row key={s.id} label={s.title || s.id} value={valueText(s.valuesAt(index))} />
+          ))}
+        </div>
+      ) : null}
       {chart.panes.map((pane) => {
-        const series = pane.series.filter((s) => s.id !== 'main');
+        const series = pane.series.filter((s) => s.id !== 'main' && !isCompareId(s.id));
         if (!series.length || !bar) return null;
         return (
           <div key={pane.id}>
@@ -71,13 +84,7 @@ export function DataWindow() {
             </div>
             {series.map((s) => {
               const values = s.valuesAt(index);
-              return (
-                <Row
-                  key={s.id}
-                  label={s.title || s.id}
-                  value={values.length ? values.map((v) => fmtAuto(v)).join('  ') : '—'}
-                />
-              );
+              return <Row key={s.id} label={s.title || s.id} value={valueText(values)} />;
             })}
           </div>
         );

@@ -5,21 +5,48 @@ import {
   parseInterval,
   type Interval,
   type IntervalUnit,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 
 export interface IntervalGroup {
+  /** Primary unit; also the group key. */
   unit: IntervalUnit;
+  /** Every unit listed in the group (custom intervals of these units belong here). */
+  units: IntervalUnit[];
   title: string;
   intervals: string[];
 }
 
-/** Built-in intervals offered in the interval menu, grouped like reference. */
+/** Built-in intervals offered in the interval menu, grouped by range of timeframe. */
 export const INTERVAL_GROUPS: IntervalGroup[] = [
-  { unit: 'minute', title: 'Minutes', intervals: ['1m', '3m', '5m', '15m', '30m', '45m'] },
-  { unit: 'hour', title: 'Hours', intervals: ['1h', '2h', '3h', '4h'] },
-  { unit: 'day', title: 'Days', intervals: ['1D'] },
-  { unit: 'week', title: 'Weeks', intervals: ['1W'] },
-  { unit: 'month', title: 'Months', intervals: ['1M', '3M', '6M', '12M'] },
+  {
+    unit: 'minute',
+    units: ['minute'],
+    title: 'Intraday (minutes)',
+    intervals: ['1m', '3m', '5m', '15m', '30m', '45m'],
+  },
+  {
+    unit: 'hour',
+    units: ['hour'],
+    title: 'Intraday (hours)',
+    intervals: ['1h', '2h', '3h', '4h'],
+  },
+  {
+    unit: 'day',
+    units: ['day', 'week', 'month'],
+    title: 'Daily+',
+    intervals: ['1D', '1W', '1M', '3M', '6M', '12M'],
+  },
+];
+
+/** Interval quick list used until the user picks favorites of their own. */
+export const DEFAULT_FAVORITE_INTERVALS: readonly string[] = [
+  '1m',
+  '5m',
+  '15m',
+  '1h',
+  '4h',
+  '1D',
+  '1W',
 ];
 
 export const UNIT_NAMES: Record<IntervalUnit, [singular: string, plural: string]> = {

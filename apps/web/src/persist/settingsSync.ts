@@ -8,23 +8,27 @@ import { createAutosaver, type Autosaver } from '../api/autosave';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import type { Settings } from '../api/types';
-import { useIndicatorPrefs } from '../indicators/store';
+import { parseAlertPrefs, readAlertPrefs, useAlertPrefs } from '../alerts/prefs';
+import { parseTradingPrefs, readTradingPrefs, useTradingPrefs } from '../replay/prefs';
+import { parseEventPrefs, readEventPrefs, useEventPrefs } from '../events/prefs';
+import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
-import { useUiStore, type RightPanel } from '../store/ui';
+import {
+  clamp,
+  MAX_INSPECTOR_WIDTH,
+  MAX_NAV_WIDTH,
+  migrateNavigator,
+  migrateToolIds,
+  MIN_INSPECTOR_WIDTH,
+  MIN_NAV_WIDTH,
+  NAV_SECTIONS,
+  useUiStore,
+} from '../store/ui';
 import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
-const PANELS: (RightPanel | null)[] = [
-  'watchlist',
-  'alerts',
-  'objectTree',
-  'dataWindow',
-  'details',
-  'news',
-  'notes',
-];
 import { isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
-export const SETTINGS_SYNC_KEY = 'investopen-settings-sync';
+export const SETTINGS_SYNC_KEY = 'tickerglass-settings-sync';
 
 export type SettingsApi = Pick<typeof persistence, 'getSettings' | 'patchSettings'>;
 
@@ -63,8 +67,11 @@ const APP_PREFS = [
 ] as const;
 
 const UI_PREFS = [
-  'rightPanel',
-  'rightWidth',
+  'navOpen',
+  'navSection',
+  'navWidth',
+  'inspectorWidth',
+  'toolRailHidden',
   'groupTools',
   'favoriteTools',
   'showFavoritesBar',
@@ -96,15 +103,33 @@ export const SETTING_DEFS: SettingDef[] = [
   },
   {
     key: 'ui.prefs',
-    read: () => pickKeys(useUiStore.getState(), UI_PREFS),
+    read: () => {
+      const prefs = pickKeys(useUiStore.getState(), UI_PREFS);
+      // The replay trading panel only exists while replaying: never synced.
+      return prefs.navSection === 'replayTrading' ? { ...prefs, navSection: 'watchlist' } : prefs;
+    },
     write: (v) => {
-      const { rightPanel: _p, ...cur } = pickKeys(useUiStore.getState(), UI_PREFS);
-      const patch: Partial<ReturnType<typeof useUiStore.getState>> = pickTyped(cur, v);
-      // Nullable: validated against the known panels.
-      if (isObj(v) && (v.rightPanel === null || typeof v.rightPanel === 'string'))
-        patch.rightPanel = PANELS.includes(v.rightPanel as RightPanel)
-          ? (v.rightPanel as RightPanel)
-          : null;
+      const cur = pickKeys(useUiStore.getState(), UI_PREFS);
+      // The server may still hold the bottom dock fields; only then is there anything to migrate.
+      const legacy = isObj(v) && ('rightPanel' in v || 'dockTab' in v || 'dockHeight' in v);
+      const incoming = isObj(v) && legacy ? migrateNavigator(v, true) : v;
+      const patch: Partial<ReturnType<typeof useUiStore.getState>> = migrateToolIds(
+        pickTyped(cur, incoming),
+      );
+      // Validated against the known sections.
+      if (
+        patch.navSection !== undefined &&
+        (!NAV_SECTIONS.includes(patch.navSection) || patch.navSection === 'replayTrading')
+      )
+        delete patch.navSection;
+      if (patch.navWidth !== undefined)
+        patch.navWidth = clamp(patch.navWidth, MIN_NAV_WIDTH, MAX_NAV_WIDTH);
+      if (patch.inspectorWidth !== undefined)
+        patch.inspectorWidth = clamp(
+          patch.inspectorWidth,
+          MIN_INSPECTOR_WIDTH,
+          MAX_INSPECTOR_WIDTH,
+        );
       useUiStore.getState().set(patch);
     },
     subscribe: (fn) => useUiStore.subscribe(fn),
@@ -114,7 +139,7 @@ export const SETTING_DEFS: SettingDef[] = [
     read: () => useIndicatorPrefs.getState().favorites,
     write: (v) => {
       if (Array.isArray(v))
-        useIndicatorPrefs.setState({ favorites: v.filter((x) => typeof x === 'string') });
+        useIndicatorPrefs.setState({ favorites: migrateRenamedPrefs({ favorites: v }).favorites });
     },
     subscribe: (fn) => useIndicatorPrefs.subscribe(fn),
   },
@@ -123,9 +148,7 @@ export const SETTING_DEFS: SettingDef[] = [
     read: () => useIndicatorPrefs.getState().defaults,
     write: (v) => {
       if (isObj(v))
-        useIndicatorPrefs.setState({
-          defaults: v as ReturnType<typeof useIndicatorPrefs.getState>['defaults'],
-        });
+        useIndicatorPrefs.setState({ defaults: migrateRenamedPrefs({ defaults: v }).defaults });
     },
     subscribe: (fn) => useIndicatorPrefs.subscribe(fn),
   },
@@ -137,6 +160,24 @@ export const SETTING_DEFS: SettingDef[] = [
     },
     write: (v) => useWatchlistPrefs.setState(parsePrefs(v)),
     subscribe: (fn) => useWatchlistPrefs.subscribe(fn),
+  },
+  {
+    key: 'alerts.prefs',
+    read: readAlertPrefs,
+    write: (v) => useAlertPrefs.setState(parseAlertPrefs(v)),
+    subscribe: (fn) => useAlertPrefs.subscribe(fn),
+  },
+  {
+    key: 'events.prefs',
+    read: readEventPrefs,
+    write: (v) => useEventPrefs.setState(parseEventPrefs(v)),
+    subscribe: (fn) => useEventPrefs.subscribe(fn),
+  },
+  {
+    key: 'replay.trading',
+    read: readTradingPrefs,
+    write: (v) => useTradingPrefs.setState(parseTradingPrefs(v)),
+    subscribe: (fn) => useTradingPrefs.subscribe(fn),
   },
 ];
 

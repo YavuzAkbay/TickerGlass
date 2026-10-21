@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import type { Flag, Watchlist } from '../api/types';
 import { useAppStore } from '../store/app';
+import { useChartView } from '../store/chartView';
 import { useWatchlistStore } from '../watchlist/store';
 import type { FlagColor, WatchlistEntry, WatchlistItem } from '../watchlist/types';
 import { WatchlistSync, type WatchlistsApi } from './watchlists';
@@ -130,7 +131,8 @@ beforeEach(() => {
     seeded: false,
     pendingSeed: null,
   });
-  useAppStore.setState({ symbol: 'AAPL', recentSymbols: ['MSFT', 'AAPL'] });
+  useChartView.setState({ symbol: 'AAPL' });
+  useAppStore.setState({ recentSymbols: ['MSFT', 'AAPL'] });
 });
 
 describe('WatchlistSync.load', () => {
@@ -212,16 +214,17 @@ describe('WatchlistSync.load', () => {
     await sync.dispose();
   });
 
-  it('marks existing lists as seeded; a seed drops invalid recent symbols', async () => {
+  it('marks existing lists as seeded; a seed drops invalid recent symbols and expressions', async () => {
     const { sync, server } = setup();
     server.lists.set('a', wl('a', 'A', 1));
     await sync.load();
     expect(st().seeded).toBe(true);
-    useAppStore.setState({ recentSymbols: ['A B', 'msft'] });
+    useChartView.setState({ symbol: 'AAPL/MSFT' });
+    useAppStore.setState({ recentSymbols: ['A B', 'msft', 'AAPL'] });
     useWatchlistStore.setState({ lists: {}, seeded: false });
     server.lists.clear();
     await sync.load();
-    expect(Object.values(st().lists)[0]!.items).toEqual([S('AAPL'), S('MSFT')]);
+    expect(Object.values(st().lists)[0]!.items).toEqual([S('MSFT'), S('AAPL')]);
     await sync.dispose();
   });
 

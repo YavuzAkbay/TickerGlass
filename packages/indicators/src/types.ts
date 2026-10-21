@@ -102,8 +102,8 @@ export interface EnumInputDef<O extends string = string> extends InputBase<O> {
 export interface TimeframeInputDef extends InputBase<string> {
   kind: 'timeframe';
   /**
-   * Key of a `bool` input in the same schema (the common "Wait for timeframe
-   * closes", conventionally default true) that selects confirmed alignment:
+   * Key of a `bool` input in the same schema (a "wait for timeframe
+   * close" switch, conventionally default true) that selects confirmed alignment:
    * every chart bar shows the last *closed* timeframe bar, so history matches
    * what was knowable in real time and live values never repaint. Without it
    * (or when false) chart bars show the timeframe bar containing them: on
@@ -119,6 +119,19 @@ export interface TimeInputDef extends InputBase<number> {
   kind: 'time';
 }
 
+/**
+ * Another symbol (ticker as the chart's DataFeed knows it, e.g. 'GOOG') whose
+ * bars the host fetches and aligns to the chart bars (Correlation). Its
+ * columns are read through `source` refs with instanceId `sym:<SYMBOL>`
+ * (see EXTERNAL_SOURCE_PREFIX).
+ */
+export interface SymbolInputDef extends InputBase<string> {
+  kind: 'symbol';
+}
+
+/** `OutputSourceRef.instanceId` prefix of an external symbol's price column. */
+export const EXTERNAL_SOURCE_PREFIX = 'sym:';
+
 export type InputDef =
   | IntInputDef
   | FloatInputDef
@@ -127,7 +140,8 @@ export type InputDef =
   | ColorInputDef
   | EnumInputDef
   | TimeframeInputDef
-  | TimeInputDef;
+  | TimeInputDef
+  | SymbolInputDef;
 
 export type InputKind = InputDef['kind'];
 
@@ -157,6 +171,15 @@ export type SourceKeys<S extends InputsSchema> = {
 }[keyof S] &
   string;
 
+/** Keys of `symbol` inputs in a schema. */
+export type SymbolKeys<S extends InputsSchema> = {
+  [K in keyof S]: S[K] extends SymbolInputDef ? K : never;
+}[keyof S] &
+  string;
+
+/** Chart-aligned price columns of an external symbol (arrays may be longer than the chart). */
+export type ExternalColumns = { readonly [P in PriceSource]: Float64Array };
+
 // ----------------------------------------------------------------- outputs
 
 export type PlotKind = 'line' | 'step' | 'histogram' | 'area' | 'columns' | 'circles' | 'cross';
@@ -185,7 +208,7 @@ export type ShapeSize = 'tiny' | 'small' | 'normal' | 'large' | 'huge';
  * A colour or a palette. With a palette the step picks an index per bar
  * (`ctx.set(id, v, colorIndex)`), e.g. MACD histogram rising/falling colours.
  * Users edit each palette entry in the Style tab. `NO_COLOR` as the index
- * hides that bar (standard `na` colour); other out-of-range indices use entry 0.
+ * hides that bar (missing-value colour); other out-of-range indices use entry 0.
  */
 export type ColorSpec = string | readonly string[];
 
@@ -222,6 +245,12 @@ export interface PlotDef<
   offset?: FromInputs<S, number>;
   /** Show the last-value label on the price axis. Default true. */
   showLastValue?: boolean;
+  /**
+   * Line/step kinds: draw straight across NaN bars instead of breaking the
+   * line (line vs line-with-breaks style), e.g. ZigZag pivots
+   * written sparsely. Default false.
+   */
+  connectGaps?: boolean;
 }
 
 export interface HLineDef<
@@ -267,18 +296,65 @@ export interface ShapeDef<
   color: ColorSpec;
   /** Static label text drawn with the shape. */
   text?: string;
+  /**
+   * Label text is the bar's value formatted with the indicator's format
+   * (Pivots High/Low prices) instead of `text`. With aboveBar/belowBar the
+   * value then both marks presence and supplies the text. Default false.
+   */
+  textFromValue?: boolean;
   textColor?: string;
   /** Shift by N bars when drawn (aboveBar/belowBar use the bar at the drawn position). */
   offset?: FromInputs<S, number>;
 }
 
+/** 'visible': one profile of the bars in view; 'session': one per session period. */
+export type VolumeProfileMode = 'visible' | 'session';
+/** Same values as the engine's volume profile drawings: row count or row size in price. */
+export type VolumeProfileRowsLayout = 'count' | 'size';
+export type VolumeProfilePlacement = 'left' | 'right';
+
+/**
+ * Volume profile computed and drawn by the engine from the chart's own bars
+ * (visible-bars / session volume profile). Its values array marks period
+ * starts in 'session' mode (non-NaN = a new period begins at that bar) and is
+ * unused (all NaN) in 'visible' mode. Not autoscaled, no legend value, not an
+ * alert operand. Numeric settings may come from inputs (like hline values).
+ */
+export interface VolumeProfileDef<
+  O extends string = string,
+  S extends InputsSchema = InputsSchema,
+> extends OutputBase<O> {
+  type: 'volumeProfile';
+  mode: VolumeProfileMode;
+  rowsLayout: FromInputs<S, VolumeProfileRowsLayout>;
+  /** Number of rows ('count' layout). */
+  rows: FromInputs<S, number>;
+  /** Row height in price units ('size' layout). */
+  rowSize: FromInputs<S, number>;
+  /** Value area, % of the profile's volume. */
+  valueArea: FromInputs<S, number>;
+  /** Histogram width in % of the profile's range (session) or pane (visible). */
+  widthPercent: FromInputs<S, number>;
+  placement: FromInputs<S, VolumeProfilePlacement>;
+  upColor: string;
+  downColor: string;
+  valueAreaUpColor: string;
+  valueAreaDownColor: string;
+  pocColor: string;
+}
+
 export type OutputDef<O extends string = string, S extends InputsSchema = InputsSchema> =
-  PlotDef<O, S> | HLineDef<O, S> | FillDef<O> | BgColorDef<O, S> | ShapeDef<O, S>;
+  | PlotDef<O, S>
+  | HLineDef<O, S>
+  | FillDef<O>
+  | BgColorDef<O, S>
+  | ShapeDef<O, S>
+  | VolumeProfileDef<O, S>;
 
 export type OutputType = OutputDef['type'];
 
 // --------------------------------------------- resolved outputs (to engine)
-// These mirror `StudyOutputMeta` in @investopen/engine structurally (the
+// These mirror `StudyOutputMeta` in @tickerglass/engine structurally (the
 // engine must not import this package). apps/web asserts compatibility.
 
 export interface ResolvedPlot {
@@ -293,6 +369,7 @@ export interface ResolvedPlot {
   base: number | null;
   offset: number;
   showLastValue: boolean;
+  connectGaps: boolean;
 }
 
 export interface ResolvedHLine {
@@ -334,12 +411,43 @@ export interface ResolvedShape {
   size: ShapeSize;
   colors: string[];
   text: string;
+  textFromValue: boolean;
   textColor: string;
   offset: number;
 }
 
+/** Order of `ResolvedVolumeProfile.colors` (and of a `colors` style override). */
+export const VOLUME_PROFILE_COLOR_KEYS = [
+  'upColor',
+  'downColor',
+  'valueAreaUpColor',
+  'valueAreaDownColor',
+  'pocColor',
+] as const;
+
+export interface ResolvedVolumeProfile {
+  type: 'volumeProfile';
+  id: string;
+  title: string;
+  visible: boolean;
+  mode: VolumeProfileMode;
+  rowsLayout: VolumeProfileRowsLayout;
+  rows: number;
+  rowSize: number;
+  valueArea: number;
+  widthPercent: number;
+  placement: VolumeProfilePlacement;
+  /** Up, down, value-area up, value-area down, POC (VOLUME_PROFILE_COLOR_KEYS). */
+  colors: string[];
+}
+
 export type ResolvedOutput =
-  ResolvedPlot | ResolvedHLine | ResolvedFill | ResolvedBgColor | ResolvedShape;
+  | ResolvedPlot
+  | ResolvedHLine
+  | ResolvedFill
+  | ResolvedBgColor
+  | ResolvedShape
+  | ResolvedVolumeProfile;
 
 /** User style override for one output (Style tab, "Save as default"). Fields
  * that do not apply to the output type are ignored. */
@@ -347,7 +455,7 @@ export interface OutputStyleOverride {
   visible?: boolean;
   /** Plots only: users may switch e.g. line -> histogram. */
   kind?: PlotKind;
-  /** Plots, fills, bgcolor, shapes: full palette. */
+  /** Plots, fills, bgcolor, shapes: full palette. Volume profiles: VOLUME_PROFILE_COLOR_KEYS order. */
   colors?: string[];
   /** HLines only. */
   color?: string;
@@ -391,6 +499,25 @@ export interface IndicatorDefinition<
   /** Draw order = array order (later on top). */
   outputs: readonly OutputDef<O, S>[];
   /**
+   * Values of past bars may change after they were first computed (ZigZag,
+   * regression channel). Required to use `StepContext.setAt`; such definitions
+   * cannot have a timeframe input and cannot be used as alert operands.
+   */
+  repaints?: true;
+  /**
+   * Bars of history the values need before they are trustworthy, for hosts
+   * that compute on a bounded window (alerts service). 'cumulative': values
+   * depend on all history (OBV, A/D), so no window is enough. Omit to let the
+   * host derive it from the inputs.
+   */
+  warmup?: IndicatorWarmup<S>;
+  /**
+   * The values read `env.events` (VWAP's Earnings/Dividends/Splits anchors).
+   * Only such instances receive the chart symbol's events, and only they
+   * recompute when the events change. Omit for false.
+   */
+  usesEvents?: FromInputs<S, boolean>;
+  /**
    * Called once per full computation. Create every stateful primitive here
    * through `ctx.ta`; never keep mutable state in closure variables (it would
    * not be rewound when the last bar is re-run). Returns the per-bar step.
@@ -398,9 +525,13 @@ export interface IndicatorDefinition<
   setup(ctx: SetupContext<S>): StepFn<S, O>;
 }
 
+export type IndicatorWarmup<S extends InputsSchema = InputsSchema> =
+  { kind: 'cumulative' } | { bars: FromInputs<S, number> };
+
 /**
  * Facts about the bars an instance runs on, provided by the host
- * (`IndicatorRuntime.setContext`). Changing them recomputes every instance.
+ * (`IndicatorRuntime.setContext`). Changing them recomputes every instance
+ * (events: only instances that use them).
  */
 export interface BarsEnv {
   /** IANA exchange timezone for calendar periods (VWAP anchors); 'UTC' when unknown. */
@@ -413,6 +544,19 @@ export interface BarsEnv {
    * interval of the time bars they were built from.
    */
   intervalSeconds: number;
+  /**
+   * Corporate event times of the symbol (unix seconds, sorted ascending, same
+   * unit as bar times), only for definitions that declare `usesEvents`.
+   * Absent = unknown (no events loaded, or a host without them).
+   */
+  events?: BarsEvents;
+}
+
+/** Event times by kind (unix seconds, sorted ascending). */
+export interface BarsEvents {
+  readonly dividends: readonly number[];
+  readonly splits: readonly number[];
+  readonly earnings: readonly number[];
 }
 
 export interface SetupContext<S extends InputsSchema> {
@@ -442,6 +586,8 @@ export interface StepContext<S extends InputsSchema = InputsSchema, O extends st
   readonly volume: Float64Array;
   /** Resolved `source` inputs (price columns or another indicator's output). */
   readonly src: { readonly [K in SourceKeys<S>]: Float64Array };
+  /** Aligned price columns of the symbol chosen in each `symbol` input (NaN where it has no bar). */
+  readonly ext: { readonly [K in SymbolKeys<S>]: ExternalColumns };
   readonly inputs: InputValues<S>;
   readonly env: Readonly<BarsEnv>;
   /**
@@ -453,6 +599,19 @@ export interface StepContext<S extends InputsSchema = InputsSchema, O extends st
   setColor(id: O, color: number): void;
   /** This indicator's own output at an earlier bar j < i (NaN if none). */
   get(id: O, j: number): number;
+  /**
+   * Retroactive write: value (and palette index) of a plot/shape/bgcolor at
+   * bar j <= i, e.g. moving a ZigZag pivot or redrawing a regression window.
+   * `color` defaults to palette index 0.
+   * Only for definitions with `repaints: true` (throws otherwise). Writes made
+   * while stepping the last bar are undone when a live tick re-runs it, and
+   * the change reported to the host starts at the smallest index touched.
+   * The definition must leave the same arrays after any tick sequence as a
+   * full computation would (e.g. clear what an earlier last-bar run drew).
+   */
+  setAt(id: O, j: number, value: number, color?: number): void;
+  /** True while stepping the last bar of the series (i === length - 1). */
+  readonly isLast: boolean;
 }
 
 // ---------------------------------------------------------- ta primitives
@@ -473,6 +632,12 @@ export interface WeightedStreaming {
   update(x: number, weight: number): number;
 }
 
+/** A streaming calculation fed two aligned values per bar (e.g. correlation). */
+export interface PairStreaming {
+  /** NaN in either argument: NaN, state unchanged (see Streaming). */
+  update(x: number, y: number): number;
+}
+
 /** Last N values (newest first), for lookbacks like `x[k]`. */
 export interface History {
   push(x: number): void;
@@ -489,7 +654,7 @@ export interface SeriesVar {
 /**
  * Factory for stateful primitives. Everything created here is snapshotted and
  * restored by the runtime. Only callable inside `setup`.
- * Conventions (standard / TA-Lib compatible): warm-up outputs are NaN; ema/rma
+ * Conventions (TA-Lib compatible): warm-up outputs are NaN; ema/rma
  * seed with the SMA of the first `length` values; stdev is population (biased).
  */
 export interface Ta {
@@ -497,19 +662,58 @@ export interface Ta {
   ema(length: number): Streaming;
   /** Wilder's moving average (alpha = 1/length), used by RSI/ATR/ADX. */
   rma(length: number): Streaming;
-  /** Linearly weighted moving average (standard `ta.wma`). */
+  /** Linearly weighted moving average. */
   wma(length: number): Streaming;
-  /** Volume-weighted moving average (standard `ta.vwma`): update(x, volume). */
+  /** Volume-weighted moving average: update(x, volume). */
   vwma(length: number): WeightedStreaming;
   /** Rolling sum over `length` values. */
   sum(length: number): Streaming;
   stdev(length: number): Streaming;
-  /** Mean absolute deviation from the window mean (standard `ta.dev`). */
+  /** Mean absolute deviation from the window mean. */
   dev(length: number): Streaming;
   highest(length: number): Streaming;
   lowest(length: number): Streaming;
+  /**
+   * Offset (<= 0, in values fed) of the highest of the last `length` values
+   * from the current one; ties pick the most recent.
+   */
+  highestBars(length: number): Streaming;
+  /** Like `highestBars` for the lowest value. */
+  lowestBars(length: number): Streaming;
+  /** Running total of every value fed. */
+  cum(): Streaming;
+  /** `x - x[length]`, default length 1. */
+  change(length?: number): Streaming;
+  /**
+   * Least-squares line over the last `length` values with x = 0..length-1
+   * oldest to newest: a + b * (length - 1 - offset),
+   * offset 0 = the fitted value at the current bar, TA-Lib LINEARREG).
+   */
+  linreg(length: number, offset?: number): Streaming;
+  /**
+   * Percentage (0..100) of the previous `length` values that are <= the
+   * current one (needs length + 1 values).
+   */
+  percentrank(length: number): Streaming;
+  /** Pearson correlation of x and y over `length` pairs. */
+  correlation(length: number): PairStreaming;
+  /** Symmetrically weighted MA of 4 values: (x[3] + 2x[2] + 2x[1] + x) / 6. */
+  swma(): Streaming;
+  /**
+   * Arnaud Legoux MA: gaussian weights centred at
+   * offset * (length - 1) from the oldest value, width length / sigma.
+   */
+  alma(length: number, offset: number, sigma: number): Streaming;
+  /**
+   * Pivot high: on the value that confirms
+   * it, the value `right` values back if it is strictly greater than the
+   * `left` values before and `right` values after it; NaN otherwise.
+   */
+  pivotHigh(left: number, right: number): Streaming;
+  /** Pivot low: like `pivotHigh` with strictly lower. */
+  pivotLow(left: number, right: number): Streaming;
   history(length: number): History;
-  /** Record of numbers carried across bars (standard `var`), e.g. SAR state. */
+  /** Record of numbers carried across bars (persistent variable), e.g. SAR state. */
   vars<T extends Record<string, number>>(init: T): T;
   series(): SeriesVar;
 }
@@ -518,8 +722,8 @@ export interface Ta {
 
 export type InstanceStatus =
   | { state: 'ok' }
-  /** Waiting for timeframe bars from the host (MTF). */
-  | { state: 'waiting'; timeframe: string }
+  /** Waiting for timeframe bars (MTF) or an external symbol's aligned bars (`symbol`) from the host. */
+  | { state: 'waiting'; timeframe: string; symbol?: string }
   | { state: 'error'; message: string };
 
 /**

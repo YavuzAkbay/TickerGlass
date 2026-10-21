@@ -7,7 +7,7 @@ import type { MockServer } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -43,7 +43,7 @@ async function open(page: Page) {
 }
 
 async function openPanel(page: Page) {
-  const panel = page.getByRole('region', { name: 'Watchlist', exact: true });
+  const panel = page.getByRole('tabpanel', { name: 'Watchlist', exact: true });
   if (!(await panel.isVisible())) await page.locator('[data-panel="watchlist"]').click();
   await expect(panel).toBeVisible();
 }
@@ -323,7 +323,7 @@ test('keyboard: arrows move the selection and change the chart symbol', async ({
   await expect.poll(() => chartSymbol(page)).toBe('AAPL');
 });
 
-test('.txt import (reference export) and export round-trip', async ({ page, server }) => {
+test('.txt import and export round-trip', async ({ page, server }) => {
   await mockMarket(page);
   seed(server, 'w1', 'Main', ['AAPL']);
   await open(page);
@@ -366,9 +366,11 @@ test('closed /ws: quotes fall back to polling /api/quotes', async ({ page, serve
   const before = market.quoteRequests.length;
   // The stream polls every 15 s while its socket is down.
   await expect
-    .poll(() => market.quoteRequests.length, { timeout: 40_000, intervals: [1000] })
-    .toBeGreaterThan(before);
-  expect(market.quoteRequests.at(-1)).toMatch(/AAPL/);
+    .poll(() => market.quoteRequests.slice(before).some((r) => /AAPL/.test(r)), {
+      timeout: 40_000,
+      intervals: [1000],
+    })
+    .toBe(true);
 });
 
 test('API down: edits queue and sync later; a stale save offers "Keep mine"', async ({
