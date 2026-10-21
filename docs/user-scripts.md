@@ -189,7 +189,7 @@ returns `NaN` and leaves the state unchanged. `ema` and `rma` seed with the SMA 
 | `ta.alma(n, offset, sigma)`                         | Arnaud Legoux moving average                                                                                                                              |
 | `ta.pivotHigh(left, right)` `pivotLow(left, right)` | On the confirming value: the value `right` back if strictly higher (lower) than the `left` before and `right` after it, else `NaN`. Ties are never pivots |
 | `ta.history(n)`                                     | `.push(x)`, `.get(k)`: the last `n` pushed values, `k = 0` newest, `NaN` if not available                                                                 |
-| `ta.vars({ a: 0, b: NaN })`                         | Object of numbers carried across bars (persistent variable); read and write its fields                                                                             |
+| `ta.vars({ a: 0, b: NaN })`                         | Object of numbers carried across bars (persistent variable); read and write its fields                                                                    |
 | `ta.series()`                                       | Scratch series: `.get(i)`, `.set(i, v)`; re-running a bar overwrites its slot                                                                             |
 
 Lookbacks count values fed, not bars.

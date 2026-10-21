@@ -52,18 +52,21 @@ describe('linreg-channel repaints', () => {
     [{ length: 20 }, false],
     [{ length: 7, useUpperDev: false, useLowerDev: false }, false],
     [{ length: 12, upperDev: 1, useLowerDev: false }, true],
-  ] as const)('live ticks and appends equal a full computation (%o, on SMA %s)', (inputs, onSma) => {
-    const full = runtime(inputs, onSma);
-    full.setBars(bars);
-    const live = runtime(inputs, onSma);
-    const changes = feed(live, bars, 5);
-    expect(full.status('c')).toEqual({ state: 'ok' });
-    expect(snapshot(live.result('c')!)).toEqual(snapshot(full.result('c')!));
-    expect(snapshot(live.result('ma')!)).toEqual(snapshot(full.result('ma')!));
-    expect(changes.some((cs) => cs.some((c) => c.id === 'c' && c.from < live.length - 1))).toBe(
-      true,
-    );
-  });
+  ] as const)(
+    'live ticks and appends equal a full computation (%o, on SMA %s)',
+    (inputs, onSma) => {
+      const full = runtime(inputs, onSma);
+      full.setBars(bars);
+      const live = runtime(inputs, onSma);
+      const changes = feed(live, bars, 5);
+      expect(full.status('c')).toEqual({ state: 'ok' });
+      expect(snapshot(live.result('c')!)).toEqual(snapshot(full.result('c')!));
+      expect(snapshot(live.result('ma')!)).toEqual(snapshot(full.result('ma')!));
+      expect(changes.some((cs) => cs.some((c) => c.id === 'c' && c.from < live.length - 1))).toBe(
+        true,
+      );
+    },
+  );
 
   it('draws only the last window and shifts it on append', () => {
     const rt = runtime({ length: 5 });
