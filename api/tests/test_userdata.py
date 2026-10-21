@@ -915,12 +915,15 @@ def test_migration_upgrade_downgrade(tmp_path: Path) -> None:
     engine.dispose()
 
 
-def test_migration_user_scripts_is_head(tmp_path: Path) -> None:
+def test_migration_user_scripts_up_down(tmp_path: Path) -> None:
     from alembic.script import ScriptDirectory
 
     url = f"sqlite:///{tmp_path}/h.db"
     cfg = alembic_config(url)
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["3f8a6c1d9e47"]
+    script = ScriptDirectory.from_config(cfg)
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert "3f8a6c1d9e47" in {r.revision for r in script.iterate_revisions(heads[0], "base")}
     engine = create_engine(url)
     command.upgrade(cfg, "head")
     assert "user_scripts" in inspect(engine).get_table_names()

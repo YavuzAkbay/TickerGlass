@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Quote } from '../api/types';
 import { emptyQuote, mergeExtended, mergeSnapshot, mergeTick } from './merge';
-import { BACKOFF_MS, MAX_WS_SYMBOLS, QuoteStream, STABLE_MS, type SocketLike } from './stream';
+import {
+  BACKOFF_MS,
+  MAX_RETAINED,
+  MAX_WS_SYMBOLS,
+  META_REFRESH_MS,
+  QuoteStream,
+  RETAIN_MS,
+  SNAP_FRESH_MS,
+  STABLE_MS,
+  type SocketLike,
+} from './stream';
 import { useQuoteStore } from './store';
 import type { ExtendedQuote, LiveQuote, TickFrame } from './types';
 
@@ -329,14 +339,19 @@ describe('QuoteStream', () => {
     expect(ws.closed).toBe(true);
   });
 
-  it('evicts quotes of released symbols once the stream goes idle', async () => {
+  it('keeps recent quotes after idle and evicts them after the retention period', async () => {
     const r = stream.subscribe(['AAPL']);
     last().open();
     last().push(tick({ symbol: 'AAPL', price: 7 }));
     expect(useQuoteStore.getState().quotes.AAPL).toBeDefined();
     r();
     await vi.advanceTimersByTimeAsync(2000 + 10_000 + 10);
-    expect(useQuoteStore.getState().quotes).toEqual({});
+    expect(useQuoteStore.getState().status).toBe('idle');
+    expect(useQuoteStore.getState().quotes.AAPL?.last).toBe(7); // kept across idle
+    await vi.advanceTimersByTimeAsync(RETAIN_MS);
+    expect(useQuoteStore.getState().quotes.AAPL).toBeDefined(); // nothing running to prune
+    stream.subscribe(['MSFT']); // the next subscription enforces retention
+    expect(useQuoteStore.getState().quotes.AAPL).toBeUndefined();
   });
 
   it('marks symbols the snapshot omitted as missing', async () => {
@@ -480,5 +495,115 @@ describe('QuoteStream', () => {
       await vi.advanceTimersByTimeAsync(30_000);
       expect(last().closed).toBe(false);
     });
+  });
+});
+
+describe('QuoteStream freshness', () => {
+  let fetches: string[] = [];
+  let stream: QuoteStream;
+  const symbolsOf = (path: string) => decodeURIComponent(path.split('=')[1]!).split(',');
+  const mk = () =>
+    new QuoteStream({
+      url: 'ws://test/ws',
+      createSocket: (u) => new FakeSocket(u),
+      fetchJson: async <T>(path: string) => {
+        fetches.push(path);
+        const list = path.startsWith('/quotes?')
+          ? symbolsOf(path).map((symbol) => snap({ symbol }))
+          : [];
+        return list as unknown as T;
+      },
+      isVisible: () => true,
+      random: () => 0.5,
+      now: () => Date.now(),
+    });
+  const quoteFetches = () => fetches.filter((f) => f.startsWith('/quotes?'));
+  const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+    fetches = [];
+    useQuoteStore.setState({ quotes: {}, missing: {}, status: 'idle', error: null });
+    stream = mk();
+  });
+  afterEach(() => {
+    stream.dispose();
+    vi.useRealTimers();
+  });
+
+  it('re-subscribing within the freshness window makes no fetch', async () => {
+    const r = stream.subscribe(['AAPL']);
+    await vi.advanceTimersByTimeAsync(60);
+    expect(quoteFetches()).toEqual(['/quotes?symbols=AAPL']);
+    r();
+    await vi.advanceTimersByTimeAsync(2100); // released
+    stream.subscribe(['AAPL']);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(quoteFetches()).toHaveLength(1);
+  });
+
+  it('re-subscribing after the snapshot went stale fetches again', async () => {
+    const r = stream.subscribe(['AAPL']);
+    await vi.advanceTimersByTimeAsync(60);
+    r();
+    await vi.advanceTimersByTimeAsync(2000 + SNAP_FRESH_MS);
+    expect(useQuoteStore.getState().quotes.AAPL).toBeDefined();
+    stream.subscribe(['AAPL']);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(quoteFetches()).toHaveLength(2);
+  });
+
+  it('re-subscribing a stale snapshot makes no fetch while a recent tick covers it', async () => {
+    stream.subscribe(['MSFT']); // keeps the stream running
+    const r = stream.subscribe(['AAPL']);
+    last().open();
+    await vi.advanceTimersByTimeAsync(60);
+    r();
+    await vi.advanceTimersByTimeAsync(2000 + SNAP_FRESH_MS); // released, snapshot stale
+    last().push(tick({ symbol: 'AAPL', price: 5 })); // a late frame still counts
+    fetches = [];
+    stream.subscribe(['AAPL']);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(quoteFetches()).toEqual([]);
+  });
+
+  it('refresh skips symbols that are ticking', async () => {
+    stream.subscribe(['AAPL', 'MSFT']);
+    last().open();
+    await vi.advanceTimersByTimeAsync(60);
+    fetches = [];
+    await vi.advanceTimersByTimeAsync(59_000);
+    last().push(tick({ symbol: 'AAPL', price: 5 }));
+    await vi.advanceTimersByTimeAsync(1000); // 60 s refresh
+    expect(quoteFetches()).toEqual(['/quotes?symbols=MSFT']);
+  });
+
+  it('refreshes a ticking symbol once its snapshot is older than the meta interval', async () => {
+    stream.subscribe(['AAPL']);
+    last().open();
+    await vi.advanceTimersByTimeAsync(60);
+    fetches = [];
+    const end = META_REFRESH_MS + 60_000;
+    for (let t = 0; t < end; t += 10_000) {
+      last().push(tick({ symbol: 'AAPL', price: 5 + t }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      if (fetches.length) break;
+    }
+    expect(quoteFetches()).toEqual(['/quotes?symbols=AAPL']);
+  });
+
+  it('prunes released symbols beyond the retention count, oldest first', async () => {
+    const total = MAX_RETAINED + 5;
+    for (let i = 0; i < total; i++) {
+      stream.subscribe([`S${i}`])();
+      await vi.advanceTimersByTimeAsync(1); // distinct release times
+    }
+    await vi.advanceTimersByTimeAsync(2000 + 10_000 + 100); // all released, idle stop prunes
+    const keys = Object.keys(useQuoteStore.getState().quotes);
+    expect(keys).toHaveLength(MAX_RETAINED);
+    for (let i = 0; i < 5; i++) expect(keys).not.toContain(`S${i}`);
+    expect(keys).toContain('S5');
+    expect(keys).toContain(`S${total - 1}`);
   });
 });

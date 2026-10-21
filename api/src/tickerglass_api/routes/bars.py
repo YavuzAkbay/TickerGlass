@@ -1,12 +1,18 @@
+import time
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from ..deps import BarServiceDep
 from ..intervals import resolve_interval
+from ._cache_headers import set_max_age, set_no_cache
 
 router = APIRouter(tags=["bars"])
+
+HISTORY_MAX_AGE_S = 300
+# A page ending this many bar intervals before now holds only closed, settled bars.
+SETTLED_BARS = 2
 
 
 class BarsResponse(BaseModel):
@@ -27,6 +33,7 @@ class BarsResponse(BaseModel):
 
 @router.get("/bars", response_model=BarsResponse)
 def get_bars(
+    response: Response,
     bars: BarServiceDep,
     symbol: Annotated[str, Query(min_length=1, max_length=32)],
     interval: str = "1d",
@@ -44,6 +51,10 @@ def get_bars(
         raise HTTPException(422, str(exc)) from exc
     res = bars.get_bars(symbol, spec, prepost, start=start, end=end, limit=limit, adjusted=adjusted)
     df = res.bars
+    if end is not None and end <= time.time() - SETTLED_BARS * spec.seconds:
+        set_max_age(response, HISTORY_MAX_AGE_S)
+    else:
+        set_no_cache(response)
     return BarsResponse(
         symbol=symbol.upper(),
         interval=spec.name,

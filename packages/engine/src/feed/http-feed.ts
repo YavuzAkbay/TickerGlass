@@ -89,6 +89,8 @@ const PING_MS = 25_000;
 const WS_SYMBOL_RE = /^[A-Za-z0-9.\-=^]{1,32}$/;
 /** Keep an unused socket around briefly so symbol switches do not reconnect. */
 const IDLE_CLOSE_MS = 10_000;
+/** Most resolved symbols remembered; least recently used are dropped. */
+const SYMBOL_CACHE_MAX = 500;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -135,6 +137,7 @@ export class HttpDataFeed implements DataFeed {
   private readonly wsUrlOpt: string | undefined;
   private readonly fetchOpt: typeof fetch | undefined;
   private readonly wsImplOpt: typeof WebSocket | undefined;
+  /** Insertion order = recency (re-inserted on use). */
   private readonly symbolCache = new Map<string, Promise<SymbolInfo>>();
 
   private ws: WebSocket | null = null;
@@ -220,13 +223,21 @@ export class HttpDataFeed implements DataFeed {
   resolveSymbol(symbol: string): Promise<SymbolInfo> {
     const key = symbol.trim().toUpperCase();
     let p = this.symbolCache.get(key);
-    if (p === undefined) {
-      p = this.request(`/api/symbols/${encodeURIComponent(key)}`).then(parseSymbolInfo);
+    if (p !== undefined) {
+      this.symbolCache.delete(key);
       this.symbolCache.set(key, p);
-      // Do not cache failures; a later call retries.
-      p.catch(() => {
-        if (this.symbolCache.get(key) === p) this.symbolCache.delete(key);
-      });
+      return p;
+    }
+    p = this.request(`/api/symbols/${encodeURIComponent(key)}`).then(parseSymbolInfo);
+    this.symbolCache.set(key, p);
+    // Do not cache failures; a later call retries.
+    p.catch(() => {
+      if (this.symbolCache.get(key) === p) this.symbolCache.delete(key);
+    });
+    while (this.symbolCache.size > SYMBOL_CACHE_MAX) {
+      const oldest = this.symbolCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.symbolCache.delete(oldest);
     }
     return p;
   }

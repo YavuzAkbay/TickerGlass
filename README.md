@@ -6,6 +6,7 @@ tools, indicators, compare, alerts, watchlists (with a plain-text import/export,
 comes from Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance).
 
 > **Status:** feature-complete for the planned scope. Known limitations: [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
+> Caching, upstream request limits and the related settings: [docs/caching.md](docs/caching.md).
 
 ## Disclaimer
 

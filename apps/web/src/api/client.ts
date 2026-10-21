@@ -110,12 +110,32 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
+/** Upper bound on cached paths; the least recently used go first. */
+export const MAX_ENTRIES = 300;
+
+/** Test hook: forget every cached response. */
+export function clearJsonCache(): void {
+  cache.clear();
+}
+
 /** getJson with a short in-memory cache. Concurrent callers share one request;
- * failures are evicted immediately so the next call retries. */
+ * failures are evicted immediately so the next call retries. The cache is an
+ * LRU capped at MAX_ENTRIES, and expired entries are swept on insert. */
 export function cachedJson<T>(path: string, ttlMs: number): Promise<T> {
   const now = Date.now();
   const hit = cache.get(path);
-  if (hit && hit.expires > now) return hit.promise as Promise<T>;
+  if (hit && hit.expires > now) {
+    cache.delete(path); // re-insert: most recently used goes last
+    cache.set(path, hit);
+    return hit.promise as Promise<T>;
+  }
+  if (hit) cache.delete(path);
+  for (const [k, e] of cache) if (e.expires <= now) cache.delete(k);
+  while (cache.size >= MAX_ENTRIES) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
   const promise = getJson<T>(path);
   const entry: CacheEntry = { expires: now + ttlMs, promise };
   cache.set(path, entry);

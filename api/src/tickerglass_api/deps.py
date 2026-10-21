@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .live import LiveHub
 from .notifications.dispatcher import Dispatcher
+from .providers.guard import UpstreamGuard
 from .services.bars import BarService
 from .services.market import MarketService
+from .services.stats import CacheStats
 from .services.symbols import SymbolService
 from .settings import Settings
 
@@ -27,9 +29,21 @@ def get_market_service(request: Request) -> MarketService:
     return svc
 
 
+def get_cache_stats(request: Request) -> CacheStats:
+    stats: CacheStats = request.app.state.cache_stats
+    return stats
+
+
+def get_upstream_guard(request: Request) -> UpstreamGuard:
+    guard: UpstreamGuard = request.app.state.upstream_guard
+    return guard
+
+
 BarServiceDep = Annotated[BarService, Depends(get_bar_service)]
 SymbolServiceDep = Annotated[SymbolService, Depends(get_symbol_service)]
 MarketServiceDep = Annotated[MarketService, Depends(get_market_service)]
+CacheStatsDep = Annotated[CacheStats, Depends(get_cache_stats)]
+UpstreamGuardDep = Annotated[UpstreamGuard, Depends(get_upstream_guard)]
 
 
 def get_db(request: Request) -> Iterator[Session]:
