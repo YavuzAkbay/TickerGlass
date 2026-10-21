@@ -29,7 +29,7 @@ interface Drawing {
   (0..1) of the pane instead: they ignore pan/zoom, bar snapping and the magnet, and are never culled.
 - `style` keys are per tool; common names: `lineColor lineWidth lineStyle extendLeft extendRight textColor
 fontSize bold italic`, `fillColor`, `levels` (`DrawingLevel[]`: `{ value, color, visible }`). The
-  framework uses `lineColor` (fallback `#4f6bed`) for handles and default axis labels.
+  framework uses `lineColor` (fallback `#6E9BD6`) for handles and default axis labels.
 
 ## 2. Tool definition API
 
@@ -316,41 +316,3 @@ Semantics not yet cross-checked against an independent reference (documented cho
   the middle of the range, then lower. Value area: from the POC add the larger of the next two rows above or below
   (ties above); it may overshoot the target by one pair. Row size is in price units, not ticks.
 - Cypher and Three drives ratio sets, Gann default colors, arc = ends + through-point, curve = auto midpoint.
-
-## 8. Work split (follow-up agents)
-
-| Agent        | Owns (create/modify)                                                                                                                                                            | Must not touch                                                            |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **A** tools  | `packages/engine/src/drawings/tools/**` (one file per tool, registered in `tools/index.ts` in toolbar order), additive helpers in `draw-utils.ts`, tool tests `tools/*.test.ts` | `types.ts` (request additive changes), layer/interaction, chart, apps/web |
-| **B** engine | rest of `packages/engine/**`: `layer.ts`, `interaction.ts`, `geometry.ts`, `mapping.ts`, `chart.ts`, `interaction/controller.ts`, engine tests; `types.ts` additive only        | `drawings/tools/**`, apps/web                                             |
-| **C** web    | `apps/web/**` + `e2e/**`                                                                                                                                                        | packages/**                                                               |
-
-**A**: Ray, Extended line, Measured line, Horizontal ray, Vertical line, Cross line, Parallel channel, Fib
-retracement, Fib extension, Rectangle, Text, Arrow, Brush, Long/Short position, Price measure,
-Time measure, Price & time measure. Types = toolbar ids: `ray extended-line measured-line horizontal-ray
-vertical-line cross-line parallel-channel fib-retracement fib-extension rectangle text arrow-line brush
-long-position short-position price-measure time-measure price-time-measure`. Shape interiors you can grab
-(rectangle) are strong hits; decorative zones (fib backgrounds, position zones) are `WEAK_BODY_HIT`.
-Text tool: `click` creation; C opens the text editor on `drawingCreated` when `text` is empty.
-
-**B**: multi-select (Shift-click toggles in `pointerDown`; optional box select), clone (Alt+drag: copy the
-pressed selection, emit `drawingCreated` per clone and drag the clones), copy/paste API
-(`copyDrawings(ids)` -> JSON, `pasteDrawings(json, {offset})`, pasted = user gesture -> `drawingCreated`),
-z-order API (`bringToFront/sendToBack/bringForward/sendBackward` returning `DrawingChange[]` for the app's undo),
-magnet + Shift (§7), per-interval `visibility` and scope/symbol filtering in `DrawingLayer.isShown`, eraser
-mode (`setActiveTool('eraser')`-style: click removes -> `drawingsRemoved`), keyboard nudge (arrows move the
-selection one bar/px -> one `drawingChanged`), lock/hide-all polish, perf (100 drawings at 60 fps while
-panning; geometry cache), touch (bigger tolerance). Already in core: per-drawing `locked/hidden`, `lockAll`,
-`hideAll`, `stayInDrawingMode`, multi-drag of an existing multi-selection.
-
-**C**: drawing store (`apps/web/src/drawings/`) + localStorage (§6) + sync to the engine; command-bus
-undo/redo (§5); wire the left toolbar (`activeTool` -> `setActiveTool` for registered types, `null` for
-cursors; `toolFinished` -> back to cursor unless `active`; magnet/stay/lock/hide/remove-all ->
-`applyOptions`/`setDrawingOptions`/`removeDrawings`; hide mode 'drawings'/'all' -> `hideAll`); floating
-mini-toolbar on `selectionChanged` (color, width, style, settings, lock, delete; hidden during
-`drawingDrag`); context menus for drawings (settings, clone, copy, z-order, visibility, lock, hide, remove,
-template) and the chart/scale/pane entries per roadmap; properties dialog generated from `properties`
-(Style/Text tabs) + Coordinates (anchors, honour `axes`) + Visibility (reuse the indicator visibility
-editor) with per-tool templates (Save as / Apply default); object tree (list per pane, reorder via
-`zIndex`, hide/lock/delete); drop drawings of panes listed in `paneRemoved` with the studies' undo step; e2e:
-draw, drag, undo, reload persistence. Until B lands, C develops against the core (no multi-select/clone).

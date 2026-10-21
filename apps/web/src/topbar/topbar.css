@@ -78,18 +78,6 @@
   outline-offset: -2px;
 }
 
-.tb-symbol {
-  padding: 0 10px 0 8px;
-  color: var(--text-strong);
-}
-.tb-symbol svg {
-  color: var(--text-muted);
-}
-.tb-symbol-text {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
 .top-bar .tb-compare {
   min-width: 30px;
   padding: 0 5px;

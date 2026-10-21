@@ -1,4 +1,5 @@
 import { isExpressionSymbol } from '@investopen/engine';
+import { commands } from '../commands/registry';
 import { useT } from '../i18n';
 import { eventsPath, EVENTS_TTL_MS, type EventsResponse } from '../events/api';
 import { useLiveQuote } from '../quotes/hooks';
@@ -47,12 +48,23 @@ function Header({ symbol, expr }: { symbol: string; expr: boolean }) {
       <button
         type="button"
         className="sh-symbol"
-        aria-label={t('symbolHeader.openDetails', { symbol })}
-        onClick={() => useUiStore.getState().openInspector('symbol')}
+        aria-label={t('symbolHeader.search', { symbol })}
+        data-tip={t('topbar.symbolSearch')}
+        data-tip-side="bottom"
+        onClick={() => commands.execute('chart.symbolSearch')}
       >
         {symbol}
       </button>
-      {name ? <span className="sh-name">{name}</span> : null}
+      {name ? (
+        <button
+          type="button"
+          className="sh-name"
+          aria-label={t('symbolHeader.openDetails', { symbol })}
+          onClick={() => useUiStore.getState().openInspector('symbol')}
+        >
+          {name}
+        </button>
+      ) : null}
       {q && isNum(q.last) ? (
         <>
           <span className="sh-last">{fmtPrice(q.last, d)}</span>

@@ -1,14 +1,4 @@
-import {
-  AlarmClock,
-  Moon,
-  Plus,
-  Redo2,
-  Rewind,
-  Search,
-  SquareFunction,
-  Sun,
-  Undo2,
-} from 'lucide-react';
+import { AlarmClock, Moon, Plus, Redo2, Rewind, SquareFunction, Sun, Undo2 } from 'lucide-react';
 import { useState, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
 import { useT } from '../i18n';
@@ -31,15 +21,13 @@ import './topbar.css';
 
 const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
-/** Single-row command bar: symbol | interval | chart type | studies | alerts and replay | layout | settings. */
+/** Single-row command bar: compare | interval | chart type | studies | alerts and replay | layout | settings. */
 export function TopBar() {
   const t = useT();
   const replayOn = useReplayStore((s) => s.status !== 'off');
   return (
     <div className="top-bar" role="toolbar" aria-label={t('topbar.toolbar')}>
       <PaletteButton />
-      <div className="tb-sep" />
-      <SymbolButton />
       <IconButton
         icon={Plus}
         label={t('topbar.compare')}
@@ -76,29 +64,10 @@ export function TopBar() {
       <LayoutPicker />
       <LayoutMenu />
       <div className="tb-sep" />
-      <div className="tb-sep" />
       <UndoRedo />
       <ThemeButton />
       <OverflowMenu />
     </div>
-  );
-}
-
-function SymbolButton() {
-  const t = useT();
-  const symbol = useChartView((s) => s.symbol);
-  return (
-    <button
-      type="button"
-      className="tb-btn tb-symbol"
-      aria-label={t('topbar.symbolSearchCurrent', { symbol })}
-      data-tip={t('topbar.symbolSearch')}
-      data-tip-side="bottom"
-      onClick={() => run('chart.symbolSearch')}
-    >
-      <Search size={16} strokeWidth={2} />
-      <span className="tb-symbol-text">{symbol}</span>
-    </button>
   );
 }
 

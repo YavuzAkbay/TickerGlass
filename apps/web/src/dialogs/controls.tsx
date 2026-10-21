@@ -14,14 +14,17 @@ export function Section({ title, children }: { title: string; children: ReactNod
 export function Row({
   label,
   htmlFor,
+  stacked,
   children,
 }: {
   label: string;
   htmlFor?: string;
+  /** Control on its own line under the label, full width (wide controls such as segmented). */
+  stacked?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="dlg-row">
+    <div className={`dlg-row${stacked ? ' dlg-row-stacked' : ''}`}>
       {htmlFor ? (
         <label className="dlg-row-label" htmlFor={htmlFor}>
           {label}
@@ -51,17 +54,43 @@ export function Check({
   );
 }
 
+/** One boolean setting: checkbox, label and an optional one-line explanation. */
+export function Setting({
+  checked,
+  label,
+  hint,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  hint?: string;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="dlg-setting">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span className="dlg-setting-text">
+        <span>{label}</span>
+        {hint ? <span className="dlg-setting-hint">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  fill,
 }: {
   value: T;
   options: [T, string][];
   onChange: (v: T) => void;
+  /** Stretch to the container with equal-width options. */
+  fill?: boolean;
 }) {
   return (
-    <div className="dlg-segmented" role="radiogroup">
+    <div className={`dlg-segmented${fill ? ' dlg-segmented-fill' : ''}`} role="radiogroup">
       {options.map(([v, label]) => (
         <button
           key={v}

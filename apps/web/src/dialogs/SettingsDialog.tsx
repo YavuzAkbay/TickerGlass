@@ -43,7 +43,7 @@ import { getChart } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { Modal } from '../ui/Modal';
 import { ChartStyleEditor } from './ChartStyleEditor';
-import { Check, Row, Section, Segmented } from './controls';
+import { Row, Section, Segmented, Setting } from './controls';
 import './dialogs.css';
 
 type TabId = 'symbol' | 'status' | 'scales' | 'canvas' | 'trading' | 'alerts' | 'events';
@@ -349,13 +349,12 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
           onChange={updateStyle}
         />
         <Section title="Session">
-          <Row label="Extended trading hours">
-            <Check
-              checked={draft.prepost}
-              label="Show pre-market and post-market"
-              onChange={(prepost) => update({ prepost })}
-            />
-          </Row>
+          <Setting
+            checked={draft.prepost}
+            label="Extended trading hours"
+            hint="Show pre-market and post-market bars"
+            onChange={(prepost) => update({ prepost })}
+          />
         </Section>
         <Section title="Time">
           <Row label="Timezone" htmlFor="set-tz">
@@ -383,7 +382,6 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
             </select>
           </Row>
         </Section>
-        <Planned items={['Precision', 'Data modification (adjust for dividends)']} />
       </>
     );
   } else if (tab === 'status') {
@@ -405,50 +403,49 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
               <option value="both">Ticker and description</option>
             </select>
           </Row>
-          <Row label="Exchange">
-            <Check
-              checked={sl.exchange}
-              label="Show the exchange name"
-              onChange={(exchange) => updateStatus({ exchange })}
-            />
-          </Row>
+          <Setting
+            checked={sl.exchange}
+            label="Exchange name"
+            hint="Show it next to the symbol"
+            onChange={(exchange) => updateStatus({ exchange })}
+          />
         </Section>
         <Section title="Values">
-          <Check
+          <Setting
             checked={sl.ohlc}
             label="Open, high, low and close"
             onChange={(ohlc) => updateStatus({ ohlc })}
           />
-          <Check
+          <Setting
             checked={sl.barChange}
             label="Change from the previous close"
             onChange={(barChange) => updateStatus({ barChange })}
           />
-          <Check
+          <Setting
             checked={sl.volume}
             label="Volume"
             onChange={(volume) => updateStatus({ volume })}
           />
         </Section>
         <Section title="Indicators and overlays">
-          <Check
+          <Setting
             checked={sl.indicatorTitles}
             label="Titles"
             onChange={(indicatorTitles) => updateStatus({ indicatorTitles })}
           />
-          <Check
+          <Setting
             checked={sl.indicatorInputs}
             label="Inputs"
             onChange={(indicatorInputs) => updateStatus({ indicatorInputs })}
           />
-          <Check
+          <Setting
             checked={sl.indicatorValues}
             label="Values"
             onChange={(indicatorValues) => updateStatus({ indicatorValues })}
           />
         </Section>
         <Section title="Appearance">
-          <Check
+          <Setting
             checked={sl.background}
             label="Background behind the status line"
             onChange={(background) => updateStatus({ background })}
@@ -463,8 +460,9 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         <Section title="Price scale">
           {s ? (
             <>
-              <Row label="Scale mode">
+              <Row label="Scale mode" stacked>
                 <Segmented
+                  fill
                   value={s.mode}
                   options={[
                     ['linear', 'Regular'],
@@ -475,20 +473,18 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
                   onChange={(mode) => updateScale({ mode })}
                 />
               </Row>
-              <Row label="Invert scale">
-                <Check
-                  checked={s.invert}
-                  label="Invert price scale"
-                  onChange={(invert) => updateScale({ invert })}
-                />
-              </Row>
-              <Row label="Auto scale">
-                <Check
-                  checked={s.autoScale}
-                  label="Fit data to the visible range"
-                  onChange={(autoScale) => updateScale({ autoScale })}
-                />
-              </Row>
+              <Setting
+                checked={s.invert}
+                label="Invert scale"
+                hint="Higher prices at the bottom"
+                onChange={(invert) => updateScale({ invert })}
+              />
+              <Setting
+                checked={s.autoScale}
+                label="Auto scale"
+                hint="Fit the price range to the visible bars"
+                onChange={(autoScale) => updateScale({ autoScale })}
+              />
             </>
           ) : (
             <div className="dlg-note">
@@ -497,28 +493,19 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
           )}
         </Section>
         <Section title="Lines">
-          <Row label="Previous day close">
-            <Check
-              checked={draft.showPrevClose}
-              label="Previous day close price line"
-              onChange={(showPrevClose) => update({ showPrevClose })}
-            />
-          </Row>
+          <Setting
+            checked={draft.showPrevClose}
+            label="Previous day close"
+            hint="Draw a price line at yesterday's close"
+            onChange={(showPrevClose) => update({ showPrevClose })}
+          />
         </Section>
-        <Planned
-          items={[
-            'Scale placement and labels',
-            'Countdown to bar close',
-            'Grid lines and session breaks',
-            'Last price line style',
-          ]}
-        />
       </>
     );
   } else if (tab === 'canvas') {
     content = (
       <>
-        <Section title="Chart basic styles">
+        <Section title="Appearance">
           <Row label="Theme">
             <Segmented
               value={draft.theme}
@@ -529,6 +516,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
               onChange={(theme) => update({ theme })}
             />
           </Row>
+        </Section>
+        <Section title="Cursor and snapping">
           <Row label="Crosshair" htmlFor="set-crosshair">
             <select
               id="set-crosshair"
@@ -554,16 +543,6 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
             </select>
           </Row>
         </Section>
-        <Planned
-          items={[
-            'Background colour and gradient',
-            'Grid lines',
-            'Crosshair colour and style',
-            'Watermark',
-            'Scale text and lines colours',
-            'Margins',
-          ]}
-        />
       </>
     );
   } else if (tab === 'alerts') {
@@ -605,18 +584,5 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         </div>
       </div>
     </Modal>
-  );
-}
-
-function Planned({ items }: { items: string[] }) {
-  return (
-    <div className="dlg-planned">
-      <div className="dlg-planned-title">More in Phase 15</div>
-      <ul>
-        {items.map((i) => (
-          <li key={i}>{i}</li>
-        ))}
-      </ul>
-    </div>
   );
 }

@@ -19,7 +19,6 @@ export const en = {
   'topbar.settings': 'Settings',
   'topbar.shortcuts': 'Keyboard shortcuts',
   'topbar.symbolSearch': 'Symbol search',
-  'topbar.symbolSearchCurrent': 'Symbol search, current symbol {symbol}',
   'topbar.chartType': 'Chart type: {type}',
   'topbar.showTools': 'Show drawing tools',
   'topbar.hideTools': 'Hide drawing tools',
@@ -42,6 +41,7 @@ export const en = {
 
   // Symbol header
   'symbolHeader.label': 'Symbol summary',
+  'symbolHeader.search': 'Symbol search, current symbol {symbol}',
   'symbolHeader.openDetails': 'Open details for {symbol}',
   'symbolHeader.range': 'Day range',
   'symbolHeader.volume': 'Volume',

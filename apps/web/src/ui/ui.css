@@ -271,12 +271,19 @@
 }
 
 /* ---- prompt / confirm ---- */
+.io-prompt .io-modal-body {
+  padding: 16px 20px;
+}
 .io-prompt-input {
   width: 100%;
 }
 .io-prompt-message {
   margin: 0;
+  color: var(--text);
   line-height: 1.5;
+}
+.io-prompt .io-modal-footer {
+  justify-content: flex-end;
 }
 .io-btn-danger {
   background: var(--down);
