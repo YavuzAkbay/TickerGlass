@@ -6,6 +6,7 @@ import {
   formatVolume,
   linearTicks,
   logTicks,
+  logTicksSpaced,
   niceStep,
 } from './price-ticks';
 
@@ -72,5 +73,48 @@ describe('formatting', () => {
     expect(formatPercent(1.234)).toBe('+1.23%');
     expect(formatPercent(-0.5)).toBe('−0.50%');
     expect(formatPercent(0)).toBe('0.00%');
+  });
+});
+
+describe('logTicksSpaced', () => {
+  const H = 700;
+  function yOf(lo: number, hi: number): (p: number) => number {
+    const a = Math.log10(lo);
+    const b = Math.log10(hi);
+    return (p) => H - ((Math.log10(p) - a) / (b - a)) * H;
+  }
+  function check(lo: number, hi: number, spacing: number): number[] {
+    const f = yOf(lo, hi);
+    const t = logTicksSpaced(lo, hi, spacing, f);
+    expect(t.length).toBeGreaterThan(3);
+    for (let i = 1; i < t.length; i++) {
+      expect(t[i] as number).toBeGreaterThan(t[i - 1] as number);
+      expect(Math.abs(f(t[i] as number) - f(t[i - 1] as number))).toBeGreaterThanOrEqual(spacing);
+    }
+    return t;
+  }
+  it('narrow range 34..1650 is evenly legible with ticks at both ends', () => {
+    const t = check(34, 1650, 34);
+    const f = yOf(34, 1650);
+    const ys = t.map(f);
+    expect(ys.some((y) => y > (H * 2) / 3)).toBe(true);
+    expect(ys.some((y) => y < H / 3)).toBe(true);
+    expect(t).toContain(100);
+    expect(t).toContain(1000);
+  });
+  it('wide range 0.5..50000', () => {
+    const t = check(0.5, 50000, 34);
+    for (const v of [1, 10, 100, 1000, 10000]) expect(t).toContain(v);
+  });
+  it('tiny prices', () => {
+    const t = check(0.00034, 0.00165, 34);
+    expect(t.every((v) => v >= 0.00034 && v <= 0.00165)).toBe(true);
+  });
+  it('very narrow range still finds ticks', () => {
+    check(100, 101, 34);
+  });
+  it('degenerate input', () => {
+    expect(logTicksSpaced(0, 10, 30, (p) => p)).toEqual([]);
+    expect(logTicksSpaced(5, 5, 30, (p) => p)).toEqual([5]);
   });
 });

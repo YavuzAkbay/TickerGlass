@@ -2390,7 +2390,7 @@ export class Chart implements StudyApi, DrawingApi {
         if (placed.length) {
           drawMarkers(ctx, placed);
           const hov = c && c.pane === pane ? hitMarker(placed, c.rawX, c.rawY) : null;
-          if (hov) drawMarkerTooltip(ctx, hov, t, paneW);
+          if (hov) drawMarkerTooltip(ctx, hov, t, paneW, pane.height);
         }
       }
 
@@ -2749,14 +2749,16 @@ function formatAxisNumber(v: number, decimals: number): string {
 
 /** Decimals needed to tell adjacent ticks apart (step 0.25 -> 2, 5 -> 0). */
 function decimalsForStep(ticks: { value: number }[]): number {
-  const a = ticks[0];
-  const b = ticks[1];
-  if (!a || !b) return 2;
-  const step = Math.abs(b.value - a.value);
-  if (!(step > 0)) return 2;
-  let d = 0;
-  while (d < 8 && Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) > 1e-9 * 10 ** d) d++;
-  return d;
+  if (ticks.length < 2) return 2;
+  // Finest decimals needed by any tick, so mixed steps (log axis) stay consistent.
+  let decimals = 0;
+  for (const t of ticks) {
+    let d = 0;
+    while (d < 8 && Math.abs(Math.round(t.value * 10 ** d) - t.value * 10 ** d) > 1e-9 * 10 ** d)
+      d++;
+    if (d > decimals) decimals = d;
+  }
+  return decimals;
 }
 
 export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
