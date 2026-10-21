@@ -6,18 +6,24 @@ at all when the requested range ends before the newest cached bar. If the
 overlapping bar changed (split or dividend re-adjustment), the series is wiped
 and backfilled again. When a tail refresh fails, the cached bars are served and
 the refresh is retried after a short pause.
+
+With a `session_lookup` the tail TTL follows the market session (see
+`services.sessions`): refreshes at the TTL while open, one final refresh after the
+close, none until the next open, and a growing pause for series that stop receiving
+bars. The schedule is stored in `SeriesMeta.next_check_at`.
 """
 
 import logging
 import math
 import threading
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pandas as pd
-from sqlalchemy import Engine, delete, func, select
+from sqlalchemy import Engine, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -31,6 +37,8 @@ from ..providers.base import (
     RateLimited,
     SymbolNotFound,
 )
+from ..settings import Settings
+from .sessions import QUIET_STREAK_MAX, TradingHours, newer_bar_due, next_check_at
 from .stats import CacheStats
 
 log = logging.getLogger(__name__)
@@ -41,6 +49,11 @@ REL_TOLERANCE = 1e-6
 UPSERT_BATCH = 2000
 # Pause before retrying a failed tail refresh (cached bars are served meanwhile).
 TAIL_RETRY_AFTER = timedelta(seconds=30)
+# `SeriesMeta.last_accessed_at` is written at most this often per series.
+ACCESS_TOUCH_EVERY = timedelta(hours=1)
+
+#: Stored metadata of a symbol (`SymbolService.cached_info`), None when unknown.
+SessionLookup = Callable[[str], dict[str, Any] | None]
 
 
 @dataclass(frozen=True)
@@ -49,13 +62,41 @@ class BarsResult:
     has_more: bool
 
 
+@dataclass(frozen=True)
+class TailPolicy:
+    """Tail refresh timing, seconds. The TTLs replace `IntervalSpec.tail_ttl`."""
+
+    tail_ttl_intraday_s: float = 30
+    tail_ttl_daily_s: float = 300
+    settle_after_close_s: float = 1200
+    quiet_backoff_max_s: float = 1800
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> "TailPolicy":
+        return cls(
+            tail_ttl_intraday_s=settings.bars_tail_ttl_intraday_s,
+            tail_ttl_daily_s=settings.bars_tail_ttl_daily_s,
+            settle_after_close_s=settings.bars_settle_after_close_s,
+            quiet_backoff_max_s=settings.bars_quiet_backoff_max_s,
+        )
+
+
 class BarService:
     def __init__(
-        self, engine: Engine, provider: MarketDataProvider, *, stats: CacheStats | None = None
+        self,
+        engine: Engine,
+        provider: MarketDataProvider,
+        *,
+        stats: CacheStats | None = None,
+        session_lookup: SessionLookup | None = None,
+        policy: TailPolicy | None = None,
     ) -> None:
         self._engine = engine
         self._provider = provider
         self._stats = stats if stats is not None else CacheStats()
+        # None: plain TTL since the last fetch, market hours ignored.
+        self._session_lookup = session_lookup
+        self._policy = policy
         # Series whose last tail refresh failed -> earliest next attempt.
         self._retry_at: dict[tuple[str, str, bool], datetime] = {}
         self._locks: defaultdict[tuple[str, str, bool], threading.Lock] = defaultdict(
@@ -112,8 +153,10 @@ class BarService:
 
         Raises only when nothing is cached; a failed tail refresh leaves the cache as is.
         """
-        now = now or datetime.now(UTC)
+        now = (now or datetime.now(UTC)).astimezone(UTC)
         key = (symbol, spec.name, prepost)
+        info = self._session_lookup(symbol) if self._session_lookup is not None else None
+        hours = TradingHours.from_symbol_info(info, prepost=prepost) if info is not None else None
         with self._locks_guard:
             lock = self._locks[key]
         with lock, Session(self._engine) as s:
@@ -121,18 +164,29 @@ class BarService:
             if meta is None:
                 self._stats.incr("bars.backfill")
                 self._backfill(s, symbol, spec, prepost, now)
-            elif now - _aware(meta.tail_fetched_at) < spec.tail_ttl:
-                self._stats.incr("bars.fresh")
+                if self._session_lookup is not None:
+                    self._schedule(s, key, spec, info, hours, now, newest_before=None)
+                s.commit()
                 return
+            if now < self._due_at(meta, spec, info, hours):
+                if self._session_lookup is None:
+                    self._stats.incr("bars.fresh")
+                elif hours is not None and not hours.is_open(now):
+                    self._stats.incr("bars.tail_skipped_closed")
+                else:
+                    self._stats.incr("bars.tail_skipped_fresh")
             elif end is not None and end <= self._newest_ts(s, symbol, spec.name, prepost):
                 # Only older bars were asked for; the tail does not matter.
                 self._stats.incr("bars.covered")
-                return
             elif (retry_at := self._retry_at.get(key)) is not None and now < retry_at:
                 self._stats.incr("bars.stale_retry_wait")
-                return
             else:
                 self._stats.incr("bars.tail_refresh")
+                newest_before = (
+                    self._newest_ts(s, symbol, spec.name, prepost)
+                    if self._session_lookup is not None
+                    else None
+                )
                 try:
                     self._refresh_tail(s, meta, spec, now)
                 except SymbolNotFound:
@@ -153,9 +207,121 @@ class BarService:
                         prepost,
                         exc,
                     )
+                    meta = s.get(SeriesMeta, key)
+                    if meta is not None:
+                        self._touch(s, meta, now)
+                    s.commit()
                     return
                 self._retry_at.pop(key, None)
+                if self._session_lookup is not None:
+                    self._schedule(s, key, spec, info, hours, now, newest_before=newest_before)
+            self._touch(s, meta, now)
             s.commit()
+
+    def _ttl(self, spec: IntervalSpec) -> timedelta:
+        if self._policy is None:
+            return spec.tail_ttl
+        p = self._policy
+        return timedelta(seconds=p.tail_ttl_intraday_s if spec.intraday else p.tail_ttl_daily_s)
+
+    def _due_at(
+        self,
+        meta: SeriesMeta,
+        spec: IntervalSpec,
+        info: dict[str, Any] | None,
+        hours: TradingHours | None,
+    ) -> datetime:
+        """When the series' tail is next due for a refresh."""
+        fetched = _aware(meta.tail_fetched_at)
+        if self._session_lookup is None:
+            return fetched + self._ttl(spec)
+        if meta.next_check_at is not None:
+            return _aware(meta.next_check_at)
+        # Not scheduled yet (series cached before scheduling existed): as if just fetched.
+        return self._next_check(spec, info, hours, fetched, meta.quiet_streak, None)
+
+    def _next_check(
+        self,
+        spec: IntervalSpec,
+        info: dict[str, Any] | None,
+        hours: TradingHours | None,
+        fetched: datetime,
+        quiet_streak: int,
+        newest_ts: int | None,
+    ) -> datetime:
+        ttl = self._ttl(spec)
+        if info is None:
+            # Symbol metadata not stored (yet): plain TTL.
+            return fetched + ttl
+        p = self._policy if self._policy is not None else TailPolicy()
+        due = next_check_at(
+            hours,
+            ttl.total_seconds(),
+            fetched,
+            fetched,
+            quiet_streak,
+            p.settle_after_close_s,
+            p.quiet_backoff_max_s,
+            newest_ts=newest_ts,
+        )
+        # In the exchange time zone; stored as UTC (SQLite drops the offset).
+        return due.astimezone(UTC)
+
+    def _schedule(
+        self,
+        s: Session,
+        key: tuple[str, str, bool],
+        spec: IntervalSpec,
+        info: dict[str, Any] | None,
+        hours: TradingHours | None,
+        now: datetime,
+        *,
+        newest_before: int | None,
+    ) -> None:
+        """Record when the series fetched at `now` is next due, and whether it is quiet:
+        open, yet the fetch brought no bar newer than `newest_before` though one is due."""
+        meta = s.get(SeriesMeta, key)
+        if meta is None:
+            return
+        symbol, interval, prepost = key
+        newest = self._newest_ts(s, symbol, interval, prepost)
+        quiet = (
+            info is not None
+            and newest_before is not None
+            and newest >= 0
+            and newest <= newest_before
+            and (hours is None or hours.is_open(now))
+            and newer_bar_due(hours, newest, spec.seconds, now)
+        )
+        if quiet:
+            self._stats.incr("bars.tail_quiet")
+            meta.quiet_streak = min(meta.quiet_streak + 1, QUIET_STREAK_MAX)
+        else:
+            meta.quiet_streak = 0
+        meta.next_check_at = self._next_check(
+            spec, info, hours, now, meta.quiet_streak, newest if newest >= 0 else None
+        )
+
+    def _touch(self, s: Session, meta: SeriesMeta, now: datetime) -> None:
+        """Mark the series as used, at most once per `ACCESS_TOUCH_EVERY`."""
+        last = meta.last_accessed_at
+        if last is not None and now - _aware(last) < ACCESS_TOUCH_EVERY:
+            return
+        # Conditional, so concurrent requests (other processes included) write once.
+        s.execute(
+            update(SeriesMeta)
+            .where(
+                SeriesMeta.symbol == meta.symbol,
+                SeriesMeta.interval == meta.interval,
+                SeriesMeta.prepost == meta.prepost,
+                or_(
+                    SeriesMeta.last_accessed_at.is_(None),
+                    SeriesMeta.last_accessed_at < now - ACCESS_TOUCH_EVERY,
+                ),
+            )
+            .values(last_accessed_at=now)
+            .execution_options(synchronize_session=False)
+        )
 
     def _backfill(
         self, s: Session, symbol: str, spec: IntervalSpec, prepost: bool, now: datetime
@@ -181,6 +347,8 @@ class BarService:
                 prepost=prepost,
                 backfilled_at=now,
                 tail_fetched_at=now,
+                quiet_streak=0,
+                last_accessed_at=now,
             )
         )
         log.info("backfilled %s %s prepost=%s: %d bars", symbol, spec.name, prepost, len(df))

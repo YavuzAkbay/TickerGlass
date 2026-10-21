@@ -85,6 +85,12 @@ class SymbolService:
             s.commit()
             return data
 
+    def cached_info(self, symbol: str) -> dict[str, Any] | None:
+        """Stored metadata of `symbol` whatever its age, or None; never calls upstream."""
+        with Session(self._engine) as s:
+            row = s.get(SymbolMeta, symbol.upper())
+            return None if row is None else row.data
+
     def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Best `limit` matches. Queries differing in case or surrounding spaces share one
         entry, and one fetch serves every smaller limit; a larger one fetches again."""
