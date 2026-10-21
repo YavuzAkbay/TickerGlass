@@ -61,7 +61,7 @@ async function openWithEvents(page: Page) {
 
 async function openEventsTab(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
-  await page.getByRole('tab', { name: 'Events' }).click();
+  await page.getByRole('dialog').getByRole('tab', { name: 'Events' }).click();
 }
 
 test('event markers render, show tooltips on hover and follow the Events tab toggles', async ({

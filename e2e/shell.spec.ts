@@ -67,9 +67,9 @@ test('chart context menu opens and scale change is undoable', async ({ page }) =
   await expect.poll(mode).toBe('linear');
 });
 
-test('dock panel opens in the bottom dock', async ({ page }) => {
+test('navigator section opens in the left panel', async ({ page }) => {
   await page.getByRole('tab', { name: 'Notes' }).click();
-  await expect(page.locator('.dock textarea')).toBeVisible();
+  await expect(page.locator('.navigator textarea')).toBeVisible();
 });
 
 test('? opens the shortcut help with chart navigation keys', async ({ page }) => {
