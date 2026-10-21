@@ -8,11 +8,13 @@ import pytest
 from curl_cffi.requests import exceptions as curl_exc
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
+from sqlalchemy.orm import Session
 from yfinance.exceptions import YFRateLimitError
 
 from tickerglass_api.app import create_app
 from tickerglass_api.db import make_engine, run_migrations
 from tickerglass_api.intervals import resolve_interval
+from tickerglass_api.models import SeriesMeta
 from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     ProviderError,
@@ -21,7 +23,8 @@ from tickerglass_api.providers.base import (
     UpstreamUnavailable,
 )
 from tickerglass_api.providers.yahoo import YahooProvider, _normalize
-from tickerglass_api.services.bars import BarService
+from tickerglass_api.services.bars import TAIL_RETRY_AFTER, BarService, _aware
+from tickerglass_api.services.stats import CacheStats
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -345,3 +348,134 @@ def test_call_other_failures_stay_provider_errors(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(ProviderError) as info:
         _fast_provider()._call(fn)
     assert type(info.value) is ProviderError
+
+
+class FlakyTailProvider(FakeProvider):
+    """Serves the recorded frame until `error` is set, then raises it."""
+
+    def __init__(self, frames: dict[tuple[str, str], pd.DataFrame]) -> None:
+        super().__init__(frames)
+        self.error: Exception | None = None
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if self.error is not None:
+            self.calls.append((symbol, interval, start, end))
+            raise self.error
+        return super().history(symbol, interval, start, end, prepost)
+
+
+def _tail_fetched_at(engine: Engine) -> datetime:
+    with Session(engine) as s:
+        meta = s.get(SeriesMeta, ("AAPL", "1d", False))
+        assert meta is not None
+        return meta.tail_fetched_at
+
+
+def test_tail_sync_skipped_when_range_ends_before_newest_bar(engine: Engine) -> None:
+    provider = FakeProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    later = NOW + spec.tail_ttl
+    res = svc.get_bars("AAPL", spec, False, end=LAST_DAILY_TS, limit=5, now=later)
+    assert len(provider.calls) == 1  # paging back: no tail sync
+    assert res.bars["ts"].tolist() == DAILY["ts"].tolist()[-6:-1]
+    assert stats.counter("bars.covered") == 1
+
+    svc.get_bars("AAPL", spec, False, end=LAST_DAILY_TS + 1, now=later)
+    assert len(provider.calls) == 2  # the range reaches the newest bar
+    assert stats.counter("bars.tail_refresh") == 1
+
+
+@pytest.mark.parametrize("error", [ProviderError("bad payload"), UpstreamUnavailable("offline")])
+def test_failed_tail_refresh_serves_cached_bars(engine: Engine, error: Exception) -> None:
+    provider = FlakyTailProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+    fetched = _tail_fetched_at(engine)
+
+    provider.error = error
+    later = NOW + spec.tail_ttl
+    res = svc.get_bars("AAPL", spec, False, limit=3, now=later)
+    assert res.bars["ts"].tolist() == DAILY["ts"].tolist()[-3:]
+    assert len(provider.calls) == 2
+    assert _tail_fetched_at(engine) == fetched  # still due for a refresh
+    assert stats.counter("bars.stale_error") == 1
+
+    # Within the retry pause: cached bars, no upstream call.
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=10))
+    assert len(provider.calls) == 2
+    assert stats.counter("bars.stale_retry_wait") == 1
+
+    # After the pause the refresh is retried and, once it works, recorded.
+    provider.error = None
+    retry = later + TAIL_RETRY_AFTER
+    svc.get_bars("AAPL", spec, False, now=retry)
+    assert len(provider.calls) == 3
+    assert _aware(_tail_fetched_at(engine)) == retry
+
+
+def test_failed_tail_refresh_honours_retry_after(engine: Engine) -> None:
+    provider = FlakyTailProvider({("AAPL", "1d"): DAILY})
+    svc = BarService(engine, provider)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    provider.error = RateLimited("slow down", 120)
+    later = NOW + spec.tail_ttl
+    svc.get_bars("AAPL", spec, False, now=later)
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=119))
+    assert len(provider.calls) == 2
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=120))
+    assert len(provider.calls) == 3
+
+
+def test_failed_rebackfill_rolls_back_cached_bars(engine: Engine) -> None:
+    provider = FlakyTailProvider({("AAPL", "1d"): DAILY})
+    svc = BarService(engine, provider)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    # A re-adjusted tail starts a wipe + re-backfill, whose full fetch then fails.
+    split = DAILY.copy()
+    split["close"] = split["close"] / 2
+    split["adj_close"] = split["adj_close"] / 2
+    provider.frames[("AAPL", "1d")] = split
+    real_history = FakeProvider.history
+
+    def history(
+        self: FlakyTailProvider,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if start is None:
+            self.calls.append((symbol, interval, start, end))
+            raise UpstreamUnavailable("offline")
+        return real_history(self, symbol, interval, start, end, prepost)
+
+    provider.history = history.__get__(provider)  # type: ignore[method-assign]
+    res = svc.get_bars("AAPL", spec, False, limit=20_000, now=NOW + spec.tail_ttl)
+    assert provider.calls[-1][2] is None  # the re-backfill was attempted
+    assert res.bars["close"].tolist() == pytest.approx(DAILY["close"].tolist())
+
+
+def test_tail_refresh_failure_without_cached_bars_still_raises(engine: Engine) -> None:
+    provider = FlakyTailProvider({})
+    svc = BarService(engine, provider)
+    provider.error = UpstreamUnavailable("offline")
+    with pytest.raises(UpstreamUnavailable):
+        svc.get_bars("AAPL", resolve_interval("1d"), False, now=NOW)

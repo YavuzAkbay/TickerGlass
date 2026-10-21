@@ -5,6 +5,7 @@ import math
 import socket
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
@@ -41,6 +42,12 @@ _NETWORK_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 
+# Retries after a failure that is neither a rate limit nor a network error.
+_OTHER_ERROR_RETRIES = 1
+# Symbols whose currency is remembered for `quotes` (least recently used dropped first).
+_CURRENCY_CACHE_MAX = 4096
+
+
 class RateLimiter:
     """Thread-safe minimum spacing between upstream requests."""
 
@@ -59,41 +66,68 @@ class RateLimiter:
 
 
 class YahooProvider:
-    def __init__(self, min_interval: float = 0.25, retries: int = 4) -> None:
+    def __init__(
+        self,
+        min_interval: float = 0.25,
+        retries: int = 4,
+        *,
+        rate_limit_retries: int | None = None,
+    ) -> None:
+        """`retries` bounds retries after network failures; `rate_limit_retries` after a
+        rate-limit refusal (None: same as `retries`). Other failures are retried once."""
         self._limiter = RateLimiter(min_interval)
         self._retries = retries
-        self._currencies: dict[str, str | None] = {}
+        self._rate_limit_retries = retries if rate_limit_retries is None else rate_limit_retries
+        self._currencies: OrderedDict[str, str] = OrderedDict()
+        self._currencies_lock = threading.Lock()
 
     def _call(self, fn: Callable[[], T]) -> T:
-        for attempt in range(self._retries + 1):
+        rate_limited = unreachable = failed = 0
+        while True:
             self._limiter.wait()
             try:
                 return fn()
             except YFRateLimitError as exc:
-                if attempt == self._retries:
-                    raise RateLimited("Yahoo rate limit exceeded", 2**self._retries) from exc
-                backoff = 2**attempt
+                if rate_limited >= self._rate_limit_retries:
+                    raise RateLimited(
+                        "Yahoo rate limit exceeded", 2**self._rate_limit_retries
+                    ) from exc
+                backoff = 2**rate_limited
+                rate_limited += 1
                 log.warning("Yahoo rate limited, retrying in %ss", backoff)
                 time.sleep(backoff)
             except ProviderError:
                 raise
             except _NETWORK_ERRORS as exc:
                 # Connection failures and timeouts (builtin and curl_cffi ones).
-                if attempt == self._retries:
+                if unreachable >= self._retries:
                     raise UpstreamUnavailable(f"Yahoo unreachable: {exc}") from exc
-                time.sleep(0.5 * 2**attempt)
+                time.sleep(0.5 * 2**unreachable)
+                unreachable += 1
             except Exception as exc:
-                if attempt == self._retries:
+                # Usually a payload yfinance could not parse; repeating rarely helps.
+                if failed >= min(self._retries, _OTHER_ERROR_RETRIES):
                     raise ProviderError(f"Yahoo request failed: {exc}") from exc
-                time.sleep(0.5 * 2**attempt)
-        raise AssertionError("unreachable")
+                time.sleep(0.5 * 2**failed)
+                failed += 1
 
     def _remember_currency(self, symbol: str, ticker: Any) -> None:
         # Call only after ticker.history(): the metadata is then already loaded.
         # quotes() only reads this cache, so it never costs a request per symbol.
         meta = ticker.history_metadata
         if meta and meta.get("currency"):
-            self._currencies[symbol.upper()] = str(meta["currency"])
+            with self._currencies_lock:
+                self._currencies[symbol.upper()] = str(meta["currency"])
+                self._currencies.move_to_end(symbol.upper())
+                while len(self._currencies) > _CURRENCY_CACHE_MAX:
+                    self._currencies.popitem(last=False)
+
+    def _currency(self, symbol: str) -> str | None:
+        with self._currencies_lock:
+            currency = self._currencies.get(symbol)
+            if currency is not None:
+                self._currencies.move_to_end(symbol)
+            return currency
 
     def history(
         self,
@@ -208,7 +242,7 @@ class YahooProvider:
                     "change": change,
                     "changePercent": change / prev * 100 if change is not None and prev else None,
                     "volume": int(vol) if vol is not None else None,
-                    "currency": self._currencies.get(sym),
+                    "currency": self._currency(sym),
                     "marketState": None,
                     "time": int(stamp.timestamp()),
                 }

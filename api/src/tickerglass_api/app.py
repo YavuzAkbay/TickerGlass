@@ -23,9 +23,11 @@ from .providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
+from .providers.guard import GuardedProvider, UpstreamGuard
 from .routes import (
     alerts,
     bars,
+    cache,
     drawings,
     layouts,
     live,
@@ -40,6 +42,7 @@ from .routes import (
 )
 from .services.bars import BarService
 from .services.market import MarketService
+from .services.stats import CacheStats
 from .services.symbols import SymbolService
 from .settings import Settings, get_settings
 
@@ -73,11 +76,26 @@ def create_app(
         if provider is None:
             from .providers.yahoo import YahooProvider
 
-            prov: MarketDataProvider = YahooProvider()
+            inner: MarketDataProvider = YahooProvider(
+                retries=settings.upstream_retries,
+                rate_limit_retries=settings.upstream_rate_limit_retries,
+            )
         else:
-            prov = provider
+            inner = provider
+        # Every upstream call (services and the live poller) goes through one guard.
+        stats = CacheStats()
+        guard = UpstreamGuard(
+            rate_per_min=settings.upstream_rate_per_min,
+            burst=settings.upstream_burst,
+            cooldown_initial_s=settings.upstream_cooldown_initial_s,
+            cooldown_max_s=settings.upstream_cooldown_max_s,
+            unavailable_cooldown_s=settings.upstream_unavailable_cooldown_s,
+        )
+        prov = GuardedProvider(inner, guard, stats)
+        app.state.cache_stats = stats
+        app.state.upstream_guard = guard
         app.state.provider = prov
-        app.state.bar_service = BarService(engine, prov)
+        app.state.bar_service = BarService(engine, prov, stats=stats)
         app.state.symbol_service = SymbolService(engine, prov)
         app.state.market_service = MarketService(prov)
         source = live_source
@@ -143,6 +161,7 @@ def create_app(
         return {"status": "ok", "version": __version__}
 
     api.include_router(bars.router)
+    api.include_router(cache.router)
     api.include_router(symbols.router)
     api.include_router(market.router)
     api.include_router(layouts.router)
