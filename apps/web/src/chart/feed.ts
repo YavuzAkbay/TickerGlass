@@ -20,7 +20,15 @@ function makeFeed(): DataFeed {
   if (mode === 'synthetic') return new ExpressionFeed(new SyntheticFeed());
   if (mode === 'synthetic-multi')
     return new ExpressionFeed(new SyntheticFeed(100_000, undefined, 42, { perSymbol: true }));
-  return new ExpressionFeed(new ResamplingFeed(new CoalescingFeed(new HttpDataFeed())));
+  // Reopened charts refresh only their newest bars; older pages stay for 5 min; the
+  // bar budget caps memory (~48 MB of columns at 1M bars).
+  const cached = new CoalescingFeed(new HttpDataFeed(), {
+    tailRefresh: true,
+    historicalTtlMs: 300_000,
+    maxBars: 1_000_000,
+    searchCache: true,
+  });
+  return new ExpressionFeed(new ResamplingFeed(cached));
 }
 
 /** Outermost layer: passthrough while live, clipped to the replay clock during replay.

@@ -2,12 +2,33 @@
 the alerts `make_client` factory (defined in test_alerts)."""
 
 import ipaddress
+from collections.abc import Iterator
 
 import pytest
 from test_alerts import make_client  # noqa: F401
 from test_userdata import client, race_client  # noqa: F401
 
 from tickerglass_api.notifications import webhook
+from tickerglass_api.settings import get_settings
+
+
+@pytest.fixture(autouse=True)
+def permissive_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Apps built in tests get an upstream guard that never throttles or cools down, so
+    fakes see every call. Tests of the guard itself construct it directly or override
+    these settings."""
+    for name, value in {
+        "UPSTREAM_RATE_PER_MIN": "1e9",
+        "UPSTREAM_BURST": "1000000",
+        "UPSTREAM_COOLDOWN_MAX_S": "0",
+        "UPSTREAM_UNAVAILABLE_COOLDOWN_S": "0",
+        # No background upkeep while a test runs.
+        "CACHE_MAINTENANCE_ENABLED": "false",
+    }.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)

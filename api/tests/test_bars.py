@@ -1,18 +1,23 @@
 import socket
-from datetime import UTC, datetime, timedelta
+import sqlite3
+import threading
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 from curl_cffi.requests import exceptions as curl_exc
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine, func, inspect, select, text
+from sqlalchemy.orm import Session
 from yfinance.exceptions import YFRateLimitError
 
 from tickerglass_api.app import create_app
 from tickerglass_api.db import make_engine, run_migrations
 from tickerglass_api.intervals import resolve_interval
+from tickerglass_api.models import Bar, SeriesMeta, SymbolMeta
 from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     ProviderError,
@@ -21,7 +26,17 @@ from tickerglass_api.providers.base import (
     UpstreamUnavailable,
 )
 from tickerglass_api.providers.yahoo import YahooProvider, _normalize
-from tickerglass_api.services.bars import BarService
+from tickerglass_api.services.bars import (
+    TAIL_RETRY_AFTER,
+    BarService,
+    PruneReport,
+    TailPolicy,
+    _aware,
+)
+from tickerglass_api.services.sessions import StoredInfo
+from tickerglass_api.services.stats import CacheStats
+from tickerglass_api.services.symbols import SymbolService
+from tickerglass_api.settings import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -73,6 +88,23 @@ class FakeProvider:
 
     def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         return [{"symbol": "AAPL", "name": "Apple Inc."}][:limit]
+
+
+class FullProvider(FakeProvider):
+    """`FakeProvider` plus the quote, event, news and fundamentals calls, so it is a complete
+    `MarketDataProvider`. None of them is used by the bar tests."""
+
+    def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        return []
+
+    def events(self, symbol: str) -> dict[str, Any]:
+        raise SymbolNotFound(symbol)
+
+    def news(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        return []
+
+    def fundamentals(self, symbol: str) -> dict[str, Any]:
+        raise SymbolNotFound(symbol)
 
 
 @pytest.fixture
@@ -153,15 +185,49 @@ def test_paging_backwards_with_to(engine: Engine) -> None:
 
 
 def test_intraday_backfill_is_chunked(engine: Engine) -> None:
-    provider = FakeProvider({})
+    minute = bar_frame([NOW - timedelta(hours=1)])
+    provider = FakeProvider({("AAPL", "1m"): minute})
     svc = BarService(engine, provider)
-    with pytest.raises(SymbolNotFound):
-        svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW)
-    # 29 days of 1m history in 7-day chunks.
+    svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW)
+    # 29 days of 1m history in 7-day chunks, newest first.
     assert len(provider.calls) == 5
     for _, _, start, end in provider.calls:
         assert start is not None and end is not None
         assert end - start <= timedelta(days=7)
+    starts = [c[2] for c in provider.calls]
+    assert starts == sorted(starts, reverse=True)  # type: ignore[type-var]
+
+
+def test_unknown_symbol_is_remembered(engine: Engine) -> None:
+    provider = FullProvider({})
+    svc = BarService(engine, provider, policy=TailPolicy(unknown_symbol_ttl_s=3600))
+    minute = resolve_interval("1m")
+    for _ in range(3):
+        with pytest.raises(SymbolNotFound):
+            svc.get_bars("NOPE", minute, False, now=NOW)
+    # The newest 1m chunk came back empty: no further chunks, no repeat within the TTL.
+    assert len(provider.calls) == 1
+
+    daily = resolve_interval("1d")
+    for _ in range(2):
+        with pytest.raises(SymbolNotFound):
+            svc.get_bars("NOPE", daily, False, now=NOW)
+    assert len(provider.calls) == 2
+
+    with pytest.raises(SymbolNotFound):
+        svc.get_bars("NOPE", minute, False, now=NOW + timedelta(seconds=3601))
+    assert len(provider.calls) == 3
+
+
+def test_empty_chunk_of_a_known_symbol_does_not_stop_the_backfill(engine: Engine) -> None:
+    # Stored metadata proves the symbol exists: a quiet last week (a long exchange
+    # closure) still backfills the older chunks.
+    old = bar_frame([NOW - timedelta(days=20)])
+    provider = FullProvider({("AAPL", "1m"): old})
+    svc = BarService(engine, provider, session_lookup=lambda s: {"symbol": s})
+    res = svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW)
+    assert len(provider.calls) == 5
+    assert res.bars["ts"].tolist() == old["ts"].tolist()
 
 
 def test_prepost_ignored_for_daily(engine: Engine) -> None:
@@ -345,3 +411,982 @@ def test_call_other_failures_stay_provider_errors(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(ProviderError) as info:
         _fast_provider()._call(fn)
     assert type(info.value) is ProviderError
+
+
+class FlakyTailProvider(FullProvider):
+    """Serves the recorded frame until `error` is set, then raises it."""
+
+    def __init__(self, frames: dict[tuple[str, str], pd.DataFrame]) -> None:
+        super().__init__(frames)
+        self.error: Exception | None = None
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if self.error is not None:
+            self.calls.append((symbol, interval, start, end))
+            raise self.error
+        return super().history(symbol, interval, start, end, prepost)
+
+
+def _tail_fetched_at(engine: Engine) -> datetime:
+    with Session(engine) as s:
+        meta = s.get(SeriesMeta, ("AAPL", "1d", False))
+        assert meta is not None
+        return meta.tail_fetched_at
+
+
+def test_tail_sync_skipped_when_range_ends_before_newest_bar(engine: Engine) -> None:
+    provider = FullProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    later = NOW + spec.tail_ttl
+    res = svc.get_bars("AAPL", spec, False, end=LAST_DAILY_TS, limit=5, now=later)
+    assert len(provider.calls) == 1  # paging back: no tail sync
+    assert res.bars["ts"].tolist() == DAILY["ts"].tolist()[-6:-1]
+    assert stats.counter("bars.covered") == 1
+
+    svc.get_bars("AAPL", spec, False, end=LAST_DAILY_TS + 1, now=later)
+    assert len(provider.calls) == 2  # the range reaches the newest bar
+    assert stats.counter("bars.tail_refresh") == 1
+
+
+@pytest.mark.parametrize("error", [ProviderError("bad payload"), UpstreamUnavailable("offline")])
+def test_failed_tail_refresh_serves_cached_bars(engine: Engine, error: Exception) -> None:
+    provider = FlakyTailProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+    fetched = _tail_fetched_at(engine)
+
+    provider.error = error
+    later = NOW + spec.tail_ttl
+    res = svc.get_bars("AAPL", spec, False, limit=3, now=later)
+    assert res.bars["ts"].tolist() == DAILY["ts"].tolist()[-3:]
+    assert len(provider.calls) == 2
+    assert _tail_fetched_at(engine) == fetched  # still due for a refresh
+    assert stats.counter("bars.stale_error") == 1
+
+    # Within the retry pause: cached bars, no upstream call.
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=10))
+    assert len(provider.calls) == 2
+    assert stats.counter("bars.stale_retry_wait") == 1
+
+    # After the pause the refresh is retried and, once it works, recorded.
+    provider.error = None
+    retry = later + TAIL_RETRY_AFTER
+    svc.get_bars("AAPL", spec, False, now=retry)
+    assert len(provider.calls) == 3
+    assert _aware(_tail_fetched_at(engine)) == retry
+
+
+def test_failed_tail_refresh_honours_retry_after(engine: Engine) -> None:
+    provider = FlakyTailProvider({("AAPL", "1d"): DAILY})
+    svc = BarService(engine, provider)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    provider.error = RateLimited("slow down", 120)
+    later = NOW + spec.tail_ttl
+    svc.get_bars("AAPL", spec, False, now=later)
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=119))
+    assert len(provider.calls) == 2
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=120))
+    assert len(provider.calls) == 3
+
+
+def test_failed_rebackfill_rolls_back_cached_bars(engine: Engine) -> None:
+    provider = FlakyTailProvider({("AAPL", "1d"): DAILY})
+    svc = BarService(engine, provider)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    # A re-adjusted tail starts a wipe + re-backfill, whose full fetch then fails.
+    split = DAILY.copy()
+    split["close"] = split["close"] / 2
+    split["adj_close"] = split["adj_close"] / 2
+    provider.frames[("AAPL", "1d")] = split
+    real_history = FakeProvider.history
+
+    def history(
+        self: FlakyTailProvider,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if start is None:
+            self.calls.append((symbol, interval, start, end))
+            raise UpstreamUnavailable("offline")
+        return real_history(self, symbol, interval, start, end, prepost)
+
+    provider.history = history.__get__(provider)  # type: ignore[method-assign]
+    res = svc.get_bars("AAPL", spec, False, limit=20_000, now=NOW + spec.tail_ttl)
+    assert provider.calls[-1][2] is None  # the re-backfill was attempted
+    assert res.bars["close"].tolist() == pytest.approx(DAILY["close"].tolist())
+
+
+def test_tail_refresh_failure_without_cached_bars_still_raises(engine: Engine) -> None:
+    provider = FlakyTailProvider({})
+    svc = BarService(engine, provider)
+    provider.error = UpstreamUnavailable("offline")
+    with pytest.raises(UpstreamUnavailable):
+        svc.get_bars("AAPL", resolve_interval("1d"), False, now=NOW)
+
+
+# ------------------------------------------------------ market-session schedule
+
+NY = ZoneInfo("America/New_York")
+TOKYO = ZoneInfo("Asia/Tokyo")
+US_EQUITY: dict[str, Any] = {
+    "symbol": "AAPL",
+    "type": "equity",
+    "timezone": "America/New_York",
+    "session": "0930-1600",
+}
+
+
+def ny(y: int, m: int, d: int, hh: int = 0, mm: int = 0, ss: int = 0) -> datetime:
+    return datetime(y, m, d, hh, mm, ss, tzinfo=NY).astimezone(UTC)
+
+
+def weekdays(first: date, last: date) -> list[date]:
+    days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+    return [d for d in days if d.weekday() < 5]
+
+
+def bar_frame(stamps: list[datetime]) -> pd.DataFrame:
+    rows = [(int(t.timestamp()), 1.0, 1.0, 1.0, 1.0, 1.0, 100.0) for t in stamps]
+    return pd.DataFrame(rows, columns=BAR_COLUMNS)
+
+
+def daily_frame(days: list[date], tz: tzinfo) -> pd.DataFrame:
+    return bar_frame([datetime.combine(d, time(0), tz) for d in days])
+
+
+def intraday_frame(days: list[date], step_s: int = 300) -> pd.DataFrame:
+    stamps: list[datetime] = []
+    for d in days:
+        t, close = datetime.combine(d, time(9, 30), NY), datetime.combine(d, time(16), NY)
+        while t < close:
+            stamps.append(t)
+            t += timedelta(seconds=step_s)
+    return bar_frame(stamps)
+
+
+class ClockedProvider(FullProvider):
+    """Only serves bars that have opened by `clock`."""
+
+    def __init__(self, frames: dict[tuple[str, str], pd.DataFrame]) -> None:
+        super().__init__(frames)
+        self.clock = datetime.min.replace(tzinfo=UTC)
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        df = super().history(symbol, interval, start, end, prepost)
+        return df[df["ts"] <= int(self.clock.timestamp())].reset_index(drop=True)
+
+
+class Scheduled:
+    """A session-aware BarService over a ClockedProvider, driven by a fake clock."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        frame: pd.DataFrame,
+        interval: str,
+        info: dict[str, Any] | None,
+        *,
+        symbol: str = "AAPL",
+        lookup: bool = True,
+        provider: "ClockedProvider | None" = None,
+    ) -> None:
+        self.provider = (
+            provider if provider is not None else ClockedProvider({(symbol, interval): frame})
+        )
+        self.stats = CacheStats()
+
+        def session_lookup(s: str) -> dict[str, Any] | None:
+            return info if s == symbol else None
+
+        self.svc = BarService(
+            engine,
+            self.provider,
+            stats=self.stats,
+            session_lookup=session_lookup if lookup else None,
+            policy=TailPolicy(),
+        )
+        self.engine = engine
+        self.symbol = symbol
+        self.spec = resolve_interval(interval)
+
+    def at(self, when: datetime) -> bool:
+        """Request the series at `when`; True if that fetched from upstream."""
+        before = len(self.provider.calls)
+        self.provider.clock = when
+        self.svc.get_bars(self.symbol, self.spec, False, limit=1, now=when)
+        return len(self.provider.calls) > before
+
+    def poll(self, start: datetime, stop: datetime, step: timedelta) -> list[datetime]:
+        """Request every `step` in [start, stop]; the times that fetched."""
+        fetched: list[datetime] = []
+        t = start
+        while t <= stop:
+            if self.at(t):
+                fetched.append(t)
+            t += step
+        return fetched
+
+    def meta(self) -> SeriesMeta:
+        with Session(self.engine) as s:
+            meta = s.get(SeriesMeta, (self.symbol, self.spec.name, False))
+            assert meta is not None
+            return meta
+
+    def next_check(self) -> datetime | None:
+        at = self.meta().next_check_at
+        return None if at is None else _aware(at)
+
+    def last_accessed(self) -> datetime | None:
+        at = self.meta().last_accessed_at
+        return None if at is None else _aware(at)
+
+
+def test_saturday_makes_no_tail_calls(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 12))
+    run = Scheduled(engine, daily_frame(days, NY), "1d", US_EQUITY)
+    assert run.at(ny(2026, 10, 10, 12))  # backfill
+    weekend = run.poll(ny(2026, 10, 10, 12, 5), ny(2026, 10, 12, 9, 25), timedelta(minutes=5))
+    assert weekend == []
+    assert run.stats.counter("bars.tail_skipped_closed") > 500
+    assert run.next_check() == ny(2026, 10, 12, 9, 30)
+    assert run.at(ny(2026, 10, 12, 9, 30))  # Monday's open
+
+
+def test_unscheduled_series_catches_up_once_on_the_weekend(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 9))
+    frame = daily_frame(days, NY)
+    # Cached Friday mid-session without a schedule (no lookup).
+    plain = Scheduled(engine, frame, "1d", US_EQUITY, lookup=False)
+    assert plain.at(ny(2026, 10, 9, 12))
+    assert plain.next_check() is None
+
+    run = Scheduled(engine, frame, "1d", US_EQUITY)
+    fetched = run.poll(ny(2026, 10, 10, 9), ny(2026, 10, 11, 23), timedelta(minutes=30))
+    assert fetched == [ny(2026, 10, 10, 9)]  # Friday's settle check was overdue
+
+
+def test_weekday_after_close_one_fetch_after_settle(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 13))
+    run = Scheduled(engine, daily_frame(days, NY), "1d", US_EQUITY)
+    assert run.at(ny(2026, 10, 12, 15, 58))  # backfill; 5 min later is past the close
+    fetched = run.poll(ny(2026, 10, 12, 15, 59), ny(2026, 10, 13, 9, 29), timedelta(minutes=1))
+    assert fetched == [ny(2026, 10, 12, 16, 20)]
+    assert run.at(ny(2026, 10, 13, 9, 30))
+
+
+def test_weekday_open_refreshes_at_ttl(engine: Engine) -> None:
+    run = Scheduled(engine, intraday_frame([date(2026, 10, 12)]), "5m", US_EQUITY)
+    assert run.at(ny(2026, 10, 12, 11))
+    step = timedelta(seconds=10)
+    fetched = run.poll(ny(2026, 10, 12, 11, 0, 10), ny(2026, 10, 12, 11, 30), step)
+    assert fetched == [ny(2026, 10, 12, 11, 0, 30) + i * timedelta(seconds=30) for i in range(60)]
+    assert run.meta().quiet_streak == 0
+    assert run.stats.counter("bars.tail_skipped_fresh") == 180 - 60
+
+
+def test_daily_open_refreshes_at_daily_ttl(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 12))
+    run = Scheduled(engine, daily_frame(days, NY), "1d", US_EQUITY)
+    assert run.at(ny(2026, 10, 12, 11))
+    fetched = run.poll(ny(2026, 10, 12, 11, 1), ny(2026, 10, 12, 11, 30), timedelta(minutes=1))
+    assert fetched == [ny(2026, 10, 12, 11, 5 * i) for i in range(1, 7)]
+
+
+def test_crypto_refreshes_on_the_weekend(engine: Engine) -> None:
+    first = date(2026, 9, 1)
+    days = [first + timedelta(days=i) for i in range(41)]  # through Sunday 10-11
+    crypto = {"symbol": "BTC-USD", "type": "cryptocurrency", "timezone": "UTC", "session": None}
+    run = Scheduled(engine, daily_frame(days, UTC), "1d", crypto, symbol="BTC-USD")
+    saturday = datetime(2026, 10, 10, 12, tzinfo=UTC)
+    assert run.at(saturday)
+    minute = timedelta(minutes=1)
+    fetched = run.poll(saturday + minute, saturday + 60 * minute, minute)
+    assert fetched == [saturday + 5 * i * minute for i in range(1, 13)]
+
+
+def test_holiday_backs_off_then_checks_once_after_settle(engine: Engine) -> None:
+    # Monday 10-12 is a holiday: no bars between Friday and Tuesday.
+    frame = intraday_frame([date(2026, 10, 9), date(2026, 10, 13)])
+    run = Scheduled(engine, frame, "5m", US_EQUITY)
+    assert run.at(ny(2026, 10, 12, 9))  # backfill before the open
+    fetched = run.poll(ny(2026, 10, 12, 9, 0, 30), ny(2026, 10, 13, 9, 20), timedelta(seconds=30))
+    # Doubling pauses while quiet, then the cap once past the grace.
+    assert fetched[:6] == [
+        ny(2026, 10, 12, 9, 30),
+        ny(2026, 10, 12, 9, 31),
+        ny(2026, 10, 12, 9, 33),
+        ny(2026, 10, 12, 9, 37),
+        ny(2026, 10, 12, 9, 45),
+        ny(2026, 10, 12, 10, 1),
+    ]
+    session = [t for t in fetched if t < ny(2026, 10, 12, 16)]
+    gaps = [b - a for a, b in zip(session, session[1:], strict=False)]
+    assert max(gaps) <= timedelta(seconds=TailPolicy().quiet_backoff_max_s)
+    assert session[-1] >= ny(2026, 10, 12, 15, 30)
+    # One check after the close settles, then nothing until Tuesday.
+    assert [t for t in fetched if t >= ny(2026, 10, 12, 16)] == [ny(2026, 10, 12, 16, 20)]
+    assert run.next_check() == ny(2026, 10, 13, 9, 30)
+    assert len(fetched) < 25
+    # Tuesday's first bar ends the quiet streak.
+    assert run.at(ny(2026, 10, 13, 9, 30))
+    assert run.meta().quiet_streak == 0
+    assert run.at(ny(2026, 10, 13, 9, 30, 30))
+
+
+def test_tokyo_daily_after_close(engine: Engine) -> None:
+    info = {"symbol": "7203.T", "type": "equity", "timezone": "Asia/Tokyo", "session": "0900-1530"}
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 22))
+    run = Scheduled(engine, daily_frame(days, TOKYO), "1d", info, symbol="7203.T")
+
+    def jst(d: int, hh: int, mm: int = 0) -> datetime:
+        return datetime(2026, 10, d, hh, mm, tzinfo=TOKYO).astimezone(UTC)
+
+    assert run.at(jst(21, 15))
+    fetched = run.poll(jst(21, 15, 1), jst(22, 8, 59), timedelta(minutes=1))
+    assert fetched == [jst(21, 15, m) for m in (5, 10, 15, 20, 25, 50)]
+    assert run.at(jst(22, 9))
+
+
+def test_without_lookup_weekend_keeps_plain_ttl(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 9))
+    run = Scheduled(engine, daily_frame(days, NY), "1d", US_EQUITY, lookup=False)
+    assert run.at(ny(2026, 10, 10, 12))
+    fetched = run.poll(ny(2026, 10, 10, 12, 1), ny(2026, 10, 10, 12, 20), timedelta(minutes=1))
+    assert fetched == [ny(2026, 10, 10, 12, m) for m in (5, 10, 15, 20)]
+    assert run.next_check() is None
+    assert run.stats.counter("bars.fresh") == 16
+    assert run.stats.counter("bars.tail_skipped_closed") == 0
+
+
+def test_lookup_without_stored_symbol_keeps_plain_ttl(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 9))
+    run = Scheduled(engine, daily_frame(days, NY), "1d", None)
+    assert run.at(ny(2026, 10, 10, 12))
+    fetched = run.poll(ny(2026, 10, 10, 12, 1), ny(2026, 10, 10, 12, 20), timedelta(minutes=1))
+    assert fetched == [ny(2026, 10, 10, 12, m) for m in (5, 10, 15, 20)]
+    assert run.next_check() == ny(2026, 10, 10, 12, 25)
+
+
+def test_last_accessed_at_is_throttled(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 9))
+    run = Scheduled(engine, daily_frame(days, NY), "1d", US_EQUITY)
+    start = ny(2026, 10, 10, 12)
+    run.at(start)
+    assert run.last_accessed() == start
+    run.at(start + timedelta(minutes=59))
+    assert run.last_accessed() == start
+    later = start + timedelta(minutes=61)
+    run.at(later)
+    assert run.last_accessed() == later
+
+
+def test_cached_info_never_calls_upstream(engine: Engine) -> None:
+    provider = FullProvider({("AAPL", "1d"): DAILY})
+    symbols = SymbolService(engine, provider)
+    assert symbols.cached_info("aapl") is None
+    info = symbols.info("AAPL")
+    provider.frames.clear()  # upstream would now fail
+    assert symbols.cached_info("aapl") == info
+
+
+def test_app_schedules_bars_from_stored_symbol_info(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path}/a.db"
+    app = create_app(provider=FullProvider({("AAPL", "1d"): DAILY}), database_url=url)
+    with TestClient(app) as client:
+        assert client.get("/api/symbols/AAPL").status_code == 200
+        assert client.get("/api/bars", params={"symbol": "AAPL"}).status_code == 200
+    engine = make_engine(url)
+    with Session(engine) as s:
+        meta = s.get(SeriesMeta, ("AAPL", "1d", False))
+        assert meta is not None and meta.next_check_at is not None
+    engine.dispose()
+
+
+def test_series_schedule_migration_up_down_up(tmp_path: Path) -> None:
+    from alembic import command
+    from test_userdata import alembic_config
+
+    url = f"sqlite:///{tmp_path}/m.db"
+    cfg = alembic_config(url)
+    engine = create_engine(url)
+    command.upgrade(cfg, "3f8a6c1d9e47")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO series_meta VALUES "
+                "('AAPL', '1d', 0, '2026-10-01 12:00:00.000000', '2026-10-02 12:00:00.000000')"
+            )
+        )
+    new = {"next_check_at", "quiet_streak", "last_accessed_at"}
+
+    def columns() -> set[str]:
+        return {c["name"] for c in inspect(engine).get_columns("series_meta")}
+
+    command.upgrade(cfg, "head")
+    assert new <= columns()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT next_check_at, quiet_streak, last_accessed_at FROM series_meta")
+        ).one()
+    assert tuple(row) == (None, 0, "2026-10-01 12:00:00.000000")
+    command.downgrade(cfg, "3f8a6c1d9e47")
+    assert not new & columns()
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM series_meta")).scalar() == 1
+    command.upgrade(cfg, "head")
+    assert new <= columns()
+    engine.dispose()
+
+
+# ------------------------------------------------------ overlap classification
+
+# Weekdays from July through 2026-10-09: more 5m history than the 59-day lookback.
+SUMMER = weekdays(date(2026, 7, 1), date(2026, 10, 9))
+CACHED_AT = ny(2026, 8, 14, 12)  # first request (backfill)
+REFRESH_AT = ny(2026, 10, 9, 12)  # eight weeks later: tail refresh
+
+
+def priced(frame: pd.DataFrame) -> pd.DataFrame:
+    """`frame` with a distinct price and volume per bar."""
+    out = frame.copy()
+    step = pd.Series(range(len(out)), dtype="float64")
+    out["close"] = 100 + step * 0.01
+    out["open"] = out["close"] - 0.05
+    out["high"] = out["close"] + 0.2
+    out["low"] = out["close"] - 0.3
+    out["adj_close"] = out["close"]
+    out["volume"] = 1000 + step
+    return out
+
+
+def cached_5m(
+    engine: Engine, frame: pd.DataFrame
+) -> tuple[ClockedProvider, CacheStats, BarService]:
+    """A 5m series of `frame` backfilled at `CACHED_AT`."""
+    provider = ClockedProvider({("AAPL", "5m"): frame})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    provider.clock = CACHED_AT
+    svc.get_bars("AAPL", resolve_interval("5m"), False, now=CACHED_AT)
+    assert len(provider.calls) == 1
+    return provider, stats, svc
+
+
+def stored(svc: BarService, interval: str, now: datetime) -> pd.DataFrame:
+    return svc.get_bars("AAPL", resolve_interval(interval), False, limit=100_000, now=now).bars
+
+
+def test_intraday_revision_upserts_and_keeps_history(engine: Engine) -> None:
+    frame = priced(intraday_frame(SUMMER))
+    provider, stats, svc = cached_5m(engine, frame)
+    # The provider revises the second-newest cached bar (the newest closed one); the
+    # backfill ended before `CACHED_AT`.
+    revised = frame.copy()
+    second = revised.index[revised["ts"] < int(CACHED_AT.timestamp())][-2]
+    revised.loc[second, ["close", "adj_close"]] = 123.45
+    provider.frames[("AAPL", "5m")] = revised
+    provider.clock = REFRESH_AT
+
+    bars = stored(svc, "5m", REFRESH_AT)
+    assert len(provider.calls) == 2  # the tail fetch only
+    assert provider.calls[1][2] is not None
+    assert stats.counter("bars.overlap_revised") == 1
+    assert stats.counter("bars.rebackfill") == 0
+    # Everything up to now, including bars older than the provider's lookback.
+    expected = revised[revised["ts"] <= int(REFRESH_AT.timestamp())]
+    lookback_start = REFRESH_AT - resolve_interval("5m").max_lookback  # type: ignore[operator]
+    assert bars["ts"].tolist()[0] < int(lookback_start.timestamp())
+    assert bars["ts"].tolist() == expected["ts"].tolist()
+    assert bars["close"].tolist() == pytest.approx(expected["close"].tolist())
+
+
+def test_intraday_split_rescales_history_without_refetch(engine: Engine) -> None:
+    frame = priced(intraday_frame(SUMMER))
+    provider, stats, svc = cached_5m(engine, frame)
+    # A 2:1 split: the provider rewrites its whole window at half the price, twice the volume.
+    split = frame.copy()
+    for col in ("open", "high", "low", "close", "adj_close"):
+        split[col] = split[col] / 2
+    split["volume"] = split["volume"] * 2
+    provider.frames[("AAPL", "5m")] = split
+    provider.clock = REFRESH_AT
+
+    bars = stored(svc, "5m", REFRESH_AT)
+    assert len(provider.calls) == 2
+    assert stats.counter("bars.overlap_rescaled") == 1
+    assert stats.counter("bars.rebackfill") == 0
+    expected = split[split["ts"] <= int(REFRESH_AT.timestamp())]
+    assert bars["ts"].tolist() == expected["ts"].tolist()
+    for col in ("open", "high", "low", "close", "adj_close", "volume"):
+        assert bars[col].tolist() == pytest.approx(expected[col].tolist()), col
+    adjusted = svc.get_bars(
+        "AAPL", resolve_interval("5m"), False, limit=100_000, adjusted=True, now=REFRESH_AT
+    ).bars
+    assert adjusted["close"].tolist() == pytest.approx(expected["close"].tolist())
+
+
+def test_intraday_unchanged_overlap_counts_same(engine: Engine) -> None:
+    frame = priced(intraday_frame(SUMMER))
+    provider, stats, svc = cached_5m(engine, frame)
+    provider.clock = REFRESH_AT
+    stored(svc, "5m", REFRESH_AT)
+    assert len(provider.calls) == 2
+    assert stats.counter("bars.overlap_same") == 1
+
+
+def test_daily_revision_still_rebackfills(engine: Engine) -> None:
+    provider = FullProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    revised = DAILY.copy()
+    revised.loc[revised.index[-2], ["close", "adj_close"]] *= 1.01
+    provider.frames[("AAPL", "1d")] = revised
+    res = svc.get_bars("AAPL", spec, False, limit=20_000, now=NOW + spec.tail_ttl)
+
+    assert len(provider.calls) == 3  # backfill, tail, full re-backfill
+    assert provider.calls[-1][2] is None
+    assert stats.counter("bars.rebackfill") == 1
+    assert res.bars["close"].tolist() == pytest.approx(revised["close"].tolist())
+
+
+# ------------------------------------------------------------------- pruning
+
+PRUNE_NOW = datetime(2026, 10, 21, 12, tzinfo=UTC)
+
+
+def seed(
+    engine: Engine,
+    symbol: str,
+    interval: str,
+    rows: int,
+    used: datetime,
+    *,
+    accessed: bool = True,
+) -> None:
+    """A cached series of `rows` bars, last read at `used` (or cached then, if not `accessed`)."""
+    with Session(engine) as s:
+        s.add(
+            SeriesMeta(
+                symbol=symbol,
+                interval=interval,
+                prepost=False,
+                backfilled_at=used - timedelta(days=1000) if accessed else used,
+                tail_fetched_at=used,
+                quiet_streak=0,
+                last_accessed_at=used if accessed else None,
+            )
+        )
+        s.add_all(
+            Bar(
+                symbol=symbol,
+                interval=interval,
+                prepost=False,
+                ts=1_700_000_000 + i * 60,
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                adj_close=1.0,
+                volume=1.0,
+            )
+            for i in range(rows)
+        )
+        s.commit()
+
+
+def series_in(engine: Engine) -> set[str]:
+    with Session(engine) as s:
+        metas = {m.symbol for m in s.scalars(select(SeriesMeta))}
+        bars = set(s.scalars(select(Bar.symbol).distinct()))
+    assert metas == bars  # bars and meta go together
+    return metas
+
+
+def days_ago(n: float) -> datetime:
+    return PRUNE_NOW - timedelta(days=n)
+
+
+def prune(svc: BarService, max_rows: int = 1_000_000) -> PruneReport:
+    return svc.prune(
+        PRUNE_NOW, max_rows=max_rows, intraday_retention_days=30, daily_retention_days=365
+    )
+
+
+def test_prune_by_age(engine: Engine) -> None:
+    seed(engine, "OLD5", "5m", 10, days_ago(31))
+    seed(engine, "NEW5", "5m", 20, days_ago(29))
+    seed(engine, "LEGACY", "1m", 5, days_ago(40), accessed=False)
+    seed(engine, "OLDD", "1d", 7, days_ago(366))
+    seed(engine, "MIDD", "1wk", 3, days_ago(100))
+    stats = CacheStats()
+    svc = BarService(engine, FullProvider({}), stats=stats)
+
+    report = prune(svc)
+    assert report == PruneReport(
+        intraday_age_series=2,
+        intraday_age_rows=15,
+        daily_age_series=1,
+        daily_age_rows=7,
+        rows_remaining=23,
+    )
+    assert (report.series_deleted, report.rows_deleted) == (3, 22)
+    assert series_in(engine) == {"NEW5", "MIDD"}
+    assert stats.counter("bars.pruned_series") == 3
+    assert stats.counter("bars.pruned_rows") == 22
+
+    report = svc.prune_with_settings(Settings(bars_intraday_retention_days=7), now=PRUNE_NOW)
+    assert (report.intraday_age_series, report.rows_remaining) == (1, 3)
+    assert series_in(engine) == {"MIDD"}
+
+
+def test_prune_by_budget_evicts_least_recently_used_intraday_first(engine: Engine) -> None:
+    seed(engine, "A", "1d", 30, days_ago(10))
+    seed(engine, "B", "5m", 30, days_ago(2))
+    seed(engine, "C", "5m", 30, days_ago(5))
+    seed(engine, "D", "1d", 30, days_ago(3))
+    svc = BarService(engine, FullProvider({}))
+
+    report = prune(svc, max_rows=100)  # 120 rows: evict down to 90
+    assert report == PruneReport(budget_series=1, budget_rows=30, rows_remaining=90)
+    assert series_in(engine) == {"A", "B", "D"}
+
+    report = prune(svc, max_rows=60)  # 90 rows: evict down to 54
+    assert report == PruneReport(budget_series=2, budget_rows=60, rows_remaining=30)
+    assert series_in(engine) == {"D"}  # B (intraday) went before the older daily A
+
+    assert prune(svc, max_rows=30) == PruneReport(rows_remaining=30)  # within budget
+
+
+def test_prune_never_deletes_recently_used_series(engine: Engine) -> None:
+    seed(engine, "HOT", "5m", 10, PRUNE_NOW - timedelta(hours=1))
+    seed(engine, "WARM", "1d", 10, days_ago(2))
+    seed(engine, "COLD", "5m", 10, days_ago(2))
+    svc = BarService(engine, FullProvider({}))
+
+    report = svc.prune(PRUNE_NOW, max_rows=1, intraday_retention_days=0, daily_retention_days=0)
+    assert report.intraday_age_series == 1 and report.daily_age_series == 1
+    assert report.rows_remaining == 10
+    assert series_in(engine) == {"HOT"}
+
+    report = svc.prune(
+        PRUNE_NOW,
+        max_rows=1,
+        intraday_retention_days=0,
+        daily_retention_days=0,
+        protect_s=0,
+    )
+    assert report.intraday_age_series == 1
+    assert series_in(engine) == set()
+
+
+class BlockingProvider(FullProvider):
+    """`history` waits for `release` after signalling `entered`."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        self.entered.set()
+        assert self.release.wait(10)
+        return super().history(symbol, interval, start, end, prepost)
+
+
+def test_prune_skips_series_being_synced(engine: Engine) -> None:
+    seed(engine, "BUSY", "1d", 10, days_ago(400))
+    seed(engine, "IDLE", "1d", 10, days_ago(400))
+    provider = BlockingProvider()
+    svc = BarService(engine, provider)
+    # A request refreshing BUSY's tail holds its lock while it waits on upstream.
+    request = threading.Thread(
+        target=svc.get_bars, args=("BUSY", resolve_interval("1d"), False), kwargs={"now": PRUNE_NOW}
+    )
+    request.start()
+    try:
+        assert provider.entered.wait(10)
+        report = prune(svc)
+    finally:
+        provider.release.set()
+        request.join(10)
+    assert report == PruneReport(
+        daily_age_series=1, daily_age_rows=10, skipped_busy=1, rows_remaining=10
+    )
+    assert series_in(engine) == {"BUSY"}
+    # The request marked it used: protected from now on.
+    assert prune(svc) == PruneReport(rows_remaining=10)
+
+
+# ------------------------------------------------------------ review fixes
+
+
+class PublishedProvider(ClockedProvider):
+    """Serves a bar only `delay` after its timestamp (a fund's NAV comes out after the close)."""
+
+    def __init__(self, frames: dict[tuple[str, str], pd.DataFrame], delay: timedelta) -> None:
+        super().__init__(frames)
+        self.delay = delay
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        df = FakeProvider.history(self, symbol, interval, start, end, prepost)
+        cutoff = int((self.clock - self.delay).timestamp())
+        return df[df["ts"] <= cutoff].reset_index(drop=True)
+
+
+def test_fund_nav_after_the_close_is_picked_up_by_the_settle_check(engine: Engine) -> None:
+    fund = {**US_EQUITY, "symbol": "VFIAX", "type": "mutualfund"}
+    days = weekdays(date(2026, 9, 1), date(2026, 10, 14))
+    # Each day's NAV appears at 16:10, after the close and before the settle check.
+    provider = PublishedProvider(
+        {("VFIAX", "1d"): daily_frame(days, NY)}, delay=timedelta(hours=16, minutes=10)
+    )
+    run = Scheduled(engine, pd.DataFrame(), "1d", fund, symbol="VFIAX", provider=provider)
+    assert run.at(ny(2026, 10, 14, 9))  # backfill: Tuesday's NAV is the newest
+    fetched = run.poll(ny(2026, 10, 14, 9, 1), ny(2026, 10, 15, 9, 29), timedelta(minutes=1))
+    assert fetched[-1] == ny(2026, 10, 14, 16, 20)
+    with Session(engine) as s:
+        newest = s.scalar(select(func.max(Bar.ts)).where(Bar.symbol == "VFIAX"))
+    assert newest == int(datetime(2026, 10, 14, tzinfo=NY).timestamp())
+
+
+def test_stored_half_day_session_does_not_block_a_later_afternoon(engine: Engine) -> None:
+    # Metadata fetched on the early-close Friday after Thanksgiving (09:30-13:00).
+    with Session(engine) as s:
+        s.add(
+            SymbolMeta(
+                symbol="AAPL",
+                data={**US_EQUITY, "session": "0930-1300"},
+                fetched_at=ny(2026, 11, 27, 12),
+            )
+        )
+        s.commit()
+    symbols = SymbolService(engine, FullProvider({}))
+    provider = ClockedProvider({("AAPL", "5m"): intraday_frame([date(2026, 11, 30)])})
+    svc = BarService(engine, provider, session_lookup=symbols.cached_info, policy=TailPolicy())
+    spec = resolve_interval("5m")
+    monday = ny(2026, 11, 30, 13, 55)
+    provider.clock = monday
+    svc.get_bars("AAPL", spec, False, now=monday)
+    later = ny(2026, 11, 30, 14)
+    provider.clock = later
+    svc.get_bars("AAPL", spec, False, now=later)
+    assert len(provider.calls) == 2  # the 14:00 refresh happened
+
+
+def test_cached_info_carries_its_age(engine: Engine) -> None:
+    symbols = SymbolService(engine, FullProvider({("AAPL", "1d"): DAILY}))
+    symbols.info("AAPL")
+    info = symbols.cached_info("AAPL")
+    assert isinstance(info, StoredInfo)
+    assert datetime.now(UTC) - _aware(info.fetched_at) < timedelta(minutes=1)
+
+
+def _split(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["close"] = out["close"] / 2
+    out["adj_close"] = out["adj_close"] / 2
+    return out
+
+
+class EmptyFullFetchProvider(FullProvider):
+    """Serves tail windows; a full-history request (no start) comes back empty."""
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if start is None:
+            self.calls.append((symbol, interval, start, end))
+            return pd.DataFrame(columns=BAR_COLUMNS)
+        return super().history(symbol, interval, start, end, prepost)
+
+
+def test_empty_rebackfill_serves_cached_bars(engine: Engine) -> None:
+    provider = FullProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    flaky = EmptyFullFetchProvider({("AAPL", "1d"): _split(DAILY)})
+    svc._provider = flaky
+    later = NOW + spec.tail_ttl
+    res = svc.get_bars("AAPL", spec, False, limit=20_000, now=later)
+    assert flaky.calls[-1][2] is None  # the re-backfill was attempted
+    assert res.bars["close"].tolist() == pytest.approx(DAILY["close"].tolist())
+    assert stats.counter("bars.stale_error") == 1
+    # Retried after the pause, not on every request.
+    svc.get_bars("AAPL", spec, False, now=later + timedelta(seconds=5))
+    assert len(flaky.calls) == 2
+
+
+def test_rebackfill_fetches_before_taking_the_write_lock(engine: Engine) -> None:
+    provider = FullProvider({("AAPL", "1d"): DAILY})
+    svc = BarService(engine, provider)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+    path = engine.url.database
+    assert path is not None
+    writes: list[str] = []
+    real_history = FakeProvider.history
+
+    def history(
+        self: FullProvider,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if start is None:
+            # Another writer during the full fetch must not find the database locked.
+            con = sqlite3.connect(path, timeout=0)
+            try:
+                con.execute("CREATE TABLE IF NOT EXISTS probe (x)")
+                con.commit()
+                writes.append("ok")
+            except sqlite3.OperationalError as exc:
+                writes.append(str(exc))
+            finally:
+                con.close()
+        return real_history(self, symbol, interval, start, end, prepost)
+
+    provider.frames[("AAPL", "1d")] = _split(DAILY)
+    provider.history = history.__get__(provider)  # type: ignore[method-assign]
+    res = svc.get_bars("AAPL", spec, False, limit=20_000, now=NOW + spec.tail_ttl)
+    assert writes == ["ok"]
+    assert res.bars["close"].tolist() == pytest.approx(_split(DAILY)["close"].tolist())
+
+
+class WindowedProvider(ClockedProvider):
+    """Rejects 1m requests wider than 8 days or reaching back more than 30 days."""
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        if start is None or end is None:
+            raise ProviderError("1m needs a range")
+        if end - start > timedelta(days=8) or start < self.clock - timedelta(days=30):
+            self.calls.append((symbol, interval, start, end))
+            raise ProviderError("requested range too wide")
+        return super().history(symbol, interval, start, end, prepost)
+
+
+def test_stale_1m_series_catches_up_in_chunks_and_keeps_history(engine: Engine) -> None:
+    days = weekdays(date(2026, 9, 8), date(2026, 10, 19))
+    provider = WindowedProvider({("AAPL", "1m"): intraday_frame(days, step_s=60)})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1m")
+    first = ny(2026, 10, 9, 12)
+    provider.clock = first
+    svc.get_bars("AAPL", spec, False, now=first)
+    with Session(engine) as s:
+        oldest = s.scalar(select(func.min(Bar.ts)))
+    assert oldest is not None
+
+    ten_days_later = ny(2026, 10, 19, 12)
+    provider.clock = ten_days_later
+    before = len(provider.calls)
+    res = svc.get_bars("AAPL", spec, False, limit=1, now=ten_days_later)
+    assert res.bars["ts"].tolist() == [int(ten_days_later.timestamp())]
+    assert stats.counter("bars.stale_error") == 0
+    window = provider.calls[before:]
+    assert len(window) >= 2
+    assert all(end - start <= timedelta(days=8) for _, _, start, end in window)  # type: ignore[operator]
+    with Session(engine) as s:
+        assert s.scalar(select(func.min(Bar.ts))) == oldest  # older history kept
+
+
+def test_prune_drops_locks_and_stale_retries_of_deleted_series(engine: Engine) -> None:
+    seed(engine, "OLD", "1d", 5, days_ago(400))
+    seed(engine, "KEEP", "1d", 5, days_ago(1))
+    svc = BarService(engine, FullProvider({}))
+    old, keep = ("OLD", "1d", False), ("KEEP", "1d", False)
+    svc._lock_for(old)
+    svc._lock_for(keep)
+    svc._retry_at[keep] = PRUNE_NOW - timedelta(seconds=1)  # expired
+    report = prune(svc)
+    assert report.daily_age_series == 1
+    assert old not in svc._locks
+    assert keep in svc._locks  # still cached: kept
+    assert keep not in svc._retry_at
+
+
+def test_sync_waiting_on_a_dropped_lock_takes_the_registered_one(engine: Engine) -> None:
+    provider = FullProvider({("AAPL", "1d"): DAILY})
+    svc = BarService(engine, provider)
+    key = ("AAPL", "1d", False)
+    dropped = svc._lock_for(key)
+    dropped.acquire()
+    request = threading.Thread(
+        target=svc.get_bars, args=("AAPL", resolve_interval("1d"), False), kwargs={"now": NOW}
+    )
+    request.start()
+    # The series is deleted meanwhile and its lock dropped; another caller then holds
+    # the new lock.
+    with svc._locks_guard:
+        del svc._locks[key]
+    registered = svc._lock_for(key)
+    registered.acquire()
+    dropped.release()
+    request.join(0.3)
+    assert request.is_alive()  # waits for the registered lock, not the dropped one
+    assert provider.calls == []
+    registered.release()
+    request.join(10)
+    assert not request.is_alive()
+    assert len(provider.calls) == 1

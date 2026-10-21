@@ -1,3 +1,6 @@
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -23,6 +26,11 @@ class UpstreamUnavailable(ProviderError):
     """Upstream could not be reached (connection failure or timeout)."""
 
 
+class UpstreamDegraded(UpstreamUnavailable):
+    """One upstream endpoint is failing while the upstream itself answers, so the request
+    was not sent (or not retried another way); no outage breaker should open."""
+
+
 class PartialQuotes(ProviderError):
     """Some request chunks failed: `quotes` holds what succeeded, `failed` the symbols
     whose chunk failed (their absence means "unknown", not "no such symbol")."""
@@ -35,6 +43,40 @@ class PartialQuotes(ProviderError):
 
 class SymbolNotFound(ProviderError):
     pass
+
+
+# Meter of the provider call running in this context (see `charge_upstream`).
+_CHARGE: ContextVar[Callable[[int], None] | None] = ContextVar("upstream_charge", default=None)
+
+
+@contextmanager
+def metering(charge: Callable[[int], None]) -> Iterator[None]:
+    """Route `charge_upstream` calls made in this context to `charge` (the guard installs
+    it around every provider call)."""
+    token = _CHARGE.set(charge)
+    try:
+        yield
+    finally:
+        _CHARGE.reset(token)
+
+
+def charge_upstream(requests: int) -> None:
+    """Report `requests` upstream requests beyond what the current call was charged for
+    (retries, fallbacks) before sending them. Raises a `ProviderError` (`RateLimited`,
+    `UpstreamUnavailable`) when they may not be sent; a no-op outside a metered call."""
+    charge = _CHARGE.get()
+    if charge is not None and requests > 0:
+        charge(requests)
+
+
+class QuoteList(list[dict[str, Any]]):
+    """Rows returned by `MarketDataProvider.quotes`, plus whether the upstream answered
+    for every requested symbol (`confirmed`): then a symbol without a row is known not to
+    exist. Providers returning a plain list never confirm."""
+
+    def __init__(self, rows: Iterable[dict[str, Any]] = (), *, confirmed: bool = False) -> None:
+        super().__init__(rows)
+        self.confirmed = confirmed
 
 
 class MarketDataProvider(Protocol):
@@ -58,7 +100,8 @@ class MarketDataProvider(Protocol):
     def search(self, query: str, limit: int) -> list[dict[str, Any]]: ...
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
-        """Latest quote per known symbol; unknown symbols are omitted."""
+        """Latest quote per known symbol; unknown symbols are omitted. Return a `QuoteList`
+        with `confirmed=True` only when the omission proves the symbol does not exist."""
         ...
 
     def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:

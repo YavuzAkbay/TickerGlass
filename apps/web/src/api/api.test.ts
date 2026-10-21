@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAutosaver, createLayoutAutosaver } from './autosave';
-import { ApiError, requestJson } from './client';
+import { ApiError, MAX_ENTRIES, cachedJson, clearJsonCache, requestJson } from './client';
 import {
   batchDrawings,
   drawingConflicts,
@@ -41,6 +41,60 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('cachedJson', () => {
+  const fetched = (path: string) => calls.filter((c) => c.url === `/api${path}`).length;
+
+  beforeEach(() => {
+    clearJsonCache();
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+  });
+  afterEach(() => clearJsonCache());
+
+  it('shares one request and serves hits within the ttl', async () => {
+    const [a, b] = await Promise.all([cachedJson('/x', 1000), cachedJson('/x', 1000)]);
+    expect(a).toBe(b);
+    expect(fetched('/x')).toBe(1);
+    vi.setSystemTime(1_000_999);
+    await cachedJson('/x', 1000);
+    expect(fetched('/x')).toBe(1);
+    vi.setSystemTime(1_001_001);
+    await cachedJson('/x', 1000);
+    expect(fetched('/x')).toBe(2);
+  });
+
+  it('is an LRU capped at MAX_ENTRIES: hits refresh recency, the oldest go first', async () => {
+    for (let i = 0; i < MAX_ENTRIES; i++) void cachedJson(`/p${i}`, 60_000);
+    expect(calls).toHaveLength(MAX_ENTRIES);
+    void cachedJson('/p0', 60_000); // hit: /p0 becomes the most recent
+    expect(calls).toHaveLength(MAX_ENTRIES);
+    void cachedJson('/extra', 60_000); // over the cap: /p1 is the least recently used
+    expect(calls).toHaveLength(MAX_ENTRIES + 1);
+    void cachedJson('/p0', 60_000);
+    expect(fetched('/p0')).toBe(1); // survived
+    void cachedJson('/p1', 60_000);
+    expect(fetched('/p1')).toBe(2); // evicted, fetched again
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('sweeps expired entries on insert instead of evicting live ones', async () => {
+    void cachedJson('/keep', 1_000_000); // the oldest, but long-lived
+    for (let i = 0; i < MAX_ENTRIES - 1; i++) void cachedJson(`/old${i}`, 1000);
+    vi.setSystemTime(1_005_000); // the short-lived ones have expired
+    void cachedJson('/new', 1000);
+    void cachedJson('/keep', 1_000_000);
+    expect(fetched('/keep')).toBe(1); // not evicted: the sweep made room
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('evicts failures so the next call retries', async () => {
+    respond = () => json({ detail: 'nope' }, 500);
+    await expect(cachedJson('/bad', 60_000)).rejects.toBeInstanceOf(ApiError);
+    await expect(cachedJson('/bad', 60_000)).rejects.toBeInstanceOf(ApiError);
+    expect(fetched('/bad')).toBe(2);
+  });
 });
 
 describe('requestJson', () => {

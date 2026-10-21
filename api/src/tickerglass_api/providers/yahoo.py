@@ -5,6 +5,7 @@ import math
 import socket
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
@@ -18,9 +19,12 @@ from .base import (
     BAR_COLUMNS,
     PartialQuotes,
     ProviderError,
+    QuoteList,
     RateLimited,
     SymbolNotFound,
+    UpstreamDegraded,
     UpstreamUnavailable,
+    charge_upstream,
 )
 
 try:  # curl_cffi is yfinance's HTTP client; its errors are OSError subclasses.
@@ -41,6 +45,14 @@ _NETWORK_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 
+# Retries after a failure that is neither a rate limit nor a network error.
+_OTHER_ERROR_RETRIES = 1
+# Symbols whose currency is remembered for `quotes` (least recently used dropped first).
+_CURRENCY_CACHE_MAX = 4096
+# Largest `quotes` batch the daily-bar download fallback serves (one request per symbol).
+_FALLBACK_MAX_SYMBOLS = 10
+
+
 class RateLimiter:
     """Thread-safe minimum spacing between upstream requests."""
 
@@ -59,41 +71,76 @@ class RateLimiter:
 
 
 class YahooProvider:
-    def __init__(self, min_interval: float = 0.25, retries: int = 4) -> None:
+    def __init__(
+        self,
+        min_interval: float = 0.25,
+        retries: int = 4,
+        *,
+        rate_limit_retries: int | None = None,
+        quote_v7_retry_s: float = 300,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        """`retries` bounds retries after network failures; `rate_limit_retries` after a
+        rate-limit refusal (None: same as `retries`). Other failures are retried once.
+        Every retry is reported with `charge_upstream` first and skipped if refused.
+        After a failed v7 quote request, `quotes` skips v7 for `quote_v7_retry_s`."""
         self._limiter = RateLimiter(min_interval)
         self._retries = retries
-        self._currencies: dict[str, str | None] = {}
+        self._rate_limit_retries = retries if rate_limit_retries is None else rate_limit_retries
+        self._v7_retry_s = quote_v7_retry_s
+        self._clock = clock
+        self._v7_retry_at: float | None = None
+        self._currencies: OrderedDict[str, str] = OrderedDict()
+        self._currencies_lock = threading.Lock()
 
-    def _call(self, fn: Callable[[], T]) -> T:
-        for attempt in range(self._retries + 1):
+    def _call(self, fn: Callable[[], T], cost: int = 1) -> T:
+        """Run `fn` (which makes `cost` upstream requests), retrying failures."""
+        rate_limited = unreachable = failed = 0
+        while True:
             self._limiter.wait()
             try:
                 return fn()
             except YFRateLimitError as exc:
-                if attempt == self._retries:
-                    raise RateLimited("Yahoo rate limit exceeded", 2**self._retries) from exc
-                backoff = 2**attempt
+                if rate_limited >= self._rate_limit_retries or not _may_retry(cost):
+                    raise RateLimited(
+                        "Yahoo rate limit exceeded", 2**self._rate_limit_retries
+                    ) from exc
+                backoff = 2**rate_limited
+                rate_limited += 1
                 log.warning("Yahoo rate limited, retrying in %ss", backoff)
                 time.sleep(backoff)
             except ProviderError:
                 raise
             except _NETWORK_ERRORS as exc:
                 # Connection failures and timeouts (builtin and curl_cffi ones).
-                if attempt == self._retries:
+                if unreachable >= self._retries or not _may_retry(cost):
                     raise UpstreamUnavailable(f"Yahoo unreachable: {exc}") from exc
-                time.sleep(0.5 * 2**attempt)
+                time.sleep(0.5 * 2**unreachable)
+                unreachable += 1
             except Exception as exc:
-                if attempt == self._retries:
+                # Usually a payload yfinance could not parse; repeating rarely helps.
+                if failed >= min(self._retries, _OTHER_ERROR_RETRIES) or not _may_retry(cost):
                     raise ProviderError(f"Yahoo request failed: {exc}") from exc
-                time.sleep(0.5 * 2**attempt)
-        raise AssertionError("unreachable")
+                time.sleep(0.5 * 2**failed)
+                failed += 1
 
     def _remember_currency(self, symbol: str, ticker: Any) -> None:
         # Call only after ticker.history(): the metadata is then already loaded.
         # quotes() only reads this cache, so it never costs a request per symbol.
         meta = ticker.history_metadata
         if meta and meta.get("currency"):
-            self._currencies[symbol.upper()] = str(meta["currency"])
+            with self._currencies_lock:
+                self._currencies[symbol.upper()] = str(meta["currency"])
+                self._currencies.move_to_end(symbol.upper())
+                while len(self._currencies) > _CURRENCY_CACHE_MAX:
+                    self._currencies.popitem(last=False)
+
+    def _currency(self, symbol: str) -> str | None:
+        with self._currencies_lock:
+            currency = self._currencies.get(symbol)
+            if currency is not None:
+                self._currencies.move_to_end(symbol)
+            return currency
 
     def history(
         self,
@@ -170,6 +217,50 @@ class YahooProvider:
         ]
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """Latest quote per known symbol from Yahoo's v7 quote endpoint, 50 symbols per
+        request. When every chunk answered with rows, the result is `confirmed`: a symbol
+        without a row does not exist (an empty answer may be a glitch, so it never confirms).
+
+        If v7 fails for another reason than a rate limit or an outage, it is skipped for
+        `quote_v7_retry_s` and the daily bars are downloaded instead (one request per
+        symbol, charged with `charge_upstream`, unconfirmed), for batches of at most
+        `_FALLBACK_MAX_SYMBOLS`; larger ones raise `UpstreamDegraded`.
+        """
+        if not symbols:
+            return QuoteList(confirmed=True)
+        retry_at = self._v7_retry_at
+        if retry_at is not None and self._clock() < retry_at:
+            return self._fallback_quotes(symbols, None)
+        rows: list[dict[str, Any]] = []
+        confirmed = True
+        try:
+            for i in range(0, len(symbols), _V7_CHUNK):
+                found = self._call(partial(self._v7_quote, symbols[i : i + _V7_CHUNK]))
+                confirmed = confirmed and bool(found)
+                rows.extend(found)
+        except (RateLimited, UpstreamUnavailable):
+            raise  # the guard's breakers need to see these; a fallback would only add load
+        except ProviderError as exc:
+            self._v7_retry_at = self._clock() + self._v7_retry_s
+            log.warning(
+                "v7 quotes failing; skipping them for %.0fs", self._v7_retry_s, exc_info=True
+            )
+            return self._fallback_quotes(symbols, exc)
+        self._v7_retry_at = None
+        return QuoteList(
+            (q for r in rows if (q := _v7_to_quote(r)) is not None), confirmed=confirmed
+        )
+
+    def _fallback_quotes(self, symbols: list[str], cause: Exception | None) -> QuoteList:
+        if len(symbols) > _FALLBACK_MAX_SYMBOLS:
+            raise UpstreamDegraded(
+                f"Yahoo v7 quotes unavailable; the fallback serves at most "
+                f"{_FALLBACK_MAX_SYMBOLS} symbols"
+            ) from cause
+        charge_upstream(len(symbols))  # raises when the budget cannot cover it
+        return QuoteList(self._download_quotes(symbols))
+
+    def _download_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
         def fetch() -> pd.DataFrame:
             df: pd.DataFrame = yf.download(
                 symbols,
@@ -178,11 +269,11 @@ class YahooProvider:
                 auto_adjust=False,
                 progress=False,
                 group_by="ticker",
-                threads=True,
+                threads=False,
             )
             return df
 
-        frame = self._call(fetch)
+        frame = self._call(fetch, cost=len(symbols))
         out: list[dict[str, Any]] = []
         if frame is None or frame.empty or not isinstance(frame.columns, pd.MultiIndex):
             return out
@@ -208,7 +299,7 @@ class YahooProvider:
                     "change": change,
                     "changePercent": change / prev * 100 if change is not None and prev else None,
                     "volume": int(vol) if vol is not None else None,
-                    "currency": self._currencies.get(sym),
+                    "currency": self._currency(sym),
                     "marketState": None,
                     "time": int(stamp.timestamp()),
                 }
@@ -265,7 +356,7 @@ class YahooProvider:
                 earnings = None
             return t.dividends, t.splits, earnings
 
-        dividends, splits, earnings = self._call(fetch)
+        dividends, splits, earnings = self._call(fetch, cost=2)
         if dividends is None and splits is None:
             raise SymbolNotFound(symbol)
         return {
@@ -286,6 +377,7 @@ class YahooProvider:
             if not items:
                 # Yahoo's ncp endpoint used by get_news currently 404s (returns []);
                 # the search endpoint still serves the legacy flat news shape.
+                charge_upstream(1)
                 s = yf.Search(symbol, max_results=1, news_count=limit, lists_count=0)
                 items = s.news or []
             return items
@@ -299,7 +391,7 @@ class YahooProvider:
             info: dict[str, Any] = t.info or {}
             return info, [t.income_stmt, t.balance_sheet, t.cashflow]
 
-        info, (income, balance, cashflow) = self._call(fetch)
+        info, (income, balance, cashflow) = self._call(fetch, cost=4)
         statements = {
             "income": _statement(income),
             "balance": _statement(balance),
@@ -311,6 +403,15 @@ class YahooProvider:
             "info": {k: _clean(info.get(k)) for k in _INFO_KEYS if info.get(k) is not None},
             "financials": statements,
         }
+
+
+def _may_retry(cost: int) -> bool:
+    """Whether the upstream budget allows a retry costing `cost` requests."""
+    try:
+        charge_upstream(cost)
+    except ProviderError:
+        return False
+    return True
 
 
 def _normalize(df: pd.DataFrame) -> pd.DataFrame:
@@ -448,6 +549,36 @@ def _extended_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
         "regularMarketTime": int(rtime) if rtime is not None else None,
         **session("preMarket"),
         **session("postMarket"),
+    }
+
+
+def _v7_to_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Map a v7 row to the `quotes` shape; change fields fall back to the previous close."""
+    sym = raw.get("symbol")
+    if not isinstance(sym, str) or not sym:
+        return None
+    last = _num(raw.get("regularMarketPrice"))
+    prev = _num(raw.get("regularMarketPreviousClose"))
+    change = _num(raw.get("regularMarketChange"))
+    if change is None and last is not None and prev is not None:
+        change = last - prev
+    pct = _num(raw.get("regularMarketChangePercent"))
+    if pct is None and change is not None and prev:
+        pct = change / prev * 100
+    volume = _num(raw.get("regularMarketVolume"))
+    when = _num(raw.get("regularMarketTime"))
+    currency = raw.get("currency")
+    state = raw.get("marketState")
+    return {
+        "symbol": sym,
+        "last": last,
+        "prevClose": prev,
+        "change": change,
+        "changePercent": pct,
+        "volume": int(volume) if volume is not None else None,
+        "currency": currency if isinstance(currency, str) else None,
+        "marketState": state if isinstance(state, str) else None,
+        "time": int(when) if when is not None else None,
     }
 
 

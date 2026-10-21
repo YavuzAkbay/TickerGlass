@@ -12,12 +12,19 @@ class Base(DeclarativeBase):
     pass
 
 
+#: How long an SQLite writer waits for a busy database (e.g. during a VACUUM) before
+#: failing with "database is locked".
+SQLITE_BUSY_TIMEOUT_S = 60.0
+
+
 def make_engine(url: str) -> Engine:
     if url.startswith("sqlite:///"):
         db_path = url.removeprefix("sqlite:///")
         if db_path != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        engine = create_engine(url, connect_args={"check_same_thread": False})
+        engine = create_engine(
+            url, connect_args={"check_same_thread": False, "timeout": SQLITE_BUSY_TIMEOUT_S}
+        )
 
         @event.listens_for(engine, "connect")
         def _sqlite_pragmas(dbapi_conn, _record):  # type: ignore[no-untyped-def]

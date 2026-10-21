@@ -1,21 +1,25 @@
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from ..deps import BarServiceDep, MarketServiceDep, SymbolServiceDep
 from ..intervals import resolve_interval
 from ..providers.base import ProviderError
 from ..services.performance import compute_performance
+from ._cache_headers import set_max_age, set_no_cache
 
 router = APIRouter(tags=["market"])
 
 MAX_QUOTE_SYMBOLS = 100
 MAX_NEWS_SYMBOLS = 10
+SLOW_MAX_AGE_S = 600  # fundamentals, events
+NEWS_MAX_AGE_S = 120
 
 
 @router.get("/quotes")
 def quotes(
+    response: Response,
     market: MarketServiceDep,
     symbols: Annotated[str, Query(min_length=1, max_length=2000)],
 ) -> list[dict[str, Any]]:
@@ -24,7 +28,9 @@ def quotes(
         raise HTTPException(status_code=422, detail="symbols must not be empty")
     if len(parsed) > MAX_QUOTE_SYMBOLS:
         raise HTTPException(status_code=422, detail=f"at most {MAX_QUOTE_SYMBOLS} symbols")
-    return market.quotes(parsed)
+    out = market.quotes(parsed)
+    set_no_cache(response)
+    return out
 
 
 def _parse_symbols(symbols: str, limit: int) -> list[str]:
@@ -39,19 +45,25 @@ def _parse_symbols(symbols: str, limit: int) -> list[str]:
 # Declared before any /quotes/{...} route.
 @router.get("/quotes/extended")
 def extended_quotes(
+    response: Response,
     market: MarketServiceDep,
     symbols: Annotated[str, Query(min_length=1, max_length=2000)],
 ) -> list[dict[str, Any]]:
-    return market.extended_quotes(_parse_symbols(symbols, MAX_QUOTE_SYMBOLS))
+    out = market.extended_quotes(_parse_symbols(symbols, MAX_QUOTE_SYMBOLS))
+    set_no_cache(response)
+    return out
 
 
 @router.get("/events/{symbol}")
-def events(market: MarketServiceDep, symbol: str) -> dict[str, Any]:
-    return market.events(symbol)
+def events(response: Response, market: MarketServiceDep, symbol: str) -> dict[str, Any]:
+    out = market.events(symbol)
+    set_max_age(response, SLOW_MAX_AGE_S)
+    return out
 
 
 @router.get("/news")
 def news_multi(
+    response: Response,
     market: MarketServiceDep,
     symbols: Annotated[str, Query(min_length=1, max_length=500)],
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
@@ -75,25 +87,33 @@ def news_multi(
     if not ok and failure is not None:
         raise failure
     out = sorted(merged.values(), key=lambda n: (n.get("time") is None, -(n.get("time") or 0)))
+    set_max_age(response, NEWS_MAX_AGE_S)
     return out[:limit]
 
 
 @router.get("/news/{symbol}")
 def news(
+    response: Response,
     market: MarketServiceDep,
     symbol: str,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
-    return market.news(symbol, limit)
+    items = market.news(symbol, limit)
+    set_max_age(response, NEWS_MAX_AGE_S)
+    return items
 
 
 @router.get("/fundamentals/{symbol}")
-def fundamentals(market: MarketServiceDep, symbol: str) -> dict[str, Any]:
-    return market.fundamentals(symbol)
+def fundamentals(response: Response, market: MarketServiceDep, symbol: str) -> dict[str, Any]:
+    out = market.fundamentals(symbol)
+    set_max_age(response, SLOW_MAX_AGE_S)
+    return out
 
 
 @router.get("/performance/{symbol}")
-def performance(bars: BarServiceDep, symbols: SymbolServiceDep, symbol: str) -> dict[str, Any]:
+def performance(
+    response: Response, bars: BarServiceDep, symbols: SymbolServiceDep, symbol: str
+) -> dict[str, Any]:
     """1W..5Y price returns from cached daily bars (calendar offsets, exchange tz)."""
     sym = symbol.upper()
     res = bars.get_bars(sym, resolve_interval("1d"), prepost=False, limit=1900, adjusted=False)
@@ -107,4 +127,5 @@ def performance(bars: BarServiceDep, symbols: SymbolServiceDep, symbol: str) -> 
         ZoneInfo(tz)
     except (ZoneInfoNotFoundError, ValueError):
         tz = "UTC"
+    set_no_cache(response)
     return {"symbol": sym, **compute_performance(res.bars, tz)}

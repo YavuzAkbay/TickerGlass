@@ -6,7 +6,7 @@
  */
 import { errorMessage, getJson } from '../api/client';
 import type { Quote } from '../api/types';
-import { mergeExtended, mergeSnapshot, mergeTick } from './merge';
+import { FRESH_EXT_TICK_MS, FRESH_TICK_MS, mergeExtended, mergeSnapshot, mergeTick } from './merge';
 import { useQuoteStore } from './store';
 import type { ExtendedQuote, LiveQuote, StreamStatus, TickFrame } from './types';
 
@@ -17,6 +17,14 @@ export const PING_MS = 25_000;
 export const STABLE_MS = 10_000;
 export const POLL_MS = 15_000;
 export const REFRESH_MS = 60_000;
+/** A snapshot this recent is reused when a symbol is subscribed again. */
+export const SNAP_FRESH_MS = 15_000;
+/** Symbols with live ticks only refetch a snapshot (prevClose, marketState) this often. */
+export const META_REFRESH_MS = 600_000;
+/** Quotes of released symbols are kept this long for quick re-subscription. */
+export const RETAIN_MS = 300_000;
+/** At most this many released symbols are kept (oldest released go first). */
+export const MAX_RETAINED = 500;
 export const BATCH_MS = 50;
 export const BACKOFF_MS = [1000, 2000, 4000, 8000, 16_000, 30_000] as const;
 export const MAX_WS_SYMBOLS = 200;
@@ -86,6 +94,14 @@ export class QuoteStream {
   private timers: ReturnType<typeof setInterval>[] = [];
   private pendingSnap = new Set<string>();
   private pendingExt = new Set<string>();
+  /** When each symbol's last `/quotes` / `/quotes/extended` snapshot arrived (ms). */
+  private snapAt = new Map<string, number>();
+  private extAt = new Map<string, number>();
+  /** When the last regular / extended tick arrived over the socket (ms, local clock). */
+  private tickAt = new Map<string, number>();
+  private extTickAt = new Map<string, number>();
+  /** When a symbol lost its last subscriber; drives retention. */
+  private releasedAt = new Map<string, number>();
   private running = false;
   private onVisibility: (() => void) | null = null;
   private eventSubs = new Set<{ topics: string[]; sub: EventSubscription }>();
@@ -99,15 +115,18 @@ export class QuoteStream {
   /** Subscribe; the returned function releases after a short grace period. */
   subscribe(symbols: string[], opts: { ext?: boolean } = {}): () => void {
     const syms = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+    if (syms.length) this.prune(); // retention is enforced before reuse
+    const now = this.now();
     for (const s of syms) {
       const n = this.refs.get(s) ?? 0;
       this.refs.set(s, n + 1);
       this.recency.set(s, ++this.seq);
-      if (n === 0) this.pendingSnap.add(s);
+      this.releasedAt.delete(s);
+      if (n === 0 && this.needsSnapshot(s, now)) this.pendingSnap.add(s);
       if (opts.ext) {
         const e = this.extRefs.get(s) ?? 0;
         this.extRefs.set(s, e + 1);
-        if (e === 0) this.pendingExt.add(s);
+        if (e === 0 && this.needsExtended(s, now)) this.pendingExt.add(s);
       }
     }
     if (!syms.length) return () => undefined;
@@ -148,6 +167,8 @@ export class QuoteStream {
     this.refs.clear();
     this.extRefs.clear();
     this.eventSubs.clear();
+    for (const m of [this.snapAt, this.extAt, this.tickAt, this.extTickAt, this.releasedAt])
+      m.clear();
   }
 
   // ------------------------------------------------------------ internals
@@ -173,6 +194,7 @@ export class QuoteStream {
       else {
         this.refs.delete(s);
         this.recency.delete(s);
+        this.releasedAt.set(s, this.now());
       }
       if (ext) {
         const e = (this.extRefs.get(s) ?? 0) - 1;
@@ -228,7 +250,7 @@ export class QuoteStream {
     this.pendingSnap.clear();
     this.pendingExt.clear();
     ws?.close();
-    useQuoteStore.setState({ quotes: {}, missing: {} });
+    this.prune(); // quotes stay for quick re-subscription; only the retention bounds apply
     this.setStatus('idle');
   }
 
@@ -318,6 +340,8 @@ export class QuoteStream {
       const t = frame as unknown as TickFrame;
       if (typeof t.symbol !== 'string' || typeof t.price !== 'number') return;
       const sym = t.symbol.toUpperCase();
+      const extTick = t.marketHours === 0 || t.marketHours === 2 || t.marketHours === 3;
+      (extTick ? this.extTickAt : this.tickAt).set(sym, this.now());
       useQuoteStore.setState((s) => ({
         quotes: { ...s.quotes, [sym]: mergeTick(s.quotes[sym], { ...t, symbol: sym }) },
         ...(s.status === 'connecting' || s.status === 'fallback-polling'
@@ -409,24 +433,70 @@ export class QuoteStream {
     void this.fetchQuotes(targets);
   }
 
-  /** Every 60 s (and on reconnect / when the page becomes visible). */
+  /**
+   * Every 60 s (and on reconnect / when the page becomes visible): symbols
+   * without a fresh tick, plus ticking ones whose snapshot is over 10 min old.
+   */
   private refresh(): void {
     this.prune();
     if (!this.visible) return;
-    void this.fetchQuotes([...this.refs.keys()]);
-    void this.fetchExtended([...this.extRefs.keys()]);
+    const now = this.now();
+    const due =
+      (at: Map<string, number>, ticks: Map<string, number>, fresh: number) => (s: string) => {
+        const t = ticks.get(s);
+        if (t === undefined || now - t >= fresh) return true;
+        return now - (at.get(s) ?? -Infinity) > META_REFRESH_MS;
+      };
+    void this.fetchQuotes(
+      [...this.refs.keys()].filter(due(this.snapAt, this.tickAt, FRESH_TICK_MS)),
+    );
+    void this.fetchExtended(
+      [...this.extRefs.keys()].filter(due(this.extAt, this.extTickAt, FRESH_EXT_TICK_MS)),
+    );
   }
 
-  /** Drop quotes of symbols nobody is subscribed to any more. */
+  /** A re-subscribed symbol needs a snapshot unless a recent one or a live tick covers it. */
+  private needsSnapshot(s: string, now: number): boolean {
+    if (!useQuoteStore.getState().quotes[s]) return true;
+    return (
+      now - (this.snapAt.get(s) ?? -Infinity) > SNAP_FRESH_MS &&
+      now - (this.tickAt.get(s) ?? -Infinity) >= FRESH_TICK_MS
+    );
+  }
+
+  private needsExtended(s: string, now: number): boolean {
+    return (
+      now - (this.extAt.get(s) ?? -Infinity) > SNAP_FRESH_MS &&
+      now - (this.extTickAt.get(s) ?? -Infinity) >= FRESH_EXT_TICK_MS
+    );
+  }
+
+  /** Drop released symbols after RETAIN_MS, and the oldest released beyond MAX_RETAINED. */
   private prune(): void {
-    useQuoteStore.setState((s) => {
-      const stale = Object.keys(s.quotes).filter((k) => !this.refs.has(k));
-      const staleMissing = Object.keys(s.missing).filter((k) => !this.refs.has(k));
-      if (!stale.length && !staleMissing.length) return s;
-      const quotes = { ...s.quotes };
-      const missing = { ...s.missing };
-      for (const k of stale) delete quotes[k];
-      for (const k of staleMissing) delete missing[k];
+    const now = this.now();
+    const drop = new Set<string>();
+    const kept: [string, number][] = [];
+    for (const [s, at] of this.releasedAt) {
+      if (this.refs.has(s)) continue;
+      if (now - at >= RETAIN_MS) drop.add(s);
+      else kept.push([s, at]);
+    }
+    if (kept.length > MAX_RETAINED) {
+      kept.sort((a, b) => a[1] - b[1]);
+      for (const [s] of kept.slice(0, kept.length - MAX_RETAINED)) drop.add(s);
+    }
+    if (!drop.size) return;
+    for (const s of drop) {
+      for (const m of [this.snapAt, this.extAt, this.tickAt, this.extTickAt, this.releasedAt])
+        m.delete(s);
+    }
+    useQuoteStore.setState((st) => {
+      const quotes = { ...st.quotes };
+      const missing = { ...st.missing };
+      for (const s of drop) {
+        delete quotes[s];
+        delete missing[s];
+      }
       return { quotes, missing };
     });
   }
@@ -449,6 +519,7 @@ export class QuoteStream {
             for (const q of list) {
               const sym = q.symbol.toUpperCase();
               quotes[sym] = mergeSnapshot(quotes[sym], { ...q, symbol: sym }, now);
+              this.snapAt.set(sym, now);
               delete missing[sym];
             }
             const got = new Set(list.map((q) => q.symbol.toUpperCase()));
@@ -475,6 +546,7 @@ export class QuoteStream {
             for (const e of list) {
               const sym = e.symbol.toUpperCase();
               quotes[sym] = mergeExtended(quotes[sym], { ...e, symbol: sym }, now);
+              this.extAt.set(sym, now);
             }
             return { quotes, error: null };
           });

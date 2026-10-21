@@ -1,6 +1,7 @@
 import asyncio
 import math
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -14,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .db import make_engine, run_migrations
-from .live import LiveHub, LiveSource, Poller, provider_poller
+from .live import LiveHub, LiveSource, Poller, market_poller
 from .notifications.dispatcher import Dispatcher
 from .providers.base import (
     MarketDataProvider,
@@ -23,9 +24,11 @@ from .providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
+from .providers.guard import GuardedProvider, UpstreamGuard
 from .routes import (
     alerts,
     bars,
+    cache,
     drawings,
     layouts,
     live,
@@ -38,8 +41,10 @@ from .routes import (
     user_settings,
     watchlists,
 )
-from .services.bars import BarService
+from .services.bars import BarService, TailPolicy
+from .services.maintenance import CacheMaintenance
 from .services.market import MarketService
+from .services.stats import CacheStats
 from .services.symbols import SymbolService
 from .settings import Settings, get_settings
 
@@ -73,13 +78,52 @@ def create_app(
         if provider is None:
             from .providers.yahoo import YahooProvider
 
-            prov: MarketDataProvider = YahooProvider()
+            inner: MarketDataProvider = YahooProvider(
+                retries=settings.upstream_retries,
+                rate_limit_retries=settings.upstream_rate_limit_retries,
+                quote_v7_retry_s=settings.quote_v7_retry_s,
+            )
         else:
-            prov = provider
+            inner = provider
+        # Every upstream call (services and the live poller) goes through one guard.
+        stats = CacheStats()
+        guard = UpstreamGuard(
+            rate_per_min=settings.upstream_rate_per_min,
+            burst=settings.upstream_burst,
+            cooldown_initial_s=settings.upstream_cooldown_initial_s,
+            cooldown_max_s=settings.upstream_cooldown_max_s,
+            unavailable_cooldown_s=settings.upstream_unavailable_cooldown_s,
+        )
+        prov = GuardedProvider(inner, guard, stats)
+        app.state.cache_stats = stats
+        app.state.upstream_guard = guard
         app.state.provider = prov
-        app.state.bar_service = BarService(engine, prov)
-        app.state.symbol_service = SymbolService(engine, prov)
-        app.state.market_service = MarketService(prov)
+        # Background refreshes of stale cache entries, shared by every in-memory cache.
+        refresher = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cache-refresh")
+        app.state.cache_refresher = refresher
+        app.state.symbol_service = SymbolService(
+            engine,
+            prov,
+            settings=settings,
+            stats=stats,
+            refresher=refresher,
+            background=guard.background,
+        )
+        # Bar tails follow the market session of the symbol's stored metadata.
+        app.state.bar_service = BarService(
+            engine,
+            prov,
+            stats=stats,
+            session_lookup=app.state.symbol_service.cached_info,
+            policy=TailPolicy.from_settings(settings),
+        )
+        app.state.market_service = MarketService(
+            prov,
+            settings=settings,
+            stats=stats,
+            refresher=refresher,
+            background=guard.background,
+        )
         source = live_source
         if source is None:
             from .providers.yahoo_live import YahooLiveSource
@@ -87,7 +131,9 @@ def create_app(
             source = YahooLiveSource()
         app.state.live_hub = LiveHub(
             source,
-            live_poller if live_poller is not None else provider_poller(prov),
+            live_poller
+            if live_poller is not None
+            else market_poller(app.state.market_service, guard),
             poll_after_s=settings.live_poll_after_s,
             poll_interval_s=settings.live_poll_interval_s,
             poll_closed_interval_s=settings.live_poll_closed_interval_s,
@@ -98,9 +144,16 @@ def create_app(
         dispatcher = Dispatcher(app.state.sessionmaker, settings, app.state.live_hub)
         app.state.dispatcher = dispatcher
         dispatcher.start()
+        maintenance = CacheMaintenance(engine, app.state.bar_service, settings, stats)
+        app.state.cache_maintenance = maintenance
+        if settings.cache_maintenance_enabled:
+            maintenance.start()
         yield
+        await maintenance.stop()
         await dispatcher.stop()
         await app.state.live_hub.close()
+        # Queued refreshes are dropped; a running one finishes on its own thread.
+        refresher.shutdown(wait=False, cancel_futures=True)
         engine.dispose()
 
     app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
@@ -143,6 +196,7 @@ def create_app(
         return {"status": "ok", "version": __version__}
 
     api.include_router(bars.router)
+    api.include_router(cache.router)
     api.include_router(symbols.router)
     api.include_router(market.router)
     api.include_router(layouts.router)
