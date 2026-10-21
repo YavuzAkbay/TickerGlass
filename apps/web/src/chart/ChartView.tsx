@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { DARK_THEME, LIGHT_THEME } from '@investopen/engine';
 import { ChartError } from './ChartError';
 import { feed } from './feed';
+import { PerfOverlay } from './PerfOverlay';
+import { dropComputeTimes, perfEnabled } from './perf';
 import { PRIMARY_CHART_ID, createChartSession, type ChartSession } from './session';
 import { attachAlerts } from '../alerts/attach';
 import { attachEvents } from '../events/attach';
@@ -29,6 +31,9 @@ import {
 import { attachSync } from '../layout/sync';
 import { takeSeed } from '../layout/seeds';
 import { legendOf, pickChartView } from '../store/chartView';
+
+/** Profiling readout and performance measures (`?perf=1`). */
+const PERF = perfEnabled();
 
 /**
  * Dev/e2e hook: runs `code` as a user-script body in a fresh sandbox worker and
@@ -95,6 +100,7 @@ export function ChartView({ id }: { id: string }) {
     const { chart } = s;
     registerSession(s);
     setSession(s);
+    if (PERF) chart.setProfiling(true);
     // Expose for debugging and e2e tests (`window.chart` is mirrored by the chart store).
     const charts = ((window as unknown as { charts?: Record<string, unknown> }).charts ??= {});
     charts[id] = chart;
@@ -123,6 +129,7 @@ export function ChartView({ id }: { id: string }) {
     return () => {
       offs.forEach((off) => off());
       delete charts[id];
+      dropComputeTimes(id);
       unregisterSession(id);
       setSession(null);
       s.destroy();
@@ -187,6 +194,7 @@ export function ChartView({ id }: { id: string }) {
     >
       <div ref={hostRef} className="chart-host" />
       {session ? <ChartError session={session} /> : null}
+      {PERF && session ? <PerfOverlay session={session} /> : null}
       {session ? <CompareLegends session={session} /> : null}
       {session ? <IndicatorLegends session={session} /> : null}
       {active ? (

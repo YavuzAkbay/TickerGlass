@@ -5,11 +5,19 @@ import type { History, PairStreaming, SeriesVar, Streaming, Ta, WeightedStreamin
  * right before stepping a bar that may be re-run (the last bar) and `restore`
  * before re-running it. One saved slot per primitive is enough because only
  * the last bar is ever re-run.
+ *
+ * `checkpoint` is the full-copy variant for re-running several bars (the
+ * chart bars of a forming higher-timeframe bar): it copies the whole state
+ * and returns a function that puts that copy back (any number of times).
  */
 export interface Stateful {
   save(): void;
   restore(): void;
+  checkpoint(): Rewind;
 }
+
+/** Puts a checkpointed state back. */
+export type Rewind = () => void;
 
 /** Fixed-size ring buffer whose save/restore is O(1). */
 class Ring implements Stateful {
@@ -56,6 +64,16 @@ class Ring implements Stateful {
     this.count = this.savedCount;
     this.buf[this.head] = this.savedSlot;
   }
+
+  checkpoint(): Rewind {
+    const buf = this.buf.slice();
+    const { head, count } = this;
+    return () => {
+      this.buf.set(buf);
+      this.head = head;
+      this.count = count;
+    };
+  }
 }
 
 function checkLength(length: number): number {
@@ -94,6 +112,15 @@ class Sum implements Streaming, Stateful {
     this.ring.restore();
     this.total = this.savedTotal;
   }
+
+  checkpoint(): Rewind {
+    const ring = this.ring.checkpoint();
+    const total = this.total;
+    return () => {
+      ring();
+      this.total = total;
+    };
+  }
 }
 
 class Sma implements Streaming, Stateful {
@@ -113,6 +140,10 @@ class Sma implements Streaming, Stateful {
 
   restore(): void {
     this.sum.restore();
+  }
+
+  checkpoint(): Rewind {
+    return this.sum.checkpoint();
   }
 }
 
@@ -148,6 +179,15 @@ class Smoothed implements Streaming, Stateful {
     this.seed.restore();
     this.prev = this.savedPrev;
   }
+
+  checkpoint(): Rewind {
+    const seed = this.seed.checkpoint();
+    const prev = this.prev;
+    return () => {
+      seed();
+      this.prev = prev;
+    };
+  }
 }
 
 /** Population standard deviation, recomputed over the window (stable). */
@@ -178,6 +218,10 @@ class Stdev implements Streaming, Stateful {
 
   restore(): void {
     this.ring.restore();
+  }
+
+  checkpoint(): Rewind {
+    return this.ring.checkpoint();
   }
 }
 
@@ -255,6 +299,20 @@ class Extreme implements Streaming, Stateful {
     this.seen = s.seen;
     this.recorded = false;
   }
+
+  checkpoint(): Rewind {
+    const idx = this.idx.slice();
+    const val = this.val.slice();
+    const { head, tail, seen } = this;
+    return () => {
+      this.idx.set(idx);
+      this.val.set(val);
+      this.head = head;
+      this.tail = tail;
+      this.seen = seen;
+      this.recorded = false;
+    };
+  }
 }
 
 /**
@@ -303,6 +361,16 @@ class Wma implements Streaming, Stateful {
     this.s = this.savedS;
     this.w = this.savedW;
   }
+
+  checkpoint(): Rewind {
+    const ring = this.ring.checkpoint();
+    const { s, w } = this;
+    return () => {
+      ring();
+      this.s = s;
+      this.w = w;
+    };
+  }
 }
 
 /** Volume-weighted moving average: sum(x * w) / sum(w) over `length` bars. */
@@ -328,6 +396,15 @@ class Vwma implements WeightedStreaming, Stateful {
   restore(): void {
     this.xw.restore();
     this.w.restore();
+  }
+
+  checkpoint(): Rewind {
+    const xw = this.xw.checkpoint();
+    const w = this.w.checkpoint();
+    return () => {
+      xw();
+      w();
+    };
   }
 }
 
@@ -360,6 +437,10 @@ class Dev implements Streaming, Stateful {
   restore(): void {
     this.ring.restore();
   }
+
+  checkpoint(): Rewind {
+    return this.ring.checkpoint();
+  }
 }
 
 /** Running total. */
@@ -379,6 +460,13 @@ class Cum implements Streaming, Stateful {
 
   restore(): void {
     this.total = this.savedTotal;
+  }
+
+  checkpoint(): Rewind {
+    const total = this.total;
+    return () => {
+      this.total = total;
+    };
   }
 }
 
@@ -408,6 +496,10 @@ abstract class Windowed implements Streaming, Stateful {
 
   restore(): void {
     this.ring.restore();
+  }
+
+  checkpoint(): Rewind {
+    return this.ring.checkpoint();
   }
 }
 
@@ -572,6 +664,15 @@ class Correlation implements PairStreaming, Stateful {
     this.xs.restore();
     this.ys.restore();
   }
+
+  checkpoint(): Rewind {
+    const xs = this.xs.checkpoint();
+    const ys = this.ys.checkpoint();
+    return () => {
+      xs();
+      ys();
+    };
+  }
 }
 
 class HistoryBuf implements History, Stateful {
@@ -596,6 +697,10 @@ class HistoryBuf implements History, Stateful {
   restore(): void {
     this.ring.restore();
   }
+
+  checkpoint(): Rewind {
+    return this.ring.checkpoint();
+  }
 }
 
 class Vars<T extends Record<string, number>> implements Stateful {
@@ -611,6 +716,13 @@ class Vars<T extends Record<string, number>> implements Stateful {
 
   restore(): void {
     Object.assign(this.value, this.saved);
+  }
+
+  checkpoint(): Rewind {
+    const copy = { ...this.value };
+    return () => {
+      Object.assign(this.value, copy);
+    };
   }
 }
 
@@ -682,5 +794,13 @@ export class TaScope {
 
   restore(): void {
     for (const s of this.states) s.restore();
+  }
+
+  /** Full copy of every primitive's state (see `Stateful.checkpoint`). */
+  checkpoint(): Rewind {
+    const rewinds = this.states.map((s) => s.checkpoint());
+    return () => {
+      for (const r of rewinds) r();
+    };
   }
 }

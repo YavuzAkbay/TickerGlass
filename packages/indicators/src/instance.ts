@@ -1,7 +1,7 @@
 import type { BarStore } from './bars';
 import type { AnyIndicatorDefinition } from './registry';
 import { isOutputRef, isValueOutput, resolveInputs } from './resolve';
-import { TaScope } from './ta';
+import { TaScope, type Rewind } from './ta';
 import {
   EXTERNAL_SOURCE_PREFIX,
   PRICE_SOURCES,
@@ -103,6 +103,12 @@ export class IndicatorInstance {
   length = 0;
   status: InstanceStatus = { state: 'ok' };
   inputs: InputValueMap;
+  /**
+   * Bar index to checkpoint the full state at while stepping (the first chart
+   * bar of a forming higher-timeframe bar this instance reads), so
+   * `computeFrom` can re-run from there. Infinity: none (no copying cost).
+   */
+  checkpointAt = Infinity;
 
   private scope: TaScope | null = null;
   private step: StepFn | null = null;
@@ -119,6 +125,8 @@ export class IndicatorInstance {
    * index that actually differs afterwards.
    */
   private shown: Map<string, UndoEntry> | null = null;
+  /** Full state before stepping bar `index` (see `checkpointAt`). */
+  private mark: { index: number; rewind: Rewind } | null = null;
 
   constructor(
     readonly def: AnyIndicatorDefinition,
@@ -141,12 +149,14 @@ export class IndicatorInstance {
     this.inputs = resolveInputs(this.def, inputs);
     this.ctx.inputs = this.inputs as InputValues<InputsSchema>;
     this.step = null;
+    this.mark = null;
   }
 
   /** Bars context for the next `computeAll` (a change needs a full recompute). */
   setEnv(env: Readonly<BarsEnv>): void {
     this.ctx.env = env;
     this.step = null;
+    this.mark = null;
   }
 
   get env(): Readonly<BarsEnv> {
@@ -160,6 +170,7 @@ export class IndicatorInstance {
     this.length = n;
     this.status = { state: 'ok' };
     this.undo.length = 0;
+    this.mark = null;
     try {
       this.bind(bars, refs);
       this.scope = new TaScope();
@@ -169,14 +180,57 @@ export class IndicatorInstance {
         env: this.ctx.env,
       });
       this.scope.open = false;
-      for (let i = 0; i < n; i++) {
-        if (i === n - 1) this.save();
-        this.runBar(i);
-      }
-      this.shown = null;
+      this.runBars(0, n);
     } catch (err) {
       this.fail(err);
     }
+  }
+
+  /**
+   * Inputs of bars >= `from` changed (bars before it did not): re-run from
+   * the checkpoint when it is at or before `from`, else compute every bar.
+   * Gives the same outputs as `computeAll`. Returns the first index re-run.
+   */
+  computeFrom(bars: BarStore, from: number, refs: RefResolver = NO_REFS): number {
+    const n = bars.length;
+    const mark = this.mark;
+    // Retroactive writes of past bars are only undone for the last bar.
+    if (
+      !mark ||
+      mark.index > from ||
+      mark.index >= n ||
+      !this.step ||
+      !this.scope ||
+      this.status.state === 'error' ||
+      this.def.repaints
+    ) {
+      this.computeAll(bars, refs);
+      return 0;
+    }
+    this.ensureCapacity(n);
+    this.length = n;
+    this.undo.length = 0;
+    this.shown = null;
+    try {
+      this.bind(bars, refs);
+      mark.rewind();
+      this.runBars(mark.index, n);
+    } catch (err) {
+      this.fail(err);
+      return 0;
+    }
+    return mark.index;
+  }
+
+  /** Step bars [start, n): checkpoint at `checkpointAt`, snapshot before the last. */
+  private runBars(start: number, n: number): void {
+    for (let i = start; i < n; i++) {
+      if (i === this.checkpointAt && this.mark?.index !== i)
+        this.mark = { index: i, rewind: this.scope!.checkpoint() };
+      if (i === n - 1) this.save();
+      this.runBar(i);
+    }
+    this.shown = null;
   }
 
   /**
@@ -203,6 +257,9 @@ export class IndicatorInstance {
       this.bind(bars, refs);
       if (kind === 'update') this.restore();
       else this.save();
+      // State before the last bar (restored above on an update) is final.
+      if (n - 1 === this.checkpointAt && this.mark?.index !== n - 1)
+        this.mark = { index: n - 1, rewind: this.scope.checkpoint() };
       this.runBar(n - 1);
     } catch (err) {
       this.shown = null;
@@ -277,6 +334,7 @@ export class IndicatorInstance {
     const message = err instanceof Error ? err.message : String(err);
     this.status = { state: 'error', message };
     this.undo.length = 0;
+    this.mark = null;
     for (const v of Object.values(this.values)) v.fill(NaN);
     for (const c of Object.values(this.colors)) c.fill(0);
   }

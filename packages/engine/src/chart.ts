@@ -175,6 +175,23 @@ function chartErrorInfo(err: unknown, message?: string): ChartErrorInfo {
   return info;
 }
 
+/** Timing of the chart's recent frames (`Chart.getRenderStats`). */
+export interface RenderStats {
+  /** Frames rendered since the chart was created. */
+  frames: number;
+  /** Duration of the last frame (layout + main + overlay), ms. */
+  lastFrameMs: number;
+  /** Mean duration of the last (up to) 60 frames, ms. */
+  avgFrameMs: number;
+  /** Canvas layers redrawn in the last frame. */
+  layersDrawn: number;
+  /** Bars in the visible range the last full redraw drew (0 for overlay-only frames). */
+  barsDrawn: number;
+}
+
+/** Frames averaged by `RenderStats.avgFrameMs`. */
+const STATS_WINDOW = 60;
+
 export interface ChartEvents extends StudyEvents, DrawingEvents {
   contextMenu: ChartPoint;
   /** Live update of the last bar (or a newly appended one). */
@@ -334,6 +351,13 @@ export class Chart implements StudyApi, DrawingApi {
   private dpr = 1;
   private invalid = 0;
   private frame = 0;
+  /** Recent frame durations (ring of STATS_WINDOW) and last-frame counters. */
+  private readonly frameMs = new Float64Array(STATS_WINDOW);
+  private frames = 0;
+  private layersDrawn = 0;
+  private barsDrawn = 0;
+  /** Emit `performance.measure` entries per frame (see `setProfiling`). */
+  private profiling = false;
   private marks: TimeMark[] = [];
   private resizeObserver: ResizeObserver;
   private countdownTimer: ReturnType<typeof setInterval>;
@@ -1501,10 +1525,13 @@ export class Chart implements StudyApi, DrawingApi {
 
   destroy(): void {
     this.destroyed = true;
+    // A load or history page still in flight must not subscribe or apply bars afterwards.
+    this.loadGen++;
     cancelAnimationFrame(this.frame);
     clearInterval(this.countdownTimer);
     this.resizeObserver.disconnect();
     this.unsubscribe?.();
+    this.unsubscribe = null;
     this.controller.destroy();
     this.events.clear();
     this.root.remove();
@@ -2039,12 +2066,41 @@ export class Chart implements StudyApi, DrawingApi {
   // ---------------------------------------------------------------- rendering
 
   private flush(): void {
+    const start = performance.now();
     this.frame = 0;
     const level = this.invalid;
     this.invalid = 0;
     if (level & INVALIDATE_LAYOUT) this.layout();
-    if (level & (INVALIDATE_LAYOUT | INVALIDATE_MAIN)) this.renderMain();
+    const main = (level & (INVALIDATE_LAYOUT | INVALIDATE_MAIN)) !== 0;
+    if (main) this.renderMain();
     this.renderOverlay();
+    const end = performance.now();
+    this.frameMs[this.frames % STATS_WINDOW] = end - start;
+    this.frames++;
+    // Per visible pane: bg, main, axis (full redraw) and overlay, axis overlay; plus the time axis.
+    const panes = this.visiblePanes().length;
+    this.layersDrawn = (main ? panes * 3 + 1 : 0) + panes * 2 + 1;
+    if (!main) this.barsDrawn = 0;
+    if (this.profiling) performance.measure('investopen:render', { start, end });
+  }
+
+  /** Timing of recent frames, for profiling. Cheap: reads a few counters. */
+  getRenderStats(): RenderStats {
+    const n = Math.min(this.frames, STATS_WINDOW);
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += this.frameMs[i]!;
+    return {
+      frames: this.frames,
+      lastFrameMs: this.frames ? this.frameMs[(this.frames - 1) % STATS_WINDOW]! : 0,
+      avgFrameMs: n ? sum / n : 0,
+      layersDrawn: this.layersDrawn,
+      barsDrawn: this.barsDrawn,
+    };
+  }
+
+  /** Record each frame as a `performance.measure` entry ("investopen:render"). Off by default. */
+  setProfiling(on: boolean): void {
+    this.profiling = on;
   }
 
   private layout(): void {
@@ -2138,6 +2194,7 @@ export class Chart implements StudyApi, DrawingApi {
     const { from, to } = this.timeScale.visibleRange();
     const t = this.theme;
     const paneW = this.paneWidth;
+    this.barsDrawn = Math.max(0, to - from + 1);
 
     if (from !== this.lastRange.from || to !== this.lastRange.to) {
       this.lastRange = { from, to };
