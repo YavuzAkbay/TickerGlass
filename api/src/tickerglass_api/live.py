@@ -12,7 +12,9 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, Protocol
 
-from .providers.base import MarketDataProvider
+from .providers.base import MarketDataProvider, RateLimited
+from .providers.guard import UpstreamGuard
+from .services.market import MarketService
 
 log = logging.getLogger(__name__)
 
@@ -81,21 +83,44 @@ def normalize_message(msg: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _poll_result(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        str(row["symbol"]): {
+            "price": row.get("last"),
+            "change": row.get("change"),
+            "changePercent": row.get("changePercent"),
+            "dayVolume": row.get("volume"),
+        }
+        for row in rows
+        if row.get("symbol")
+    }
+
+
 def provider_poller(provider: MarketDataProvider) -> Poller:
     """Poll via the provider's batch quotes (one upstream call, shared rate limiter)."""
 
     async def poll(symbols: list[str]) -> dict[str, dict[str, Any]]:
-        rows = await asyncio.to_thread(provider.quotes, symbols)
-        return {
-            str(row["symbol"]): {
-                "price": row.get("last"),
-                "change": row.get("change"),
-                "changePercent": row.get("changePercent"),
-                "dayVolume": row.get("volume"),
-            }
-            for row in rows
-            if row.get("symbol")
-        }
+        return _poll_result(await asyncio.to_thread(provider.quotes, symbols))
+
+    return poll
+
+
+def market_poller(market: MarketService, guard: UpstreamGuard, *, max_age: float) -> Poller:
+    """Poll through the quote cache, so a poll and `/api/quotes` within `max_age` seconds
+    share one upstream request. Polls run in background mode: they yield to interactive
+    requests when the upstream budget runs low, and a refusal just skips the round."""
+
+    def fetch(symbols: list[str]) -> list[dict[str, Any]]:
+        with guard.background():
+            return market.quotes(symbols, max_age=max_age)
+
+    async def poll(symbols: list[str]) -> dict[str, dict[str, Any]]:
+        try:
+            rows = await asyncio.to_thread(fetch, symbols)
+        except RateLimited as exc:
+            log.debug("poll skipped for %d symbol(s): %s", len(symbols), exc)
+            return {}
+        return _poll_result(rows)
 
     return poll
 

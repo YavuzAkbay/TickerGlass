@@ -269,8 +269,9 @@ class GuardedProvider:
         return self._run("search", 1, lambda: self._inner.search(query, limit))
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
-        # yf.download fetches each ticker separately.
-        return self._run("quotes", len(symbols), lambda: self._inner.quotes(symbols))
+        # One v7 request per 50 symbols (the rarely used download fallback costs more).
+        cost = math.ceil(len(symbols) / V7_CHUNK)
+        return self._run("quotes", cost, lambda: self._inner.quotes(symbols))
 
     def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
         cost = math.ceil(len(symbols) / V7_CHUNK)
