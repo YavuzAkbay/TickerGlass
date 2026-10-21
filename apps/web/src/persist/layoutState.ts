@@ -5,8 +5,8 @@
  * The client owns this shape; bump LAYOUT_SCHEMA_VERSION and add an upgrade
  * step when it changes.
  */
-import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@investopen/engine';
-import { resolveIndicatorId } from '@investopen/indicators';
+import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@tickerglass/engine';
+import { resolveIndicatorId } from '@tickerglass/indicators';
 import type { StoreApi } from 'zustand';
 import { PRIMARY_CHART_ID } from '../chart/ids';
 import { useHistory, type HistoryState } from '../commands/history';

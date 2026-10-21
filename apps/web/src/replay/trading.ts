@@ -1,4 +1,4 @@
-import type { ChartMarker, ChartPriceLine } from '@investopen/engine';
+import type { ChartMarker, ChartPriceLine } from '@tickerglass/engine';
 import { create } from 'zustand';
 import type { ReplaySession } from './controller';
 import {

@@ -5,7 +5,7 @@ import type {
   DeepPartial,
   LegendOptions,
   LegendTitleMode,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { createActiveFacade } from '../chart/facade';
 import { normalizeSymbol, useAppStore } from './app';
 

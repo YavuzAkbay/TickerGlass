@@ -1,6 +1,6 @@
 /** Fired-alert markers and price-alert lines on the chart (docs/alerts.md §5.5). */
-import type { Alert, AlertLogEntry } from '@investopen/alerts';
-import { canonicalSymbol, type ChartMarker, type ChartPriceLine } from '@investopen/engine';
+import type { Alert, AlertLogEntry } from '@tickerglass/alerts';
+import { canonicalSymbol, type ChartMarker, type ChartPriceLine } from '@tickerglass/engine';
 import { commands } from '../commands/registry';
 import { useReplayStore } from '../replay/store';
 import type { ChartSession } from '../chart/session';

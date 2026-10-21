@@ -3,9 +3,9 @@
  * socket, series, fire queue, state store and heartbeat around injectable
  * `api`, `control`, `feed` and `clock`.
  */
-import type { Alert, AlertRuntimeState } from '@investopen/alerts';
-import { seriesKey, validateAlert } from '@investopen/alerts';
-import type { DataFeed, LiveStatus, Unsubscribe } from '@investopen/engine/node';
+import type { Alert, AlertRuntimeState } from '@tickerglass/alerts';
+import { seriesKey, validateAlert } from '@tickerglass/alerts';
+import type { DataFeed, LiveStatus, Unsubscribe } from '@tickerglass/engine/node';
 import { ApiError, type ApiClient, type StateRow } from './api';
 import { AlertRunner } from './alert-runner';
 import { backoffMs, jitter, type Clock } from './clock';

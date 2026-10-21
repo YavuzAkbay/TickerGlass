@@ -4,7 +4,7 @@
  * identity otherwise; these functions reproduce a tool's line from its anchors,
  * the snapshotted scale and an `AnchorTimeline` of the alert's own bars.
  */
-import { timeToLogical, type AnchorTimeline } from '@investopen/engine/node';
+import { timeToLogical, type AnchorTimeline } from '@tickerglass/engine/node';
 import type { DrawingPart, DrawingScaleMode } from './types';
 
 /** A permanent problem with the drawing: the alert goes to status `error` with this message. */

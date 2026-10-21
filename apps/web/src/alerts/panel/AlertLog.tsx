@@ -1,4 +1,4 @@
-import type { AlertDelivery, AlertLogEntry } from '@investopen/alerts';
+import type { AlertDelivery, AlertLogEntry } from '@tickerglass/alerts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { confirmDialog } from '../../ui/Prompt';
 import { useAlerts } from '../store';

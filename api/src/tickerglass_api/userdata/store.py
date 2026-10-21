@@ -198,7 +198,7 @@ def export_bundle(session: Session) -> s.Bundle:
 
     return s.Bundle(
         version=s.BUNDLE_VERSION,
-        app="investopen",
+        app="tickerglass",
         exported_at=s.now(),
         layouts=[
             s.BundleLayout(**layout(r).model_dump())
@@ -306,7 +306,7 @@ def import_bundle(
     overwritten (revision bumped), the rest is created (watchlists match by id,
     flags by symbol). replace: the tables of
     the sections present in the bundle are emptied first; absent sections are
-    left alone (so `{"version": 1, "app": "investopen"}` changes nothing).
+    left alone (so `{"version": 1, "app": "tickerglass"}` changes nothing).
     """
     if not 1 <= bundle.version <= s.BUNDLE_VERSION:
         raise BundleError(

@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -18,8 +18,8 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-drawing-templates');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-drawing-templates');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
@@ -84,8 +84,8 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(err.message));
   await page.addInitScript(() => {
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-indicators');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-indicators');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
@@ -130,7 +130,7 @@ test('inspector edits the selected drawing, closes on Escape, and shows symbol d
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
+    localStorage.removeItem('tickerglass-drawings');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
@@ -186,7 +186,7 @@ test('inspector moves focus in, restores it, closes on symbol change, and leaves
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
+    localStorage.removeItem('tickerglass-drawings');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);

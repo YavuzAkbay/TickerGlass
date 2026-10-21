@@ -11,8 +11,8 @@ import {
   type AlertRuntimeState,
   type FireIn,
   type SampleKind,
-} from '@investopen/alerts';
-import type { SymbolInfo } from '@investopen/engine/node';
+} from '@tickerglass/alerts';
+import type { SymbolInfo } from '@tickerglass/engine/node';
 import {
   buildValues,
   refHashes,

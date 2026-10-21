@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from investopen_api.app import create_app
+from tickerglass_api.app import create_app
 
 
 def test_health() -> None:

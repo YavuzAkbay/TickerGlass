@@ -2,7 +2,7 @@
  * Alert wire types (docs/alerts.md §1.2, §1.3, §2.1, §3.5). JSON-serialisable;
  * the API stores `AlertSpec` as is in `alerts.spec`. Change additively only.
  */
-import type { InputValueMap } from '@investopen/indicators';
+import type { InputValueMap } from '@tickerglass/indicators';
 
 export const ALERT_SCHEMA_VERSION = 1;
 

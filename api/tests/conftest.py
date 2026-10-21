@@ -7,7 +7,7 @@ import pytest
 from test_alerts import make_client  # noqa: F401
 from test_userdata import client, race_client  # noqa: F401
 
-from investopen_api.notifications import webhook
+from tickerglass_api.notifications import webhook
 
 
 @pytest.fixture(autouse=True)

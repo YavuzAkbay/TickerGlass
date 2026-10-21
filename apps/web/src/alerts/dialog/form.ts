@@ -25,8 +25,8 @@ import {
   type ValidateOptions,
   type ValidationError,
   type ValueOperand,
-} from '@investopen/alerts';
-import type { IndicatorRegistry } from '@investopen/indicators';
+} from '@tickerglass/alerts';
+import type { IndicatorRegistry } from '@tickerglass/indicators';
 
 /** One side of a condition: a typed number or a source (price, indicator, drawing line). */
 export type TargetForm =

@@ -1,4 +1,4 @@
-import { buildTradingCalendar, timeToLogical, type AnchorTimeline } from '@investopen/engine/node';
+import { buildTradingCalendar, timeToLogical, type AnchorTimeline } from '@tickerglass/engine/node';
 import { describe, expect, it } from 'vitest';
 import {
   drawingChannel,

@@ -1,4 +1,4 @@
-import { isExpressionSymbol } from '@investopen/engine';
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { ChevronDown } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import type { Fundamentals, FundamentalsInfo, Performance, SymbolMeta } from '../../api/types';

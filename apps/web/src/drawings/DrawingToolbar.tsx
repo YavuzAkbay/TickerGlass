@@ -4,7 +4,7 @@ import {
   type DrawingBounds,
   type DrawingProperty,
   type JsonValue,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { Ellipsis, Lock, PanelRight, Settings, Trash2, Type, Unlock } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';

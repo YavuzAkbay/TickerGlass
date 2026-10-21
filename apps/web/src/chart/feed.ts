@@ -6,7 +6,7 @@ import {
   ResamplingFeed,
   SyntheticFeed,
   type DataFeed,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { apiLookbackSeconds } from '../replay/limits';
 
 const feedMode = () => new URLSearchParams(location.search).get('feed');

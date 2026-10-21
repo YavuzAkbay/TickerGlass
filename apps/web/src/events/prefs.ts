@@ -42,7 +42,7 @@ export const useEventPrefs = create<PrefsState>()(
       set: (patch) => set(parseEventPrefs({ ...patch })),
     }),
     {
-      name: 'investopen-event-prefs',
+      name: 'tickerglass-event-prefs',
       version: 1,
       partialize: pick,
       merge: (persisted, current) => ({ ...current, ...parseEventPrefs(persisted) }),

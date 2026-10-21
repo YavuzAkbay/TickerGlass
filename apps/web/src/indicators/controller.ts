@@ -17,7 +17,7 @@ import {
   type StudyTarget,
   type SymbolInfo,
   type Unsubscribe,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
   externalSymbols,
   getIndicator,
@@ -30,7 +30,7 @@ import {
   type BarsEvents,
   type InstanceStatus,
   type RuntimeContext,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import {
   sourceRefOf,
   studyTitle,

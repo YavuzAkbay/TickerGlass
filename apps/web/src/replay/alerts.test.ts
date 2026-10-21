@@ -1,5 +1,5 @@
-import type { Alert } from '@investopen/alerts';
-import type { ChartMarker } from '@investopen/engine';
+import type { Alert } from '@tickerglass/alerts';
+import type { ChartMarker } from '@tickerglass/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayAlerts, REPLAY_ALERT_GROUP } from './alerts';
 

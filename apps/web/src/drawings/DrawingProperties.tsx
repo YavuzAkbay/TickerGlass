@@ -7,7 +7,7 @@ import {
   type DrawingProperty,
   type DrawingStyle,
   type JsonValue,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { Plus, X } from 'lucide-react';
 import { useRef } from 'react';
 import { ColorSwatch } from '../dialogs/ColorPicker';

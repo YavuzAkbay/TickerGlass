@@ -1,7 +1,7 @@
 """Alert request/response models, spec validation and serializers (docs/alerts.md §1).
 
 Self-contained (no import of `schemas`) because `schemas.Bundle` embeds `BundleAlert`.
-The spec models mirror `@investopen/alerts` `types.ts`; they check shape only (the
+The spec models mirror `@tickerglass/alerts` `types.ts`; they check shape only (the
 TypeScript validator additionally checks indicator types, outputs and cycles).
 """
 

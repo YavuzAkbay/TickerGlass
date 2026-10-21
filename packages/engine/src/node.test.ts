@@ -26,7 +26,7 @@ function runtimeImports(fs: Fs, file: URL): URL[] {
   return out;
 }
 
-describe('@investopen/engine/node', () => {
+describe('@tickerglass/engine/node', () => {
   it('runs without DOM globals', () => {
     expect(typeof globalThis.document).toBe('undefined');
     expect(typeof globalThis.window).toBe('undefined');
@@ -34,7 +34,7 @@ describe('@investopen/engine/node', () => {
   });
 
   it('exports the feed stack, symbols, anchor mapping and calendar', async () => {
-    const mod = await import('@investopen/engine/node');
+    const mod = await import('@tickerglass/engine/node');
     for (const name of [
       'HttpDataFeed',
       'ResamplingFeed',

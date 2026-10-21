@@ -1,8 +1,8 @@
 /** Test harness: fake API (node:http), stub feed, fake clock and control. */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Alert, AlertSpec, FireIn } from '@investopen/alerts';
-import { DEFAULT_NOTIFY } from '@investopen/alerts';
+import type { Alert, AlertSpec, FireIn } from '@tickerglass/alerts';
+import { DEFAULT_NOTIFY } from '@tickerglass/alerts';
 import {
   ExpressionFeed,
   FeedError,
@@ -15,7 +15,7 @@ import {
   type SubscribeRequest,
   type SymbolInfo,
   type Unsubscribe,
-} from '@investopen/engine/node';
+} from '@tickerglass/engine/node';
 import { ApiClient, type StateRow, type StoredDrawing } from './api';
 import type { Clock } from './clock';
 import { loadConfig, type Config } from './config';

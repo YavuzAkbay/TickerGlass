@@ -85,7 +85,7 @@ const WS_OPEN = 1;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 30_000;
 const PING_MS = 25_000;
-/** Mirrors SYMBOL_RE in api/src/investopen_api/routes/live.py: one bad symbol rejects a whole frame. */
+/** Mirrors SYMBOL_RE in api/src/tickerglass_api/routes/live.py: one bad symbol rejects a whole frame. */
 const WS_SYMBOL_RE = /^[A-Za-z0-9.\-=^]{1,32}$/;
 /** Keep an unused socket around briefly so symbol switches do not reconnect. */
 const IDLE_CLOSE_MS = 10_000;
@@ -127,7 +127,7 @@ interface LiveSub {
 }
 
 /**
- * DataFeed over the InvestOpen API. Only serves native API intervals; wrap it in
+ * DataFeed over the TickerGlass API. Only serves native API intervals; wrap it in
  * `ResamplingFeed` for the rest.
  */
 export class HttpDataFeed implements DataFeed {

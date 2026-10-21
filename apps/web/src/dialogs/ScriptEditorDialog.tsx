@@ -1,4 +1,4 @@
-import { USER_SCRIPT_PREFIX, getIndicator } from '@investopen/indicators';
+import { USER_SCRIPT_PREFIX, getIndicator } from '@tickerglass/indicators';
 import { Check, Copy, FilePlus, PlusSquare, Pencil, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type UIEvent } from 'react';
 import { errorMessage } from '../api/client';

@@ -3,7 +3,7 @@
  * visibility) stored in `/indicator-templates`. Applying one creates fresh
  * instance ids and rewires indicator-on-indicator sources to them.
  */
-import { isOutputRef } from '@investopen/indicators';
+import { isOutputRef } from '@tickerglass/indicators';
 import { useHistory } from '../commands/history';
 import { newInstanceId, validateInstances, type IndicatorState } from '../indicators/model';
 import { useIndicatorStore } from '../indicators/store';

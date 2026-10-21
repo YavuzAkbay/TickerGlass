@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from investopen_api.app import create_app
-from investopen_api.providers.base import (
+from tickerglass_api.app import create_app
+from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     PartialQuotes,
     ProviderError,
@@ -17,7 +17,7 @@ from investopen_api.providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
-from investopen_api.providers.yahoo import YahooProvider
+from tickerglass_api.providers.yahoo import YahooProvider
 
 KNOWN = {"AAPL", "MSFT"}
 V7_FIXTURE = Path(__file__).parent / "fixtures" / "v7_quote_mixed.json"

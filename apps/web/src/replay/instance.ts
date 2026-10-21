@@ -1,4 +1,4 @@
-import type { ChartMarker, ChartPriceLine, SymbolInfo } from '@investopen/engine';
+import type { ChartMarker, ChartPriceLine, SymbolInfo } from '@tickerglass/engine';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { ChartInfoState, ChartSession } from '../chart/session';

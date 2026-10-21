@@ -1,4 +1,4 @@
-import { isExpressionSymbol } from '@investopen/engine';
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { commands, type Command } from '../commands/registry';
 import { addChartWithSymbol, canAddChart } from '../layout/actions';
 import { normalizeSymbol } from '../store/app';

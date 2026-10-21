@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, Star, X } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent } from 'react';
-import type { IntervalUnit } from '@investopen/engine';
+import type { IntervalUnit } from '@tickerglass/engine';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';

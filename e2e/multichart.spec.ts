@@ -5,8 +5,8 @@ import type { MockServer } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
-    charts: Record<string, import('@investopen/engine').Chart>;
+    chart: import('@tickerglass/engine').Chart;
+    charts: Record<string, import('@tickerglass/engine').Chart>;
   }
 }
 
@@ -15,7 +15,7 @@ const layoutButton = (page: Page) => page.getByRole('button', { name: /^Layout:/
 
 async function open(page: Page) {
   // Fresh indicator state (a new chart shows the default Volume only).
-  await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
+  await page.addInitScript(() => localStorage.removeItem('tickerglass-indicators'));
   await page.goto('/?feed=synthetic');
   await page.waitForFunction(() => window.chart?.store.length > 0);
   await expect(layoutButton(page)).toBeVisible();
@@ -414,7 +414,7 @@ test('drawing sync off: a drawing stays on its chart; selection is per chart', a
   await page.addInitScript(() => {
     if (sessionStorage.getItem('mc-drw')) return;
     sessionStorage.setItem('mc-drw', '1');
-    localStorage.removeItem('investopen-drawings');
+    localStorage.removeItem('tickerglass-drawings');
   });
   await twoCharts(page);
   await setSync(page, 'Drawings', false);
@@ -495,7 +495,7 @@ test('a 4-chart layout of one symbol and interval fetches bars once', async ({ p
       },
     });
   });
-  await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
+  await page.addInitScript(() => localStorage.removeItem('tickerglass-indicators'));
   await page.goto('/');
   await page.waitForFunction(() => window.chart?.store.length > 0);
   await expect(layoutButton(page)).toBeVisible();

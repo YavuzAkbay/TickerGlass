@@ -1,7 +1,7 @@
 # Persistence (Phase 7, watchlists Phase 8, compares Phase 9)
 
 User data lives in the API database (SQLite by default, Postgres via `DATABASE_URL`). The web app talks to it
-through `apps/web/src/api/persistence.ts` and `autosave.ts`. Server code: `api/src/investopen_api/userdata/`,
+through `apps/web/src/api/persistence.ts` and `autosave.ts`. Server code: `api/src/tickerglass_api/userdata/`,
 `routes/{layouts,drawings,templates,user_settings,notes,watchlists,user_scripts,transfer}.py`. Migrations
 `bd686f7c13d4` (Phase 7), `50fc9b162b6f` (watchlists, Phase 8) and `3f8a6c1d9e47` (user scripts).
 
@@ -112,7 +112,7 @@ the batch for the rest, retry. Refetch (`getDrawings`, `getLayout`) on window fo
 ## 4. Import/export bundle
 
 ```jsonc
-{ "version": 1, "app": "investopen", "exportedAt": "...",
+{ "version": 1, "app": "tickerglass", "exportedAt": "...",
   "layouts": [{ "id", "name", "state", "schemaVersion", "isLastUsed", ... }],   // "app" is required
   "drawings": [{ "data": <Drawing>, "schemaVersion", ... }],   // id/symbol/z derived from data
   "indicatorTemplates": [...], "drawingTemplates": [...], "chartTemplates": [...],
@@ -124,14 +124,14 @@ the batch for the rest, retry. Refetch (`getDrawings`, `getLayout`) on window fo
 ```
 
 Export fields `revision`/`createdAt`/`updatedAt` are informational. Import validates everything first (`app:
-"investopen"` required, version 1..server's `BUNDLE_VERSION`, sizes, duplicate keys in the bundle, per-symbol
+"tickerglass"` required, version 1..server's `BUNDLE_VERSION`, sizes, duplicate keys in the bundle, per-symbol
 drawings without a symbol, null setting values, more than 10,000 settings -> 422) and runs in one transaction.
 `merge`: layouts/drawings/notes match by id, templates by name (drawing templates by toolType+name), settings by
 key; matches are overwritten (revision bumped), the rest is created (watchlists match by id, flags by symbol; a
 flag keeps its `created_at` unless the color changed); a bundle `isLastUsed` applies only if no
 layout is last-used yet. `replace` requires `confirm=true` (400 otherwise; not needed with `dryRun=true`) and
 empties only the tables of the sections **present** in the bundle (`"notes": []` wipes notes; an absent `notes`
-key leaves them alone), so `{"version": 1, "app": "investopen"}` changes nothing. Send a full export bundle to
+key leaves them alone), so `{"version": 1, "app": "tickerglass"}` changes nothing. Send a full export bundle to
 replace everything. `dryRun=true` returns the same summary and rolls back.
 
 - `watchlists` and `flags` are additive: `BUNDLE_VERSION` stays 1, and a Phase 7 bundle without these keys leaves
@@ -165,9 +165,9 @@ replace everything. `dryRun=true` returns the same summary and rolls back.
 Implemented in `apps/web/src/persist/` (Phase 7): `migration.ts` (step 1), `bootstrap.ts` + `layouts.ts` (steps
 2–4), `drawingSync.ts`, `settingsSync.ts` (keys `app.prefs`, `ui.prefs`, `indicators.favorites`,
 `indicators.defaults`, `watchlist.prefs`), `drawingTemplatesSync.ts`, `notes.ts`, `watchlists.ts` (Phase 8,
-`WatchlistSync`: lists whole with revision checks, flags as `PATCH` batches). Layout cache key: `investopen-layout`.
-Watchlist cache keys: `investopen-watchlists` (lists, flags, dirty flags, pending deletes) and
-`investopen-watchlist-prefs` (mirror of the setting `watchlist.prefs` = `{activeId, columns, sort}`; `activeId` is a
+`WatchlistSync`: lists whole with revision checks, flags as `PATCH` batches). Layout cache key: `tickerglass-layout`.
+Watchlist cache keys: `tickerglass-watchlists` (lists, flags, dirty flags, pending deletes) and
+`tickerglass-watchlist-prefs` (mirror of the setting `watchlist.prefs` = `{activeId, columns, sort}`; `activeId` is a
 list id or `flag:<color>`). The first run seeds one list "Watchlist" with the current and recent symbols; seeded
 offline, it is kept only if the first successful load finds no lists on the server (or it was edited).
 
@@ -178,8 +178,8 @@ compares: { items: CompareState[], scaleRestore: PriceScaleMode | null } }`. v1 
 (`'overlay'` -> price pane, `'pane'` -> own pane taking over the `volume` pane's size, none if a Volume
 indicator exists) and drops it. The step is content based and idempotent, because the local cache, the
 recovery copy and the orphan copy store no schema version and are read as v1; the server copy is rewritten as
-the current version on the next save. The local stores migrate the same way (`investopen-indicators` v2 reads the legacy
-`investopen-app` `volume`). Chart templates ignore a stored `volume`.
+the current version on the next save. The local stores migrate the same way (`tickerglass-indicators` v2 reads the legacy
+`tickerglass-app` `volume`). Chart templates ignore a stored `volume`.
 
 v3 (Phase 9) adds `compares` (`docs/compare.md` §6). The upgrade step `UPGRADES[2]` adds
 `{items: [], scaleRestore: null}` when the key is missing. `parseLayoutState` drops invalid compare items and
@@ -200,12 +200,12 @@ needs no change (opaque JSON), and `Drawing.chartId` lives inside the drawing's 
 
 | localStorage key                                                                                     | Goes to                                                                           |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `investopen-drawings` `{version:1, bySymbol, synced}`                                                | `drawings` (one row per `Drawing`, unchanged JSON)                                |
-| `investopen-indicators` `instances` + `investopen-app` chart fields                                  | one layout "Default", set last-used                                               |
-| `investopen-indicator-prefs` `{favorites, defaults}`                                                 | settings `indicators.favorites`, `indicators.defaults`                            |
-| `investopen-drawing-templates` `{byType, defaults}`                                                  | `drawing_templates`; each `defaults[type]` -> `isDefault: true`, name `"Default"` |
-| `investopen-app` prefs (theme, favoriteIntervals, customIntervals, recentSymbols, crosshair, magnet) | setting `app.prefs`                                                               |
-| `investopen-ui` `notes` (string)                                                                     | one general note (symbol null)                                                    |
+| `tickerglass-drawings` `{version:1, bySymbol, synced}`                                                | `drawings` (one row per `Drawing`, unchanged JSON)                                |
+| `tickerglass-indicators` `instances` + `tickerglass-app` chart fields                                  | one layout "Default", set last-used                                               |
+| `tickerglass-indicator-prefs` `{favorites, defaults}`                                                 | settings `indicators.favorites`, `indicators.defaults`                            |
+| `tickerglass-drawing-templates` `{byType, defaults}`                                                  | `drawing_templates`; each `defaults[type]` -> `isDefault: true`, name `"Default"` |
+| `tickerglass-app` prefs (theme, favoriteIntervals, customIntervals, recentSymbols, crosshair, magnet) | setting `app.prefs`                                                               |
+| `tickerglass-ui` `notes` (string)                                                                     | one general note (symbol null)                                                    |
 
 1. **First run**: if setting `migration.localStorage` is absent and localStorage holds data, build a bundle from it,
    `importAll(bundle, {mode: 'merge', dryRun: true})`, then for real; then `putSetting('migration.localStorage',

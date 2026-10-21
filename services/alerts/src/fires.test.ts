@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FireIn } from '@investopen/alerts';
+import type { FireIn } from '@tickerglass/alerts';
 import { ApiError } from './api';
 import type { FireJob } from './alert-runner';
 import { FireQueue } from './fires';

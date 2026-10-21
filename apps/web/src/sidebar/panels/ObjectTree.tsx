@@ -1,4 +1,4 @@
-import type { Drawing } from '@investopen/engine';
+import type { Drawing } from '@tickerglass/engine';
 import { ChevronRight, Eye, EyeOff, Lock, Trash2, Unlock } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {

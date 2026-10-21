@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Chart, CrosshairInfo, SymbolInfo } from '@investopen/engine';
+import type { Chart, CrosshairInfo, SymbolInfo } from '@tickerglass/engine';
 import type { ChartSession } from '../chart/session';
 
 interface ChartStore {

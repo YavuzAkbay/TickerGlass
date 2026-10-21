@@ -1,5 +1,5 @@
-import { CHANNEL_TOOLS, LINE_TOOLS } from '@investopen/alerts';
-import { getDrawingTool, type DrawingStyle } from '@investopen/engine';
+import { CHANNEL_TOOLS, LINE_TOOLS } from '@tickerglass/alerts';
+import { getDrawingTool, type DrawingStyle } from '@tickerglass/engine';
 import {
   ArrowDownToLine,
   Bell,

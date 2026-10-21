@@ -13,7 +13,7 @@ import {
   scriptIdOf,
   type AnyIndicatorDefinition,
   type IndicatorRegistry,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import type { UserScript } from '../api/types';
 import { useScriptsStore } from './store';
 

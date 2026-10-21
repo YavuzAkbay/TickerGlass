@@ -1,4 +1,4 @@
-import { IndicatorRegistry, defaultRegistry } from '@investopen/indicators';
+import { IndicatorRegistry, defaultRegistry } from '@tickerglass/indicators';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { UserScript } from '../api/types';
 import { syncScriptDefinitions, userScriptProblem } from './definitions';

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AlertSpec } from '@investopen/alerts';
+import type { AlertSpec } from '@tickerglass/alerts';
 import { BAR_T, bar, harness, makeAlert, minuteBars, until, type Harness } from './test-utils';
 
 let h: Harness | null = null;

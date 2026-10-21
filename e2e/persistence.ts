@@ -775,7 +775,7 @@ export class MockServer {
         200,
         {
           version: 1,
-          app: 'investopen',
+          app: 'tickerglass',
           exportedAt: this.now(),
           layouts: [...this.layouts.values()].map((l) => this.full(l)),
           drawings: [...this.drawings.values()],
@@ -850,7 +850,7 @@ export class MockServer {
 
   /** store.import_bundle: merge by id/name/key (matches overwritten, revision bumped) or replace present sections. */
   private importBundle(b: Json, mode: string): Json | Reply {
-    if (b.app !== 'investopen') return detail(422, 'app must be "investopen"');
+    if (b.app !== 'tickerglass') return detail(422, 'app must be "tickerglass"');
     if (typeof b.version !== 'number' || b.version < 1 || b.version > 1)
       return detail(422, 'unsupported bundle version');
     const zero = () => ({ created: 0, updated: 0, deleted: 0 });

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
-import type { ChartType } from '@investopen/engine';
+import type { ChartType } from '@tickerglass/engine';
 
 type IconProps = { size?: number };
 

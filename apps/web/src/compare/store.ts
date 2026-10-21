@@ -1,4 +1,4 @@
-import type { SymbolInfo } from '@investopen/engine';
+import type { SymbolInfo } from '@tickerglass/engine';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { createActiveFacade } from '../chart/facade';
 import type { CompareLayout, CompareState } from './model';

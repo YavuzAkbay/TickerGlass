@@ -1,10 +1,10 @@
-import { intervalSeconds, isIntraday, type Interval } from '@investopen/engine';
+import { intervalSeconds, isIntraday, type Interval } from '@tickerglass/engine';
 
 const DAY = 86_400;
 
 /**
  * How far back the API serves each native intraday interval, in days. Mirrors
- * api/src/investopen_api/intervals.py (lookback_days - 1: a day of margin).
+ * api/src/tickerglass_api/intervals.py (lookback_days - 1: a day of margin).
  * Keep in sync by hand.
  */
 const LOOKBACK_DAYS: Record<number, number> = {

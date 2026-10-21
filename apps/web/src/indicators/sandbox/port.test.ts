@@ -1,9 +1,9 @@
-import type { BarColumns } from '@investopen/engine';
+import type { BarColumns } from '@tickerglass/engine';
 import {
   compileUserScript,
   probeLineOffset,
   type RuntimeContext,
-} from '@investopen/indicators/core';
+} from '@tickerglass/indicators/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkerPort } from '../controller';
 import type { FromWorker, ToWorker } from '../protocol';

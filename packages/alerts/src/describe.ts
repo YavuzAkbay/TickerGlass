@@ -10,7 +10,7 @@ import {
   type AnyIndicatorDefinition,
   type IndicatorRegistry,
   type InputValueMap,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import type {
   AlertIn,
   ConditionOp,

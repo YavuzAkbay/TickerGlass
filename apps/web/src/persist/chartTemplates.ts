@@ -2,7 +2,7 @@
  * Chart templates (Settings dialog "Template" menu): every chart setting
  * except the per-chart price scale, stored in `/chart-templates`.
  */
-import type { ChartStyle, CrosshairMode, DeepPartial, MagnetMode } from '@investopen/engine';
+import type { ChartStyle, CrosshairMode, DeepPartial, MagnetMode } from '@tickerglass/engine';
 import type { Theme } from '../store/app';
 import { pickTyped } from './settingsSync';
 

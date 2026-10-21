@@ -51,9 +51,9 @@ export const CACHE_KEYS = [
   DRAWINGS_CACHE_KEY,
   SETTINGS_SYNC_KEY,
   DRAWING_TEMPLATES_SYNC_KEY,
-  'investopen-notes',
-  'investopen-watchlists',
-  'investopen-watchlist-prefs',
+  'tickerglass-notes',
+  'tickerglass-watchlists',
+  'tickerglass-watchlist-prefs',
   LOCAL_BUNDLE_KEY,
 ];
 

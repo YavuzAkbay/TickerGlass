@@ -1,4 +1,4 @@
-import type { DataFeed } from '@investopen/engine';
+import type { DataFeed } from '@tickerglass/engine';
 import { replayFeed } from '../chart/feed';
 import { fetchEvents } from '../events/api';
 import { syncScriptDefinitions } from '../scripts/definitions';

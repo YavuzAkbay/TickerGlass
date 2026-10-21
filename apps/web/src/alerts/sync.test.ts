@@ -1,4 +1,4 @@
-import type { Alert, AlertLogEntry } from '@investopen/alerts';
+import type { Alert, AlertLogEntry } from '@tickerglass/alerts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AlertLogPage } from '../api/alerts';
 import { ApiError } from '../api/client';

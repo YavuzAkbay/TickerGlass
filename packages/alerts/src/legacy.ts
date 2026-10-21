@@ -4,7 +4,7 @@
  * `resolveIndicatorId`; anything that is not a recognisable spec is returned
  * untouched so validation still reports it.
  */
-import { resolveIndicatorId } from '@investopen/indicators';
+import { resolveIndicatorId } from '@tickerglass/indicators';
 
 type Json = Record<string, unknown>;
 

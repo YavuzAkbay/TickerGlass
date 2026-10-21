@@ -1,4 +1,4 @@
-import type { Chart, Drawing } from '@investopen/engine';
+import type { Chart, Drawing } from '@tickerglass/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import type { Layout, LayoutSummary, StoredDrawing } from '../api/types';
@@ -1302,31 +1302,31 @@ describe('drawing batch sync', () => {
 
 function legacyStorage() {
   return memStorage({
-    'investopen-drawings': JSON.stringify({
+    'tickerglass-drawings': JSON.stringify({
       version: 1,
       bySymbol: { AAPL: [drw('d1', { symbol: '' })] },
       synced: [drw('d2', { scope: 'all', symbol: '' })],
     }),
-    'investopen-indicators': JSON.stringify({
+    'tickerglass-indicators': JSON.stringify({
       state: { instances: [indicator('i1')] },
       version: 1,
     }),
-    'investopen-app': JSON.stringify({
+    'tickerglass-app': JSON.stringify({
       state: { theme: 'light', favoriteIntervals: ['1D'], symbol: 'AAPL', chartType: 'line' },
       version: 3,
     }),
-    'investopen-indicator-prefs': JSON.stringify({
+    'tickerglass-indicator-prefs': JSON.stringify({
       state: { favorites: ['rsi'], defaults: { rsi: { inputs: { length: 9 } } } },
       version: 1,
     }),
-    'investopen-drawing-templates': JSON.stringify({
+    'tickerglass-drawing-templates': JSON.stringify({
       state: {
         byType: { 'trend-line': [{ name: 'Red', style: { lineColor: 'red' } }] },
         defaults: { 'trend-line': { lineColor: 'blue' } },
       },
       version: 1,
     }),
-    'investopen-ui': JSON.stringify({
+    'tickerglass-ui': JSON.stringify({
       state: { notes: 'hello', syncNewDrawings: true },
       version: 0,
     }),
@@ -1380,7 +1380,7 @@ function fakeImportServer() {
 describe('localStorage migration', () => {
   it('builds a bundle from every legacy key', () => {
     const b = buildMigrationBundle(legacyStorage(), state('i1'))!;
-    expect(b.app).toBe('investopen');
+    expect(b.app).toBe('tickerglass');
     expect(b.layouts).toEqual([
       expect.objectContaining({ id: MIGRATED_LAYOUT_ID, name: 'Default', isLastUsed: true }),
     ]);
@@ -1982,7 +1982,7 @@ describe('migration: mutual exclusion and other browsers', () => {
     const request = vi.fn(async (_name: string, _o: unknown, fn: () => Promise<unknown>) => fn());
     const locks = { request } as unknown as LockManagerLike;
     expect(await withMigrationLock(async () => 7, { locks, storage: memStorage() })).toBe(7);
-    expect(request.mock.calls[0]![0]).toBe('investopen-migration');
+    expect(request.mock.calls[0]![0]).toBe('tickerglass-migration');
   });
 
   it('concurrent starts in one page share one run; an aborted caller stops waiting only', async () => {
@@ -2030,7 +2030,7 @@ describe('migration: mutual exclusion and other browsers', () => {
     await runMigration(server.api, storage, () => state('i1'));
     dismissLocalData(storage);
     expect(await runMigration(server.api, storage, () => state('i1'))).toBe('done');
-    expect(storage.get(backupKeyOf('investopen-drawings'))).not.toBeNull();
+    expect(storage.get(backupKeyOf('tickerglass-drawings'))).not.toBeNull();
   });
 });
 
@@ -2190,7 +2190,7 @@ describe('focus changes', () => {
 describe('data import', () => {
   const full = {
     version: 1,
-    app: 'investopen' as const,
+    app: 'tickerglass' as const,
     layouts: [],
     drawings: [],
     indicatorTemplates: [],

@@ -1,4 +1,4 @@
-import { getIndicator, type InstanceStatus } from '@investopen/indicators';
+import { getIndicator, type InstanceStatus } from '@tickerglass/indicators';
 import { Database, Ellipsis, Eye, EyeOff, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';

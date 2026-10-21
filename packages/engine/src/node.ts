@@ -1,5 +1,5 @@
 /**
- * Node-safe entry (`@investopen/engine/node`, docs/alerts.md §3.1): feeds,
+ * Node-safe entry (`@tickerglass/engine/node`, docs/alerts.md §3.1): feeds,
  * expression language, intervals, anchor mapping, multi-chart time mapping
  * and the trading calendar.
  * Nothing reachable from here may import chart, render, canvas or DOM code;

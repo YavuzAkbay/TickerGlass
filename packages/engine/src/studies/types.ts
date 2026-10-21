@@ -2,7 +2,7 @@
  * Study (indicator display) contract — Phase 5.
  *
  * The engine draws indicator results but never computes them and never
- * imports @investopen/indicators. The output metadata below mirrors that
+ * imports @tickerglass/indicators. The output metadata below mirrors that
  * package's `ResolvedOutput` structurally; apps/web asserts the two stay
  * compatible at compile time (apps/web/src/indicators/contract.ts).
  *

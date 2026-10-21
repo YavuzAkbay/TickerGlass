@@ -354,7 +354,7 @@ export type OutputDef<O extends string = string, S extends InputsSchema = Inputs
 export type OutputType = OutputDef['type'];
 
 // --------------------------------------------- resolved outputs (to engine)
-// These mirror `StudyOutputMeta` in @investopen/engine structurally (the
+// These mirror `StudyOutputMeta` in @tickerglass/engine structurally (the
 // engine must not import this package). apps/web asserts compatibility.
 
 export interface ResolvedPlot {

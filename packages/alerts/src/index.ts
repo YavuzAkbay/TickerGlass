@@ -1,7 +1,7 @@
 /**
- * @investopen/alerts: alert wire types, validation, condition and trigger
+ * @tickerglass/alerts: alert wire types, validation, condition and trigger
  * evaluation, drawing levels, bar close, warm-up and message templates
- * (docs/alerts.md). Pure TS without DOM; imports only `@investopen/engine/node`.
+ * (docs/alerts.md). Pure TS without DOM; imports only `@tickerglass/engine/node`.
  */
 export * from './types';
 export {

@@ -5,7 +5,7 @@ import {
   parseInterval,
   type Interval,
   type IntervalUnit,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 
 export interface IntervalGroup {
   /** Primary unit; also the group key. */

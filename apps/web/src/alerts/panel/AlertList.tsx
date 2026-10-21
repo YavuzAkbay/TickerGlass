@@ -1,4 +1,4 @@
-import { describeCondition, type Alert } from '@investopen/alerts';
+import { describeCondition, type Alert } from '@tickerglass/alerts';
 import { AlarmClock, MoreHorizontal, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { commands } from '../../commands/registry';

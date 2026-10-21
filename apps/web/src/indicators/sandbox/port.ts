@@ -14,7 +14,7 @@ import {
   type InputValueMap,
   type InstanceStatus,
   type RuntimeContext,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import type { WorkerPort } from '../controller';
 import type { FromWorker, ResultChange, ToWorker } from '../protocol';
 import { MAX_SCRIPT_INSTANCES_PER_CHART, SCRIPT_INSTANCE_CAP_MESSAGE } from './limits';

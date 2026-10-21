@@ -1,5 +1,5 @@
-import { getDrawingTool, type CrosshairMode } from '@investopen/engine';
-import { getIndicator } from '@investopen/indicators';
+import { getDrawingTool, type CrosshairMode } from '@tickerglass/engine';
+import { getIndicator } from '@tickerglass/indicators';
 import { useAppStore } from '../store/app';
 import { useUiStore, type DrawingToolId } from '../store/ui';
 import { toast } from '../ui/Toast';

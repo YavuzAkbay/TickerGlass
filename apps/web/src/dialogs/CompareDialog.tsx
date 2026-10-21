@@ -1,6 +1,6 @@
 import { Eye, EyeOff, Layers, Search, X } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import type { SymbolSearchResult } from '@investopen/engine';
+import type { SymbolSearchResult } from '@tickerglass/engine';
 import { Modal } from '../ui/Modal';
 import {
   addCompare,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Chart, ChartEvents } from '@investopen/engine';
+import type { Chart, ChartEvents } from '@tickerglass/engine';
 import { cachedJson, errorMessage, getJson } from '../api/client';
 import type { Quote } from '../api/types';
 

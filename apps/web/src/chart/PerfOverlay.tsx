@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { RenderStats } from '@investopen/engine';
+import type { RenderStats } from '@tickerglass/engine';
 import { computeTimesOf, type ComputeStats } from './perf';
 import type { ChartSession } from './session';
 

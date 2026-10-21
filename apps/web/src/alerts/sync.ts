@@ -5,7 +5,7 @@
  * revision they are based on; on 409 the stored alert is adopted and a "Keep
  * mine" toast re-sends the change without a revision.
  */
-import type { Alert, AlertIn } from '@investopen/alerts';
+import type { Alert, AlertIn } from '@tickerglass/alerts';
 import * as alertsApi from '../api/alerts';
 import { ApiError, errorMessage } from '../api/client';
 import { commands } from '../commands/registry';

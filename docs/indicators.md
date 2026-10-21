@@ -4,7 +4,7 @@ Contract for the indicator framework. Source of truth for types:
 `packages/indicators/src/types.ts` (definitions, runtime) and
 `packages/engine/src/studies/types.ts` (display). Change either only additively, and say so in the PR.
 
-## 1. Definition API (`@investopen/indicators`)
+## 1. Definition API (`@tickerglass/indicators`)
 
 An indicator is a declarative object built with `defineIndicator` (it infers literal input keys and output
 ids, so `step` is fully typed) and registered with `registerIndicator` / looked up with `getIndicator`,
@@ -235,10 +235,10 @@ User scripts (see [user-scripts.md](user-scripts.md)) run in sandbox workers, ne
 or on the main thread. Registry type of a script instance is `user:<scriptId>` (`USER_SCRIPT_PREFIX`,
 `scriptIdOf`). **The format is persisted in saved chart layouts and must never change.**
 
-**Entry points.** `@investopen/indicators/core` exports everything except the built-in indicators (nothing is
-registered in `defaultRegistry`); `@investopen/indicators` is core plus the built-ins. `sandbox-worker.ts`
+**Entry points.** `@tickerglass/indicators/core` exports everything except the built-in indicators (nothing is
+registered in `defaultRegistry`); `@tickerglass/indicators` is core plus the built-ins. `sandbox-worker.ts`
 and `SandboxCore` import only `/core`; the indicator `worker.ts` registers the built-ins explicitly with
-`import '@investopen/indicators'`, and `WorkerCore` takes an `IndicatorRegistry`.
+`import '@tickerglass/indicators'`, and `WorkerCore` takes an `IndicatorRegistry`.
 
 **Routing.** `attach.ts` wraps the indicator worker in a `ScriptRouterPort` (a `WorkerPort`; the controller
 cannot tell the difference). Routing table:
@@ -367,7 +367,7 @@ worker as one IIFE and fails the build if the sandbox worker entry has imports, 
 other file or does not start with `"use strict";` (`sandboxWorkerSelfContained`, which also adds that prologue), or
 if the emitted worker file mentions another emitted file (`sandboxWorkerNoAssetRefs`).
 
-## 6. Engine study API (`@investopen/engine`, `StudyApi`)
+## 6. Engine study API (`@tickerglass/engine`, `StudyApi`)
 
 `addStudy(spec)` -> paneId (`target: { paneId }` or `{ newPane: { id?, ratio? } }`; a `newPane.id` that
 already exists is reused, so re-adding to an own pane after undo or `setState` works), `removeStudy`,
@@ -404,7 +404,7 @@ for API compatibility, default `'hidden'`; the app never turns it on). New chart
 instance (`DEFAULT_VOLUME_ID`, placement `main`). The controller gives a study `priceScale: 'none'` when it
 is in the price pane and has `format: 'volume'` (or plots such a study through its source), else `'pane'`,
 and updates it when the study moves (legend "More" > Move to). Older state with built-in volume
-(`chartSettings.volume` / `investopen-app` `volume`) becomes a Volume instance once (docs/persistence.md §5).
+(`chartSettings.volume` / `tickerglass-app` `volume`) becomes a Volume instance once (docs/persistence.md §5).
 
 ## 7. Heikin Ashi and brick chart types
 

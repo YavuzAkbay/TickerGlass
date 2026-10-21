@@ -5,14 +5,14 @@ type ReplayStatus = 'off' | 'picking' | 'loading' | 'paused' | 'playing' | 'ende
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
-    charts: Record<string, import('@investopen/engine').Chart>;
+    chart: import('@tickerglass/engine').Chart;
+    charts: Record<string, import('@tickerglass/engine').Chart>;
     replay: {
       store: {
         getState(): { status: ReplayStatus; last: number; next: number; tick: string | null };
       };
-      feed: import('@investopen/engine').ReplayFeed & {
-        getBars: import('@investopen/engine').DataFeed['getBars'];
+      feed: import('@tickerglass/engine').ReplayFeed & {
+        getBars: import('@tickerglass/engine').DataFeed['getBars'];
       };
     };
   }

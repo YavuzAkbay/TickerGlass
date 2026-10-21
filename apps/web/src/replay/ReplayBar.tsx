@@ -1,4 +1,4 @@
-import { formatInterval, parseInterval, tickIntervals } from '@investopen/engine';
+import { formatInterval, parseInterval, tickIntervals } from '@tickerglass/engine';
 import { FastForward, Pause, Play, Scissors, StepForward, TriangleAlert, X } from 'lucide-react';
 import { useMemo } from 'react';
 import { commands } from '../commands/registry';

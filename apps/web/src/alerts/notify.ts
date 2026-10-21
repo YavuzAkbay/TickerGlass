@@ -1,5 +1,5 @@
 /** In-app alert notifications: toast, sound and browser Notification (docs/alerts.md §5.6). */
-import type { AlertLogEntry, AlertNotify } from '@investopen/alerts';
+import type { AlertLogEntry, AlertNotify } from '@tickerglass/alerts';
 import { actionToast } from '../ui/Toast';
 import { onAlertFired, type FiredAlertInfo } from './events';
 import { openAlertLog, useAlerts } from './store';

@@ -6,7 +6,7 @@
  * bus ignores (`setSyncedCrosshair` emits no event, `setRightEdgeTime` is
  * cause 'api'), so there are no echo loops.
  */
-import type { Chart, CrosshairInfo } from '@investopen/engine';
+import type { Chart, CrosshairInfo } from '@tickerglass/engine';
 import type { ChartSession } from '../chart/session';
 import { getActiveSession, useChartStore } from '../store/chart';
 import type { SyncFlags } from './grid';

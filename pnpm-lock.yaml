@@ -44,13 +44,13 @@ importers:
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
-      '@investopen/alerts':
+      '@tickerglass/alerts':
         specifier: workspace:*
         version: link:../../packages/alerts
-      '@investopen/engine':
+      '@tickerglass/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@investopen/indicators':
+      '@tickerglass/indicators':
         specifier: workspace:*
         version: link:../../packages/indicators
       acorn:
@@ -84,10 +84,10 @@ importers:
 
   packages/alerts:
     dependencies:
-      '@investopen/engine':
+      '@tickerglass/engine':
         specifier: workspace:*
         version: link:../engine
-      '@investopen/indicators':
+      '@tickerglass/indicators':
         specifier: workspace:*
         version: link:../indicators
     devDependencies:
@@ -105,13 +105,13 @@ importers:
 
   services/alerts:
     dependencies:
-      '@investopen/alerts':
+      '@tickerglass/alerts':
         specifier: workspace:*
         version: link:../../packages/alerts
-      '@investopen/engine':
+      '@tickerglass/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@investopen/indicators':
+      '@tickerglass/indicators':
         specifier: workspace:*
         version: link:../../packages/indicators
     devDependencies:

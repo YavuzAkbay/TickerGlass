@@ -1,4 +1,4 @@
-import type { Chart, Drawing } from '@investopen/engine';
+import type { Chart, Drawing } from '@tickerglass/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistory } from '../commands/history';
 import { useChartStore } from '../store/chart';

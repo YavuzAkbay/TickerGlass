@@ -1,4 +1,4 @@
-import { isExpressionSymbol } from '@investopen/engine';
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { eventsPath, EVENTS_TTL_MS, type EventsResponse } from '../events/api';
 import { useT } from '../i18n';
 import { useChartView } from '../store/chartView';

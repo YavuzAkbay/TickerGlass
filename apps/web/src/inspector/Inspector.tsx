@@ -1,4 +1,4 @@
-import { getDrawingTool } from '@investopen/engine';
+import { getDrawingTool } from '@tickerglass/engine';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { DrawingProperties } from '../drawings/DrawingProperties';

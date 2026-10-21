@@ -62,7 +62,7 @@ export const useAlertPrefs = create<PrefsState>()(
       set: (patch) => set(parseAlertPrefs({ ...patch })),
     }),
     {
-      name: 'investopen-alert-prefs',
+      name: 'tickerglass-alert-prefs',
       version: 1,
       partialize: pick,
       merge: (persisted, current) => ({ ...current, ...parseAlertPrefs(persisted) }),

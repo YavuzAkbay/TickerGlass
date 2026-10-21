@@ -9,9 +9,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Connection, create_engine, insert, inspect, update
 from test_userdata import NullProvider, alembic_config, interleave, strip_volatile
 
-from investopen_api import models
-from investopen_api.app import create_app
-from investopen_api.userdata.schemas import MAX_WATCHLIST_ITEMS
+from tickerglass_api import models
+from tickerglass_api.app import create_app
+from tickerglass_api.userdata.schemas import MAX_WATCHLIST_ITEMS
 
 
 def sym(s: str) -> dict[str, Any]:
@@ -164,7 +164,7 @@ def test_flags_validation(client: TestClient) -> None:
 
 
 def bundle_body(**sections: Any) -> dict[str, Any]:
-    return {"version": 1, "app": "investopen", **sections}
+    return {"version": 1, "app": "tickerglass", **sections}
 
 
 def test_bundle_export_and_round_trip(client: TestClient, tmp_path: Path) -> None:

@@ -1,5 +1,5 @@
-import type { BarColumns } from '@investopen/engine';
-import { probeLineOffset } from '@investopen/indicators/core';
+import type { BarColumns } from '@tickerglass/engine';
+import { probeLineOffset } from '@tickerglass/indicators/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { UserScript, UserScriptIn } from '../api/types';
 import type { SandboxPort } from '../indicators/sandbox/port';

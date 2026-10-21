@@ -1,5 +1,5 @@
 // Alert evaluation service entry point (docs/alerts.md §3).
-import { ExpressionFeed, HttpDataFeed, ResamplingFeed } from '@investopen/engine/node';
+import { ExpressionFeed, HttpDataFeed, ResamplingFeed } from '@tickerglass/engine/node';
 import { ApiClient } from './api';
 import { systemClock } from './clock';
 import { ConfigError, loadConfig } from './config';

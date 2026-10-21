@@ -103,7 +103,7 @@ def create_app(
         await app.state.live_hub.close()
         engine.dispose()
 
-    app = FastAPI(title="InvestOpen API", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(
         CORSMiddleware,

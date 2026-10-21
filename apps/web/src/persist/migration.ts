@@ -4,7 +4,7 @@
  * id/name/key), so a run interrupted before the marker is written can repeat.
  * The original keys are never deleted; a copy is kept under `<key>.premigration`.
  */
-import { resolveDrawingType } from '@investopen/engine';
+import { resolveDrawingType } from '@tickerglass/engine';
 import * as persistence from '../api/persistence';
 import { BUNDLE_VERSION, type Bundle } from '../api/types';
 import { parseStoredDrawings, STORAGE_KEY as DRAWINGS_KEY } from '../drawings/store';
@@ -21,11 +21,11 @@ export const MIGRATED_LAYOUT_NAME = 'Default';
 
 export const LEGACY_KEYS = [
   DRAWINGS_KEY,
-  'investopen-indicators',
-  'investopen-app',
-  'investopen-indicator-prefs',
-  'investopen-drawing-templates',
-  'investopen-ui',
+  'tickerglass-indicators',
+  'tickerglass-app',
+  'tickerglass-indicator-prefs',
+  'tickerglass-drawing-templates',
+  'tickerglass-ui',
 ] as const;
 
 export const backupKeyOf = (key: string) => `${key}.premigration`;
@@ -55,7 +55,7 @@ export function buildMigrationBundle(
   if (!LEGACY_KEYS.some((k) => storage.get(k) !== null)) return null;
   const bundle: Partial<Bundle> & Pick<Bundle, 'version' | 'app'> = {
     version: BUNDLE_VERSION,
-    app: 'investopen',
+    app: 'tickerglass',
     layouts: [],
     drawings: [],
     drawingTemplates: [],
@@ -75,7 +75,7 @@ export function buildMigrationBundle(
       for (const d of list) push(d.symbol.trim() ? d : { ...d, symbol: sym });
   }
 
-  if (storage.get('investopen-indicators') !== null || storage.get('investopen-app') !== null)
+  if (storage.get('tickerglass-indicators') !== null || storage.get('tickerglass-app') !== null)
     bundle.layouts!.push({
       id: MIGRATED_LAYOUT_ID,
       name: MIGRATED_LAYOUT_NAME,
@@ -84,13 +84,13 @@ export function buildMigrationBundle(
       isLastUsed: true,
     });
 
-  const prefs = persisted(storage, 'investopen-indicator-prefs');
+  const prefs = persisted(storage, 'tickerglass-indicator-prefs');
   if (prefs) {
     if (Array.isArray(prefs.favorites)) bundle.settings!['indicators.favorites'] = prefs.favorites;
     if (isObj(prefs.defaults)) bundle.settings!['indicators.defaults'] = prefs.defaults;
   }
 
-  const templates = persisted(storage, 'investopen-drawing-templates');
+  const templates = persisted(storage, 'tickerglass-drawing-templates');
   if (templates) {
     if (isObj(templates.byType))
       for (const [toolType, list] of Object.entries(templates.byType)) {
@@ -116,7 +116,7 @@ export function buildMigrationBundle(
           });
   }
 
-  const app = persisted(storage, 'investopen-app');
+  const app = persisted(storage, 'tickerglass-app');
   if (app)
     bundle.settings!['app.prefs'] = pick(app, [
       'theme',
@@ -127,7 +127,7 @@ export function buildMigrationBundle(
       'magnet',
     ]);
 
-  const ui = persisted(storage, 'investopen-ui');
+  const ui = persisted(storage, 'tickerglass-ui');
   if (ui) {
     bundle.settings!['ui.prefs'] = migrateToolIds(
       migrateNavigator(
@@ -164,9 +164,9 @@ export function buildMigrationBundle(
 export type MigrationResult = 'done' | 'migrated' | 'empty' | 'local-data';
 
 /** This browser's migration outcome (localStorage). */
-export const LOCAL_MIGRATION_KEY = 'investopen-migration.local';
+export const LOCAL_MIGRATION_KEY = 'tickerglass-migration.local';
 /** Bundle of this browser's own data, offered for import when another browser migrated first. */
-export const LOCAL_BUNDLE_KEY = 'investopen-migration.local-bundle';
+export const LOCAL_BUNDLE_KEY = 'tickerglass-migration.local-bundle';
 
 type LocalOutcome = 'migrated' | 'empty' | 'offered' | 'imported' | 'dismissed';
 
@@ -264,7 +264,7 @@ export async function importLocalData(
   const suffix = now.toString(36);
   const bundle: Partial<Bundle> & Pick<Bundle, 'version' | 'app'> = {
     version: BUNDLE_VERSION,
-    app: 'investopen',
+    app: 'tickerglass',
     layouts: (local.layouts ?? []).map((l) => ({
       ...l,
       id: `local-${suffix}`,
@@ -289,8 +289,8 @@ export function dismissLocalData(storage: SafeStorage, now = Date.now()): void {
 
 // ------------------------------------------------------------ mutual exclusion
 
-export const MIGRATION_LOCK = 'investopen-migration';
-export const LEASE_KEY = 'investopen-migration.lease';
+export const MIGRATION_LOCK = 'tickerglass-migration';
+export const LEASE_KEY = 'tickerglass-migration.lease';
 const LEASE_MS = 30_000;
 
 export interface LockManagerLike {

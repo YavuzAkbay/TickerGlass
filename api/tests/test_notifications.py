@@ -22,12 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from test_alerts import body, create, fire
 
-from investopen_api import models as m
-from investopen_api.db import make_engine, run_migrations
-from investopen_api.notifications import DeliveryError, webhook
-from investopen_api.notifications.dispatcher import MAX_ATTEMPTS, Dispatcher
-from investopen_api.settings import Settings
-from investopen_api.userdata.alerts import utc
+from tickerglass_api import models as m
+from tickerglass_api.db import make_engine, run_migrations
+from tickerglass_api.notifications import DeliveryError, webhook
+from tickerglass_api.notifications.dispatcher import MAX_ATTEMPTS, Dispatcher
+from tickerglass_api.settings import Settings
+from tickerglass_api.userdata.alerts import utc
 
 T0 = datetime(2026, 10, 15, 14, 30, tzinfo=UTC)
 
@@ -231,7 +231,7 @@ def test_webhook_envelope_and_signature(maker: sessionmaker[Session], net: FakeN
     }
     assert isinstance(req.data, bytes)
     want = hmac.new(b"k", req.data, hashlib.sha256).hexdigest()
-    assert req.get_header("X-investopen-signature") == f"sha256={want}"
+    assert req.get_header("X-tickerglass-signature") == f"sha256={want}"
     assert run(d, T0 + timedelta(hours=1)) == 0  # sent rows are never retried
 
 
@@ -241,7 +241,7 @@ def test_webhook_per_alert_target_overrides_default_and_no_secret(
     seed(maker, [("webhook", "https://mine.example/h")])
     run(Dispatcher(maker, settings(alerts_webhook_url="https://default.example/")), T0)
     assert net.last.full_url == "https://mine.example/h"
-    assert net.last.get_header("X-investopen-signature") is None
+    assert net.last.get_header("X-tickerglass-signature") is None
 
 
 @pytest.mark.parametrize(
@@ -312,7 +312,7 @@ def test_email_starttls(maker: sessionmaker[Session], smtp: type[FakeSMTP]) -> N
     assert (conn.host, conn.port, conn.timeout) == ("mail.example", 587, 10.0)
     assert conn.calls == ["starttls", "login:u:p", "send"]
     [msg] = conn.sent
-    assert msg["Subject"] == "InvestOpen alert: Mine"
+    assert msg["Subject"] == "TickerGlass alert: Mine"
     assert msg["From"] == "alerts@example.com" and msg["To"] == "me@example.com, you@example.org"
     text = msg.get_content()
     assert text.startswith("AAPL Crossing 190.00\n")

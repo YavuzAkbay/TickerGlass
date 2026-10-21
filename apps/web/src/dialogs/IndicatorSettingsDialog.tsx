@@ -16,7 +16,7 @@ import {
   type ResolvedOutput,
   type ShapeSize,
   type SourceValue,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { commitPreview, discardPreview, previewIndicator } from '../indicators/actions';

@@ -45,7 +45,7 @@ export const useTradingPrefs = create<PrefsState>()(
       set: (patch) => set(parseTradingPrefs({ ...patch })),
     }),
     {
-      name: 'investopen-trading-prefs',
+      name: 'tickerglass-trading-prefs',
       version: 1,
       partialize: pick,
       merge: (persisted, current) => ({ ...current, ...parseTradingPrefs(persisted) }),

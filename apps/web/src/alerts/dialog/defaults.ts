@@ -2,7 +2,7 @@
  * Initial dialog state per entry point (docs/alerts.md §5.3). Pure: the chart
  * comes in as an `AlertContext`.
  */
-import { CHANNEL_TOOLS, DEFAULT_NOTIFY, type Alert, type SeriesOperand } from '@investopen/alerts';
+import { CHANNEL_TOOLS, DEFAULT_NOTIFY, type Alert, type SeriesOperand } from '@tickerglass/alerts';
 import {
   alertToForm,
   cloneForm,

@@ -143,10 +143,10 @@ def send(
     `allow_private=False` refuses non-public destinations (see module docstring).
     """
     check_url(url, allow_private)
-    headers = {"Content-Type": content_type, "User-Agent": "InvestOpen-Alerts"}
+    headers = {"Content-Type": content_type, "User-Agent": "TickerGlass-Alerts"}
     if secret:
         digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        headers["X-InvestOpen-Signature"] = f"sha256={digest}"
+        headers["X-TickerGlass-Signature"] = f"sha256={digest}"
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with _build_opener(allow_private).open(req, timeout=timeout) as resp:

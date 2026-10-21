@@ -162,7 +162,7 @@ export async function exportAllData(): Promise<void> {
     await getPersistence()?.flushAll();
     const bundle = await persistence.exportAll();
     const stamp = new Date().toISOString().slice(0, 10);
-    downloadJson(bundle, `investopen-backup-${stamp}.json`);
+    downloadJson(bundle, `tickerglass-backup-${stamp}.json`);
   });
 }
 

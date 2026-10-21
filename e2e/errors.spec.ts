@@ -4,7 +4,7 @@ import { mockMarket } from './market';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -65,7 +65,7 @@ async function serveBars(page: Page, state: { mode: Mode; calls: number }) {
       },
     });
   });
-  await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
+  await page.addInitScript(() => localStorage.removeItem('tickerglass-indicators'));
 }
 
 const overlay = (page: Page) => page.locator('.chart-error');

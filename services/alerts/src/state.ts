@@ -1,5 +1,5 @@
 /** Dirty set of alert states, flushed with `PUT /alerts/states` (docs/alerts.md §3.5). */
-import type { AlertRuntimeState } from '@investopen/alerts';
+import type { AlertRuntimeState } from '@tickerglass/alerts';
 import type { ApiClient } from './api';
 import { errText, type Logger } from './log';
 

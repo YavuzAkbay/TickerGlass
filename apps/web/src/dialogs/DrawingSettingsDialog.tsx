@@ -7,7 +7,7 @@ import {
   type Drawing,
   type DrawingPoint,
   type DrawingStyle,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { ChevronDown, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { scopePatch, updateDrawings } from '../drawings/actions';

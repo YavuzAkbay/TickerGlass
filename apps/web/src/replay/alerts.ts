@@ -5,8 +5,8 @@ import {
   type Alert,
   type CrossCondition,
   type SampleValues,
-} from '@investopen/alerts';
-import { canonicalSymbol, type ChartMarker } from '@investopen/engine';
+} from '@tickerglass/alerts';
+import { canonicalSymbol, type ChartMarker } from '@tickerglass/engine';
 import { ALERT_COLOR } from '../alerts/attach';
 
 export const REPLAY_ALERT_GROUP = 'replay-alerts';

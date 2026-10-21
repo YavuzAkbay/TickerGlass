@@ -3,7 +3,7 @@
  * sample and the trigger bookkeeping of one alert revision. The service
  * computes the operand values; this decides whether a sample fires.
  */
-import { intervalSeconds, parseInterval } from '@investopen/engine/node';
+import { intervalSeconds, parseInterval } from '@tickerglass/engine/node';
 import { evaluateCondition, seriesKey } from './condition';
 import {
   afterFire,

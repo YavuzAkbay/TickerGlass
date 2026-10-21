@@ -1,4 +1,4 @@
-import { describeCondition, type Alert } from '@investopen/alerts';
+import { describeCondition, type Alert } from '@tickerglass/alerts';
 import { Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { commands } from '../../commands/registry';

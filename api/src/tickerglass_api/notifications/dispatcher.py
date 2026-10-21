@@ -200,7 +200,7 @@ def webhook_body(entry: m.AlertLog, raw: bool) -> tuple[bytes, str]:
 
 
 def email_content(entry: m.AlertLog) -> tuple[str, str]:
-    subject = f"InvestOpen alert: {entry.alert_name}"
+    subject = f"TickerGlass alert: {entry.alert_name}"
     body = (
         f"{entry.message}\n\n"
         f"Symbol: {entry.symbol}\n"

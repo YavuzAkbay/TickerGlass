@@ -3,7 +3,7 @@
 // dialogs, object tree) call the functions below. The store is the source of
 // truth: ./attach reconciles the engine with it after every change, so undo
 // and redo only touch the store (docs/drawings.md §5).
-import type { Drawing, DrawingPatch, DrawingStyle } from '@investopen/engine';
+import type { Drawing, DrawingPatch, DrawingStyle } from '@tickerglass/engine';
 import { useHistory, type UndoEntry } from '../commands/history';
 import { useIndicatorStore } from '../indicators/store';
 import { useChartView } from '../store/chartView';

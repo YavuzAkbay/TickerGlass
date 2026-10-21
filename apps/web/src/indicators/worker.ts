@@ -1,6 +1,6 @@
 // Indicator worker entry (Vite module worker, one per chart).
 // Registers the built-in indicators (workerCore only imports the core).
-import '@investopen/indicators';
+import '@tickerglass/indicators';
 import type { ToWorker } from './protocol';
 import { WorkerCore } from './workerCore';
 

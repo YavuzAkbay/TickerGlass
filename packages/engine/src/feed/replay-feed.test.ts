@@ -730,7 +730,7 @@ describe('ReplayFeed review fixes', () => {
 describe('chooseTick', () => {
   const M = (count: number): Interval => ({ unit: 'minute', count });
   const NOW = MON + 5000 * DAY;
-  // Mirrors the API lookback table (api/src/investopen_api/intervals.py).
+  // Mirrors the API lookback table (api/src/tickerglass_api/intervals.py).
   const lookbackSeconds = (iv: Interval): number | null => {
     const min = intervalSeconds(iv) / 60;
     if (min === 1) return 29 * DAY;

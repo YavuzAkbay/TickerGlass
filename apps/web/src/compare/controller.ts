@@ -30,7 +30,7 @@ import {
   type StudyTarget,
   type SymbolInfo,
   type Unsubscribe,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { comparePaneId, type ComparePlacement, type CompareState } from './model';
 import type { StoreApi } from 'zustand/vanilla';
 import type { CompareRuntimeState, CompareStatus } from './store';

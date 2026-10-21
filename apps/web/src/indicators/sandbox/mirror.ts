@@ -2,7 +2,7 @@
 // `bars` buffers are transferred to the indicator worker, so the router keeps
 // this mirror to replay the series to sandboxes it spawns later and to answer
 // their resyncs.
-import type { Bar, BarColumns } from '@investopen/engine';
+import type { Bar, BarColumns } from '@tickerglass/engine';
 
 const COLUMNS = ['time', 'open', 'high', 'low', 'close', 'volume'] as const;
 

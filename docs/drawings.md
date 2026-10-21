@@ -1,7 +1,7 @@
 # Drawings (Phase 6 design)
 
 Contract for the drawing framework. Source of truth for types: `packages/engine/src/drawings/types.ts`
-(exported from `@investopen/engine`). Change it only additively, and say so in the PR.
+(exported from `@tickerglass/engine`). Change it only additively, and say so in the PR.
 
 ## 1. Model
 
@@ -232,7 +232,7 @@ drawings are deferred). The server derives `symbol`/`pane_id`/`z` from `data`, w
 `apply(upserts, removeIds)`: the client diffs the store against the last saved state and sends a debounced
 `POST /drawings/batch` (`upserts` with `baseRevision`, `deletes`; a revision mismatch returns per-id
 conflicts). `GET /drawings?symbol=` returns that symbol's drawings plus the synced ones. localStorage
-`investopen-drawings` (`{ version: 1, bySymbol, synced }`, backup-on-unreadable and cross-tab merge rules)
+`tickerglass-drawings` (`{ version: 1, bySymbol, synced }`, backup-on-unreadable and cross-tab merge rules)
 stays as the offline cache and is imported into `drawings` on first run (migration plan:
 `docs/persistence.md` §6). Drawing templates (per-tool named styles)
 live in `drawing_templates` (at most one default per tool).

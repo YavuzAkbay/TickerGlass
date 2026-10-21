@@ -10,7 +10,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev
 
 ENV PATH="/opt/venv/bin:$PATH" API_HOST=0.0.0.0 API_PORT=8000 \
-    DATABASE_URL=sqlite:////data/investopen.db
+    DATABASE_URL=sqlite:////data/tickerglass.db
 VOLUME /data
 EXPOSE 8000
-CMD ["investopen-api"]
+CMD ["tickerglass-api"]

@@ -1,4 +1,4 @@
-# InvestOpen
+# TickerGlass
 
 Open-source, self-hosted charting and technical-analysis platform that runs in your browser.
 It aims for feature parity with professional charting tools: multiple chart types, drawing
@@ -9,7 +9,7 @@ comes from Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance).
 
 ## Disclaimer
 
-- InvestOpen is **not affiliated with, endorsed by, or connected to Yahoo, any data vendor,
+- TickerGlass is **not affiliated with, endorsed by, or connected to Yahoo, any data vendor,
   or any third-party platform.** All trademarks belong to their owners.
 - Yahoo Finance data is provided under Yahoo's terms, which allow **personal use only**.
   Each user runs their own instance and fetches data for themselves. Do not run a public
@@ -52,7 +52,7 @@ pnpm install
 cd api && uv sync && cd ..
 
 # terminal 1: API on :8000
-cd api && uv run uvicorn investopen_api.app:app --reload
+cd api && uv run uvicorn tickerglass_api.app:app --reload
 
 # terminal 2: web app on :5173 (proxies /api and /ws to :8000)
 pnpm dev

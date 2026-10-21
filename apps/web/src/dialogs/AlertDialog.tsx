@@ -15,7 +15,7 @@ import {
   type SeriesOperand,
   type TriggerMode,
   type ValidationError,
-} from '@investopen/alerts';
+} from '@tickerglass/alerts';
 import { Minus, Plus } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import * as alertsApi from '../api/alerts';

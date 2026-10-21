@@ -1,4 +1,4 @@
-import type { Chart, PriceScaleMode } from '@investopen/engine';
+import type { Chart, PriceScaleMode } from '@tickerglass/engine';
 import { useHistory } from './history';
 
 type ScaleState = { mode: PriceScaleMode; autoScale: boolean; invert: boolean };
