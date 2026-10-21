@@ -4,7 +4,7 @@
  * in-test mock for every page, so e2e never writes to a real backend, and
  * fails the test if the app made an API call the sandbox does not cover.
  */
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
 import { MockServer, mockPersistence } from './persistence';
 
 export const test = base.extend<{ server: MockServer }>({
@@ -32,3 +32,14 @@ export const test = base.extend<{ server: MockServer }>({
 });
 
 export { expect };
+
+/** Click `name` in the top bar "More" menu. */
+export async function openOverflowItem(page: Page, name: string) {
+  await page.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('menuitem', { name }).click();
+}
+
+/** Open the chart settings dialog through the "More" menu. */
+export async function openChartSettings(page: Page) {
+  await openOverflowItem(page, 'Settings');
+}

@@ -35,6 +35,17 @@ export const en = {
   'topbar.copyImage': 'Copy image',
   'topbar.themeLight': 'Switch to light theme',
   'topbar.themeDark': 'Switch to dark theme',
+  'topbar.palette': 'Search or run…',
+  'topbar.paletteLabel': 'Open command palette',
+  'topbar.more': 'More',
+  'topbar.snapshotMenu': 'Snapshot',
+
+  // Symbol header
+  'symbolHeader.label': 'Symbol summary',
+  'symbolHeader.openDetails': 'Open details for {symbol}',
+  'symbolHeader.range': 'Day range',
+  'symbolHeader.volume': 'Volume',
+  'symbolHeader.earnings': 'Next earnings',
 
   // Navigator
   'nav.panels': 'Panels',
