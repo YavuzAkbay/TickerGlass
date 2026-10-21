@@ -142,6 +142,41 @@ describe('layoutMarkers culling', () => {
   });
 });
 
+describe('paneBottom strip', () => {
+  const iv = { unit: 'day', count: 1 } as const;
+  const times = Array.from({ length: 10 }, (_, i) => START + i * D);
+  const bm = (id: string, i: number) =>
+    m(id, START + i * D, { position: 'paneBottom', shape: 'letter', text: 'E' });
+  const base = 300 - 6 - MARKER_SIZE / 2;
+
+  it('sits at the pane bottom regardless of price', () => {
+    const out = layoutMarkers(groups(bm('a', 2)), input(times, iv));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.x).toBe(25);
+    expect(out[0]!.y).toBe(base);
+  });
+
+  it('stacks upward on the same bar and on overlapping neighbours only', () => {
+    const out = layoutMarkers(
+      groups(bm('a', 2), bm('b', 2), bm('c', 3), bm('d', 5)),
+      input(times, iv),
+    );
+    const y = Object.fromEntries(out.map((p) => [p.marker.id, p.y]));
+    const step = MARKER_SIZE + 2;
+    expect(y.a).toBe(base);
+    expect(y.b).toBe(base - step);
+    expect(y.c).toBe(base - 2 * step); // 10px from both a and b
+    expect(y.d).toBe(base);
+  });
+
+  it('still culls by x and hit-tests at the strip', () => {
+    const out = layoutMarkers(groups(bm('a', 2)), input(times, iv, { paneWidth: 10 }));
+    expect(out).toEqual([]);
+    const placed = layoutMarkers(groups(bm('a', 2)), input(times, iv));
+    expect(hitMarker(placed, 25, base + 3)?.marker.id).toBe('a');
+  });
+});
+
 describe('hit testing', () => {
   it('hits the topmost marker within its box', () => {
     const iv = { unit: 'day', count: 1 } as const;

@@ -1,4 +1,4 @@
-import { linearTicks, logTicks } from './price-ticks';
+import { linearTicks, logTicksSpaced } from './price-ticks';
 
 export type PriceScaleMode = 'linear' | 'log' | 'percent' | 'indexed';
 
@@ -139,7 +139,10 @@ export class PriceScale {
     if (this.mode === 'log') {
       const pLo = 10 ** lo;
       const pHi = 10 ** hi;
-      return logTicks(pLo, pHi, target).map((p) => ({ value: p, y: this.priceToY(p) }));
+      return logTicksSpaced(pLo, pHi, minSpacingPx, (p) => this.priceToY(p)).map((p) => ({
+        value: p,
+        y: this.priceToY(p),
+      }));
     }
     // Linear, percent and indexed: nice steps in display units.
     return linearTicks(lo, hi, target).map((v) => ({ value: v, y: this.internalToY(v) }));

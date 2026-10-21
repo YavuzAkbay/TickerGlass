@@ -69,6 +69,101 @@ export function logTicks(min: number, max: number, targetCount: number): number[
   return gather([1], Math.ceil(ticks.length / Math.max(1, targetCount)));
 }
 
+/**
+ * Mantissa levels, coarsest first. A level is either an explicit mantissa list
+ * (per decade) or a uniform mantissa step (per decade, mantissa in [1, 10)).
+ */
+const LOG_LEVELS: ReadonlyArray<{ mults?: readonly number[]; step?: number }> = [
+  { mults: [1] },
+  { mults: [1, 2, 5] },
+  { step: 1 },
+  { step: 0.5 },
+  { step: 0.2 },
+  { step: 0.1 },
+  { step: 0.05 },
+  { step: 0.02 },
+  { step: 0.01 },
+  { step: 0.005 },
+  { step: 0.002 },
+  { step: 0.001 },
+];
+
+/** Max candidates generated per level; finer levels beyond this are skipped. */
+const LOG_LEVEL_CAP = 400;
+
+function cleanValue(v: number): number {
+  return Number(v.toPrecision(12));
+}
+
+function logLevelCandidates(
+  min: number,
+  max: number,
+  level: { mults?: readonly number[]; step?: number },
+): number[] | null {
+  const k0 = Math.floor(Math.log10(min));
+  const k1 = Math.floor(Math.log10(max));
+  const out: number[] = [];
+  const lo = min * (1 - 1e-12);
+  const hi = max * (1 + 1e-12);
+  for (let k = k0; k <= k1; k++) {
+    const base = pow10(k);
+    if (level.mults) {
+      for (const m of level.mults) {
+        const v = cleanValue(m * base);
+        if (v >= lo && v <= hi) out.push(v);
+      }
+    } else if (level.step) {
+      const step = level.step * base;
+      const from = Math.max(Math.ceil(lo / step - 1e-9), Math.round(base / step));
+      const to = Math.min(Math.floor(hi / step + 1e-9), Math.round((base * 10) / step) - 1);
+      if (to - from + 1 + out.length > LOG_LEVEL_CAP) return null;
+      for (let i = from; i <= to; i++) out.push(cleanValue(i * step));
+    }
+    if (out.length > LOG_LEVEL_CAP) return null;
+  }
+  return out;
+}
+
+/**
+ * Pixel-aware ticks for a log axis. Candidates are tried from the coarsest
+ * level (powers of 10) to ever finer 1/2/5-style levels; a candidate is kept
+ * only if its pixel position is at least `minSpacingPx` from every kept tick.
+ * Dense steps appear where the axis has room, coarse ones where it is compressed.
+ * Returns ascending prices.
+ */
+export function logTicksSpaced(
+  min: number,
+  max: number,
+  minSpacingPx: number,
+  priceToY: (price: number) => number,
+): number[] {
+  if (!(min > 0) || !(max >= min) || !Number.isFinite(max)) return [];
+  if (max === min) return [min];
+  const gap = Math.max(1, minSpacingPx);
+  const accepted: number[] = [];
+  const ys: number[] = [];
+  for (const level of LOG_LEVELS) {
+    const cands = logLevelCandidates(min, max, level);
+    if (!cands) break;
+    for (const v of cands) {
+      const y = priceToY(v);
+      if (!Number.isFinite(y)) continue;
+      let ok = true;
+      for (const other of ys) {
+        if (Math.abs(other - y) < gap) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        accepted.push(v);
+        ys.push(y);
+      }
+    }
+  }
+  return accepted.sort((a, b) => a - b);
+}
+
 /** Decimal places needed to represent `minTick` (0.01 -> 2, 0.25 -> 2, 1 -> 0). */
 export function decimalsForMinTick(minTick: number): number {
   if (!(minTick > 0) || !Number.isFinite(minTick)) return 2;

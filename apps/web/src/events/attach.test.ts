@@ -25,7 +25,7 @@ describe('buildEventMarkers', () => {
   it('builds D, S and E badges below the bars with tooltips', () => {
     const m = buildEventMarkers(DATA, DEFAULT_EVENT_PREFS, Infinity, 5000);
     expect(m.map((x) => x.text)).toEqual(['D', 'S', 'S', 'E', 'E']);
-    expect(m.every((x) => x.position === 'belowBar' && x.shape === 'letter')).toBe(true);
+    expect(m.every((x) => x.position === 'paneBottom' && x.shape === 'letter')).toBe(true);
     expect(m.map((x) => x.tooltip)).toEqual([
       'Dividend 0.24',
       'Split 4:1',

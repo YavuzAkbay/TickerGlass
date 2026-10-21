@@ -3,13 +3,17 @@ import type { ChartTheme } from '../options';
 import { font, roundRect } from './draw';
 
 export type ChartMarkerShape = 'bell' | 'circle' | 'arrowUp' | 'arrowDown' | 'letter';
-export type ChartMarkerPosition = 'aboveBar' | 'belowBar' | 'price';
+export type ChartMarkerPosition = 'aboveBar' | 'belowBar' | 'price' | 'paneBottom';
 
 /** A time-anchored mark on the main pane (alert fired, event, ...). */
 export interface ChartMarker {
   id: string;
   /** Unix seconds; mapped through the time scale, so it survives interval changes. */
   time: number;
+  /**
+   * `paneBottom` sits in a strip along the bottom edge of the pane at the
+   * bar's x; markers that would overlap horizontally stack upward.
+   */
   position: ChartMarkerPosition;
   /** Required for `position: 'price'`; ignored otherwise. */
   price?: number;
@@ -50,6 +54,8 @@ export interface MarkerLayoutInput {
  * above/below marker before the first bar or a price marker without a finite
  * price. An above/below marker past the last bar (a future event) sits at the
  * last bar's extreme. Markers on the same bar and side stack outward.
+ * `paneBottom` markers ignore price: they line up along the pane's bottom edge
+ * and stack upward when closer than one marker step horizontally.
  */
 export function layoutMarkers(
   groups: ReadonlyMap<string, readonly ChartMarker[]>,
@@ -59,6 +65,8 @@ export function layoutMarkers(
   const tl = inp.timeline;
   if (!tl.length) return out;
   const stacks = new Map<string, number>();
+  // paneBottom: x positions already used per stack level (level 0 = lowest).
+  const strip: number[][] = [];
   const pad = MARKER_SIZE;
   for (const [group, list] of groups) {
     for (const m of list) {
@@ -68,7 +76,13 @@ export function layoutMarkers(
       const x = inp.indexToX(index);
       if (x < -pad || x > inp.paneWidth + pad) continue;
       let y: number;
-      if (m.position === 'price') {
+      if (m.position === 'paneBottom') {
+        if (index < 0) continue;
+        let level = 0;
+        while ((strip[level] ?? []).some((px) => Math.abs(px - x) < STACK_STEP)) level++;
+        (strip[level] ??= []).push(x);
+        y = inp.paneHeight - GAP - MARKER_SIZE / 2 - level * STACK_STEP;
+      } else if (m.position === 'price') {
         if (m.price === undefined || !Number.isFinite(m.price)) continue;
         y = inp.priceToY(m.price);
       } else {
@@ -184,12 +198,13 @@ export function drawMarkers(ctx: CanvasRenderingContext2D, placed: readonly Plac
   }
 }
 
-/** Small text box above the marker (flipped below near the top edge). */
+/** Small text box above the marker (flipped below near the top edge, kept inside the pane). */
 export function drawMarkerTooltip(
   ctx: CanvasRenderingContext2D,
   p: PlacedMarker,
   theme: ChartTheme,
   paneWidth: number,
+  paneHeight: number = Infinity,
 ): void {
   const text = p.marker.tooltip;
   if (!text) return;
@@ -199,6 +214,7 @@ export function drawMarkerTooltip(
   const x = Math.max(2, Math.min(paneWidth - w - 2, p.x - w / 2));
   let y = p.y - MARKER_SIZE / 2 - h - 4;
   if (y < 2) y = p.y + MARKER_SIZE / 2 + 4;
+  if (y + h > paneHeight - 2) y = Math.max(2, p.y - MARKER_SIZE / 2 - h - 4);
   ctx.fillStyle = theme.crosshairLabelBg;
   roundRect(ctx, x, y, w, h, 3);
   ctx.fill();

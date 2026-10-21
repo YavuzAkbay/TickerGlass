@@ -1,4 +1,4 @@
-/** Dividend, split and earnings markers on the chart (group `events`, below the bars). */
+/** Dividend, split and earnings markers on the chart (group `events`, in a strip along the pane bottom). */
 import { isExpressionSymbol, PALETTE, type ChartMarker } from '@investopen/engine';
 import { useReplayStore } from '../replay/store';
 import type { ChartSession } from '../chart/session';
@@ -37,7 +37,7 @@ export function buildEventMarkers(
       out.push({
         id: `div-${d.t}`,
         time: d.t,
-        position: 'belowBar',
+        position: 'paneBottom',
         color: PALETTE.cyan,
         shape: 'letter',
         text: 'D',
@@ -50,7 +50,7 @@ export function buildEventMarkers(
       out.push({
         id: `split-${s.t}`,
         time: s.t,
-        position: 'belowBar',
+        position: 'paneBottom',
         color: PALETTE.violet,
         shape: 'letter',
         text: 'S',
@@ -68,7 +68,7 @@ export function buildEventMarkers(
       out.push({
         id: `earn-${e.t}`,
         time: e.t,
-        position: 'belowBar',
+        position: 'paneBottom',
         color: PALETTE.primary,
         shape: 'letter',
         text: 'E',

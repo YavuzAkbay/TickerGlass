@@ -83,4 +83,19 @@ describe('PriceScale', () => {
       expect(t.y).toBeLessThanOrEqual(501);
     }
   });
+
+  it('log ticks never crowd and cover top and bottom thirds', () => {
+    const ps = new PriceScale();
+    ps.mode = 'log';
+    ps.height = 700;
+    ps.setAutoRange(34, 1650);
+    const ticks = ps.ticks(34);
+    for (let i = 1; i < ticks.length; i++) {
+      const a = ticks[i - 1] as { y: number };
+      const b = ticks[i] as { y: number };
+      expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(34);
+    }
+    expect(ticks.some((t) => t.y < 700 / 3)).toBe(true);
+    expect(ticks.some((t) => t.y > (700 * 2) / 3)).toBe(true);
+  });
 });
