@@ -12,7 +12,8 @@ export interface ChartMarker {
   time: number;
   /**
    * `paneBottom` sits in a strip along the bottom edge of the pane at the
-   * bar's x; markers that would overlap horizontally stack upward.
+   * bar's x; markers that would overlap horizontally stack upward, at most
+   * {@link STRIP_LEVELS} high (further ones overlap on the top level).
    */
   position: ChartMarkerPosition;
   /** Required for `position: 'price'`; ignored otherwise. */
@@ -28,6 +29,8 @@ export const MARKER_SIZE = 14;
 const GAP = 6;
 const STACK_STEP = MARKER_SIZE + 2;
 const HIT_PAD = 2;
+/** Stack levels of the `paneBottom` strip. */
+export const STRIP_LEVELS = 2;
 
 /** A marker resolved to pane coordinates (CSS px, pane-relative). */
 export interface PlacedMarker {
@@ -35,6 +38,11 @@ export interface PlacedMarker {
   marker: ChartMarker;
   x: number;
   y: number;
+  /**
+   * Tooltip to show instead of `marker.tooltip`: set on a strip marker that
+   * overflowed onto the top level, joining the tooltips of the markers it covers.
+   */
+  tooltip?: string;
 }
 
 /** Bar columns and scales a layout needs (the displayed series of the main pane). */
@@ -48,14 +56,88 @@ export interface MarkerLayoutInput {
   paneHeight: number;
 }
 
+/** Inputs of the strip layout, which depends on x only. */
+export type StripLayoutInput = Pick<
+  MarkerLayoutInput,
+  'timeline' | 'indexToX' | 'paneWidth' | 'paneHeight'
+>;
+
+/** `paneBottom` markers laid out, before x culling. */
+export interface StripLayout {
+  /** Ascending x; culled entries are not removed yet. */
+  placed: PlacedMarker[];
+  /** Stack levels in use (0 when there are no strip markers). */
+  levels: number;
+}
+
+/**
+ * Lays out every `paneBottom` marker on the timeline (offscreen ones too, so
+ * panning never changes the stacking). Sorted by x; each marker takes the
+ * lowest level whose last marker is at least one step to the left, else it
+ * overlaps on the top level and its tooltip lists the covered markers' too.
+ */
+export function layoutStrip(
+  groups: ReadonlyMap<string, readonly ChartMarker[]>,
+  inp: StripLayoutInput,
+): StripLayout {
+  const tl = inp.timeline;
+  const items: Array<{ group: string; marker: ChartMarker; x: number }> = [];
+  if (!tl.length) return { placed: [], levels: 0 };
+  for (const [group, list] of groups) {
+    for (const m of list) {
+      if (m.position !== 'paneBottom') continue;
+      const logical = timeToLogical(tl, { time: m.time });
+      if (!Number.isFinite(logical)) continue;
+      const index = Math.round(logical);
+      if (index < 0) continue;
+      const x = inp.indexToX(index);
+      if (Number.isFinite(x)) items.push({ group, marker: m, x });
+    }
+  }
+  items.sort((a, b) => a.x - b.x);
+  const lastX: number[] = [];
+  let topLast: PlacedMarker | null = null;
+  let levels = 0;
+  const placed: PlacedMarker[] = [];
+  for (const it of items) {
+    let level = 0;
+    while (level < STRIP_LEVELS && lastX[level] !== undefined && it.x - lastX[level]! < STACK_STEP)
+      level++;
+    const overflow = level === STRIP_LEVELS;
+    if (overflow) level = STRIP_LEVELS - 1;
+    lastX[level] = it.x;
+    levels = Math.max(levels, level + 1);
+    const p: PlacedMarker = {
+      group: it.group,
+      marker: it.marker,
+      x: it.x,
+      y: inp.paneHeight - GAP - MARKER_SIZE / 2 - level * STACK_STEP,
+    };
+    if (overflow && topLast) {
+      const text = [topLast.tooltip ?? topLast.marker.tooltip, it.marker.tooltip]
+        .filter((t) => !!t)
+        .join(' · ');
+      if (text) p.tooltip = text;
+    }
+    if (level === STRIP_LEVELS - 1) topLast = p;
+    placed.push(p);
+  }
+  return { placed, levels };
+}
+
+/** Bottom reserve (px) the price scale needs to keep candles clear of a strip `levels` high. */
+export function stripReservePx(levels: number): number {
+  return levels > 0 ? GAP + MARKER_SIZE + (levels - 1) * STACK_STEP + 4 : 0;
+}
+
 /**
  * Places markers of every group. Culled: a marker whose bar is outside the
  * visible x range or whose y is outside the pane is dropped, as is an
  * above/below marker before the first bar or a price marker without a finite
  * price. An above/below marker past the last bar (a future event) sits at the
  * last bar's extreme. Markers on the same bar and side stack outward.
- * `paneBottom` markers ignore price: they line up along the pane's bottom edge
- * and stack upward when closer than one marker step horizontally.
+ * `paneBottom` markers ignore price: see {@link layoutStrip}. Strip markers
+ * come first in the result (ascending x), then the others in group order.
  */
 export function layoutMarkers(
   groups: ReadonlyMap<string, readonly ChartMarker[]>,
@@ -64,25 +146,25 @@ export function layoutMarkers(
   const out: PlacedMarker[] = [];
   const tl = inp.timeline;
   if (!tl.length) return out;
-  const stacks = new Map<string, number>();
-  // paneBottom: x positions already used per stack level (level 0 = lowest).
-  const strip: number[][] = [];
   const pad = MARKER_SIZE;
+  const visible = (x: number, y: number): boolean =>
+    x >= -pad &&
+    x <= inp.paneWidth + pad &&
+    Number.isFinite(y) &&
+    y >= -pad &&
+    y <= inp.paneHeight + pad;
+  for (const p of layoutStrip(groups, inp).placed) if (visible(p.x, p.y)) out.push(p);
+  const stacks = new Map<string, number>();
   for (const [group, list] of groups) {
     for (const m of list) {
+      if (m.position === 'paneBottom') continue;
       const logical = timeToLogical(tl, { time: m.time });
       if (!Number.isFinite(logical)) continue;
       const index = Math.round(logical);
       const x = inp.indexToX(index);
       if (x < -pad || x > inp.paneWidth + pad) continue;
       let y: number;
-      if (m.position === 'paneBottom') {
-        if (index < 0) continue;
-        let level = 0;
-        while ((strip[level] ?? []).some((px) => Math.abs(px - x) < STACK_STEP)) level++;
-        (strip[level] ??= []).push(x);
-        y = inp.paneHeight - GAP - MARKER_SIZE / 2 - level * STACK_STEP;
-      } else if (m.position === 'price') {
+      if (m.position === 'price') {
         if (m.price === undefined || !Number.isFinite(m.price)) continue;
         y = inp.priceToY(m.price);
       } else {
@@ -98,7 +180,7 @@ export function layoutMarkers(
             ? inp.priceToY(inp.high[bar]!) - off
             : inp.priceToY(inp.low[bar]!) + off;
       }
-      if (!Number.isFinite(y) || y < -pad || y > inp.paneHeight + pad) continue;
+      if (!visible(x, y)) continue;
       out.push({ group, marker: m, x, y });
     }
   }
@@ -206,7 +288,7 @@ export function drawMarkerTooltip(
   paneWidth: number,
   paneHeight: number = Infinity,
 ): void {
-  const text = p.marker.tooltip;
+  const text = p.tooltip ?? p.marker.tooltip;
   if (!text) return;
   ctx.font = font(theme);
   const w = ctx.measureText(text).width + 12;

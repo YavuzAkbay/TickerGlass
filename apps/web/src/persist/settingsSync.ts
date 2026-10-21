@@ -13,7 +13,17 @@ import { parseTradingPrefs, readTradingPrefs, useTradingPrefs } from '../replay/
 import { parseEventPrefs, readEventPrefs, useEventPrefs } from '../events/prefs';
 import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
-import { migrateNavigator, migrateToolIds, NAV_SECTIONS, useUiStore } from '../store/ui';
+import {
+  clamp,
+  MAX_INSPECTOR_WIDTH,
+  MAX_NAV_WIDTH,
+  migrateNavigator,
+  migrateToolIds,
+  MIN_INSPECTOR_WIDTH,
+  MIN_NAV_WIDTH,
+  NAV_SECTIONS,
+  useUiStore,
+} from '../store/ui';
 import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
 import { isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
@@ -100,8 +110,9 @@ export const SETTING_DEFS: SettingDef[] = [
     },
     write: (v) => {
       const cur = pickKeys(useUiStore.getState(), UI_PREFS);
-      // The server may still hold the bottom dock fields.
-      const incoming = isObj(v) ? migrateNavigator(v) : v;
+      // The server may still hold the bottom dock fields; only then is there anything to migrate.
+      const legacy = isObj(v) && ('rightPanel' in v || 'dockTab' in v || 'dockHeight' in v);
+      const incoming = isObj(v) && legacy ? migrateNavigator(v, true) : v;
       const patch: Partial<ReturnType<typeof useUiStore.getState>> = migrateToolIds(
         pickTyped(cur, incoming),
       );
@@ -111,6 +122,14 @@ export const SETTING_DEFS: SettingDef[] = [
         (!NAV_SECTIONS.includes(patch.navSection) || patch.navSection === 'replayTrading')
       )
         delete patch.navSection;
+      if (patch.navWidth !== undefined)
+        patch.navWidth = clamp(patch.navWidth, MIN_NAV_WIDTH, MAX_NAV_WIDTH);
+      if (patch.inspectorWidth !== undefined)
+        patch.inspectorWidth = clamp(
+          patch.inspectorWidth,
+          MIN_INSPECTOR_WIDTH,
+          MAX_INSPECTOR_WIDTH,
+        );
       useUiStore.getState().set(patch);
     },
     subscribe: (fn) => useUiStore.subscribe(fn),

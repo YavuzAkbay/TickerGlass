@@ -3,7 +3,7 @@ import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
 import { useReplayStore } from '../replay/store';
-import { DEFAULT_NAV_WIDTH, useUiStore } from '../store/ui';
+import { DEFAULT_NAV_WIDTH, MAX_NAV_WIDTH, MIN_NAV_WIDTH, useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import '../sidebar/sidebar.css';
 import { NavRail } from './NavRail';
@@ -90,6 +90,8 @@ export function Navigator() {
             aria-orientation="vertical"
             aria-label={t('nav.resize')}
             aria-valuenow={width}
+            aria-valuemin={MIN_NAV_WIDTH}
+            aria-valuemax={MAX_NAV_WIDTH}
             tabIndex={0}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}

@@ -3,7 +3,14 @@ import { useT } from '../i18n';
 import { eventsPath, EVENTS_TTL_MS, type EventsResponse } from '../events/api';
 import { useLiveQuote } from '../quotes/hooks';
 import type { SymbolMeta } from '../api/types';
-import { changeClass, decimalsForTick, fmtCompact, fmtPrice, isNum } from '../sidebar/format';
+import {
+  changeClass,
+  decimalsForTick,
+  fmtCompact,
+  fmtPrice,
+  fmtSigned,
+  isNum,
+} from '../sidebar/format';
 import { useApi, useNow } from '../sidebar/hooks';
 import { earningsStat } from '../sidebar/panels/Details';
 import { useChartView } from '../store/chartView';
@@ -29,8 +36,8 @@ function Header({ symbol, expr }: { symbol: string; expr: boolean }) {
   const d = decimalsForTick(meta.data?.minTick);
   const cls = changeClass(q?.change);
   const glyph = isNum(q?.change) ? (q.change > 0 ? '▲' : q.change < 0 ? '▼' : '') : '';
-  const abs = isNum(q?.change) ? fmtPrice(Math.abs(q.change), d) : null;
-  const pct = isNum(q?.changePercent) ? `${fmtPrice(Math.abs(q.changePercent), 2)}%` : null;
+  const abs = isNum(q?.change) ? fmtSigned(q.change, d) : null;
+  const pct = isNum(q?.changePercent) ? fmtSigned(q.changePercent, 2, '%') : null;
   const earn = events.data ? earningsStat(events.data, {}, now) : null;
   const nextEarn = earn && earn.label === 'Next earnings' && earn.value !== '—' ? earn.value : null;
   const name = meta.data?.name;

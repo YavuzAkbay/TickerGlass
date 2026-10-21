@@ -151,4 +151,30 @@ describe('ui.prefs sync', () => {
     useUiStore.setState({ navSection: 'replayTrading' });
     expect((uiPrefs.read() as { navSection: string }).navSection).toBe('watchlist');
   });
+
+  it('keeps local nav prefs when the payload has no nav keys', () => {
+    useUiStore.setState({ navOpen: false, navSection: 'news', navWidth: 400 });
+    uiPrefs.write({ toolRailHidden: true });
+    expect(useUiStore.getState()).toMatchObject({
+      navOpen: false,
+      navSection: 'news',
+      navWidth: 400,
+      toolRailHidden: true,
+    });
+  });
+
+  it('legacy payload migrates the section but leaves the local width', () => {
+    useUiStore.setState({ navWidth: 400 });
+    uiPrefs.write({ rightPanel: 'alerts', dockHeight: 300 });
+    expect(useUiStore.getState()).toMatchObject({
+      navOpen: true,
+      navSection: 'alerts',
+      navWidth: 400,
+    });
+  });
+
+  it('clamps incoming widths', () => {
+    uiPrefs.write({ navWidth: 5000, inspectorWidth: 1 });
+    expect(useUiStore.getState()).toMatchObject({ navWidth: 480, inspectorWidth: 260 });
+  });
 });

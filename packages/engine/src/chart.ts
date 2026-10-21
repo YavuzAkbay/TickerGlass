@@ -10,6 +10,8 @@ import {
   drawMarkerTooltip,
   hitMarker,
   layoutMarkers,
+  layoutStrip,
+  stripReservePx,
   type ChartMarker,
   type PlacedMarker,
 } from './render/markers';
@@ -1689,6 +1691,18 @@ export class Chart implements StudyApi, DrawingApi {
     });
   }
 
+  /** Bottom reserve for the main pane's `paneBottom` strip (0 without strip markers). */
+  private stripReserve(paneHeight: number): number {
+    if (!this.markerGroups.size || paneHeight <= 0) return 0;
+    const { levels } = layoutStrip(this.markerGroups, {
+      timeline: this.refreshTimeline(),
+      indexToX: (i) => this.timeScale.indexToX(i),
+      paneWidth: this.paneWidth,
+      paneHeight,
+    });
+    return stripReservePx(levels);
+  }
+
   private placedLines(pane: Pane): PlacedPriceLine[] {
     if (!this.lineGroups.size) return [];
     return layoutPriceLines(this.lineGroups, pane.id, pane.height, (p) =>
@@ -2226,6 +2240,8 @@ export class Chart implements StudyApi, DrawingApi {
       // Auto-scale + percent base.
       const base = pane.series[0]?.baseValue(from);
       if (base) ps.base = base;
+      // Keep candles clear of the event strip; its layout depends on x only.
+      ps.reserveBottomPx = pane.id === 'main' ? this.stripReserve(pane.height) : 0;
       if (ps.autoScale && from <= to) {
         let min = Infinity;
         let max = -Infinity;
@@ -2246,8 +2262,9 @@ export class Chart implements StudyApi, DrawingApi {
       const dev = pane.bg.device();
       dev.fillStyle = t.grid;
       for (const m of this.marks) vLine(dev, m.x, 0, pane.height, this.dpr);
-      const ticks = ps.ticks(pane.height < 120 ? 24 : 34);
-      pane.labelDecimals = decimalsForStep(ticks);
+      const tickSet = ps.tickSet(pane.height < 120 ? 24 : 34);
+      const ticks = tickSet.ticks;
+      pane.labelDecimals = tickSet.decimals ?? decimalsForStep(ticks);
       for (const tk of ticks) hLine(dev, tk.y, 0, paneW, this.dpr);
       if (pane.id === 'main' && from <= to) this.shadeExtendedHours(dev, from, to, pane.height);
 
@@ -2747,10 +2764,10 @@ function formatAxisNumber(v: number, decimals: number): string {
   return formatPrice(v, Math.min(8, decimals));
 }
 
-/** Decimals needed to tell adjacent ticks apart (step 0.25 -> 2, 5 -> 0). */
+/** Decimals needed to tell adjacent linear ticks apart (step 0.25 -> 2, 5 -> 0). */
 function decimalsForStep(ticks: { value: number }[]): number {
   if (ticks.length < 2) return 2;
-  // Finest decimals needed by any tick, so mixed steps (log axis) stay consistent.
+  // Finest decimals needed by any tick.
   let decimals = 0;
   for (const t of ticks) {
     let d = 0;
