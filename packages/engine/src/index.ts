@@ -17,7 +17,7 @@ export { CandleSeries, LineSeries } from './render/series';
 export { MainSeries, VolumeSeries } from './render/main-series';
 export type { VolumeMode } from './render/main-series';
 export * from './chart-types';
-export type { DeepPartial } from './chart';
+export type { ChartErrorInfo, DeepPartial } from './chart';
 export type { PaneSeries, SeriesRenderContext } from './render/series';
 export type { PriceScaleMode } from './scale/price-scale';
 export type { ChartMarker, ChartMarkerPosition, ChartMarkerShape } from './render/markers';

@@ -154,6 +154,27 @@ export interface ChartPoint {
   drawingId?: string | null;
 }
 
+/** Payload of the `error` event. `status` and `retryAfter` come from a `FeedError`. */
+export interface ChartErrorInfo {
+  message: string;
+  /** HTTP status of a failed request; 0 for network errors. Absent for other errors. */
+  status?: number;
+  /** Seconds the server asked to wait before retrying (429/503). */
+  retryAfter?: number;
+}
+
+function chartErrorInfo(err: unknown, message?: string): ChartErrorInfo {
+  const info: ChartErrorInfo = {
+    message: message ?? (err instanceof Error ? err.message : String(err)),
+  };
+  if (err instanceof Error) {
+    const { status, retryAfter } = err as { status?: unknown; retryAfter?: unknown };
+    if (typeof status === 'number') info.status = status;
+    if (typeof retryAfter === 'number') info.retryAfter = retryAfter;
+  }
+  return info;
+}
+
 export interface ChartEvents extends StudyEvents, DrawingEvents {
   contextMenu: ChartPoint;
   /** Live update of the last bar (or a newly appended one). */
@@ -165,7 +186,7 @@ export interface ChartEvents extends StudyEvents, DrawingEvents {
   symbolResolved: SymbolInfo;
   dataLoaded: { symbol: string; interval: string; bars: number };
   loading: boolean;
-  error: { message: string };
+  error: ChartErrorInfo;
   stateChange: ChartState;
   /** The "+" on the price axis label was clicked. */
   priceAxisPlus: { paneId: string; price: number };
@@ -1842,7 +1863,7 @@ export class Chart implements StudyApi, DrawingApi {
       this.invalidate(INVALIDATE_LAYOUT);
       this.emitSeriesReset();
       this.emitViewChange('data');
-      this.events.emit('error', { message });
+      this.events.emit('error', chartErrorInfo(err, message));
     } finally {
       if (gen === this.loadGen) this.events.emit('loading', false);
     }
@@ -1933,7 +1954,7 @@ export class Chart implements StudyApi, DrawingApi {
         }
         return n;
       } catch (err) {
-        this.events.emit('error', { message: err instanceof Error ? err.message : String(err) });
+        this.events.emit('error', chartErrorInfo(err));
         return 0;
       } finally {
         this.loadingMore = false;

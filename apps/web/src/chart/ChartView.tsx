@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { DARK_THEME, LIGHT_THEME } from '@investopen/engine';
+import { ChartError } from './ChartError';
 import { feed } from './feed';
 import { PRIMARY_CHART_ID, createChartSession, type ChartSession } from './session';
 import { attachAlerts } from '../alerts/attach';
@@ -104,6 +105,11 @@ export function ChartView({ id }: { id: string }) {
       chart.on('symbolResolved', (symbolInfo) => s.info.setState({ symbolInfo })),
       chart.on('crosshairMove', (c) => s.info.setState({ crosshair: c })),
       chart.on('loading', (loading) => s.info.setState({ loading })),
+      // Only a failed load blanks the chart; a failed history page keeps its bars.
+      chart.on('error', (error) => {
+        if (chart.store.length === 0) s.info.setState({ error });
+      }),
+      chart.on('dataLoaded', () => s.info.setState({ error: null })),
       chart.on('contextMenu', (p) => openChartContextMenu(chart, p)),
       // Drawings first: a pane removal folds their undo step with the studies'.
       attachDrawings(s, hostRef.current!),
@@ -141,7 +147,10 @@ export function ChartView({ id }: { id: string }) {
     apply();
     let prev = view.getState();
     const off = view.subscribe((v) => {
-      if (v.symbol !== prev.symbol || v.interval !== prev.interval) apply();
+      if (v.symbol !== prev.symbol || v.interval !== prev.interval) {
+        session.info.setState({ error: null });
+        apply();
+      }
       if (v.chartStyle !== prev.chartStyle || v.chartType !== prev.chartType) {
         chart.setChartStyle(v.chartStyle);
         chart.setChartType(v.chartType);
@@ -176,6 +185,7 @@ export function ChartView({ id }: { id: string }) {
       onPointerDownCapture={() => setActiveChart(id)}
     >
       <div ref={hostRef} className="chart-host" />
+      {session ? <ChartError session={session} /> : null}
       {session ? <CompareLegends session={session} /> : null}
       {session ? <IndicatorLegends session={session} /> : null}
       {active ? (

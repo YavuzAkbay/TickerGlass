@@ -35,7 +35,7 @@ function fakeSession(id: string): ChartSession {
     compareRuntime: createCompareRuntimeStore(),
     history: createHistoryStore(),
     drawingRuntime: createDrawingRuntimeStore(),
-    info: createStore(() => ({ symbolInfo: null, crosshair: null, loading: false })),
+    info: createStore(() => ({ symbolInfo: null, crosshair: null, loading: false, error: null })),
     destroy: () => {},
   };
 }

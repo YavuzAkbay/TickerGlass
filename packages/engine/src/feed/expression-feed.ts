@@ -393,15 +393,22 @@ export class ExpressionFeed implements DataFeed {
 
 function legError(symbol: string, input: string, err: unknown): FeedError {
   const status = err instanceof FeedError ? err.status : 0;
+  const retryAfter = err instanceof FeedError ? err.retryAfter : undefined;
   if (status >= 400 && status < 500) {
     let hint = symbol.includes('-') ? ' — for a spread put spaces around the minus: A - B' : '';
     if (!symbol.includes('/') && /[A-Za-z]\/[A-Za-z]/.test(input)) {
       hint += ' — to use a symbol containing \'/\', quote it: "BRK/B"';
     }
-    return new FeedError(`Unknown symbol in expression: ${symbol}${hint}`, status, { cause: err });
+    return new FeedError(`Unknown symbol in expression: ${symbol}${hint}`, status, {
+      cause: err,
+      retryAfter,
+    });
   }
   const detail = err instanceof Error ? err.message : String(err);
-  return new FeedError(`Could not resolve ${symbol}: ${detail}`, status, { cause: err });
+  return new FeedError(`Could not resolve ${symbol}: ${detail}`, status, {
+    cause: err,
+    retryAfter,
+  });
 }
 
 function tailKey(canonical: string, interval: Interval, prepost: boolean | undefined): string {

@@ -93,6 +93,7 @@ const NO_INFO = createStore<ChartInfoState>(() => ({
   symbolInfo: null,
   crosshair: null,
   loading: false,
+  error: null,
 }));
 
 function useReplaySession(): ChartSession | undefined {
