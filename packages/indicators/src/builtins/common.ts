@@ -2,18 +2,18 @@ import type { StepContext, Streaming, Ta, WeightedStreaming } from '../types';
 
 /** Default colours shared by the built-ins (mirrors the engine's PALETTE). */
 export const COLOR = {
-  blue: '#4f6bed',
-  orange: '#f2a93b',
+  blue: '#6E9BD6',
+  orange: '#E0A93B',
   purple: '#8e5cf6',
-  red: '#e5484d',
+  red: '#DE6A4F',
   pink: '#e8618c',
   green: '#8bc34a',
-  brightRed: '#e5484d',
-  yellow: '#f2a93b',
-  level: '#9aa4b2',
+  brightRed: '#DE6A4F',
+  yellow: '#E0A93B',
+  level: '#A39E8F',
   levelMiddle: 'rgba(154, 164, 178, 0.5)',
-  blueFill: 'rgba(79, 107, 237, 0.1)',
-  blueFillLight: 'rgba(79, 107, 237, 0.05)',
+  blueFill: 'rgba(110, 155, 214, 0.1)',
+  blueFillLight: 'rgba(110, 155, 214, 0.05)',
   purpleFill: 'rgba(142, 92, 246, 0.1)',
 } as const;
 

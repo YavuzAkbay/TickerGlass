@@ -74,7 +74,7 @@ export const CCI = defineIndicator({
       id: 'ma',
       title: 'Smoothing Line',
       kind: 'line',
-      color: '#f2a93b',
+      color: '#E0A93B',
       visible: false,
     },
   ],

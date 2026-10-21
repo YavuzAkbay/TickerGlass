@@ -13,7 +13,7 @@ import {
 const SMOOTHING = 5;
 
 export const HIGHLIGHTER_DEFAULTS = {
-  lineColor: 'rgba(242, 169, 59, 0.35)',
+  lineColor: 'rgba(224, 169, 59, 0.35)',
   lineWidth: 20,
 };
 

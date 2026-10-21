@@ -27,7 +27,7 @@ export const KST = defineIndicator({
   outputs: [
     { type: 'hline', id: 'zero', title: 'Zero', value: 0, color: COLOR.levelMiddle },
     { type: 'plot', id: 'kst', title: 'KST', kind: 'line', color: '#0fb5c9' },
-    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#e5484d' },
+    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#DE6A4F' },
   ],
   setup({ inputs, ta }) {
     const rocs = [inputs.roc1, inputs.roc2, inputs.roc3, inputs.roc4];

@@ -19,7 +19,7 @@ export const SMA = defineIndicator({
       id: 'ma',
       title: 'MA',
       kind: 'line',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       offset: (inputs) => inputs.offset,
     },
   ],

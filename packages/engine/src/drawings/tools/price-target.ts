@@ -23,11 +23,11 @@ import type { DrawingBarData, DrawingGeometry, DrawingLineStyle } from '../types
 
 export const PRICE_TARGET_DEFAULTS = {
   /** Line and pending label; also the handle colour. */
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 2,
   lineStyle: 'solid' as DrawingLineStyle,
-  successColor: '#18a383',
-  failureColor: '#e5484d',
+  successColor: '#7FB069',
+  failureColor: '#DE6A4F',
   textColor: '#ffffff',
   showLabel: true,
 };

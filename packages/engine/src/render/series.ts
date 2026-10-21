@@ -132,7 +132,7 @@ export class LineSeries implements PaneSeries {
     readonly title: string,
     private readonly values: () => Float64Array,
     private readonly length: () => number,
-    public color = '#4f6bed',
+    public color = '#6E9BD6',
     public lineWidth = 1.5,
   ) {}
 

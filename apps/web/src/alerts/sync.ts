@@ -82,7 +82,8 @@ export class AlertsSync {
     }, RETRY_MS);
     const service = setInterval(() => {
       if (
-        useUiStore.getState().rightPanel === 'alerts' &&
+        useUiStore.getState().navOpen &&
+        useUiStore.getState().navSection === 'alerts' &&
         (!dom || document.visibilityState === 'visible')
       )
         void this.loadService();

@@ -33,13 +33,13 @@ export const MAX_COMPARES = 10;
 export const MAX_COMPARE_SYMBOL = 128;
 export const DEFAULT_COMPARE_LINE_WIDTH = 2;
 export const COMPARE_COLORS = [
-  '#f2a93b',
+  '#E0A93B',
   '#e8618c',
   '#0fb5c9',
   '#8e5cf6',
   '#8bc34a',
-  '#4f6bed',
-  '#e5484d',
+  '#6E9BD6',
+  '#DE6A4F',
   '#7a8a99',
 ];
 
@@ -88,7 +88,7 @@ export function compareSymbol(
 export function nextCompareColor(items: readonly CompareState[]): string {
   const used = new Set(items.map((i) => i.color.toLowerCase()));
   return (
-    COMPARE_COLORS.find((c) => !used.has(c)) ??
+    COMPARE_COLORS.find((c) => !used.has(c.toLowerCase())) ??
     COMPARE_COLORS[items.length % COMPARE_COLORS.length]!
   );
 }

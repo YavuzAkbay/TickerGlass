@@ -21,7 +21,7 @@ import { useLayoutGrid } from '../layout/store';
 import { getChart, useChartStore } from '../store/chart';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
-import { useUiStore, type RightPanel } from '../store/ui';
+import { useUiStore, type NavSection } from '../store/ui';
 import { toast } from '../ui/Toast';
 import { useHistory } from './history';
 import { commands, type Command } from './registry';
@@ -73,7 +73,7 @@ export async function saveScreenshot(copy: boolean, layout = false): Promise<voi
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-const PANELS: [RightPanel, string][] = [
+const PANELS: [NavSection | 'details', string][] = [
   ['watchlist', 'Watchlist'],
   ['alerts', 'Alerts'],
   ['objectTree', 'Object tree'],
@@ -325,7 +325,13 @@ export function registerCoreCommands(): () => void {
       id: `view.panel.${id}`,
       title: `Toggle ${title} panel`,
       category: 'Panels',
-      run: () => useUiStore.getState().togglePanel(id),
+      run: () => {
+        const ui = useUiStore.getState();
+        // Symbol details live in the Inspector.
+        if (id !== 'details') ui.toggleNav(id);
+        else if (ui.inspector?.view === 'symbol') ui.closeInspector();
+        else ui.openInspector('symbol');
+      },
     })),
   ];
   return commands.register(list);

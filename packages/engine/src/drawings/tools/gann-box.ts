@@ -20,7 +20,7 @@ import {
 
 export const GANN_BOX_DEFAULTS = {
   /** Angle (diagonal) lines; also the handle colour. */
-  lineColor: '#9aa4b2',
+  lineColor: '#A39E8F',
   levelsLineWidth: 1,
   levelsLineStyle: 'solid' as DrawingLineStyle,
   /** Price levels: horizontal lines at fractions of the box height (0 at anchor 1). */
@@ -28,7 +28,7 @@ export const GANN_BOX_DEFAULTS = {
   /** Time levels: vertical lines at fractions of the box width (0 at anchor 1). */
   timeLevels: defaultGannLevels(),
   useOneColor: false,
-  oneColor: '#4f6bed',
+  oneColor: '#6E9BD6',
   fillBackground: true,
   backgroundTransparency: 85,
   showAngles: false,

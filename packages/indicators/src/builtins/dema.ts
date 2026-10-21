@@ -12,7 +12,7 @@ export const DEMA = defineIndicator({
     length: { kind: 'int', label: 'Length', default: 9, min: 1, max: 5000 },
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
-  outputs: [{ type: 'plot', id: 'dema', title: 'DEMA', kind: 'line', color: '#18a383' }],
+  outputs: [{ type: 'plot', id: 'dema', title: 'DEMA', kind: 'line', color: '#7FB069' }],
   setup({ inputs, ta }) {
     const e1 = ta.ema(inputs.length);
     const e2 = ta.ema(inputs.length);

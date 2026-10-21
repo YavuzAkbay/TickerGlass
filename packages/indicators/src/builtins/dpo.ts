@@ -28,7 +28,7 @@ export const DPO = defineIndicator({
       id: 'dpo',
       title: 'Detrended Price Oscillator',
       kind: 'line',
-      color: '#18a383',
+      color: '#7FB069',
       offset: (inputs) => (inputs.centered ? -barsBack(inputs.length) : 0),
     },
   ],

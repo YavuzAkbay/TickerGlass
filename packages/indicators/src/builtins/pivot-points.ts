@@ -3,7 +3,7 @@ import { defineIndicator } from '../registry';
 /** Order of the "Type" options. */
 const PIVOT_TYPES = ['Traditional', 'Fibonacci', 'Woodie', 'Classic', 'DM', 'Camarilla'] as const;
 type PivotType = (typeof PIVOT_TYPES)[number];
-const PIVOT_COLOR = '#f2a93b';
+const PIVOT_COLOR = '#E0A93B';
 
 const LEVELS = ['p', 'r1', 's1', 'r2', 's2', 'r3', 's3', 'r4', 's4', 'r5', 's5'] as const;
 type Level = (typeof LEVELS)[number];

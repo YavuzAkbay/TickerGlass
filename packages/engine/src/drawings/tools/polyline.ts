@@ -11,7 +11,7 @@ import {
   shapeDefaults,
 } from './shape-common';
 
-export const POLYLINE_DEFAULTS = shapeDefaults('#4f6bed', 'rgba(79, 107, 237, 0.2)');
+export const POLYLINE_DEFAULTS = shapeDefaults('#6E9BD6', 'rgba(110, 155, 214, 0.2)');
 
 /** Closed polyline: more than 2 anchors and the last is an exact copy of the first
  * (creation finished by clicking on anchor 0). */

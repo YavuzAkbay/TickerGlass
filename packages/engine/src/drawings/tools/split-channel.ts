@@ -18,13 +18,13 @@ import type {
 
 /** Style keys of the two-line channels (split channel, flat-edge channel). */
 export const TWO_LINE_CHANNEL_DEFAULTS = {
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 2,
   lineStyle: 'solid' as DrawingLineStyle,
   extendLeft: false,
   extendRight: false,
   fillBackground: true,
-  backgroundColor: 'rgba(79, 107, 237, 0.2)',
+  backgroundColor: 'rgba(110, 155, 214, 0.2)',
 };
 
 export type TwoLineChannelStyle = typeof TWO_LINE_CHANNEL_DEFAULTS;

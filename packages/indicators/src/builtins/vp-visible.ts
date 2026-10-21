@@ -52,11 +52,11 @@ export function profileOutput(mode: VolumeProfileMode): VolumeProfileDef<'vp', t
     valueArea: (inputs) => inputs.valueArea,
     widthPercent: (inputs) => inputs.widthPercent,
     placement: (inputs) => inputs.placement,
-    upColor: 'rgba(79, 107, 237, 0.3)',
-    downColor: 'rgba(242, 169, 59, 0.3)',
-    valueAreaUpColor: 'rgba(79, 107, 237, 0.7)',
-    valueAreaDownColor: 'rgba(242, 169, 59, 0.7)',
-    pocColor: '#e5484d',
+    upColor: 'rgba(110, 155, 214, 0.3)',
+    downColor: 'rgba(224, 169, 59, 0.3)',
+    valueAreaUpColor: 'rgba(110, 155, 214, 0.7)',
+    valueAreaDownColor: 'rgba(224, 169, 59, 0.7)',
+    pocColor: '#DE6A4F',
   };
 }
 

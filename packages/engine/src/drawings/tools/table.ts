@@ -18,9 +18,9 @@ export const TABLE_DEFAULTS = {
   fillBackground: true,
   backgroundColor: 'rgba(255, 255, 255, 0.9)',
   showBorder: true,
-  borderColor: '#9aa4b2',
+  borderColor: '#A39E8F',
   headerRow: true,
-  headerColor: 'rgba(79, 107, 237, 0.3)',
+  headerColor: 'rgba(110, 155, 214, 0.3)',
 };
 
 type TableStyle = typeof TABLE_DEFAULTS;

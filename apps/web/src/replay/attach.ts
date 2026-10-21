@@ -17,7 +17,8 @@ export function attachReplay(session: Pick<ChartSession, 'id' | 'chart'>): () =>
   const offs = [
     useReplayStore.subscribe((s, prev) => {
       if (s.status === prev.status) return;
-      if (s.status === 'off' && ui().rightPanel === 'replayTrading') ui().set({ rightPanel: null });
+      if (s.status === 'off' && ui().navSection === 'replayTrading')
+        ui().set({ navSection: 'watchlist' });
       if (s.status === 'picking') ui().set({ activeTool: REPLAY_PICK_ID });
       else if (prev.status === 'picking' && armed()) resetToCursor();
     }),

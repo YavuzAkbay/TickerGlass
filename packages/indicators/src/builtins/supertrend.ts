@@ -20,13 +20,13 @@ export const SUPERTREND = defineIndicator({
   },
   outputs: [
     { type: 'plot', id: 'up', title: 'Up Trend', kind: 'line', color: '#8bc34a' },
-    { type: 'plot', id: 'down', title: 'Down Trend', kind: 'line', color: '#e5484d' },
+    { type: 'plot', id: 'down', title: 'Down Trend', kind: 'line', color: '#DE6A4F' },
     {
       type: 'plot',
       id: 'middle',
       title: 'Body Middle',
       kind: 'line',
-      color: '#9aa4b2',
+      color: '#A39E8F',
       visible: false,
       showLastValue: false,
     },
@@ -42,7 +42,7 @@ export const SUPERTREND = defineIndicator({
       id: 'downFill',
       title: 'Downtrend Highlighter',
       between: ['middle', 'down'],
-      color: 'rgba(229, 72, 77, 0.1)',
+      color: 'rgba(222, 106, 79, 0.1)',
     },
   ],
   setup({ inputs, ta }) {

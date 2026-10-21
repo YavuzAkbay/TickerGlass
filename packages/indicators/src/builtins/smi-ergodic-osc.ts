@@ -22,7 +22,7 @@ export const SMI_ERGODIC_OSC = defineIndicator({
       id: 'osc',
       title: 'SMI Ergodic Histogram',
       kind: 'histogram',
-      color: '#e5484d',
+      color: '#DE6A4F',
     },
   ],
   setup({ inputs, ta }) {

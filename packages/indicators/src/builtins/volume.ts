@@ -25,14 +25,14 @@ export const VOLUME = defineIndicator({
       title: 'Volume',
       kind: 'columns',
       // 0: up (growing), 1: down (falling)
-      color: ['rgba(24, 163, 131, 0.5)', 'rgba(229, 72, 77, 0.5)'],
+      color: ['rgba(127, 176, 105, 0.5)', 'rgba(222, 106, 79, 0.5)'],
     },
     {
       type: 'plot',
       id: 'ma',
       title: 'Volume MA',
       kind: 'line',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       visible: false,
     },
   ],

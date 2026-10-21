@@ -18,15 +18,15 @@ defineIndicator({
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
   outputs: [
-    { type: 'plot', id: 'fast', title: 'Fast', kind: 'line', color: '#4f6bed' },
-    { type: 'plot', id: 'slow', title: 'Slow', kind: 'line', color: '#f2a93b' },
+    { type: 'plot', id: 'fast', title: 'Fast', kind: 'line', color: '#6E9BD6' },
+    { type: 'plot', id: 'slow', title: 'Slow', kind: 'line', color: '#E0A93B' },
     {
       type: 'shape',
       id: 'up',
       title: 'Cross up',
       shape: 'triangleUp',
       location: 'belowBar',
-      color: '#18a383',
+      color: '#7FB069',
     },
     {
       type: 'shape',
@@ -34,7 +34,7 @@ defineIndicator({
       title: 'Cross down',
       shape: 'triangleDown',
       location: 'aboveBar',
-      color: '#e5484d',
+      color: '#DE6A4F',
     },
   ],
   setup({ inputs, ta }) {

@@ -43,9 +43,9 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
 
   // Change the colour from the floating toolbar.
   await toolbar.getByRole('button', { name: /^Line color/ }).click();
-  await page.getByRole('option', { name: '#e5484d' }).click();
+  await page.getByRole('option', { name: '#DE6A4F' }).click();
   await page.keyboard.press('Escape');
-  await expect.poll(async () => (await drawings(page))[0]!.style.lineColor).toBe('#e5484d');
+  await expect.poll(async () => (await drawings(page))[0]!.style.lineColor).toBe('#DE6A4F');
   const placed = (await drawings(page))[0]!.points;
 
   // Drag the line up.
@@ -61,7 +61,7 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   // Undo the drag (colour change stays).
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(async () => (await drawings(page))[0]!.points).toEqual(placed);
-  expect((await drawings(page))[0]!.style.lineColor).toBe('#e5484d');
+  expect((await drawings(page))[0]!.style.lineColor).toBe('#DE6A4F');
 
   // Reload: the drawing comes back from localStorage.
   await page.reload();
@@ -69,7 +69,7 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   await expect.poll(async () => (await drawings(page)).length).toBe(1);
   const restored = (await drawings(page))[0]!;
   expect(restored.type).toBe('trend-line');
-  expect(restored.style.lineColor).toBe('#e5484d');
+  expect(restored.style.lineColor).toBe('#DE6A4F');
   expect(restored.points).toEqual(placed);
 
   // Select and delete with the keyboard.

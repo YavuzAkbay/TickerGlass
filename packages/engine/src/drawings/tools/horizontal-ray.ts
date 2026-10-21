@@ -6,11 +6,11 @@ const TEXT_GAP = 4;
 const TEXT_MARGIN = 8;
 
 export const HORIZONTAL_RAY_DEFAULTS = {
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   showPriceLabel: true,
-  textColor: '#4f6bed',
+  textColor: '#6E9BD6',
   fontSize: 12,
   bold: false,
   italic: false,

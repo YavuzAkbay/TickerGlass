@@ -13,8 +13,8 @@ import {
 } from './shape-common';
 
 export const ELLIPSE_DEFAULTS = {
-  ...shapeDefaults('#e5484d', 'rgba(229, 72, 77, 0.2)'),
-  ...textDefaults('#e5484d'),
+  ...shapeDefaults('#DE6A4F', 'rgba(222, 106, 79, 0.2)'),
+  ...textDefaults('#DE6A4F'),
 };
 
 const ell = { cx: 0, cy: 0, rx: 0, ry: 0 };

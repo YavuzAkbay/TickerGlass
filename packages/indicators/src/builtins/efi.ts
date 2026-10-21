@@ -15,7 +15,7 @@ export const EFI = defineIndicator({
   },
   outputs: [
     { type: 'hline', id: 'zero', title: 'Zero', value: 0, color: COLOR.level },
-    { type: 'plot', id: 'efi', title: 'Elder Force Index', kind: 'line', color: '#e5484d' },
+    { type: 'plot', id: 'efi', title: 'Elder Force Index', kind: 'line', color: '#DE6A4F' },
   ],
   setup({ inputs, ta }) {
     const ema = ta.ema(inputs.length);
