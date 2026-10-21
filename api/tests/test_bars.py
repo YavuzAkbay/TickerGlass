@@ -88,6 +88,23 @@ class FakeProvider:
         return [{"symbol": "AAPL", "name": "Apple Inc."}][:limit]
 
 
+class FullProvider(FakeProvider):
+    """`FakeProvider` plus the quote, event, news and fundamentals calls, so it is a complete
+    `MarketDataProvider`. None of them is used by the bar tests."""
+
+    def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        return []
+
+    def events(self, symbol: str) -> dict[str, Any]:
+        raise SymbolNotFound(symbol)
+
+    def news(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+        return []
+
+    def fundamentals(self, symbol: str) -> dict[str, Any]:
+        raise SymbolNotFound(symbol)
+
+
 @pytest.fixture
 def engine(tmp_path: Path) -> Engine:
     url = f"sqlite:///{tmp_path}/t.db"
@@ -360,7 +377,7 @@ def test_call_other_failures_stay_provider_errors(monkeypatch: pytest.MonkeyPatc
     assert type(info.value) is ProviderError
 
 
-class FlakyTailProvider(FakeProvider):
+class FlakyTailProvider(FullProvider):
     """Serves the recorded frame until `error` is set, then raises it."""
 
     def __init__(self, frames: dict[tuple[str, str], pd.DataFrame]) -> None:
@@ -389,7 +406,7 @@ def _tail_fetched_at(engine: Engine) -> datetime:
 
 
 def test_tail_sync_skipped_when_range_ends_before_newest_bar(engine: Engine) -> None:
-    provider = FakeProvider({("AAPL", "1d"): DAILY})
+    provider = FullProvider({("AAPL", "1d"): DAILY})
     stats = CacheStats()
     svc = BarService(engine, provider, stats=stats)
     spec = resolve_interval("1d")
@@ -531,7 +548,7 @@ def intraday_frame(days: list[date], step_s: int = 300) -> pd.DataFrame:
     return bar_frame(stamps)
 
 
-class ClockedProvider(FakeProvider):
+class ClockedProvider(FullProvider):
     """Only serves bars that have opened by `clock`."""
 
     def __init__(self, frames: dict[tuple[str, str], pd.DataFrame]) -> None:
@@ -748,7 +765,7 @@ def test_last_accessed_at_is_throttled(engine: Engine) -> None:
 
 
 def test_cached_info_never_calls_upstream(engine: Engine) -> None:
-    provider = FakeProvider({("AAPL", "1d"): DAILY})
+    provider = FullProvider({("AAPL", "1d"): DAILY})
     symbols = SymbolService(engine, provider)
     assert symbols.cached_info("aapl") is None
     info = symbols.info("AAPL")
@@ -758,7 +775,7 @@ def test_cached_info_never_calls_upstream(engine: Engine) -> None:
 
 def test_app_schedules_bars_from_stored_symbol_info(tmp_path: Path) -> None:
     url = f"sqlite:///{tmp_path}/a.db"
-    app = create_app(provider=FakeProvider({("AAPL", "1d"): DAILY}), database_url=url)
+    app = create_app(provider=FullProvider({("AAPL", "1d"): DAILY}), database_url=url)
     with TestClient(app) as client:
         assert client.get("/api/symbols/AAPL").status_code == 200
         assert client.get("/api/bars", params={"symbol": "AAPL"}).status_code == 200
@@ -862,7 +879,7 @@ def test_intraday_revision_upserts_and_keeps_history(engine: Engine) -> None:
     # Everything up to now, including bars older than the provider's lookback.
     expected = revised[revised["ts"] <= int(REFRESH_AT.timestamp())]
     lookback_start = REFRESH_AT - resolve_interval("5m").max_lookback  # type: ignore[operator]
-    assert int(bars["ts"].iat[0]) < int(lookback_start.timestamp())
+    assert bars["ts"].tolist()[0] < int(lookback_start.timestamp())
     assert bars["ts"].tolist() == expected["ts"].tolist()
     assert bars["close"].tolist() == pytest.approx(expected["close"].tolist())
 
@@ -902,7 +919,7 @@ def test_intraday_unchanged_overlap_counts_same(engine: Engine) -> None:
 
 
 def test_daily_revision_still_rebackfills(engine: Engine) -> None:
-    provider = FakeProvider({("AAPL", "1d"): DAILY})
+    provider = FullProvider({("AAPL", "1d"): DAILY})
     stats = CacheStats()
     svc = BarService(engine, provider, stats=stats)
     spec = resolve_interval("1d")
@@ -989,7 +1006,7 @@ def test_prune_by_age(engine: Engine) -> None:
     seed(engine, "OLDD", "1d", 7, days_ago(366))
     seed(engine, "MIDD", "1wk", 3, days_ago(100))
     stats = CacheStats()
-    svc = BarService(engine, FakeProvider({}), stats=stats)
+    svc = BarService(engine, FullProvider({}), stats=stats)
 
     report = prune(svc)
     assert report == PruneReport(
@@ -1014,7 +1031,7 @@ def test_prune_by_budget_evicts_least_recently_used_intraday_first(engine: Engin
     seed(engine, "B", "5m", 30, days_ago(2))
     seed(engine, "C", "5m", 30, days_ago(5))
     seed(engine, "D", "1d", 30, days_ago(3))
-    svc = BarService(engine, FakeProvider({}))
+    svc = BarService(engine, FullProvider({}))
 
     report = prune(svc, max_rows=100)  # 120 rows: evict down to 90
     assert report == PruneReport(budget_series=1, budget_rows=30, rows_remaining=90)
@@ -1031,7 +1048,7 @@ def test_prune_never_deletes_recently_used_series(engine: Engine) -> None:
     seed(engine, "HOT", "5m", 10, PRUNE_NOW - timedelta(hours=1))
     seed(engine, "WARM", "1d", 10, days_ago(2))
     seed(engine, "COLD", "5m", 10, days_ago(2))
-    svc = BarService(engine, FakeProvider({}))
+    svc = BarService(engine, FullProvider({}))
 
     report = svc.prune(PRUNE_NOW, max_rows=1, intraday_retention_days=0, daily_retention_days=0)
     assert report.intraday_age_series == 1 and report.daily_age_series == 1
@@ -1049,7 +1066,7 @@ def test_prune_never_deletes_recently_used_series(engine: Engine) -> None:
     assert series_in(engine) == set()
 
 
-class BlockingProvider(FakeProvider):
+class BlockingProvider(FullProvider):
     """`history` waits for `release` after signalling `entered`."""
 
     def __init__(self) -> None:

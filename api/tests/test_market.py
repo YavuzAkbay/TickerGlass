@@ -7,11 +7,12 @@ from typing import Any
 
 import pandas as pd
 import pytest
+import yfinance as yf
 from fastapi.testclient import TestClient
 from yfinance.exceptions import YFRateLimitError
 
 from tickerglass_api.app import create_app
-from tickerglass_api.live import market_poller
+from tickerglass_api.live import Poller, market_poller
 from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     PartialQuotes,
@@ -519,15 +520,13 @@ def _download_frame() -> pd.DataFrame:
 
 
 def test_yahoo_quotes_fall_back_to_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    import tickerglass_api.providers.yahoo as yahoo_mod
-
     calls: list[dict[str, Any]] = []
 
     def download(symbols: list[str], **kwargs: Any) -> pd.DataFrame:
         calls.append({"symbols": symbols, **kwargs})
         return _download_frame()
 
-    monkeypatch.setattr(yahoo_mod.yf, "download", download)
+    monkeypatch.setattr(yf, "download", download)
     yahoo = YahooProvider(min_interval=0, retries=0)
 
     def v7(chunk: list[str]) -> list[dict[str, Any]]:
@@ -553,12 +552,10 @@ def test_yahoo_quotes_fall_back_to_download(monkeypatch: pytest.MonkeyPatch) -> 
 def test_yahoo_quotes_rate_limit_and_outage_are_not_retried_by_download(
     monkeypatch: pytest.MonkeyPatch, failure: Exception, expected: type[ProviderError]
 ) -> None:
-    import tickerglass_api.providers.yahoo as yahoo_mod
-
     def download(*args: Any, **kwargs: Any) -> pd.DataFrame:
         raise AssertionError("no fallback expected")
 
-    monkeypatch.setattr(yahoo_mod.yf, "download", download)
+    monkeypatch.setattr(yf, "download", download)
     yahoo = YahooProvider(min_interval=0, retries=0, rate_limit_retries=0)
 
     def v7(chunk: list[str]) -> list[dict[str, Any]]:
@@ -630,19 +627,26 @@ def test_quote_ttl_follows_market_state() -> None:
     assert refetched() == {"REG", "UNK", "PRE", "POST", "CLS"}
 
 
+def poll_once(poll: Poller, symbols: list[str]) -> dict[str, dict[str, Any]]:
+    async def run() -> dict[str, dict[str, Any]]:
+        return await poll(symbols)
+
+    return asyncio.run(run())
+
+
 def test_market_poller_shares_the_quote_cache(tmp_path: Path) -> None:
     fake = FakeProvider()
     app = create_app(provider=fake, database_url=f"sqlite:///{tmp_path}/p.db")
     with TestClient(app) as client:
         poll = market_poller(app.state.market_service, app.state.upstream_guard, max_age=15)
-        polled = asyncio.run(poll(["AAPL", "MSFT", "NOPE"]))
+        polled = poll_once(poll, ["AAPL", "MSFT", "NOPE"])
         assert polled == {
             s: {"price": 101.0, "change": 1.0, "changePercent": 1.0, "dayVolume": 5}
             for s in ("AAPL", "MSFT")
         }
         res = client.get("/api/quotes", params={"symbols": "AAPL,MSFT"})
         assert [q["symbol"] for q in res.json()] == ["AAPL", "MSFT"]
-        asyncio.run(poll(["AAPL", "MSFT"]))
+        poll_once(poll, ["AAPL", "MSFT"])
     assert fake.quote_calls == [["AAPL", "MSFT", "NOPE"]]
 
 
@@ -660,7 +664,7 @@ def test_market_poller_runs_in_background_and_skips_rate_limits() -> None:
 
     fake.quotes = quotes  # type: ignore[method-assign]
     poll = market_poller(MarketService(fake), guard, max_age=15)
-    assert asyncio.run(poll(["AAPL"])) == {}
+    assert poll_once(poll, ["AAPL"]) == {}
     outcome.append(RateLimited("cooling down", 30))
-    assert asyncio.run(poll(["MSFT"])) == {}  # skipped, not raised
+    assert poll_once(poll, ["MSFT"]) == {}  # skipped, not raised
     assert modes == [True, True] and not guard.in_background()
