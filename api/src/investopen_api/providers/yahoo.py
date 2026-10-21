@@ -2,6 +2,7 @@
 
 import logging
 import math
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -22,8 +23,22 @@ from .base import (
     UpstreamUnavailable,
 )
 
+try:  # curl_cffi is yfinance's HTTP client; its errors are OSError subclasses.
+    from curl_cffi.requests.exceptions import RequestException as _CurlRequestError
+except ImportError:  # pragma: no cover - depends on the installed yfinance
+    _CurlRequestError = None  # type: ignore[assignment,misc]
+
 log = logging.getLogger(__name__)
 T = TypeVar("T")
+
+# Network failures only. A bare OSError would also catch disk-cache errors
+# (PermissionError, FileNotFoundError), which are not "Yahoo unreachable".
+_NETWORK_ERRORS: tuple[type[BaseException], ...] = (
+    ConnectionError,
+    TimeoutError,
+    socket.gaierror,
+    *((_CurlRequestError,) if _CurlRequestError is not None else ()),
+)
 
 
 class RateLimiter:
@@ -62,7 +77,7 @@ class YahooProvider:
                 time.sleep(backoff)
             except ProviderError:
                 raise
-            except OSError as exc:
+            except _NETWORK_ERRORS as exc:
                 # Connection failures and timeouts (builtin and curl_cffi ones).
                 if attempt == self._retries:
                     raise UpstreamUnavailable(f"Yahoo unreachable: {exc}") from exc

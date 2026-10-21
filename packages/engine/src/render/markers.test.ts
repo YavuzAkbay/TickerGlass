@@ -3,6 +3,7 @@ import type { AnchorTimeline } from '../drawings/mapping';
 import type { Interval } from '../types';
 import {
   MARKER_SIZE,
+  drawGlyph,
   hitMarker,
   layoutMarkers,
   type ChartMarker,
@@ -176,5 +177,38 @@ describe('hit testing', () => {
     expect(hitPriceLine(placed, 100, 60, 800, 300)).toBeNull();
     expect(hitPriceLine(placed, 810, 55, 800, 300)?.line.id).toBe('a');
     expect(hitPriceLine(placed, 810, 80, 800, 300)).toBeNull();
+  });
+});
+
+describe('drawGlyph letter', () => {
+  it('leaves the text state of the context untouched', () => {
+    type TextState = { font: string; textAlign: string; textBaseline: string };
+    const stack: TextState[] = [];
+    const ctx = {
+      font: '10px serif',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+      fillStyle: '',
+      save() {
+        stack.push({ font: this.font, textAlign: this.textAlign, textBaseline: this.textBaseline });
+      },
+      restore() {
+        Object.assign(this, stack.pop());
+      },
+      beginPath() {},
+      fill() {},
+      fillText() {},
+      moveTo() {},
+      lineTo() {},
+      arcTo() {},
+      closePath() {},
+      roundRect() {},
+    };
+    drawGlyph(ctx as unknown as CanvasRenderingContext2D, 'letter', 10, 10, 14, '#000', 'E');
+    expect([ctx.font, ctx.textAlign, ctx.textBaseline]).toEqual([
+      '10px serif',
+      'left',
+      'alphabetic',
+    ]);
   });
 });

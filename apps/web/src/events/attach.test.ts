@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla';
 import type { ChartMarker } from '@investopen/engine';
 import type { EventsResponse } from './api';
 import { attachEvents, buildEventMarkers, splitLabel } from './attach';
+import { useReplayStore } from '../replay/store';
 import { DEFAULT_EVENT_PREFS, parseEventPrefs, useEventPrefs } from './prefs';
 
 const fetchEvents = vi.fn<(symbol: string) => Promise<EventsResponse>>();
@@ -88,11 +89,11 @@ describe('attachEvents', () => {
     fetchEvents.mockReset();
   });
 
-  const setup = (symbol: string) => {
+  const setup = (symbol: string, id = 'c1') => {
     const calls: ChartMarker[][] = [];
     const chart = { setMarkers: (_g: string, m: ChartMarker[]) => calls.push(m) };
     const view = createStore(() => ({ symbol }));
-    const off = attachEvents({ chart, view } as unknown as Parameters<typeof attachEvents>[0]);
+    const off = attachEvents({ id, chart, view } as unknown as Parameters<typeof attachEvents>[0]);
     return { calls, view, off };
   };
   const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -106,6 +107,21 @@ describe('attachEvents', () => {
     expect(calls.at(-1)).toHaveLength(3);
     off();
     expect(calls.at(-1)).toEqual([]);
+  });
+
+  it('applies the replay clock only on the replay chart', async () => {
+    fetchEvents.mockResolvedValue(DATA);
+    const replaying = setup('AAPL', 'r');
+    const other = setup('AAPL', 'o');
+    await flush();
+    const all = replaying.calls.at(-1)!.length;
+    expect(all).toBeGreaterThan(0);
+    useReplayStore.getState().set({ status: 'paused', next: 0, chartId: 'r' });
+    expect(replaying.calls.at(-1)).toHaveLength(0);
+    expect(other.calls.at(-1)).toHaveLength(all);
+    useReplayStore.getState().set({ status: 'off', next: Number.NaN, chartId: null });
+    replaying.off();
+    other.off();
   });
 
   it('does not fetch for expressions and ignores stale responses', async () => {

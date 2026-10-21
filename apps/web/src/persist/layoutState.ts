@@ -281,7 +281,7 @@ function parseSlot(raw: unknown, base: ChartSettings): ChartSlotState | null {
       timezone: pick('timezone', (v) => typeof v === 'string'),
       prepost: pick('prepost', (v) => typeof v === 'boolean'),
       // Layouts saved before the status line settings have none: defaults.
-      statusLine: parseStatusLine(cs.statusLine),
+      statusLine: parseStatusLine(cs.statusLine ?? base.statusLine),
     },
   };
 }

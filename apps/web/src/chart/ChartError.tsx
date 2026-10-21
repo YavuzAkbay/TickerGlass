@@ -3,13 +3,23 @@ import { RefreshCw, Search, TriangleAlert } from 'lucide-react';
 import { useStore } from 'zustand';
 import { setActiveChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
-import { classifyChartError, retryDelaySeconds } from './errorState';
+import { autoRetryDelaySeconds, classifyChartError } from './errorState';
 import type { ChartSession } from './session';
 
-/** Counts down `seconds`, then calls `onDone` once. */
-function useCountdown(seconds: number, onDone: () => void): number {
-  const [left, setLeft] = useState(seconds);
+/** Automatic 429 retries made per session; cleared when data loads or the symbol changes. */
+const autoRetries = new WeakMap<ChartSession, { symbol: string; count: number }>();
+
+function retryCount(session: ChartSession): number {
+  const symbol = session.view.getState().symbol;
+  const cur = autoRetries.get(session);
+  return cur && cur.symbol === symbol ? cur.count : 0;
+}
+
+/** Counts down `seconds` (nothing when null), then calls `onDone` once. */
+function useCountdown(seconds: number | null, onDone: () => void): number {
+  const [left, setLeft] = useState(seconds ?? 0);
   useEffect(() => {
+    if (seconds === null) return;
     const end = Date.now() + seconds * 1000;
     const timer = setInterval(() => {
       const remaining = Math.max(0, Math.ceil((end - Date.now()) / 1000));
@@ -32,7 +42,12 @@ function RateLimited({
   session: ChartSession;
   retryAfter?: number | undefined;
 }) {
-  const left = useCountdown(retryDelaySeconds(retryAfter), () => {
+  const [delay] = useState(() => autoRetryDelaySeconds(retryAfter, retryCount(session) + 1));
+  const left = useCountdown(delay, () => {
+    autoRetries.set(session, {
+      symbol: session.view.getState().symbol,
+      count: retryCount(session) + 1,
+    });
     session.info.setState({ error: null });
     void session.chart.reload();
   });
@@ -40,7 +55,9 @@ function RateLimited({
     <>
       <p className="chart-error-title">Rate limited</p>
       <p className="chart-error-text">
-        The data provider is limiting requests. Retrying in {left} s.
+        {delay === null
+          ? 'The data provider is limiting requests. Retry in a moment.'
+          : `The data provider is limiting requests. Retrying in ${left} s.`}
       </p>
     </>
   );
@@ -50,6 +67,7 @@ function RateLimited({
 export function ChartError({ session }: { session: ChartSession }) {
   const error = useStore(session.info, (s) => s.error);
   const symbol = useStore(session.view, (s) => s.symbol);
+  useEffect(() => session.chart.on('dataLoaded', () => autoRetries.delete(session)), [session]);
   if (!error) return null;
 
   const kind = classifyChartError(error);

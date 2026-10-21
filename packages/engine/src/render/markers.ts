@@ -124,11 +124,13 @@ export function drawGlyph(
       roundRect(ctx, cx - h, cy - h, size, size, 3);
       ctx.fill();
       if (text) {
+        ctx.save();
         ctx.fillStyle = '#ffffff';
         ctx.font = `600 ${Math.round(size * 0.65)}px system-ui, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, cx, cy + 0.5);
+        ctx.restore();
       }
       return;
     case 'circle':

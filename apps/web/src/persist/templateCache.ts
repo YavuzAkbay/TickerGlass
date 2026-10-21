@@ -91,92 +91,120 @@ export class OfflineTemplates<D> {
     return this.read().items;
   }
 
+  /** Operations run one at a time so a stale snapshot is never written after an await. */
+  private chain: Promise<unknown> = Promise.resolve();
+
+  private enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(op, op);
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
   /** Push queued offline changes. Throws when the API is unreachable (the queue is kept). */
-  async sync(): Promise<void> {
-    const state = this.read();
-    for (const id of [...state.pendingDeletes]) {
+  sync(): Promise<void> {
+    return this.enqueue(() => this.syncNow());
+  }
+
+  private async syncNow(): Promise<void> {
+    for (const id of [...this.read().pendingDeletes]) {
       try {
         await this.api.remove(id);
       } catch (err) {
         if (isTransient(err)) throw err;
         // 404 and other permanent errors: nothing left to delete.
       }
-      state.pendingDeletes = state.pendingDeletes.filter((x) => x !== id);
-      this.write(state);
+      const cur = this.read();
+      cur.pendingDeletes = cur.pendingDeletes.filter((x) => x !== id);
+      this.write(cur);
     }
-    for (const name of [...state.pendingSaves]) {
-      const row = state.items.find((r) => r.name === name);
+    for (const name of [...this.read().pendingSaves]) {
+      const row = this.read().items.find((r) => r.name === name);
+      let saved: TemplateRow<D> | null = null;
+      let dropped = false;
       if (row) {
         try {
-          const saved = await this.api.save({
-            name,
-            data: row.data,
-            schemaVersion: row.schemaVersion,
-          });
-          row.id = saved.id;
+          saved = await this.api.save({ name, data: row.data, schemaVersion: row.schemaVersion });
         } catch (err) {
           if (isTransient(err)) throw err;
           // A permanent rejection (409, 422) would fail again: drop the offline copy.
-          state.items = state.items.filter((r) => r !== row);
+          dropped = true;
         }
       }
-      state.pendingSaves = state.pendingSaves.filter((x) => x !== name);
-      this.write(state);
+      const cur = this.read();
+      if (saved) {
+        const id = saved.id;
+        cur.items = cur.items.map((r) => (r.name === name ? { ...r, id } : r));
+      } else if (dropped) cur.items = cur.items.filter((r) => r.name !== name);
+      cur.pendingSaves = cur.pendingSaves.filter((x) => x !== name);
+      this.write(cur);
     }
   }
 
   /** Server templates (after pushing queued changes); the cache when unreachable. */
-  async list(): Promise<{ items: TemplateRow<D>[]; offline: boolean }> {
-    try {
-      await this.sync();
-      const items = await this.api.list();
-      this.write({ items, pendingSaves: [], pendingDeletes: [] });
-      return { items, offline: false };
-    } catch (err) {
-      if (!isTransient(err)) throw err;
-      return { items: this.read().items, offline: true };
-    }
+  list(): Promise<{ items: TemplateRow<D>[]; offline: boolean }> {
+    return this.enqueue(async () => {
+      try {
+        await this.syncNow();
+        const items = await this.api.list();
+        // Keep whatever is still queued (for example by another tab) on top of the server list.
+        const cur = this.read();
+        const keep = cur.items.filter((r) => cur.pendingSaves.includes(r.name));
+        const merged = [...items.filter((r) => !keep.some((k) => k.name === r.name)), ...keep];
+        this.write({
+          items: merged,
+          pendingSaves: cur.pendingSaves,
+          pendingDeletes: cur.pendingDeletes,
+        });
+        return { items: merged, offline: false };
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+        return { items: this.read().items, offline: true };
+      }
+    });
   }
 
   /** Create or replace by name. Non-transient API errors are thrown. */
-  async save(name: string, data: D, schemaVersion: number): Promise<TemplateResult> {
-    try {
-      await this.sync();
-      const row = await this.api.save({ name, data, schemaVersion });
+  save(name: string, data: D, schemaVersion: number): Promise<TemplateResult> {
+    return this.enqueue(async () => {
+      try {
+        await this.syncNow();
+        const row = await this.api.save({ name, data, schemaVersion });
+        const cur = this.read();
+        cur.items = [...cur.items.filter((r) => r.name !== name), row];
+        this.write(cur);
+        return { offline: false };
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+      }
       const cur = this.read();
+      const old = cur.items.find((r) => r.name === name);
+      const row: TemplateRow<D> = { id: old?.id ?? `local:${name}`, name, data, schemaVersion };
       cur.items = [...cur.items.filter((r) => r.name !== name), row];
+      if (!cur.pendingSaves.includes(name)) cur.pendingSaves.push(name);
       this.write(cur);
-      return { offline: false };
-    } catch (err) {
-      if (!isTransient(err)) throw err;
-    }
-    const cur = this.read();
-    const old = cur.items.find((r) => r.name === name);
-    const row: TemplateRow<D> = { id: old?.id ?? `local:${name}`, name, data, schemaVersion };
-    cur.items = [...cur.items.filter((r) => r.name !== name), row];
-    if (!cur.pendingSaves.includes(name)) cur.pendingSaves.push(name);
-    this.write(cur);
-    return { offline: true };
+      return { offline: true };
+    });
   }
 
   /** Delete. Non-transient API errors (other than 404) are thrown. */
-  async remove(row: TemplateRow<D>): Promise<TemplateResult> {
-    const state = this.read();
-    let offline = false;
-    if (!isLocalId(row.id)) {
-      try {
-        await this.api.remove(row.id);
-      } catch (err) {
-        if (isTransient(err)) {
-          offline = true;
-          if (!state.pendingDeletes.includes(row.id)) state.pendingDeletes.push(row.id);
-        } else if (!isNotFound(err)) throw err;
+  remove(row: TemplateRow<D>): Promise<TemplateResult> {
+    return this.enqueue(async () => {
+      let offline = false;
+      if (!isLocalId(row.id)) {
+        try {
+          await this.api.remove(row.id);
+        } catch (err) {
+          if (isTransient(err)) offline = true;
+          else if (!isNotFound(err)) throw err;
+        }
       }
-    }
-    state.items = state.items.filter((r) => r.id !== row.id);
-    state.pendingSaves = state.pendingSaves.filter((n) => n !== row.name);
-    this.write(state);
-    return { offline };
+      const state = this.read();
+      if (offline && !state.pendingDeletes.includes(row.id)) state.pendingDeletes.push(row.id);
+      state.items = state.items.filter((r) => r.id !== row.id);
+      state.pendingSaves = state.pendingSaves.filter((n) => n !== row.name);
+      this.write(state);
+      return { offline };
+    });
   }
 }
 

@@ -711,6 +711,9 @@ export class IndicatorController {
       () => {
         // Unknown symbol or provider down: event anchors accumulate over the whole
         // series (the chart's event markers and the Details panel show the error).
+        // Forget the symbol so the next chart reset or indicator change retries; there
+        // is no timer, so a down provider cannot cause a retry loop.
+        if (mine === this.eventsToken && this.eventsSymbol === symbol) this.eventsSymbol = null;
       },
     );
   }

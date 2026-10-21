@@ -79,7 +79,7 @@ export function buildEventMarkers(
 }
 
 /** Keep `chart`'s event markers in sync with the symbol, the toggles and the replay clock. */
-export function attachEvents(session: Pick<ChartSession, 'chart' | 'view'>): () => void {
+export function attachEvents(session: Pick<ChartSession, 'id' | 'chart' | 'view'>): () => void {
   const { chart } = session;
   let data: EventsResponse | null = null;
   let token = 0;
@@ -88,8 +88,10 @@ export function attachEvents(session: Pick<ChartSession, 'chart' | 'view'>): () 
   const apply = () => {
     if (disposed) return;
     const replay = useReplayStore.getState();
-    // During replay, only events the replay clock has passed.
-    const before = replay.status !== 'off' && Number.isFinite(replay.next) ? replay.next : Infinity;
+    // On the replay chart, only events the replay clock has passed (other charts show all).
+    const replaying =
+      replay.status !== 'off' && Number.isFinite(replay.next) && replay.chartId === session.id;
+    const before = replaying ? replay.next : Infinity;
     chart.setMarkers(EVENT_GROUP, buildEventMarkers(data, useEventPrefs.getState(), before));
   };
 
@@ -121,7 +123,7 @@ export function attachEvents(session: Pick<ChartSession, 'chart' | 'view'>): () 
       if (s.symbol !== p.symbol) load();
     }),
     useReplayStore.subscribe((s, p) => {
-      if (s.status !== p.status || s.next !== p.next) apply();
+      if (s.status !== p.status || s.next !== p.next || s.chartId !== p.chartId) apply();
     }),
   ];
   return () => {

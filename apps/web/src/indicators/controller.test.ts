@@ -600,6 +600,24 @@ describe('IndicatorController', () => {
     expect(chart.studies.get(vwap.id)!.values.vwap).toEqual(want(null));
   });
 
+  it('retries a failed events fetch on the next chart reset, not in a loop', async () => {
+    const bars = makeBars(30, 3600);
+    const loadEvents = vi
+      .fn<NonNullable<ControllerOptions['loadEvents']>>()
+      .mockRejectedValueOnce(new Error('provider down'))
+      .mockResolvedValue({ dividends: [], splits: [], earnings: [] });
+    const { chart, ctl } = setup({ loadEvents });
+    ctl.sync([inst('vwap', { anchor: 'Dividends' })]);
+    chart.load(bars);
+    await settle();
+    expect(loadEvents).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(loadEvents).toHaveBeenCalledTimes(1);
+    chart.load(bars);
+    await settle();
+    expect(loadEvents).toHaveBeenCalledTimes(2);
+  });
+
   it('WorkerCore applies a context sent with bars in one computation', () => {
     const out: FromWorker[] = [];
     const core = new WorkerCore((m) => out.push(m));
