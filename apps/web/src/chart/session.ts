@@ -18,7 +18,12 @@ import {
 } from '../indicators/store';
 import { createDrawingRuntimeStore, type DrawingRuntime } from '../drawings/store';
 import { useAppStore } from '../store/app';
-import { createChartViewStore, type ChartViewData, type ChartViewState } from '../store/chartView';
+import {
+  createChartViewStore,
+  legendOf,
+  type ChartViewData,
+  type ChartViewState,
+} from '../store/chartView';
 import { feed } from './feed';
 import { PRIMARY_CHART_ID } from './ids';
 
@@ -68,6 +73,7 @@ export function createChartSession(
     crosshair: app.crosshair,
     magnet: app.magnet,
     showPrevClose: v.showPrevClose,
+    legend: legendOf(v.statusLine),
   });
   chart.setChartStyle(v.chartStyle);
   chart.setChartType(v.chartType);

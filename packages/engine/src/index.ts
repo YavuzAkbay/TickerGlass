@@ -10,8 +10,15 @@ export type {
   SyncedCrosshair,
   ViewChangeCause,
 } from './chart';
-export { DARK_THEME, LIGHT_THEME, DEFAULT_OPTIONS } from './options';
-export type { ChartOptions, ChartTheme, CrosshairMode, MagnetMode } from './options';
+export { DARK_THEME, LIGHT_THEME, DEFAULT_OPTIONS, DEFAULT_LEGEND_OPTIONS } from './options';
+export type {
+  ChartOptions,
+  ChartTheme,
+  CrosshairMode,
+  LegendOptions,
+  LegendTitleMode,
+  MagnetMode,
+} from './options';
 export { Pane } from './pane';
 export { CandleSeries, LineSeries } from './render/series';
 export { MainSeries, VolumeSeries } from './render/main-series';

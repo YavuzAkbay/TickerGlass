@@ -1,7 +1,59 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { ChartStyle, ChartType, DeepPartial } from '@investopen/engine';
+import type {
+  ChartStyle,
+  ChartType,
+  DeepPartial,
+  LegendOptions,
+  LegendTitleMode,
+} from '@investopen/engine';
 import { createActiveFacade } from '../chart/facade';
 import { normalizeSymbol, useAppStore } from './app';
+
+/** What the status line (the legend over the chart) shows. */
+export interface StatusLineSettings {
+  title: LegendTitleMode;
+  exchange: boolean;
+  ohlc: boolean;
+  barChange: boolean;
+  volume: boolean;
+  indicatorTitles: boolean;
+  indicatorInputs: boolean;
+  indicatorValues: boolean;
+  background: boolean;
+}
+
+export const DEFAULT_STATUS_LINE: StatusLineSettings = {
+  title: 'ticker',
+  exchange: true,
+  ohlc: true,
+  barChange: true,
+  volume: true,
+  indicatorTitles: true,
+  indicatorInputs: true,
+  indicatorValues: true,
+  background: false,
+};
+
+/** A stored status line; missing or mistyped fields take their defaults. */
+export function parseStatusLine(v: unknown): StatusLineSettings {
+  const out = { ...DEFAULT_STATUS_LINE };
+  if (typeof v !== 'object' || v === null) return out;
+  const r = v as Record<string, unknown>;
+  if (r.title === 'ticker' || r.title === 'description' || r.title === 'both') out.title = r.title;
+  for (const k of Object.keys(out) as (keyof StatusLineSettings)[])
+    if (k !== 'title' && typeof r[k] === 'boolean') (out[k] as boolean) = r[k] as boolean;
+  return out;
+}
+
+/** The engine legend options of a status line. */
+export const legendOf = (s: StatusLineSettings): LegendOptions => ({
+  title: s.title,
+  exchange: s.exchange,
+  ohlc: s.ohlc,
+  barChange: s.barChange,
+  volume: s.volume,
+  background: s.background,
+});
 
 /** What one chart shows: its symbol, interval and chart settings. */
 export interface ChartViewData {
@@ -13,6 +65,7 @@ export interface ChartViewData {
   showPrevClose: boolean;
   timezone: string; // 'exchange' | 'local' | 'UTC' | IANA
   prepost: boolean;
+  statusLine: StatusLineSettings;
 }
 
 export interface ChartViewState extends ChartViewData {
@@ -29,6 +82,7 @@ export const DEFAULT_CHART_VIEW: ChartViewData = {
   showPrevClose: false,
   timezone: 'exchange',
   prepost: false,
+  statusLine: DEFAULT_STATUS_LINE,
 };
 
 export const CHART_VIEW_KEYS = Object.keys(DEFAULT_CHART_VIEW) as (keyof ChartViewData)[];
@@ -42,6 +96,7 @@ export const pickChartView = (s: ChartViewData): ChartViewData => ({
   showPrevClose: s.showPrevClose,
   timezone: s.timezone,
   prepost: s.prepost,
+  statusLine: parseStatusLine(s.statusLine),
 });
 
 export function createChartViewStore(initial?: Partial<ChartViewData>): StoreApi<ChartViewState> {

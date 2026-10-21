@@ -9,6 +9,7 @@ import { DropdownMenu } from '../ui/Menu';
 import { removeCompare, toggleCompareVisible } from './actions';
 import { compareMenuItems } from './menu';
 import { comparePaneId, type CompareState } from './model';
+import type { StatusLineSettings } from '../store/chartView';
 import type { CompareStatus } from './store';
 import './compare.css';
 
@@ -42,6 +43,7 @@ function shieldFromChart(el: HTMLDivElement | null) {
 /** Compare legend rows, rendered into each pane's engine compare slot. */
 export function CompareLegends({ session }: { session: ChartSession }) {
   const { chart } = session;
+  const statusLine = useStore(session.view, (s) => s.statusLine);
   const items = useStore(session.compares, (s) => s.items);
   const status = useStore(session.compareRuntime, (s) => s.status);
   // Re-read last-bar values when overlay data changes.
@@ -69,6 +71,7 @@ export function CompareLegends({ session }: { session: ChartSession }) {
                 item={item}
                 index={index}
                 status={status[item.id]}
+                statusLine={statusLine}
               />
             ))}
           </div>,
@@ -85,11 +88,13 @@ function LegendRow({
   item,
   index,
   status,
+  statusLine,
 }: {
   chart: LegendChart;
   item: CompareState;
   index: number;
   status: CompareStatus | undefined;
+  statusLine: StatusLineSettings;
 }) {
   const [moreBtn, setMoreBtn] = useState<HTMLButtonElement | null>(null);
   const [menu, setMenu] = useState(false);
@@ -98,7 +103,7 @@ function LegendRow({
     item.visible && ready && index >= 0 ? chart.getStudyValues(item.id, index)[0] : undefined;
 
   let tail = null;
-  if (item.visible) {
+  if (item.visible && statusLine.indicatorValues) {
     if (status?.state === 'error' || status?.state === 'unavailable') {
       tail = (
         <span className="cmp-legend-error" title={status.message}>
@@ -122,7 +127,7 @@ function LegendRow({
       data-compare-id={item.id}
     >
       <span className="cmp-legend-dot" style={{ background: item.color }} aria-hidden="true" />
-      <span className="cmp-legend-name">{item.symbol}</span>
+      {statusLine.indicatorTitles ? <span className="cmp-legend-name">{item.symbol}</span> : null}
       <span className="cmp-legend-actions">
         <button
           type="button"

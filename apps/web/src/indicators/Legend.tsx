@@ -7,6 +7,7 @@ import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';
 import { DropdownMenu } from '../ui/Menu';
 import { removeIndicator, toggleIndicatorVisible } from './actions';
+import type { StatusLineSettings } from '../store/chartView';
 import type { ChartHost } from './controller';
 import { inputsTitle, sourceInputKey, type IndicatorState } from './model';
 import { indicatorMenuItems, openIndicatorSettings, sourceMenuItems } from './menu';
@@ -49,6 +50,7 @@ type LegendChart = Pick<ChartHost, 'getLegendSlot' | 'getStudyValues' | 'store'>
 /** Study legend rows, rendered into each pane's engine legend slot. */
 export function IndicatorLegends({ session }: { session: ChartSession }) {
   const { chart } = session;
+  const statusLine = useStore(session.view, (s) => s.statusLine);
   const instances = useEffectiveInstancesOf(session.indicators, session.preview);
   const status = useStore(session.indicatorRuntime, (s) => s.status);
   const panes = useStore(session.indicatorRuntime, (s) => s.panes);
@@ -77,6 +79,7 @@ export function IndicatorLegends({ session }: { session: ChartSession }) {
                 all={instances}
                 index={index}
                 status={status[inst.id]}
+                statusLine={statusLine}
               />
             ))}
           </div>,
@@ -94,12 +97,14 @@ function LegendRow({
   all,
   index,
   status,
+  statusLine,
 }: {
   chart: LegendChart;
   inst: IndicatorState;
   all: IndicatorState[];
   index: number;
   status: InstanceStatus | undefined;
+  statusLine: StatusLineSettings;
 }) {
   const [moreBtn, setMoreBtn] = useState<HTMLButtonElement | null>(null);
   const [srcBtn, setSrcBtn] = useState<HTMLButtonElement | null>(null);
@@ -124,6 +129,8 @@ function LegendRow({
     );
   } else if (status?.state === 'waiting') {
     tail = <span className="ind-legend-muted">Loading {status.symbol ?? status.timeframe}…</span>;
+  } else if (!statusLine.indicatorValues) {
+    tail = null;
   } else {
     tail = values.map((v) => (
       <span
@@ -142,8 +149,10 @@ function LegendRow({
       className={`ind-legend-row${inst.visible ? '' : ' off'}${menu ? ' menu-open' : ''}`}
       data-indicator-id={inst.id}
     >
-      <span className="ind-legend-name">{name}</span>
-      {inputs ? <span className="ind-legend-inputs">{inputs}</span> : null}
+      {statusLine.indicatorTitles ? <span className="ind-legend-name">{name}</span> : null}
+      {inputs && statusLine.indicatorInputs ? (
+        <span className="ind-legend-inputs">{inputs}</span>
+      ) : null}
       <span className="ind-legend-actions">
         <button
           type="button"

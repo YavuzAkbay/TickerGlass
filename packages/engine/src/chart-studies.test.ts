@@ -612,3 +612,60 @@ describe('Chart studies', () => {
     expect(chart.addStudy(studySpec('rsi', { paneId: 'p2' }))).toBe('p2');
   });
 });
+
+describe('legend options', () => {
+  const info = {
+    symbol: 'TEST',
+    name: 'Test Corp',
+    exchange: 'XTST',
+    exchangeName: 'Test Exchange',
+    type: null,
+    currency: null,
+    timezone: null,
+    session: null,
+    priceHint: 2,
+    minTick: 0.01,
+  };
+  const text = (chart: Chart) => (chart.panes[0]!.legendInfo as unknown as FakeEl).innerHTML;
+
+  it('shows ticker, interval, exchange, OHLC and change by default', async () => {
+    const { chart } = await load(5);
+    chart.symbolInfo = info;
+    chart['updateLegends']();
+    const html = text(chart);
+    expect(html).toContain('TEST · ');
+    expect(html).toContain('Test Exchange');
+    expect(html).toContain('>O<');
+    expect(html).toContain('%');
+    expect(html).not.toContain('Test Corp');
+  });
+
+  it('honours title mode, exchange, OHLC and bar change', async () => {
+    const { chart } = await load(5);
+    chart.symbolInfo = info;
+    chart.setLegendOptions({ title: 'description', exchange: false });
+    expect(text(chart)).toContain('Test Corp');
+    expect(text(chart)).not.toContain('Test Exchange');
+    chart.setLegendOptions({ title: 'both', ohlc: false, barChange: false });
+    expect(text(chart)).toContain('TEST · Test Corp');
+    expect(text(chart)).not.toContain('>O<');
+    expect(text(chart)).not.toContain('%');
+  });
+
+  it('draws a backdrop only when asked', async () => {
+    const { chart } = await load(5);
+    const style = (chart.panes[0]!.legendEl as unknown as FakeEl).style;
+    expect(style.background || '').toBe('');
+    chart.setLegendOptions({ background: true });
+    expect(style.background).toContain('--io-bg');
+    chart.setLegendOptions({ background: false });
+    expect(style.background || '').toBe('');
+  });
+
+  it('keeps unset fields when applying a partial update', async () => {
+    const { chart } = await load(5);
+    chart.setLegendOptions({ ohlc: false });
+    chart.setLegendOptions({ volume: false });
+    expect(chart['options'].legend).toMatchObject({ ohlc: false, volume: false, barChange: true });
+  });
+});

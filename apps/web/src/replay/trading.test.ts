@@ -1,5 +1,6 @@
 import type { ChartMarker, ChartPriceLine } from '@investopen/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TRADING_PREFS, useTradingPrefs } from './prefs';
 import {
   POSITION_LINE_GROUP,
   ReplayTrading,
@@ -40,6 +41,7 @@ function setup() {
 }
 
 beforeEach(() => {
+  useTradingPrefs.setState(DEFAULT_TRADING_PREFS);
   useTrading.setState({ qty: 1 });
 });
 
@@ -56,7 +58,38 @@ describe('ReplayTrading', () => {
       shape: 'arrowUp',
       position: 'belowBar',
     });
-    expect(lines[POSITION_LINE_GROUP]![0]).toMatchObject({ price: 100, label: 'Long 2 @ 100.00' });
+    expect(lines[POSITION_LINE_GROUP]![0]).toMatchObject({
+      price: 100,
+      label: 'Long 2 @ 100.00 · P&L 0.00',
+    });
+  });
+
+  it('shows the unrealized P&L in the position label and follows the mark', () => {
+    const { t, lines, show } = setup();
+    t.reset();
+    t.order('buy', 2);
+    show(105, 1060);
+    expect(lines[POSITION_LINE_GROUP]![0]).toMatchObject({
+      label: 'Long 2 @ 100.00 · P&L +10.00',
+    });
+  });
+
+  it('honours the display preferences, also for what is already drawn', () => {
+    const { t, markers, lines } = setup();
+    t.reset();
+    t.order('buy', 2);
+    useTradingPrefs.getState().set({ pnlLabel: false });
+    t.redraw();
+    expect(lines[POSITION_LINE_GROUP]![0]).toMatchObject({ label: 'Long 2 @ 100.00' });
+    useTradingPrefs.getState().set({ positionLine: false });
+    t.redraw();
+    expect(lines[POSITION_LINE_GROUP]).toEqual([]);
+    useTradingPrefs.getState().set({ tradeMarkers: false });
+    t.redraw();
+    expect(markers[TRADE_MARKER_GROUP]).toEqual([]);
+    useTradingPrefs.getState().set({ tradeMarkers: true });
+    t.redraw();
+    expect(markers[TRADE_MARKER_GROUP]).toHaveLength(1);
   });
 
   it('buy, step, sell: realized and total P&L', () => {
@@ -77,7 +110,7 @@ describe('ReplayTrading', () => {
     t.reset();
     expect(t.close()).toBe('No open position');
     t.order('sell', 3);
-    expect(lines[POSITION_LINE_GROUP]![0]).toMatchObject({ label: 'Short 3 @ 100.00' });
+    expect(lines[POSITION_LINE_GROUP]![0]).toMatchObject({ label: 'Short 3 @ 100.00 · P&L 0.00' });
     expect(t.close()).toBeNull();
     expect(useTrading.getState().paper.positions).toEqual({});
     expect(lines[POSITION_LINE_GROUP]).toEqual([]);

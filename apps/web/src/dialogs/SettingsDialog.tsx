@@ -18,6 +18,7 @@ import {
   type ChartType,
   type CrosshairMode,
   type DeepPartial,
+  type LegendTitleMode,
   type MagnetMode,
   type PriceScaleMode,
 } from '@investopen/engine';
@@ -35,7 +36,8 @@ import {
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
-import { useChartView } from '../store/chartView';
+import { DEFAULT_STATUS_LINE, useChartView, type StatusLineSettings } from '../store/chartView';
+import { TradingTab } from '../replay/TradingTab';
 import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
@@ -59,23 +61,6 @@ const TABS: {
   { id: 'alerts', label: 'Alerts', icon: AlarmClock },
   { id: 'events', label: 'Events', icon: CalendarDays },
 ];
-
-const PLANNED: Partial<Record<TabId, string[]>> = {
-  status: [
-    'Symbol title: description, ticker, exchange',
-    'Open market status',
-    'OHLC values and bar change',
-    'Volume and last-day change values',
-    'Indicator titles, inputs and values',
-    'Status line background',
-  ],
-  trading: [
-    'Buy/sell buttons and instant orders',
-    'Positions, orders and executions on chart',
-    'Profit & loss display',
-    'Order and position line styles',
-  ],
-};
 
 const TIMEZONES = [
   'America/New_York',
@@ -109,6 +94,7 @@ interface Draft {
   timezone: string;
   chartStyle: DeepPartial<ChartStyle>;
   showPrevClose: boolean;
+  statusLine: StatusLineSettings;
   scale: { mode: PriceScaleMode; invert: boolean; autoScale: boolean } | null;
 }
 
@@ -120,6 +106,7 @@ const DEFAULTS: Omit<Draft, 'scale'> & { scale: NonNullable<Draft['scale']> } = 
   timezone: 'exchange',
   chartStyle: {},
   showPrevClose: false,
+  statusLine: DEFAULT_STATUS_LINE,
   scale: { mode: 'linear', invert: false, autoScale: true },
 };
 
@@ -145,6 +132,7 @@ function readDraft(): Draft {
     timezone: v.timezone,
     chartStyle: v.chartStyle,
     showPrevClose: v.showPrevClose,
+    statusLine: v.statusLine,
     scale: readScale(getChart()),
   };
 }
@@ -395,6 +383,76 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         <Planned items={['Precision', 'Data modification (adjust for dividends)']} />
       </>
     );
+  } else if (tab === 'status') {
+    const sl = draft.statusLine;
+    const updateStatus = (patch: Partial<StatusLineSettings>) =>
+      update({ statusLine: { ...sl, ...patch } });
+    content = (
+      <>
+        <Section title="Symbol">
+          <Row label="Title" htmlFor="set-sl-title">
+            <select
+              id="set-sl-title"
+              className="io-input dlg-select"
+              value={sl.title}
+              onChange={(e) => updateStatus({ title: e.target.value as LegendTitleMode })}
+            >
+              <option value="ticker">Ticker</option>
+              <option value="description">Description</option>
+              <option value="both">Ticker and description</option>
+            </select>
+          </Row>
+          <Row label="Exchange">
+            <Check
+              checked={sl.exchange}
+              label="Show the exchange name"
+              onChange={(exchange) => updateStatus({ exchange })}
+            />
+          </Row>
+        </Section>
+        <Section title="Values">
+          <Check
+            checked={sl.ohlc}
+            label="Open, high, low and close"
+            onChange={(ohlc) => updateStatus({ ohlc })}
+          />
+          <Check
+            checked={sl.barChange}
+            label="Change from the previous close"
+            onChange={(barChange) => updateStatus({ barChange })}
+          />
+          <Check
+            checked={sl.volume}
+            label="Volume"
+            onChange={(volume) => updateStatus({ volume })}
+          />
+        </Section>
+        <Section title="Indicators and overlays">
+          <Check
+            checked={sl.indicatorTitles}
+            label="Titles"
+            onChange={(indicatorTitles) => updateStatus({ indicatorTitles })}
+          />
+          <Check
+            checked={sl.indicatorInputs}
+            label="Inputs"
+            onChange={(indicatorInputs) => updateStatus({ indicatorInputs })}
+          />
+          <Check
+            checked={sl.indicatorValues}
+            label="Values"
+            onChange={(indicatorValues) => updateStatus({ indicatorValues })}
+          />
+        </Section>
+        <Section title="Appearance">
+          <Check
+            checked={sl.background}
+            label="Background behind the status line"
+            onChange={(background) => updateStatus({ background })}
+          />
+        </Section>
+      </>
+    );
   } else if (tab === 'scales') {
     const s = draft.scale;
     content = (
@@ -510,9 +568,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   } else if (tab === 'events') {
     content = <EventsTab />;
   } else {
-    content = (
-      <Placeholder title={TABS.find((t) => t.id === tab)?.label ?? ''} items={PLANNED[tab] ?? []} />
-    );
+    content = <TradingTab />;
   }
 
   return (
@@ -553,21 +609,6 @@ function Planned({ items }: { items: string[] }) {
   return (
     <div className="dlg-planned">
       <div className="dlg-planned-title">More in Phase 15</div>
-      <ul>
-        {items.map((i) => (
-          <li key={i}>{i}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Placeholder({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="dlg-placeholder">
-      <div className="dlg-placeholder-badge">Phase 15</div>
-      <h3>{title} settings are coming in Phase 15</h3>
-      <p>Planned options:</p>
       <ul>
         {items.map((i) => (
           <li key={i}>{i}</li>

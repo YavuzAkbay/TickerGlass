@@ -28,7 +28,7 @@ import {
 } from '../store/chart';
 import { attachSync } from '../layout/sync';
 import { takeSeed } from '../layout/seeds';
-import { pickChartView } from '../store/chartView';
+import { legendOf, pickChartView } from '../store/chartView';
 
 /**
  * Dev/e2e hook: runs `code` as a user-script body in a fresh sandbox worker and
@@ -165,6 +165,7 @@ export function ChartView({ id }: { id: string }) {
           prepost: v.prepost,
           showPrevClose: v.showPrevClose,
         });
+      if (v.statusLine !== prev.statusLine) chart.setLegendOptions(legendOf(v.statusLine));
       prev = v;
     });
     return off;
