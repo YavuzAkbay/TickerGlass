@@ -42,6 +42,7 @@ from .routes import (
     watchlists,
 )
 from .services.bars import BarService, TailPolicy
+from .services.maintenance import CacheMaintenance
 from .services.market import MarketService
 from .services.stats import CacheStats
 from .services.symbols import SymbolService
@@ -144,7 +145,12 @@ def create_app(
         dispatcher = Dispatcher(app.state.sessionmaker, settings, app.state.live_hub)
         app.state.dispatcher = dispatcher
         dispatcher.start()
+        maintenance = CacheMaintenance(engine, app.state.bar_service, settings, stats)
+        app.state.cache_maintenance = maintenance
+        if settings.cache_maintenance_enabled:
+            maintenance.start()
         yield
+        await maintenance.stop()
         await dispatcher.stop()
         await app.state.live_hub.close()
         # Queued refreshes are dropped; a running one finishes on its own thread.

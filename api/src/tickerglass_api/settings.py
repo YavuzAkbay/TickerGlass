@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     #: Daily, weekly and monthly series not read for this many days are deleted.
     bars_daily_retention_days: float = 365
 
+    # Periodic cache upkeep (services/maintenance.py): prune bars, purge stale symbol
+    # metadata, compact the SQLite file.
+    cache_maintenance_enabled: bool = True
+    cache_maintenance_interval_s: float = 21600
+
     # Alerts (docs/alerts.md §4.1). Secrets live only here, never in the browser.
     alerts_webhook_url: str | None = None
     alerts_webhook_secret: str | None = None
