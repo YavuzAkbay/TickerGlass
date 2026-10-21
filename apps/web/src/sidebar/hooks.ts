@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Chart, ChartEvents } from '@tickerglass/engine';
-import { cachedJson, errorMessage, getJson } from '../api/client';
-import type { Quote } from '../api/types';
+import { cachedJson, errorMessage } from '../api/client';
 
 export interface ApiState<T> {
   data: T | undefined;
@@ -35,59 +34,6 @@ export function useApi<T>(path: string | null, ttlMs: number): ApiState<T> {
     loading: !!key && !current,
     retry: () => setNonce((n) => n + 1),
   };
-}
-
-export interface QuotesState {
-  quotes: Record<string, Quote>;
-  error: string | null;
-  /** True until the first response for the current symbol set. */
-  loading: boolean;
-}
-
-/** Quotes for `symbols`, refreshed every `pollMs` while mounted and the tab is visible. */
-export function useQuotes(symbols: string[], pollMs = 15000): QuotesState {
-  const key = symbols.join(',');
-  const [state, setState] = useState<{
-    key: string;
-    quotes: Record<string, Quote>;
-    error: string | null;
-  }>({
-    key: '',
-    quotes: {},
-    error: null,
-  });
-
-  useEffect(() => {
-    if (!key) return;
-    let alive = true;
-    const ctrl = new AbortController();
-    const load = () => {
-      if (document.hidden) return;
-      getJson<Quote[]>(`/quotes?symbols=${encodeURIComponent(key)}`, { signal: ctrl.signal }).then(
-        (list) => {
-          if (!alive) return;
-          setState((s) => {
-            const quotes = { ...s.quotes };
-            for (const q of list) quotes[q.symbol] = q;
-            return { key, quotes, error: null };
-          });
-        },
-        (e: unknown) => {
-          if (!alive || ctrl.signal.aborted) return;
-          setState((s) => ({ ...s, key, error: errorMessage(e) }));
-        },
-      );
-    };
-    load();
-    const timer = setInterval(load, pollMs);
-    return () => {
-      alive = false;
-      ctrl.abort();
-      clearInterval(timer);
-    };
-  }, [key, pollMs]);
-
-  return { quotes: state.quotes, error: state.error, loading: !!key && state.key !== key };
 }
 
 /** Re-render counter bumped whenever one of the chart's events fires. */
