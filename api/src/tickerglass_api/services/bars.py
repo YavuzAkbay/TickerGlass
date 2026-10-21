@@ -1,9 +1,11 @@
 """Bar cache: serves bars from the DB and keeps it in sync with the provider.
 
 First request for a series backfills everything the provider allows. Later
-requests only refetch the tail once it is older than the interval's TTL. If the
+requests only refetch the tail once it is older than the interval's TTL, and not
+at all when the requested range ends before the newest cached bar. If the
 overlapping bar changed (split or dividend re-adjustment), the series is wiped
-and backfilled again.
+and backfilled again. When a tail refresh fails, the cached bars are served and
+the refresh is retried after a short pause.
 """
 
 import logging
@@ -22,7 +24,14 @@ from sqlalchemy.orm import Session
 
 from ..intervals import IntervalSpec
 from ..models import Bar, SeriesMeta
-from ..providers.base import BAR_COLUMNS, MarketDataProvider, SymbolNotFound
+from ..providers.base import (
+    BAR_COLUMNS,
+    MarketDataProvider,
+    ProviderError,
+    RateLimited,
+    SymbolNotFound,
+)
+from .stats import CacheStats
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +39,8 @@ log = logging.getLogger(__name__)
 TAIL_OVERLAP_BARS = 3
 REL_TOLERANCE = 1e-6
 UPSERT_BATCH = 2000
+# Pause before retrying a failed tail refresh (cached bars are served meanwhile).
+TAIL_RETRY_AFTER = timedelta(seconds=30)
 
 
 @dataclass(frozen=True)
@@ -39,9 +50,14 @@ class BarsResult:
 
 
 class BarService:
-    def __init__(self, engine: Engine, provider: MarketDataProvider) -> None:
+    def __init__(
+        self, engine: Engine, provider: MarketDataProvider, *, stats: CacheStats | None = None
+    ) -> None:
         self._engine = engine
         self._provider = provider
+        self._stats = stats if stats is not None else CacheStats()
+        # Series whose last tail refresh failed -> earliest next attempt.
+        self._retry_at: dict[tuple[str, str, bool], datetime] = {}
         self._locks: defaultdict[tuple[str, str, bool], threading.Lock] = defaultdict(
             threading.Lock
         )
@@ -62,7 +78,7 @@ class BarService:
         """Return up to `limit` most recent bars with start <= ts < end."""
         symbol = symbol.upper()
         prepost = prepost and spec.intraday
-        self.sync(symbol, spec, prepost, now=now)
+        self.sync(symbol, spec, prepost, now=now, end=end)
         with Session(self._engine) as s:
             q = select(Bar).where(
                 Bar.symbol == symbol, Bar.interval == spec.name, Bar.prepost == prepost
@@ -85,8 +101,17 @@ class BarService:
         return BarsResult(df, has_more)
 
     def sync(
-        self, symbol: str, spec: IntervalSpec, prepost: bool, now: datetime | None = None
+        self,
+        symbol: str,
+        spec: IntervalSpec,
+        prepost: bool,
+        now: datetime | None = None,
+        end: int | None = None,
     ) -> None:
+        """Bring the cached series up to date for a request ending before `end`.
+
+        Raises only when nothing is cached; a failed tail refresh leaves the cache as is.
+        """
         now = now or datetime.now(UTC)
         key = (symbol, spec.name, prepost)
         with self._locks_guard:
@@ -94,9 +119,42 @@ class BarService:
         with lock, Session(self._engine) as s:
             meta = s.get(SeriesMeta, key)
             if meta is None:
+                self._stats.incr("bars.backfill")
                 self._backfill(s, symbol, spec, prepost, now)
-            elif now - _aware(meta.tail_fetched_at) >= spec.tail_ttl:
-                self._refresh_tail(s, meta, spec, now)
+            elif now - _aware(meta.tail_fetched_at) < spec.tail_ttl:
+                self._stats.incr("bars.fresh")
+                return
+            elif end is not None and end <= self._newest_ts(s, symbol, spec.name, prepost):
+                # Only older bars were asked for; the tail does not matter.
+                self._stats.incr("bars.covered")
+                return
+            elif (retry_at := self._retry_at.get(key)) is not None and now < retry_at:
+                self._stats.incr("bars.stale_retry_wait")
+                return
+            else:
+                self._stats.incr("bars.tail_refresh")
+                try:
+                    self._refresh_tail(s, meta, spec, now)
+                except SymbolNotFound:
+                    raise
+                except ProviderError as exc:
+                    s.rollback()
+                    if not self._has_bars(s, symbol, spec.name, prepost):
+                        raise
+                    pause = TAIL_RETRY_AFTER
+                    if isinstance(exc, RateLimited):
+                        pause = max(pause, timedelta(seconds=exc.retry_after))
+                    self._retry_at[key] = now + pause
+                    self._stats.incr("bars.stale_error")
+                    log.warning(
+                        "tail refresh failed for %s %s prepost=%s, serving cached bars: %s",
+                        symbol,
+                        spec.name,
+                        prepost,
+                        exc,
+                    )
+                    return
+                self._retry_at.pop(key, None)
             s.commit()
 
     def _backfill(
@@ -160,6 +218,16 @@ class BarService:
             )
         )
         self._backfill(s, symbol, spec, prepost, now)
+
+    @staticmethod
+    def _newest_ts(s: Session, symbol: str, interval: str, prepost: bool) -> int:
+        """Newest cached bar's ts, or -1 when the series has no bars."""
+        ts = s.scalar(
+            select(func.max(Bar.ts)).where(
+                Bar.symbol == symbol, Bar.interval == interval, Bar.prepost == prepost
+            )
+        )
+        return -1 if ts is None else int(ts)
 
     @staticmethod
     def _has_bars(s: Session, symbol: str, interval: str, prepost: bool) -> bool:

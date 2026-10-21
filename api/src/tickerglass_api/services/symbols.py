@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -5,7 +6,9 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from ..models import SymbolMeta
-from ..providers.base import MarketDataProvider
+from ..providers.base import MarketDataProvider, ProviderError, SymbolNotFound
+
+log = logging.getLogger(__name__)
 
 SYMBOL_TTL = timedelta(hours=24)
 
@@ -26,7 +29,16 @@ class SymbolService:
                 )
                 if now - fetched < SYMBOL_TTL:
                     return row.data
-            data = self._provider.symbol_info(symbol)
+            try:
+                data = self._provider.symbol_info(symbol)
+            except SymbolNotFound:
+                raise
+            except ProviderError as exc:
+                if row is None:
+                    raise
+                # Stale metadata beats an error; the next request tries again.
+                log.warning("symbol info refresh failed for %s, serving cached: %s", symbol, exc)
+                return row.data
             s.merge(SymbolMeta(symbol=symbol, data=data, fetched_at=now))
             s.commit()
             return data
