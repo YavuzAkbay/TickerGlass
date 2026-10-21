@@ -24,12 +24,29 @@ import {
 /** HTTP/API failure. `status` is the HTTP status, or 0 for network/protocol errors. */
 export class FeedError extends Error {
   readonly status: number;
+  /** Seconds to wait before retrying, from a `Retry-After` header (429/503), if sent. */
+  readonly retryAfter?: number;
 
-  constructor(message: string, status: number, options?: { cause?: unknown }) {
+  constructor(
+    message: string,
+    status: number,
+    options?: { cause?: unknown; retryAfter?: number | undefined },
+  ) {
     super(message, options);
     this.name = 'FeedError';
     this.status = status;
+    if (options?.retryAfter !== undefined) this.retryAfter = options.retryAfter;
   }
+}
+
+/** Seconds from a `Retry-After` header value (delta-seconds or HTTP date); undefined if absent/invalid. */
+export function parseRetryAfter(value: string | null, now = Date.now()): number | undefined {
+  if (value === null) return undefined;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v);
+  const at = Date.parse(v);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 export type UpstreamStatus = 'connected' | 'reconnecting' | 'polling';
@@ -155,7 +172,9 @@ export class HttpDataFeed implements DataFeed {
       parseError = err;
     }
     if (!res.ok) {
-      throw new FeedError(errorDetail(body) ?? `HTTP ${res.status} ${res.statusText}`, res.status);
+      throw new FeedError(errorDetail(body) ?? `HTTP ${res.status} ${res.statusText}`, res.status, {
+        retryAfter: parseRetryAfter(res.headers.get('Retry-After')),
+      });
     }
     if (parseError !== null) {
       throw new FeedError('invalid JSON response', 0, { cause: parseError });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Bar } from '../types';
-import { FeedError, HttpDataFeed, type LiveStatus } from './http-feed';
+import { FeedError, HttpDataFeed, parseRetryAfter, type LiveStatus } from './http-feed';
 import { parseInterval } from './intervals';
 
 const z = (iso: string): number => Date.parse(iso) / 1000;
@@ -129,6 +129,33 @@ describe('HttpDataFeed HTTP', () => {
     const p = feed.getBars({ symbol: 'NOPE', interval: parseInterval('1D'), limit: 10 });
     await expect(p).rejects.toBeInstanceOf(FeedError);
     await expect(p).rejects.toMatchObject({ status: 404, message: 'symbol not found: NOPE' });
+  });
+
+  it('parses Retry-After seconds into FeedError.retryAfter', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ detail: 'slow down' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '7' },
+        }),
+    );
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    await expect(
+      feed.getBars({ symbol: 'A', interval: parseInterval('1D'), limit: 1 }),
+    ).rejects.toMatchObject({ status: 429, retryAfter: 7 });
+  });
+
+  it('leaves retryAfter unset without a usable header', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ detail: 'x' }, 503));
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    const err = await feed
+      .getBars({ symbol: 'A', interval: parseInterval('1D'), limit: 1 })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FeedError);
+    expect((err as FeedError).retryAfter).toBeUndefined();
+    expect(parseRetryAfter('soon')).toBeUndefined();
+    expect(parseRetryAfter(null)).toBeUndefined();
+    expect(parseRetryAfter('Thu, 01 Jan 1970 00:00:10 GMT', 0)).toBe(10);
   });
 
   it('joins FastAPI validation details', async () => {

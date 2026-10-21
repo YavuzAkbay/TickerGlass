@@ -1,5 +1,5 @@
 import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@investopen/engine';
-import type { CrosshairInfo, SymbolInfo } from '@investopen/engine';
+import type { ChartErrorInfo, CrosshairInfo, SymbolInfo } from '@investopen/engine';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { createHistoryStore, type HistoryState } from '../commands/history';
 import {
@@ -31,6 +31,8 @@ export interface ChartInfoState {
   symbolInfo: SymbolInfo | null;
   crosshair: CrosshairInfo | null;
   loading: boolean;
+  /** The last load failed (cleared when bars load, on retry or when the symbol changes). */
+  error: ChartErrorInfo | null;
 }
 
 /** Everything one chart in the layout owns: the engine chart and its per-chart stores. */
@@ -73,6 +75,7 @@ export function createChartSession(
     symbolInfo: null,
     crosshair: null,
     loading: false,
+    error: null,
   }));
   return {
     id,
