@@ -1,4 +1,5 @@
 import socket
+import threading
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
@@ -8,14 +9,14 @@ import pandas as pd
 import pytest
 from curl_cffi.requests import exceptions as curl_exc
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import Engine, create_engine, inspect, select, text
 from sqlalchemy.orm import Session
 from yfinance.exceptions import YFRateLimitError
 
 from tickerglass_api.app import create_app
 from tickerglass_api.db import make_engine, run_migrations
 from tickerglass_api.intervals import resolve_interval
-from tickerglass_api.models import SeriesMeta
+from tickerglass_api.models import Bar, SeriesMeta
 from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     ProviderError,
@@ -24,9 +25,16 @@ from tickerglass_api.providers.base import (
     UpstreamUnavailable,
 )
 from tickerglass_api.providers.yahoo import YahooProvider, _normalize
-from tickerglass_api.services.bars import TAIL_RETRY_AFTER, BarService, TailPolicy, _aware
+from tickerglass_api.services.bars import (
+    TAIL_RETRY_AFTER,
+    BarService,
+    PruneReport,
+    TailPolicy,
+    _aware,
+)
 from tickerglass_api.services.stats import CacheStats
 from tickerglass_api.services.symbols import SymbolService
+from tickerglass_api.settings import Settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -795,3 +803,292 @@ def test_series_schedule_migration_up_down_up(tmp_path: Path) -> None:
     command.upgrade(cfg, "head")
     assert new <= columns()
     engine.dispose()
+
+
+# ------------------------------------------------------ overlap classification
+
+# Weekdays from July through 2026-10-09: more 5m history than the 59-day lookback.
+SUMMER = weekdays(date(2026, 7, 1), date(2026, 10, 9))
+CACHED_AT = ny(2026, 8, 14, 12)  # first request (backfill)
+REFRESH_AT = ny(2026, 10, 9, 12)  # eight weeks later: tail refresh
+
+
+def priced(frame: pd.DataFrame) -> pd.DataFrame:
+    """`frame` with a distinct price and volume per bar."""
+    out = frame.copy()
+    step = pd.Series(range(len(out)), dtype="float64")
+    out["close"] = 100 + step * 0.01
+    out["open"] = out["close"] - 0.05
+    out["high"] = out["close"] + 0.2
+    out["low"] = out["close"] - 0.3
+    out["adj_close"] = out["close"]
+    out["volume"] = 1000 + step
+    return out
+
+
+def cached_5m(
+    engine: Engine, frame: pd.DataFrame
+) -> tuple[ClockedProvider, CacheStats, BarService]:
+    """A 5m series of `frame` backfilled at `CACHED_AT`."""
+    provider = ClockedProvider({("AAPL", "5m"): frame})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    provider.clock = CACHED_AT
+    svc.get_bars("AAPL", resolve_interval("5m"), False, now=CACHED_AT)
+    assert len(provider.calls) == 1
+    return provider, stats, svc
+
+
+def stored(svc: BarService, interval: str, now: datetime) -> pd.DataFrame:
+    return svc.get_bars("AAPL", resolve_interval(interval), False, limit=100_000, now=now).bars
+
+
+def test_intraday_revision_upserts_and_keeps_history(engine: Engine) -> None:
+    frame = priced(intraday_frame(SUMMER))
+    provider, stats, svc = cached_5m(engine, frame)
+    # The provider revises the second-newest cached bar (the newest closed one); the
+    # backfill ended before `CACHED_AT`.
+    revised = frame.copy()
+    second = revised.index[revised["ts"] < int(CACHED_AT.timestamp())][-2]
+    revised.loc[second, ["close", "adj_close"]] = 123.45
+    provider.frames[("AAPL", "5m")] = revised
+    provider.clock = REFRESH_AT
+
+    bars = stored(svc, "5m", REFRESH_AT)
+    assert len(provider.calls) == 2  # the tail fetch only
+    assert provider.calls[1][2] is not None
+    assert stats.counter("bars.overlap_revised") == 1
+    assert stats.counter("bars.rebackfill") == 0
+    # Everything up to now, including bars older than the provider's lookback.
+    expected = revised[revised["ts"] <= int(REFRESH_AT.timestamp())]
+    lookback_start = REFRESH_AT - resolve_interval("5m").max_lookback  # type: ignore[operator]
+    assert int(bars["ts"].iat[0]) < int(lookback_start.timestamp())
+    assert bars["ts"].tolist() == expected["ts"].tolist()
+    assert bars["close"].tolist() == pytest.approx(expected["close"].tolist())
+
+
+def test_intraday_split_rescales_history_without_refetch(engine: Engine) -> None:
+    frame = priced(intraday_frame(SUMMER))
+    provider, stats, svc = cached_5m(engine, frame)
+    # A 2:1 split: the provider rewrites its whole window at half the price, twice the volume.
+    split = frame.copy()
+    for col in ("open", "high", "low", "close", "adj_close"):
+        split[col] = split[col] / 2
+    split["volume"] = split["volume"] * 2
+    provider.frames[("AAPL", "5m")] = split
+    provider.clock = REFRESH_AT
+
+    bars = stored(svc, "5m", REFRESH_AT)
+    assert len(provider.calls) == 2
+    assert stats.counter("bars.overlap_rescaled") == 1
+    assert stats.counter("bars.rebackfill") == 0
+    expected = split[split["ts"] <= int(REFRESH_AT.timestamp())]
+    assert bars["ts"].tolist() == expected["ts"].tolist()
+    for col in ("open", "high", "low", "close", "adj_close", "volume"):
+        assert bars[col].tolist() == pytest.approx(expected[col].tolist()), col
+    adjusted = svc.get_bars(
+        "AAPL", resolve_interval("5m"), False, limit=100_000, adjusted=True, now=REFRESH_AT
+    ).bars
+    assert adjusted["close"].tolist() == pytest.approx(expected["close"].tolist())
+
+
+def test_intraday_unchanged_overlap_counts_same(engine: Engine) -> None:
+    frame = priced(intraday_frame(SUMMER))
+    provider, stats, svc = cached_5m(engine, frame)
+    provider.clock = REFRESH_AT
+    stored(svc, "5m", REFRESH_AT)
+    assert len(provider.calls) == 2
+    assert stats.counter("bars.overlap_same") == 1
+
+
+def test_daily_revision_still_rebackfills(engine: Engine) -> None:
+    provider = FakeProvider({("AAPL", "1d"): DAILY})
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    spec = resolve_interval("1d")
+    svc.get_bars("AAPL", spec, False, now=NOW)
+
+    revised = DAILY.copy()
+    revised.loc[revised.index[-2], ["close", "adj_close"]] *= 1.01
+    provider.frames[("AAPL", "1d")] = revised
+    res = svc.get_bars("AAPL", spec, False, limit=20_000, now=NOW + spec.tail_ttl)
+
+    assert len(provider.calls) == 3  # backfill, tail, full re-backfill
+    assert provider.calls[-1][2] is None
+    assert stats.counter("bars.rebackfill") == 1
+    assert res.bars["close"].tolist() == pytest.approx(revised["close"].tolist())
+
+
+# ------------------------------------------------------------------- pruning
+
+PRUNE_NOW = datetime(2026, 10, 21, 12, tzinfo=UTC)
+
+
+def seed(
+    engine: Engine,
+    symbol: str,
+    interval: str,
+    rows: int,
+    used: datetime,
+    *,
+    accessed: bool = True,
+) -> None:
+    """A cached series of `rows` bars, last read at `used` (or cached then, if not `accessed`)."""
+    with Session(engine) as s:
+        s.add(
+            SeriesMeta(
+                symbol=symbol,
+                interval=interval,
+                prepost=False,
+                backfilled_at=used - timedelta(days=1000) if accessed else used,
+                tail_fetched_at=used,
+                quiet_streak=0,
+                last_accessed_at=used if accessed else None,
+            )
+        )
+        s.add_all(
+            Bar(
+                symbol=symbol,
+                interval=interval,
+                prepost=False,
+                ts=1_700_000_000 + i * 60,
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                adj_close=1.0,
+                volume=1.0,
+            )
+            for i in range(rows)
+        )
+        s.commit()
+
+
+def series_in(engine: Engine) -> set[str]:
+    with Session(engine) as s:
+        metas = {m.symbol for m in s.scalars(select(SeriesMeta))}
+        bars = set(s.scalars(select(Bar.symbol).distinct()))
+    assert metas == bars  # bars and meta go together
+    return metas
+
+
+def days_ago(n: float) -> datetime:
+    return PRUNE_NOW - timedelta(days=n)
+
+
+def prune(svc: BarService, max_rows: int = 1_000_000) -> PruneReport:
+    return svc.prune(
+        PRUNE_NOW, max_rows=max_rows, intraday_retention_days=30, daily_retention_days=365
+    )
+
+
+def test_prune_by_age(engine: Engine) -> None:
+    seed(engine, "OLD5", "5m", 10, days_ago(31))
+    seed(engine, "NEW5", "5m", 20, days_ago(29))
+    seed(engine, "LEGACY", "1m", 5, days_ago(40), accessed=False)
+    seed(engine, "OLDD", "1d", 7, days_ago(366))
+    seed(engine, "MIDD", "1wk", 3, days_ago(100))
+    stats = CacheStats()
+    svc = BarService(engine, FakeProvider({}), stats=stats)
+
+    report = prune(svc)
+    assert report == PruneReport(
+        intraday_age_series=2,
+        intraday_age_rows=15,
+        daily_age_series=1,
+        daily_age_rows=7,
+        rows_remaining=23,
+    )
+    assert (report.series_deleted, report.rows_deleted) == (3, 22)
+    assert series_in(engine) == {"NEW5", "MIDD"}
+    assert stats.counter("bars.pruned_series") == 3
+    assert stats.counter("bars.pruned_rows") == 22
+
+    report = svc.prune_with_settings(Settings(bars_intraday_retention_days=7), now=PRUNE_NOW)
+    assert (report.intraday_age_series, report.rows_remaining) == (1, 3)
+    assert series_in(engine) == {"MIDD"}
+
+
+def test_prune_by_budget_evicts_least_recently_used_intraday_first(engine: Engine) -> None:
+    seed(engine, "A", "1d", 30, days_ago(10))
+    seed(engine, "B", "5m", 30, days_ago(2))
+    seed(engine, "C", "5m", 30, days_ago(5))
+    seed(engine, "D", "1d", 30, days_ago(3))
+    svc = BarService(engine, FakeProvider({}))
+
+    report = prune(svc, max_rows=100)  # 120 rows: evict down to 90
+    assert report == PruneReport(budget_series=1, budget_rows=30, rows_remaining=90)
+    assert series_in(engine) == {"A", "B", "D"}
+
+    report = prune(svc, max_rows=60)  # 90 rows: evict down to 54
+    assert report == PruneReport(budget_series=2, budget_rows=60, rows_remaining=30)
+    assert series_in(engine) == {"D"}  # B (intraday) went before the older daily A
+
+    assert prune(svc, max_rows=30) == PruneReport(rows_remaining=30)  # within budget
+
+
+def test_prune_never_deletes_recently_used_series(engine: Engine) -> None:
+    seed(engine, "HOT", "5m", 10, PRUNE_NOW - timedelta(hours=1))
+    seed(engine, "WARM", "1d", 10, days_ago(2))
+    seed(engine, "COLD", "5m", 10, days_ago(2))
+    svc = BarService(engine, FakeProvider({}))
+
+    report = svc.prune(PRUNE_NOW, max_rows=1, intraday_retention_days=0, daily_retention_days=0)
+    assert report.intraday_age_series == 1 and report.daily_age_series == 1
+    assert report.rows_remaining == 10
+    assert series_in(engine) == {"HOT"}
+
+    report = svc.prune(
+        PRUNE_NOW,
+        max_rows=1,
+        intraday_retention_days=0,
+        daily_retention_days=0,
+        protect_s=0,
+    )
+    assert report.intraday_age_series == 1
+    assert series_in(engine) == set()
+
+
+class BlockingProvider(FakeProvider):
+    """`history` waits for `release` after signalling `entered`."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        self.entered.set()
+        assert self.release.wait(10)
+        return super().history(symbol, interval, start, end, prepost)
+
+
+def test_prune_skips_series_being_synced(engine: Engine) -> None:
+    seed(engine, "BUSY", "1d", 10, days_ago(400))
+    seed(engine, "IDLE", "1d", 10, days_ago(400))
+    provider = BlockingProvider()
+    svc = BarService(engine, provider)
+    # A request refreshing BUSY's tail holds its lock while it waits on upstream.
+    request = threading.Thread(
+        target=svc.get_bars, args=("BUSY", resolve_interval("1d"), False), kwargs={"now": PRUNE_NOW}
+    )
+    request.start()
+    try:
+        assert provider.entered.wait(10)
+        report = prune(svc)
+    finally:
+        provider.release.set()
+        request.join(10)
+    assert report == PruneReport(
+        daily_age_series=1, daily_age_rows=10, skipped_busy=1, rows_remaining=10
+    )
+    assert series_in(engine) == {"BUSY"}
+    # The request marked it used: protected from now on.
+    assert prune(svc) == PruneReport(rows_remaining=10)

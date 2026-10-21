@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     #: Cap of the doubling TTL for series that stop receiving bars while open.
     bars_quiet_backoff_max_s: float = 1800
 
+    # Bar storage bounds (BarService.prune). Series read within the last day are kept.
+    #: Bar rows across all series; above it the least recently used series are deleted,
+    #: intraday first, down to 90% (about 80 bytes per row on disk).
+    bars_max_rows: int = 10_000_000
+    #: Intraday series not read for this many days are deleted.
+    bars_intraday_retention_days: float = 30
+    #: Daily, weekly and monthly series not read for this many days are deleted.
+    bars_daily_retention_days: float = 365
+
     # Alerts (docs/alerts.md §4.1). Secrets live only here, never in the browser.
     alerts_webhook_url: str | None = None
     alerts_webhook_secret: str | None = None
