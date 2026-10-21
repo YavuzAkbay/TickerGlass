@@ -12,6 +12,7 @@ import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
+import { Inspector } from './inspector/Inspector';
 import { Navigator } from './navigator/Navigator';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
@@ -75,6 +76,7 @@ export function App() {
           <RangeStrip />
         </div>
       </main>
+      <Inspector />
       <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
         <ToolRail />
       </aside>

@@ -481,3 +481,9 @@ export const useDrawingTemplates = create<DrawingTemplates>()(
     },
   ),
 );
+
+/** The stored drawing with this id (any symbol bucket), if any. */
+export function lookupDrawing(s: DrawingBuckets, id: unknown): Drawing | undefined {
+  if (typeof id !== 'string') return undefined;
+  return allDrawings(s).find((d) => d.id === id);
+}

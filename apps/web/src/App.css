@@ -3,7 +3,7 @@
 .app {
   display: grid;
   grid-template-rows: 36px minmax(0, 1fr);
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   height: 100vh;
   background: var(--border);
   gap: 1px;
@@ -22,7 +22,7 @@
 }
 
 .app-rail {
-  grid-area: 2 / 3 / 3 / 4;
+  grid-area: 2 / 4 / 3 / 5;
   display: flex;
   min-height: 0;
   overflow: hidden;

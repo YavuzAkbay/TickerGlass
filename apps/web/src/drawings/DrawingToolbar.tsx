@@ -5,10 +5,11 @@ import {
   type DrawingProperty,
   type JsonValue,
 } from '@investopen/engine';
-import { Ellipsis, Lock, Settings, Trash2, Type, Unlock } from 'lucide-react';
+import { Ellipsis, Lock, PanelRight, Settings, Trash2, Type, Unlock } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ColorSwatch } from '../dialogs/ColorPicker';
+import { useT } from '../i18n';
 import { getChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
@@ -131,6 +132,7 @@ export function DrawingToolbar() {
 }
 
 function ToolbarBody({ ids }: { ids: string[] }) {
+  const t = useT();
   const buckets = useDrawingStore();
   const list = lookupAll(buckets, ids);
   const ref = useRef<HTMLDivElement>(null);
@@ -255,6 +257,13 @@ function ToolbarBody({ ids }: { ids: string[] }) {
         </>
       ) : null}
       <div className="drw-tb-sep" />
+      <IconButton
+        label={t('drawing.properties')}
+        icon={PanelRight}
+        className="drw-tb-btn"
+        disabled={list.length !== 1 || !def}
+        onClick={() => useUiStore.getState().openInspector('drawing', first.id)}
+      />
       <IconButton
         label="Settings"
         icon={Settings}
