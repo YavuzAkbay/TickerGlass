@@ -1,4 +1,4 @@
-import type { ChartState, DataFeed, PriceScaleMode } from '@investopen/engine';
+import type { ChartState, DataFeed, PriceScaleMode } from '@tickerglass/engine';
 import { replayFeed } from '../chart/feed';
 import type { ChartSession } from '../chart/session';
 import { runInSession, scopedOn } from '../store/chart';

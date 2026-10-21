@@ -1,5 +1,5 @@
 /**
- * InvestOpen default palette: the single source for series, drawing and
+ * TickerGlass default palette: the single source for series, drawing and
  * indicator default colours. (`packages/indicators` mirrors the values in
  * `builtins/common.ts` because it does not depend on the engine.)
  */

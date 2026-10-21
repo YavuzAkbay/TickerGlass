@@ -1,4 +1,4 @@
-import type { Chart, ChartState, PriceScaleMode } from '@investopen/engine';
+import type { Chart, ChartState, PriceScaleMode } from '@tickerglass/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistory } from '../commands/history';
 import { useChartStore } from '../store/chart';

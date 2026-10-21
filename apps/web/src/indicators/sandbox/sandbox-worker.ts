@@ -2,8 +2,8 @@
 // script instance. Served with a restrictive response CSP (vite.config.ts
 // sandboxCsp(), docker/nginx.conf) and locked down in JS before any user code.
 // Must bundle into one self-contained file (vite.config.ts build guards), and
-// must not pull in the built-in indicators (only `@investopen/indicators/core`).
-import { probeLineOffset } from '@investopen/indicators/core';
+// must not pull in the built-in indicators (only `@tickerglass/indicators/core`).
+import { probeLineOffset } from '@tickerglass/indicators/core';
 import { lockdown } from './lockdown';
 import { SandboxCore } from './sandboxCore';
 

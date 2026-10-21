@@ -1,4 +1,4 @@
-import type { CrosshairInfo } from '@investopen/engine';
+import type { CrosshairInfo } from '@tickerglass/engine';
 import { createStore } from 'zustand/vanilla';
 import { describe, expect, it, vi } from 'vitest';
 import { createChartViewStore } from '../store/chartView';

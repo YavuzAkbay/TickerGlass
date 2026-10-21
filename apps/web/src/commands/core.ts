@@ -1,4 +1,4 @@
-import type { Chart } from '@investopen/engine';
+import type { Chart } from '@tickerglass/engine';
 import {
   Camera,
   Expand,

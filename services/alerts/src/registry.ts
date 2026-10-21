@@ -1,5 +1,5 @@
 /** In-memory alerts by id; diffs a fresh list against memory (docs/alerts.md §3.1). */
-import type { Alert } from '@investopen/alerts';
+import type { Alert } from '@tickerglass/alerts';
 
 export interface RegistryDiff {
   added: Alert[];

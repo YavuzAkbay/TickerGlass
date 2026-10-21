@@ -2,7 +2,7 @@
  * Fire queue (docs/alerts.md §3.1): `POST /fire` with the same `fireId` until
  * 2xx, 409 (drop and reload the alert) or 404/422 (drop); in order per alert.
  */
-import type { AlertLogEntry } from '@investopen/alerts';
+import type { AlertLogEntry } from '@tickerglass/alerts';
 import { ApiError, type ApiClient } from './api';
 import { backoffMs, jitter, type Clock } from './clock';
 import { errText, type Logger } from './log';

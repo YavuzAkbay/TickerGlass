@@ -1,6 +1,6 @@
 import type { ChartTheme } from './options';
 
-const STYLE_ID = 'investopen-engine-style';
+const STYLE_ID = 'tickerglass-engine-style';
 
 const CSS = `
 .io-chart { position: relative; overflow: hidden; user-select: none; -webkit-user-select: none;

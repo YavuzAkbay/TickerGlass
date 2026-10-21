@@ -6,7 +6,7 @@
  * `POST /drawings/batch`. On 409 the server copies of the conflicting ids are
  * adopted and the rest is retried.
  */
-import { resolveDrawingType, type Drawing } from '@investopen/engine';
+import { resolveDrawingType, type Drawing } from '@tickerglass/engine';
 import { createAutosaver, type Autosaver } from '../api/autosave';
 import { errorMessage, isRetryable } from '../api/client';
 import * as persistence from '../api/persistence';
@@ -22,7 +22,7 @@ import {
 } from '../drawings/store';
 import { isObj, readJson, safeStorage, type SafeStorage } from './net';
 
-export const DRAWING_SYNC_KEY = 'investopen-drawings-sync';
+export const DRAWING_SYNC_KEY = 'tickerglass-drawings-sync';
 /** 2: renamed tool ids (v1 rows still load, `resolveDrawingType` maps them and they are re-saved). */
 export const DRAWING_SCHEMA_VERSION = 2;
 

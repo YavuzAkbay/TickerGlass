@@ -8,8 +8,8 @@ import {
   type IndicatorResult,
   type InputValueMap,
   type RuntimeContext,
-} from '@investopen/indicators/core';
-import type { BarColumns } from '@investopen/engine';
+} from '@tickerglass/indicators/core';
+import type { BarColumns } from '@tickerglass/engine';
 import { WorkerCore } from '../workerCore';
 import type {
   CheckMismatch,

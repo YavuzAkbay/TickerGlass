@@ -2,13 +2,13 @@ import { expect, test } from './fixtures';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
 test('add an indicator, edit its settings, hide and remove it', async ({ page }) => {
   // Start without persisted indicators (a new chart: the default Volume only).
-  await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
+  await page.addInitScript(() => localStorage.removeItem('tickerglass-indicators'));
   await page.goto('/?feed=synthetic');
   await page.waitForFunction(() => window.chart?.store.length > 0);
 

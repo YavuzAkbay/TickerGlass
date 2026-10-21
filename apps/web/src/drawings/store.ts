@@ -1,4 +1,4 @@
-import { resolveDrawingType, type Drawing, type DrawingStyle } from '@investopen/engine';
+import { resolveDrawingType, type Drawing, type DrawingStyle } from '@tickerglass/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore, type StoreApi } from 'zustand/vanilla';
@@ -10,7 +10,7 @@ import { stripPerDrawingStyle } from './per-drawing';
  * engine only holds the current chart's list (see ./attach). Mutate through
  * ./actions so changes are undoable.
  */
-export const STORAGE_KEY = 'investopen-drawings';
+export const STORAGE_KEY = 'tickerglass-drawings';
 
 export interface DrawingBuckets {
   /** Scope 'symbol' drawings by `Drawing.symbol`. */
@@ -444,7 +444,7 @@ export function migrateTemplates(
   };
 }
 
-/** Persisted `investopen-drawing-templates` version: 2 = renamed tool ids. */
+/** Persisted `tickerglass-drawing-templates` version: 2 = renamed tool ids. */
 export const TEMPLATES_STORE_VERSION = 2;
 
 export const useDrawingTemplates = create<DrawingTemplates>()(
@@ -475,7 +475,7 @@ export const useDrawingTemplates = create<DrawingTemplates>()(
         }),
     }),
     {
-      name: 'investopen-drawing-templates',
+      name: 'tickerglass-drawing-templates',
       version: TEMPLATES_STORE_VERSION,
       migrate: (persisted) => migrateTemplates(persisted) as DrawingTemplates,
     },

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FeedError } from '@investopen/engine/node';
-import type { AlertSpec } from '@investopen/alerts';
+import { FeedError } from '@tickerglass/engine/node';
+import type { AlertSpec } from '@tickerglass/alerts';
 import {
   BAR_T,
   bar,

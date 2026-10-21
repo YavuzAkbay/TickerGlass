@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createStore } from 'zustand/vanilla';
-import type { ChartMarker } from '@investopen/engine';
+import type { ChartMarker } from '@tickerglass/engine';
 import type { EventsResponse } from './api';
 import { attachEvents, buildEventMarkers, splitLabel } from './attach';
 import { useReplayStore } from '../replay/store';

@@ -1,5 +1,5 @@
 /** Dividend, split and earnings markers on the chart (group `events`, in a strip along the pane bottom). */
-import { isExpressionSymbol, PALETTE, type ChartMarker } from '@investopen/engine';
+import { isExpressionSymbol, PALETTE, type ChartMarker } from '@tickerglass/engine';
 import { useReplayStore } from '../replay/store';
 import type { ChartSession } from '../chart/session';
 import { fetchEvents, type EventsResponse } from './api';

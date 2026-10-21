@@ -9,7 +9,7 @@ import { firstChart } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
     /** Set by `takeOverLiveFeed`: pushes a bar into the chart like a live feed would. */
     __pushBar?: (bar: Record<string, number>) => void;
   }
@@ -40,7 +40,7 @@ const smaRow = (page: Page) => page.locator('.ind-legend-row', { hasText: 'SMA' 
 const editor = (page: Page) => page.locator('.se-dialog');
 
 async function open(page: Page) {
-  await page.addInitScript(() => localStorage.removeItem('investopen-indicators'));
+  await page.addInitScript(() => localStorage.removeItem('tickerglass-indicators'));
   await page.goto('/?feed=synthetic');
   await ready(page);
 }

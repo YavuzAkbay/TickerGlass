@@ -1,6 +1,6 @@
 import { Check, Clock, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import type { SymbolSearchResult } from '@investopen/engine';
+import type { SymbolSearchResult } from '@tickerglass/engine';
 import { MAX_CHART_SYMBOL, TOO_LONG_FOR_CHART } from '../commands/core';
 import { commands } from '../commands/registry';
 import { ExpressionErrorBox, ExpressionRow, classifyQuery } from '../compare/ExpressionRow';

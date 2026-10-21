@@ -1,4 +1,4 @@
-import type { Drawing, DrawingStyle } from '@investopen/engine';
+import type { Drawing, DrawingStyle } from '@tickerglass/engine';
 
 /**
  * Style keys that belong to one drawing, never to a saved default or template:

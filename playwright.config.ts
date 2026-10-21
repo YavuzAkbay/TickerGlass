@@ -9,7 +9,7 @@ export default defineConfig({
   timeout: 60_000,
   use: { baseURL: origin, viewport: { width: 1400, height: 800 } },
   webServer: {
-    command: `pnpm --filter @investopen/web dev --host 127.0.0.1 --port ${port}`,
+    command: `pnpm --filter @tickerglass/web dev --host 127.0.0.1 --port ${port}`,
     url: origin,
     reuseExistingServer: true,
   },

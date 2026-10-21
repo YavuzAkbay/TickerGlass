@@ -67,7 +67,7 @@ export const useReplayStore = create<ReplayStore>()(
       set: (patch) => set(patch),
     }),
     {
-      name: 'investopen-replay',
+      name: 'tickerglass-replay',
       storage: createJSONStorage(() => lazyStorage),
       partialize: ({ speed, update }) => ({ speed, update }),
       // Stored values may be stale or hand-edited: keep only valid ones.

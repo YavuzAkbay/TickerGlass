@@ -3,7 +3,7 @@
  * `persist/watchlists.ts` syncs with `/watchlists` and `/flags`. Every edit
  * marks the list dirty (or the flag in `flagsDirty`) until the server has it.
  */
-import { isExpressionSymbol } from '@investopen/engine';
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { normalizeSymbol } from '../store/app';
@@ -330,7 +330,7 @@ export const useWatchlistStore = create<WatchlistState>()(
       };
     },
     {
-      name: 'investopen-watchlists',
+      name: 'tickerglass-watchlists',
       version: 1,
       merge: mergePersisted,
       partialize: (s) => ({

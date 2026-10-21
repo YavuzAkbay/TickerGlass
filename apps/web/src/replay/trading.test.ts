@@ -1,4 +1,4 @@
-import type { ChartMarker, ChartPriceLine } from '@investopen/engine';
+import type { ChartMarker, ChartPriceLine } from '@tickerglass/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TRADING_PREFS, useTradingPrefs } from './prefs';
 import {

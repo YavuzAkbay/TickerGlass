@@ -12,9 +12,9 @@ export const test = base.extend<{ server: MockServer }>({
   // Seeds only a fresh profile; specs that clear storage and reload keep this default.
   page: async ({ page }, use) => {
     await page.addInitScript(() => {
-      if (localStorage.getItem('investopen-ui') !== null) return;
+      if (localStorage.getItem('tickerglass-ui') !== null) return;
       localStorage.setItem(
-        'investopen-ui',
+        'tickerglass-ui',
         JSON.stringify({ state: { navOpen: false, navSection: 'watchlist' }, version: 3 }),
       );
     });

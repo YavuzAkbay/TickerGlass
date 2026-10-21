@@ -13,10 +13,10 @@ from pydantic import ValidationError
 from sqlalchemy import Connection, create_engine, func, insert, inspect, select, update
 from test_userdata import NullProvider, drawing, engine_of, interleave
 
-from investopen_api import models as m
-from investopen_api.app import create_app
-from investopen_api.settings import Settings
-from investopen_api.userdata.alerts import AlertIn
+from tickerglass_api import models as m
+from tickerglass_api.app import create_app
+from tickerglass_api.settings import Settings
+from tickerglass_api.userdata.alerts import AlertIn
 
 FIXTURES = Path(__file__).resolve().parents[2] / "packages" / "alerts" / "test" / "fixtures"
 
@@ -776,7 +776,7 @@ def test_bundle_export_import_alerts(client: TestClient) -> None:
 
     # Absent key: replace leaves alerts alone.
     res = client.post(
-        "/api/import?mode=replace&confirm=true", json={"version": 1, "app": "investopen"}
+        "/api/import?mode=replace&confirm=true", json={"version": 1, "app": "tickerglass"}
     )
     assert res.status_code == 200 and res.json()["alerts"] == {
         "created": 0,
@@ -808,7 +808,7 @@ def test_bundle_export_import_alerts(client: TestClient) -> None:
     )
     res = client.post(
         "/api/import?mode=replace&confirm=true",
-        json={"version": 1, "app": "investopen", "alerts": []},
+        json={"version": 1, "app": "tickerglass", "alerts": []},
     )
     assert res.json()["alerts"]["deleted"] == 2
     assert client.get("/api/alerts").json() == []
@@ -819,7 +819,7 @@ def test_bundle_export_import_alerts(client: TestClient) -> None:
 def test_bundle_rejects_invalid_alert_and_duplicates(client: TestClient) -> None:
     good = json.loads((FIXTURES / "valid" / "price-crossing-value.json").read_text())
     bad = json.loads((FIXTURES / "invalid" / "bars-zero.json").read_text())
-    base = {"version": 1, "app": "investopen"}
+    base = {"version": 1, "app": "tickerglass"}
     assert (
         client.post("/api/import", json={**base, "alerts": [{**bad, "id": "x"}]}).status_code == 422
     )
@@ -918,7 +918,7 @@ def test_ws_drawings_changed_after_batch_and_import(client: TestClient) -> None:
         good = json.loads((FIXTURES / "valid" / "price-crossing-value.json").read_text())
         client.post(
             "/api/import",
-            json={"version": 1, "app": "investopen", "alerts": [{**good, "id": "imp"}]},
+            json={"version": 1, "app": "tickerglass", "alerts": [{**good, "id": "imp"}]},
         )
         assert recv_type(ws, "alerts.changed")["ids"] == ["imp"]
 

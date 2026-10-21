@@ -3,17 +3,17 @@
 Alerts watch a value of a symbol (price, an indicator output) against a target (a number, another value, a
 drawing's line or channel) and notify when a condition becomes true. They are evaluated by the Node service in
 `services/alerts`, so they fire with the browser closed. The service uses the same TypeScript code as the chart:
-the engine's feed stack for bars and live updates, `@investopen/indicators` for indicator values, and the engine's
+the engine's feed stack for bars and live updates, `@tickerglass/indicators` for indicator values, and the engine's
 anchor mapping for drawings.
 
 Planned code:
 
-- `packages/alerts/` (`@investopen/alerts`, new): wire types, spec validation, condition and trigger evaluator,
+- `packages/alerts/` (`@tickerglass/alerts`, new): wire types, spec validation, condition and trigger evaluator,
   drawing level math, warm-up lengths, message templates. Pure TS, no DOM, used by the service and the web app.
-- `packages/engine/src/node.ts` (new entry `@investopen/engine/node`): the Node-safe part of the engine (feeds,
+- `packages/engine/src/node.ts` (new entry `@tickerglass/engine/node`): the Node-safe part of the engine (feeds,
   expression language, intervals, anchor mapping, trading calendar). No chart, render or canvas imports.
 - `services/alerts/src/`: the evaluation service.
-- `api/src/investopen_api/`: `routes/alerts.py`, `userdata/alerts.py`, `notifications/`, migration
+- `api/src/tickerglass_api/`: `routes/alerts.py`, `userdata/alerts.py`, `notifications/`, migration
   `<rev>_alerts.py`, `/ws` event topics.
 - `apps/web/src/alerts/`: store, sync, events, dialog, panel, notifications, chart markers.
 
@@ -27,7 +27,7 @@ Limitations will be listed in [LIMITATIONS.md](LIMITATIONS.md#alerts) (new secti
 | Who delivers notifications       | The **API**. In-app frames go out over `/ws`. Webhook, Telegram and email go through a persisted outbox in the API (stdlib `urllib`/`smtplib`, no new dependencies). Secrets live in one place (the API env), "Send test" works while the service is down, and pytest covers delivery. The service only decides _that_ an alert fires.                                                                                                                                   |
 | Service <-> API live data        | The service uses `ExpressionFeed(ResamplingFeed(HttpDataFeed({baseUrl: API_URL})))`, the same stack as `apps/web/src/chart/feed.ts`. Node 22 has global `fetch` and `WebSocket`. Bars, resampling, expression math and live bar building are byte-for-byte the chart's.                                                                                                                                                                                                  |
 | Service <-> API control          | A second `/ws` connection subscribes to event topics `alerts` and `drawings` (new `op: 'events'`). A full REST resync runs every 60 s as a safety net.                                                                                                                                                                                                                                                                                                                   |
-| Expression symbols (`AAPL/MSFT`) | **Supported.** The expression code (`packages/engine/src/feed/expression/`, `expression-feed.ts`) is pure TS with no DOM. Exposing it through `@investopen/engine/node` gives the service the same bars the chart shows, at no extra cost. A node-environment test keeps that entry DOM-free. Legs outside the `/ws` charset get no live ticks; those series fall back to bar polling (§3.6). Watchlist rows cannot hold expressions, so that entry point is unaffected. |
+| Expression symbols (`AAPL/MSFT`) | **Supported.** The expression code (`packages/engine/src/feed/expression/`, `expression-feed.ts`) is pure TS with no DOM. Exposing it through `@tickerglass/engine/node` gives the service the same bars the chart shows, at no extra cost. A node-environment test keeps that entry DOM-free. Legs outside the `/ws` charset get no live ticks; those series fall back to bar polling (§3.6). Watchlist rows cannot hold expressions, so that entry point is unaffected. |
 | Series the alert runs on         | Always **standard time bars** of `(symbol, interval, prepost)` as captured at creation. Heikin Ashi and brick chart types are display transforms. On Heikin Ashi the dialog notes that values use regular candles. On brick types, drawing sources are disabled, because the drawing geometry would differ.                                                                                                                                                              |
 | Indicator settings               | Snapshot. The alert stores the fully resolved inputs of the indicator and of every upstream indicator. Editing the indicator on the chart later does not change the alert. The dialog says so.                                                                                                                                                                                                                                                                           |
 | Drawings                         | Live reference by `drawingId`. Moving the line moves the alert. The price-scale mode (linear or log) is snapshotted, because it changes the line's shape (§2.6). Deleting the drawing puts the alert into `error`.                                                                                                                                                                                                                                                       |
@@ -63,7 +63,7 @@ Limitations will be listed in [LIMITATIONS.md](LIMITATIONS.md#alerts) (new secti
   reverse order. SQLite FKs are enforced (`PRAGMA foreign_keys=ON` in `db.py`). The delete route still deletes
   the state row explicitly, so Postgres and SQLite behave the same.
 
-### 1.2 Alert spec (`@investopen/alerts` `types.ts`, JSON in `alerts.spec`)
+### 1.2 Alert spec (`@tickerglass/alerts` `types.ts`, JSON in `alerts.spec`)
 
 ```ts
 export const ALERT_SCHEMA_VERSION = 1;
@@ -571,14 +571,14 @@ with another cumulative or relative value (OBV vs its moving average) are unaffe
 | `registry.ts`     | in-memory alerts by id (with revision); diffs a fresh list against memory -> `added / changed / removed`; routes them to series                                                                                               |
 | `series.ts`       | `Series` per key `symbol                                                                                                                                                                                                      | interval | prepost`: `resolveSymbol`, history load (§3.4), `subscribe`, close detection (§2.4), poll fallback (§3.6), `IndicatorRuntime`, timeline/calendar, drawings cache; emits samples to its alerts |
 | `operands.ts`     | per sample: computes each distinct operand once (`price`, indicator output by instance hash, drawing level by drawing id+part+scale)                                                                                          |
-| `alert-runner.ts` | wraps `createAlertEvaluator` from `@investopen/alerts` for one alert revision; renders the message; queues fires                                                                                                              |
+| `alert-runner.ts` | wraps `createAlertEvaluator` from `@tickerglass/alerts` for one alert revision; renders the message; queues fires                                                                                                              |
 | `fires.ts`        | fire queue: `POST /fire` with the same `fireId` until 2xx, 409 (drop and reload the alert) or 404/422 (drop); in order per alert                                                                                              |
 | `state.ts`        | dirty set of alert states; flush with `PUT /alerts/states` every `ALERTS_STATE_FLUSH_MS` (5 s) and on shutdown                                                                                                                |
 | `heartbeat.ts`    | `POST /alerts/service/heartbeat` every 30 s                                                                                                                                                                                   |
 | `log.ts`          | one-line JSON logs (`level, msg, alertId?, series?`); `ALERTS_LOG_LEVEL`                                                                                                                                                      |
 
 The feed is `new ExpressionFeed(new ResamplingFeed(new HttpDataFeed({ baseUrl: API_URL, wsUrl })))` from
-`@investopen/engine/node`, with `wsUrl` derived as `ws(s)://<API_URL host>/ws`. The live socket is the feed's
+`@tickerglass/engine/node`, with `wsUrl` derived as `ws(s)://<API_URL host>/ws`. The live socket is the feed's
 own; the control socket is separate, so neither one's reconnect logic depends on the other.
 
 ### 3.2 Loop
@@ -666,7 +666,7 @@ crossing that happened inside those 5 s, and the `fireId` and per-bar guard prev
 ### 3.7 Packaging
 
 `docker/node.Dockerfile` copies `packages/alerts/package.json` before `pnpm install`. The `alerts` target keeps
-bundling with esbuild (workspace packages are bundled; `@investopen/engine/node` keeps canvas code out).
+bundling with esbuild (workspace packages are bundled; `@tickerglass/engine/node` keeps canvas code out).
 `docker-compose.yml` passes the service env (§4.1).
 
 ## 4. Notifications
@@ -678,7 +678,7 @@ API (`settings.py`, `.env.example`):
 | Variable                                                                                                                         | Default          | Meaning                                                                                   |
 | -------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
 | `ALERTS_WEBHOOK_URL`                                                                                                             | unset            | default webhook target (a per-alert `notify.webhookUrl` overrides it)                     |
-| `ALERTS_WEBHOOK_SECRET`                                                                                                          | unset            | adds `X-InvestOpen-Signature: sha256=<hex HMAC-SHA256 of the body>`                       |
+| `ALERTS_WEBHOOK_SECRET`                                                                                                          | unset            | adds `X-TickerGlass-Signature: sha256=<hex HMAC-SHA256 of the body>`                       |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`                                                                                         | unset            | both are required for Telegram                                                            |
 | `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`, `SMTP_TLS` (`starttls` \| `ssl` \| `none`) | unset / as noted | `SMTP_HOST`, `SMTP_FROM`, `SMTP_TO` are required for email; `SMTP_TO` may be a comma list |
 | `ALERTS_LOG_MAX`                                                                                                                 | 5000             | log retention                                                                             |
@@ -702,7 +702,7 @@ Telegram `429` honors `retry_after`; 4xx other than 408/429 fails at once. Pendi
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | webhook  | `POST`, 10 s timeout. Default body `application/json`: `{alert:{id,name,symbol,interval}, message, firedAt, barTime, values, delayed}`. With `notify.webhookRaw`: the rendered message as the body, sent as `application/json` if it parses as JSON and `text/plain; charset=utf-8` otherwise. |
 | telegram | `POST https://api.telegram.org/bot<token>/sendMessage` `{chat_id, text, disable_web_page_preview: true}`, plain text (no parse mode), message truncated to 4096                                                                                                                                |
-| email    | `smtplib` with `SMTP_TLS`; subject `InvestOpen alert: <name>`; plain text body: message, then symbol, interval, bar time, fired at                                                                                                                                                             |
+| email    | `smtplib` with `SMTP_TLS`; subject `TickerGlass alert: <name>`; plain text body: message, then symbol, interval, bar time, fired at                                                                                                                                                             |
 
 ### 4.3 Message templates (`renderMessage`, `packages/alerts/src/template.ts`)
 
@@ -877,7 +877,7 @@ expect: fires[]}`) so pytest can reuse the spec files. Required cases (y = 10 un
 | warm-up          | EMA 50 on 1000 synthetic bars with `warmupBars` lead-in == full-history EMA within 1e-8 relative                                                                                                                                |
 | validation       | every file in `fixtures/valid` passes and every file in `fixtures/invalid` fails with its named error (same files in pytest)                                                                                                    |
 
-`packages/engine/src/node.test.ts` (`// @vitest-environment node`): importing `@investopen/engine/node` works
+`packages/engine/src/node.test.ts` (`// @vitest-environment node`): importing `@tickerglass/engine/node` works
 without `document`, `window` or `OffscreenCanvas`, and its exports include the feed classes, `canonicalSymbol`,
 `timeToLogical` and `buildTradingCalendar`.
 

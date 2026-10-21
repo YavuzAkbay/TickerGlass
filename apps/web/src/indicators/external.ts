@@ -13,7 +13,7 @@ import {
   type Interval,
   type SymbolInfo,
   type Unsubscribe,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { AlignedSeries, buildGrid, pushGridKey, type AlignGrid } from '../compare/aligned';
 import type { ToWorker } from './protocol';
 

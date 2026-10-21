@@ -8,7 +8,7 @@ import {
   type OutputSourceRef,
   type PriceSource,
   type SourceValue,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import {
   Bell,
   Code,

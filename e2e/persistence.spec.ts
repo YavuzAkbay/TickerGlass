@@ -5,7 +5,7 @@ import { firstChart, freshBoot } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -140,9 +140,9 @@ test('export the layout and all data as downloads', async ({ page }) => {
   download = page.waitForEvent('download');
   await layoutMenu(page, 'Export all data');
   file = await download;
-  expect(file.suggestedFilename()).toMatch(/^investopen-backup-\d{4}-\d\d-\d\d\.json$/);
+  expect(file.suggestedFilename()).toMatch(/^tickerglass-backup-\d{4}-\d\d-\d\d\.json$/);
   const bundle = JSON.parse(await readFile((await file.path())!, 'utf8'));
-  expect(bundle).toMatchObject({ version: 1, app: 'investopen' });
+  expect(bundle).toMatchObject({ version: 1, app: 'tickerglass' });
   expect(bundle.layouts).toHaveLength(1);
 });
 

@@ -1,7 +1,7 @@
 [project]
-name = "investopen-api"
+name = "tickerglass-api"
 version = "0.1.0"
-description = "InvestOpen data API (yfinance-backed)"
+description = "TickerGlass data API (yfinance-backed)"
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-investopen-api = "investopen_api.__main__:main"
+tickerglass-api = "tickerglass_api.__main__:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
@@ -40,7 +40,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "ASYNC"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["investopen_api"]
+packages = ["tickerglass_api"]
 mypy_path = "src"
 
 [tool.pytest.ini_options]

@@ -3,7 +3,7 @@
  * numbers, caret positions, Tab handling and script naming. No DOM, no React.
  */
 import type { IndicatorState } from '../indicators/model';
-import { USER_SCRIPT_PREFIX } from '@investopen/indicators';
+import { USER_SCRIPT_PREFIX } from '@tickerglass/indicators';
 
 /** The "New script" template: the SMA cross of docs/user-scripts.md section 1. */
 export const NEW_SCRIPT_TEMPLATE = `// SMA cross: two moving averages and a marker where the fast one crosses the slow one.

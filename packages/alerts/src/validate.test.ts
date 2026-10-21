@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { IndicatorRegistry, SMA } from '@investopen/indicators';
+import { IndicatorRegistry, SMA } from '@tickerglass/indicators';
 import { describe, expect, it } from 'vitest';
 import { validateAlert, type DrawingInfo, type ValidationCode } from './validate';
 

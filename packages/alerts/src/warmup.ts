@@ -11,7 +11,7 @@ import {
   type InputValueMap,
   type InputValues,
   type InputsSchema,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { isMovingOp } from './condition';
 import type { AlertSpec, IndicatorRef, IndicatorRefInstance, ValueOperand } from './types';
 

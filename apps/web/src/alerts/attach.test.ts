@@ -1,4 +1,4 @@
-import type { Alert, AlertLogEntry } from '@investopen/alerts';
+import type { Alert, AlertLogEntry } from '@tickerglass/alerts';
 import { describe, expect, it } from 'vitest';
 import { alertLinePrice, buildLines, buildMarkers, MAX_MARKERS } from './attach';
 

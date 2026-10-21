@@ -11,7 +11,7 @@ import { expect, test } from './fixtures';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -33,8 +33,8 @@ async function openFresh(page: Page) {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-drawing-templates');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-drawing-templates');
   });
   await page.goto('/?feed=synthetic');
   await page.waitForFunction(() => window.chart?.store.length > 0);
@@ -44,7 +44,7 @@ async function openFresh(page: Page) {
 function listTools(page: Page): Promise<ToolInfo[]> {
   return page.evaluate(async (engine) => {
     const { listDrawingTools } = await import(/* @vite-ignore */ `/@fs${engine}`);
-    return listDrawingTools().map((d: import('@investopen/engine').AnyDrawingToolDefinition) => {
+    return listDrawingTools().map((d: import('@tickerglass/engine').AnyDrawingToolDefinition) => {
       const c = d.creation;
       const count =
         c.kind === 'click'

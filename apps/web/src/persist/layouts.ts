@@ -33,9 +33,9 @@ function focusKey(key: string): string {
   return JSON.stringify(s);
 }
 
-export const LAYOUT_CACHE_KEY = 'investopen-layout';
+export const LAYOUT_CACHE_KEY = 'tickerglass-layout';
 /** Unsaved state of a layout that no longer exists on the server (kept for "Save as new"). */
-export const LAYOUT_ORPHAN_KEY = 'investopen-layout.orphan';
+export const LAYOUT_ORPHAN_KEY = 'tickerglass-layout.orphan';
 /** After applying a layout, view-only changes (the chart settling) are not edits for this long. */
 const SETTLE_MS = 1500;
 export const DEFAULT_LAYOUT_NAME = 'Untitled';

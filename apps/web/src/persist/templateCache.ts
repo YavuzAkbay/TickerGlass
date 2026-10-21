@@ -8,8 +8,8 @@ import * as persistence from '../api/persistence';
 import type { IndicatorState } from '../indicators/model';
 import { isNotFound, isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
-export const INDICATOR_TEMPLATES_CACHE_KEY = 'investopen-indicator-templates-cache';
-export const CHART_TEMPLATES_CACHE_KEY = 'investopen-chart-templates-cache';
+export const INDICATOR_TEMPLATES_CACHE_KEY = 'tickerglass-indicator-templates-cache';
+export const CHART_TEMPLATES_CACHE_KEY = 'tickerglass-chart-templates-cache';
 
 /** A template as the UI sees it, whatever the content field is called on the wire. */
 export interface TemplateRow<D> {

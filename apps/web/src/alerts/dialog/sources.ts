@@ -23,9 +23,9 @@ import {
   type SampleValues,
   type SeriesOperand,
   type ValueOperand,
-} from '@investopen/alerts';
-import { BRICK_TYPES, type ChartType } from '@investopen/engine';
-import { defaultRegistry, isUserScriptType } from '@investopen/indicators';
+} from '@tickerglass/alerts';
+import { BRICK_TYPES, type ChartType } from '@tickerglass/engine';
+import { defaultRegistry, isUserScriptType } from '@tickerglass/indicators';
 import { toolName } from '../../drawings/model';
 
 /** The fields of a stored drawing the dialog reads. */

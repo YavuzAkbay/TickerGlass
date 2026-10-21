@@ -1,4 +1,4 @@
-import { IndicatorRuntime, type Change, type IndicatorRegistry } from '@investopen/indicators/core';
+import { IndicatorRuntime, type Change, type IndicatorRegistry } from '@tickerglass/indicators/core';
 import type { FromWorker, ResultChange, ToWorker } from './protocol';
 
 export type Post = (msg: FromWorker, transfer: Transferable[]) => void;
@@ -40,7 +40,7 @@ export class WorkerCore {
       }
       this.started = performance.now();
       this.dispatch(msg);
-      performance.measure(`investopen:indicators ${msg.type}`, {
+      performance.measure(`tickerglass:indicators ${msg.type}`, {
         start: this.started,
         end: performance.now(),
       });

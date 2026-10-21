@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { probeLineOffset } from '@investopen/indicators/core';
-import type { BarColumns } from '@investopen/engine';
+import { probeLineOffset } from '@tickerglass/indicators/core';
+import type { BarColumns } from '@tickerglass/engine';
 import type { ResultChange } from '../protocol';
 import type { FromSandbox, SandboxMessage } from './protocol';
 import { SandboxCore, sameValue } from './sandboxCore';

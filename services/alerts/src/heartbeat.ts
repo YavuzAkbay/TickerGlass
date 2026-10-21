@@ -1,5 +1,5 @@
 /** `POST /alerts/service/heartbeat` every 30 s (docs/alerts.md §3.1). */
-import type { ServiceHeartbeat } from '@investopen/alerts';
+import type { ServiceHeartbeat } from '@tickerglass/alerts';
 import type { ApiClient } from './api';
 import type { Clock } from './clock';
 import { errText, type Logger } from './log';

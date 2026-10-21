@@ -1,7 +1,7 @@
 // App-side compare overlay model: persisted overlay state and its validation.
 // Pure (no DOM, no stores). The shape is persisted in layouts (schema v3):
 // change it only with a layout upgrade step (persist/layoutState.ts).
-import { canonicalSymbol, type PriceScaleMode } from '@investopen/engine';
+import { canonicalSymbol, type PriceScaleMode } from '@tickerglass/engine';
 import { isObj } from '../persist/net';
 
 /** Same % scale as the main series | new (implicit) price scale | new pane. */

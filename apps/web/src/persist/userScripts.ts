@@ -12,7 +12,7 @@ import type { UserScript, UserScriptIn } from '../api/types';
 import { useScriptsStore } from '../scripts/store';
 import { isObj, readJson, safeStorage, type SafeStorage } from './net';
 
-export const USER_SCRIPTS_CACHE_KEY = 'investopen-user-scripts';
+export const USER_SCRIPTS_CACHE_KEY = 'tickerglass-user-scripts';
 
 export type UserScriptsApi = Pick<
   typeof persistence,

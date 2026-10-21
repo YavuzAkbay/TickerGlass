@@ -1,4 +1,4 @@
-import type { Drawing } from '@investopen/engine';
+import type { Drawing } from '@tickerglass/engine';
 import { describe, expect, it } from 'vitest';
 import {
   fitsImageBudget,

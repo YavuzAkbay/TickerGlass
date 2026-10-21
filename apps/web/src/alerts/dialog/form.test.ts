@@ -1,5 +1,5 @@
-import type { Alert, AlertIn } from '@investopen/alerts';
-import { DEFAULT_NOTIFY } from '@investopen/alerts';
+import type { Alert, AlertIn } from '@tickerglass/alerts';
+import { DEFAULT_NOTIFY } from '@tickerglass/alerts';
 import { describe, expect, it } from 'vitest';
 import { alertToForm, cloneForm, emptyValue, formToAlert, type FormState } from './form';
 

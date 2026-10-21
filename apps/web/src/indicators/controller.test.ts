@@ -12,7 +12,7 @@ import {
   type StudySpec,
   type StudyTarget,
   type SymbolInfo,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
   IndicatorRuntime,
   defaultRegistry,
@@ -21,7 +21,7 @@ import {
   registerIndicator,
   type BarsEvents,
   type InputValueMap,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistory } from '../commands/history';
 import { addIndicator, removeIndicators } from './actions';

@@ -14,7 +14,7 @@ import {
   usesEvents,
   type IndicatorRegistry,
   type InputValueMap,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { isChannelTool, supportsPart, TOOL_POINTS } from './drawing-levels';
 import { upgradeAlertSpec } from './legacy';
 import {

@@ -31,7 +31,7 @@ describe('replay store', () => {
     useReplayStore
       .getState()
       .set({ speed: 100, update: '5m', status: 'playing', last: 5, tick: '1m' });
-    const saved = JSON.parse(storage.data.get('investopen-replay')!) as {
+    const saved = JSON.parse(storage.data.get('tickerglass-replay')!) as {
       state: Record<string, unknown>;
     };
     expect(saved.state).toEqual({ speed: 100, update: '5m' });
@@ -41,7 +41,7 @@ describe('replay store', () => {
     vi.stubGlobal(
       'localStorage',
       memoryStorage({
-        'investopen-replay': JSON.stringify({ state: { speed: 300, update: 'bars' }, version: 0 }),
+        'tickerglass-replay': JSON.stringify({ state: { speed: 300, update: 'bars' }, version: 0 }),
       }),
     );
     await useReplayStore.persist.rehydrate();
@@ -50,7 +50,7 @@ describe('replay store', () => {
     vi.stubGlobal(
       'localStorage',
       memoryStorage({
-        'investopen-replay': JSON.stringify({ state: { speed: 12345, update: 7 }, version: 0 }),
+        'tickerglass-replay': JSON.stringify({ state: { speed: 12345, update: 7 }, version: 0 }),
       }),
     );
     useReplayStore.setState({ speed: 500, update: 'auto' });

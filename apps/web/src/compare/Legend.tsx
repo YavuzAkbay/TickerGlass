@@ -1,7 +1,7 @@
 import { Ellipsis, Eye, EyeOff, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Chart } from '@investopen/engine';
+import type { Chart } from '@tickerglass/engine';
 import { useStore } from 'zustand';
 import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';

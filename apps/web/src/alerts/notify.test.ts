@@ -1,4 +1,4 @@
-import type { AlertLogEntry } from '@investopen/alerts';
+import type { AlertLogEntry } from '@tickerglass/alerts';
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_NOTIFY,

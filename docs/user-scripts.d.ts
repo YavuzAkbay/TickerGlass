@@ -1,10 +1,10 @@
 /**
- * Type declarations for InvestOpen user scripts (apiVersion 1).
+ * Type declarations for TickerGlass user scripts (apiVersion 1).
  *
  * Optional: put this file next to your script in an editor that understands
  * TypeScript declarations (VS Code, WebStorm) and start the script with
  * `// @ts-check` to get completion and type errors while you write it.
- * InvestOpen itself runs plain JavaScript and ignores this file.
+ * TickerGlass itself runs plain JavaScript and ignores this file.
  *
  * Derived from packages/indicators/src/{types,user-script}.ts. Reference:
  * docs/user-scripts.md.
@@ -243,7 +243,7 @@ type OutputDef<O extends string = string> =
 // --------------------------------------------------------------- definition
 
 interface IndicatorDefinition<S extends InputsSchema = InputsSchema, O extends string = string> {
-  /** Ignored: the script's id is assigned by InvestOpen. May be left out. */
+  /** Ignored: the script's id is assigned by TickerGlass. May be left out. */
   id?: string;
   /** Full name in the Indicators dialog. */
   name: string;

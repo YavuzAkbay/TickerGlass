@@ -1,4 +1,4 @@
-import { resolveIndicatorId, type InstanceStatus } from '@investopen/indicators';
+import { resolveIndicatorId, type InstanceStatus } from '@tickerglass/indicators';
 import { useMemo } from 'react';
 import { create, useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -22,9 +22,9 @@ export interface IndicatorStore {
 
 /**
  * Built-in volume mode the app stored before volume became an indicator
- * (`investopen-app` state `volume`; 'overlay', the old default, when unset).
+ * (`tickerglass-app` state `volume`; 'overlay', the old default, when unset).
  */
-export function legacyAppVolume(raw = safeStorage().get('investopen-app')): unknown {
+export function legacyAppVolume(raw = safeStorage().get('tickerglass-app')): unknown {
   const app = readJson<unknown>(raw);
   return isObj(app) && isObj(app.state) && 'volume' in app.state ? app.state.volume : 'overlay';
 }
@@ -55,7 +55,7 @@ export function migrateRenamedPrefs(persisted: unknown): IndicatorPrefsData {
   return { favorites, defaults };
 }
 
-/** zustand `migrate` of `investopen-indicators`. */
+/** zustand `migrate` of `tickerglass-indicators`. */
 export function migrateIndicatorStore(persisted: unknown, version: number): IndicatorStore {
   const s = isObj(persisted) ? persisted : {};
   const stored = Array.isArray(s.instances) ? (s.instances as IndicatorState[]) : [];
@@ -97,7 +97,7 @@ export function createIndicatorStore(persistLocal = false): StoreApi<IndicatorSt
     }));
   return createStore<IndicatorStore>()(
     persist((set) => ({ instances: initialInstances(), ...indicatorActions(set) }), {
-      name: 'investopen-indicators',
+      name: 'tickerglass-indicators',
       version: 3,
       // v1 -> v2: the engine's built-in volume became the Volume indicator.
       // v2 -> v3: renamed built-ins get their current type id.
@@ -177,7 +177,7 @@ interface IndicatorPrefs extends IndicatorPrefsData {
   clearDefaults: (type: string) => void;
 }
 
-/** zustand `migrate` of `investopen-indicator-prefs`. */
+/** zustand `migrate` of `tickerglass-indicator-prefs`. */
 export function migrateIndicatorPrefs(persisted: unknown, version: number): IndicatorPrefs {
   const s = isObj(persisted) ? persisted : {};
   return (version < 2 ? { ...s, ...migrateRenamedPrefs(s) } : s) as unknown as IndicatorPrefs;
@@ -202,7 +202,7 @@ export const useIndicatorPrefs = create<IndicatorPrefs>()(
         }),
     }),
     {
-      name: 'investopen-indicator-prefs',
+      name: 'tickerglass-indicator-prefs',
       version: 2,
       // v1 -> v2: renamed built-ins get their current id.
       migrate: migrateIndicatorPrefs,

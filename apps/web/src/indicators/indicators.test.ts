@@ -3,7 +3,7 @@ import {
   defineIndicator,
   getIndicator,
   type AnyIndicatorDefinition,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useHistory } from '../commands/history';
 import {

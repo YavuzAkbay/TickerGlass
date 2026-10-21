@@ -6,7 +6,7 @@ import {
   isIntraday,
   parseInterval,
   type Interval,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
   EXTERNAL_SOURCE_PREFIX,
   coerceInputs,
@@ -25,7 +25,7 @@ import {
   type OutputSourceRef,
   type OutputStyleOverrides,
   type PriceSource,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 
 // ------------------------------------------------------------- visibility
 

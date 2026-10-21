@@ -1,7 +1,7 @@
 /**
  * Everything except the built-in indicators: importing this entry does not
  * register them in `defaultRegistry` (user script sandbox, which only needs
- * the runtime). `@investopen/indicators` = this + the built-ins.
+ * the runtime). `@tickerglass/indicators` = this + the built-ins.
  */
 export * from './types';
 export { LEGACY_INDICATOR_IDS, resolveIndicatorId } from './legacy-ids';

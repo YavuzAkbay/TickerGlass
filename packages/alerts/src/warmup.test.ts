@@ -1,4 +1,4 @@
-import { IndicatorRegistry, IndicatorRuntime, type BarArrays } from '@investopen/indicators';
+import { IndicatorRegistry, IndicatorRuntime, type BarArrays } from '@tickerglass/indicators';
 import { describe, expect, it } from 'vitest';
 import type { AlertSpec, IndicatorRef } from './types';
 import { alertBars, instanceWarmup, warmupBars, warmupSince } from './warmup';

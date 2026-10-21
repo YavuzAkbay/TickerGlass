@@ -5,7 +5,7 @@ import {
   type DrawingIntervalVisibility,
   type DrawingPatch,
   type Interval,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import {
   VISIBILITY_UNITS,
   defaultVisibility,

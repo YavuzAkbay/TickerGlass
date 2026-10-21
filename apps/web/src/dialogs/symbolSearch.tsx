@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { SymbolSearchResult } from '@investopen/engine';
+import type { SymbolSearchResult } from '@tickerglass/engine';
 import { feed } from '../chart/feed';
 
 export type SymbolTab = 'all' | 'stocks' | 'funds' | 'crypto' | 'forex' | 'indices' | 'futures';

@@ -1,6 +1,6 @@
 # Watchlist plain-text format
 
-InvestOpen plain-text watchlist format: one `EXCHANGE:TICKER` per entry, comma or newline separated,
+TickerGlass plain-text watchlist format: one `EXCHANGE:TICKER` per entry, comma or newline separated,
 optional `###Section` headers. The watchlist menu imports and exports `.txt` files in this format
 (`apps/web/src/watchlist/model.ts`: `parseTxt`, `formatTxt`).
 

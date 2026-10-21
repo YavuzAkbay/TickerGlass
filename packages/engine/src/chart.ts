@@ -2095,7 +2095,7 @@ export class Chart implements StudyApi, DrawingApi {
     const panes = this.visiblePanes().length;
     this.layersDrawn = (main ? panes * 3 + 1 : 0) + panes * 2 + 1;
     if (!main) this.barsDrawn = 0;
-    if (this.profiling) performance.measure('investopen:render', { start, end });
+    if (this.profiling) performance.measure('tickerglass:render', { start, end });
   }
 
   /** Timing of recent frames, for profiling. Cheap: reads a few counters. */
@@ -2112,7 +2112,7 @@ export class Chart implements StudyApi, DrawingApi {
     };
   }
 
-  /** Record each frame as a `performance.measure` entry ("investopen:render"). Off by default. */
+  /** Record each frame as a `performance.measure` entry ("tickerglass:render"). Off by default. */
   setProfiling(on: boolean): void {
     this.profiling = on;
   }

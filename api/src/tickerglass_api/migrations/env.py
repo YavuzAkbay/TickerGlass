@@ -1,9 +1,9 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from investopen_api import models  # noqa: F401  (registers tables)
-from investopen_api.db import Base
-from investopen_api.settings import get_settings
+from tickerglass_api import models  # noqa: F401  (registers tables)
+from tickerglass_api.db import Base
+from tickerglass_api.settings import get_settings
 
 config = context.config
 if not config.get_main_option("sqlalchemy.url"):

@@ -26,7 +26,7 @@ const ENTITIES: [keyof Omit<ImportSummary, 'mode' | 'dryRun'>, string][] = [
 ];
 
 export const isBundle = (v: unknown): v is ImportBundle =>
-  isObj(v) && v.app === 'investopen' && typeof v.version === 'number' && v.kind === undefined;
+  isObj(v) && v.app === 'tickerglass' && typeof v.version === 'number' && v.kind === undefined;
 
 /**
  * Export all data, or import a backup: the file is always dry-run first and
@@ -67,7 +67,7 @@ export default function DataTransferDialog({ onClose }: { onClose: () => void; a
       return;
     }
     if (!isBundle(picked.data)) {
-      setError(`"${picked.name}" is not an InvestOpen backup`);
+      setError(`"${picked.name}" is not an TickerGlass backup`);
       return;
     }
     setFile({ name: picked.name, bundle: picked.data });

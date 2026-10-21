@@ -362,7 +362,7 @@ def test_channel(
         kind="fired",
         fired_at=now,
         bar_time=int(now.timestamp()),
-        message="InvestOpen test notification",
+        message="TickerGlass test notification",
         values={},
         delayed=False,
         final=False,

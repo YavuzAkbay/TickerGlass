@@ -1,4 +1,4 @@
-import '@investopen/indicators';
+import '@tickerglass/indicators';
 import { describe, expect, it } from 'vitest';
 import type { FromWorker } from '../indicators/protocol';
 import { WorkerCore } from '../indicators/workerCore';
@@ -42,12 +42,12 @@ describe('perf', () => {
     core.handle({ type: 'bars', revision: 1, bars: bars(50) });
     const results = () => out.filter((m) => m.type === 'results');
     expect(results().at(-1)).not.toHaveProperty('ms');
-    performance.clearMeasures('investopen:indicators bars');
+    performance.clearMeasures('tickerglass:indicators bars');
     core.handle({ type: 'profile', on: true });
     core.handle({ type: 'bars', revision: 2, bars: bars(50) });
     const last = results().at(-1)!;
     expect(last.ms).toBeGreaterThanOrEqual(0);
-    expect(performance.getEntriesByName('investopen:indicators bars')).toHaveLength(1);
-    performance.clearMeasures('investopen:indicators bars');
+    expect(performance.getEntriesByName('tickerglass:indicators bars')).toHaveLength(1);
+    performance.clearMeasures('tickerglass:indicators bars');
   });
 });

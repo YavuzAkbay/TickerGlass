@@ -1,5 +1,5 @@
-import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@investopen/engine';
-import type { ChartErrorInfo, CrosshairInfo, SymbolInfo } from '@investopen/engine';
+import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@tickerglass/engine';
+import type { ChartErrorInfo, CrosshairInfo, SymbolInfo } from '@tickerglass/engine';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { createHistoryStore, type HistoryState } from '../commands/history';
 import {

@@ -2,12 +2,12 @@
 // (docs/indicators.md §5a). The sandbox speaks the ToWorker subset an
 // instance needs plus load/ping/check; it answers like the indicator worker
 // (FromWorker) plus ack/loaded/compileError/checkResult.
-import type { BarColumns } from '@investopen/engine';
+import type { BarColumns } from '@tickerglass/engine';
 import type {
   InputValueMap,
   RuntimeContext,
   UserScriptManifest,
-} from '@investopen/indicators/core';
+} from '@tickerglass/indicators/core';
 import type { FromWorker, ToWorker } from '../protocol';
 
 /** Indicator-worker messages a sandbox handles (delegated to its WorkerCore). */

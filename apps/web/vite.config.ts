@@ -32,7 +32,7 @@ function cspMiddleware(path: RegExp, csp: string): Connect.NextHandleFunction {
 /** Adds the sandbox CSP to the sandbox worker script in `vite dev` and `vite preview`. */
 function sandboxCsp(): Plugin {
   return {
-    name: 'investopen:sandbox-csp',
+    name: 'tickerglass:sandbox-csp',
     // Registered before Vite's own middlewares, which send the response.
     configureServer: (server) =>
       void server.middlewares.use(cspMiddleware(SANDBOX_WORKER_DEV_PATH, SANDBOX_CSP_DEV)),
@@ -56,7 +56,7 @@ function sandboxWorkerSelfContained(): Plugin {
   const isSandboxEntry = (chunk: { isEntry: boolean; facadeModuleId: string | null }) =>
     chunk.isEntry && SANDBOX_WORKER_ENTRY.test(chunk.facadeModuleId ?? '');
   return {
-    name: 'investopen:sandbox-worker-self-contained',
+    name: 'tickerglass:sandbox-worker-self-contained',
     renderChunk(code, chunk) {
       if (!isSandboxEntry(chunk) || code.startsWith(USE_STRICT)) return null;
       return { code: `${USE_STRICT}\n${code}`, map: null };
@@ -85,7 +85,7 @@ function sandboxWorkerSelfContained(): Plugin {
  */
 function sandboxWorkerNoAssetRefs(): Plugin {
   return {
-    name: 'investopen:sandbox-worker-no-asset-refs',
+    name: 'tickerglass:sandbox-worker-no-asset-refs',
     apply: 'build',
     generateBundle(_options, bundle) {
       const files = Object.values(bundle);

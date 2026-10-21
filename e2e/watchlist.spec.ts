@@ -7,7 +7,7 @@ import type { MockServer } from './persistence';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 

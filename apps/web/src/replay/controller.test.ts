@@ -1,4 +1,4 @@
-import type { ChartEvents, ReplayInfo, ReplayStartOptions } from '@investopen/engine';
+import type { ChartEvents, ReplayInfo, ReplayStartOptions } from '@tickerglass/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayController, type ReplayChart, type ReplayFeedLike } from './controller';
 import { DEFAULT_SPEED, useReplayStore } from './store';

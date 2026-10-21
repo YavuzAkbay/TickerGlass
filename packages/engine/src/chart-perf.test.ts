@@ -162,14 +162,14 @@ describe('render stats', () => {
     const chart = new Chart(new FakeEl() as unknown as HTMLElement, feed);
     charts.push(chart);
     await chart.setSymbol('TEST');
-    performance.clearMeasures('investopen:render');
+    performance.clearMeasures('tickerglass:render');
     runFrames();
-    expect(performance.getEntriesByName('investopen:render')).toHaveLength(0);
+    expect(performance.getEntriesByName('tickerglass:render')).toHaveLength(0);
     chart.setProfiling(true);
     chart.invalidate(1);
     runFrames();
-    expect(performance.getEntriesByName('investopen:render')).toHaveLength(1);
-    performance.clearMeasures('investopen:render');
+    expect(performance.getEntriesByName('tickerglass:render')).toHaveLength(1);
+    performance.clearMeasures('tickerglass:render');
   });
 });
 

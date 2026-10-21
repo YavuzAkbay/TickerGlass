@@ -17,7 +17,7 @@ import {
   type BarColumns,
   type BucketContext,
   type Interval,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 
 const UTC_CTX = createBucketContext({ timezone: null, session: null });
 

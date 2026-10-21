@@ -1,5 +1,5 @@
 /** Screenshot composition: filename, footer text and cell placement (pure), plus the canvas build. */
-import type { Chart } from '@investopen/engine';
+import type { Chart } from '@tickerglass/engine';
 
 export const FOOTER_HEIGHT = 24;
 

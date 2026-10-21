@@ -6,14 +6,14 @@
  * warns. Imported by the editor chunk alone, which keeps `acorn` out of the
  * main bundle (it is loaded dynamically, on first use).
  */
-import type { BarColumns } from '@investopen/engine';
+import type { BarColumns } from '@tickerglass/engine';
 import {
   USER_SCRIPT_API_VERSION,
   coerceInputs,
   definitionFromManifest,
   parseManifest,
   type RuntimeContext,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import type { UserScript, UserScriptIn } from '../api/types';
 import { copyColumns, secondsOf, type ChartHost } from '../indicators/controller';
 import { createSandboxWorker, type SandboxPort } from '../indicators/sandbox/port';

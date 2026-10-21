@@ -1,4 +1,4 @@
-import { resolveDrawingType } from '@investopen/engine';
+import { resolveDrawingType } from '@tickerglass/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Locale } from '../i18n';
@@ -89,7 +89,7 @@ interface UiState {
   set: (patch: Partial<UiState>) => void;
 }
 
-/** Persisted `investopen-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator. */
+/** Persisted `tickerglass-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator. */
 export const UI_STORE_VERSION = 3;
 
 export const DEFAULT_NAV_WIDTH = 260;
@@ -226,7 +226,7 @@ export const useUiStore = create<UiState>()(
       set: (patch) => set(patch),
     }),
     {
-      name: 'investopen-ui',
+      name: 'tickerglass-ui',
       version: UI_STORE_VERSION,
       // The persisted shape is the `partialize` result; unknown fields pass through untouched.
       migrate: (persisted) =>

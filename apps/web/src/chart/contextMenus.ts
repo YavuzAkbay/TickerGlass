@@ -1,4 +1,4 @@
-import type { Chart, ChartPoint } from '@investopen/engine';
+import type { Chart, ChartPoint } from '@tickerglass/engine';
 import {
   Bell,
   ClipboardCopy,

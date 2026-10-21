@@ -1,4 +1,4 @@
-import type { ChartStyle, ChartType } from '@investopen/engine';
+import type { ChartStyle, ChartType } from '@tickerglass/engine';
 import { ColorSwatch } from './ColorPicker';
 
 type Value = string | number | boolean;

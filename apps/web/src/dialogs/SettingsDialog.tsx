@@ -21,7 +21,7 @@ import {
   type LegendTitleMode,
   type MagnetMode,
   type PriceScaleMode,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { AlertsSettingsTab } from '../alerts/SettingsTab';
 import { EventsTab } from '../events/EventsTab';
 import { errorMessage } from '../api/client';

@@ -6,7 +6,7 @@ import {
   type AlertLogEntry,
   type AlertStatus,
   type DeliveryChannel,
-} from '@investopen/alerts';
+} from '@tickerglass/alerts';
 import { ApiError, requestJson, type RequestOptions } from './client';
 
 type Opts = Pick<RequestOptions, 'signal'>;

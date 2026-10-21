@@ -13,7 +13,7 @@ import {
   type Alert,
   type AlertRuntimeState,
   type DrawingLike,
-} from '@investopen/alerts';
+} from '@tickerglass/alerts';
 import {
   buildTradingCalendar,
   createTzConverter,
@@ -30,13 +30,13 @@ import {
   type SymbolInfo,
   type TradingCalendar,
   type Unsubscribe,
-} from '@investopen/engine/node';
+} from '@tickerglass/engine/node';
 import {
   getIndicator,
   IndicatorRuntime,
   timeframeInputValue,
   type BarArrays,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import type { ApiClient } from './api';
 import { AlertRunner, type FireJob, type RunnerEnv } from './alert-runner';
 import { backoffMs, type Clock } from './clock';

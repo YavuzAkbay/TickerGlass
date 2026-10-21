@@ -1,5 +1,5 @@
 /** Alerts, the notification log and service status (docs/alerts.md §5.1). Not persisted: the API is the source. */
-import type { Alert, AlertLogEntry } from '@investopen/alerts';
+import type { Alert, AlertLogEntry } from '@tickerglass/alerts';
 import { create } from 'zustand';
 import type { AlertChannels, ServiceStatus } from '../api/alerts';
 import { useUiStore } from '../store/ui';

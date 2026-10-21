@@ -6,7 +6,7 @@ import {
   getDrawingTool,
   type Drawing,
   type DrawingStyle,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { useLayoutGrid } from '../layout/store';
 import { addIndicator } from '../indicators/actions';
 import type { ChartSession } from '../chart/session';

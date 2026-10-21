@@ -1,11 +1,11 @@
 // Messages between the main thread and the indicator worker (docs/indicators.md §5).
-import type { Bar, BarColumns } from '@investopen/engine';
+import type { Bar, BarColumns } from '@tickerglass/engine';
 import type {
   InputValueMap,
   InstanceSpec,
   InstanceStatus,
   RuntimeContext,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 
 export type ToWorker =
   /** Raw timeframe input value -> resolved ('' = chart bars). */

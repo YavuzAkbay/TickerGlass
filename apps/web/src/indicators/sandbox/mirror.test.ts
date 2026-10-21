@@ -1,4 +1,4 @@
-import type { Bar, BarColumns } from '@investopen/engine';
+import type { Bar, BarColumns } from '@tickerglass/engine';
 import { describe, expect, it } from 'vitest';
 import { SeriesMirror } from './mirror';
 

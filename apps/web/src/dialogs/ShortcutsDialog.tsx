@@ -1,4 +1,4 @@
-import { KEY_BINDINGS } from '@investopen/engine';
+import { KEY_BINDINGS } from '@tickerglass/engine';
 import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { formatShortcut } from '../commands/registry';

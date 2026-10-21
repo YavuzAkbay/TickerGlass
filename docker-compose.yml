@@ -3,7 +3,7 @@ services:
     build: ./api
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/investopen.db}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/tickerglass.db}
       # Alert notifications (docs/alerts.md section 4.1); all optional, empty = unset.
       ALERTS_WEBHOOK_URL: ${ALERTS_WEBHOOK_URL:-}
       ALERTS_WEBHOOK_SECRET: ${ALERTS_WEBHOOK_SECRET:-}
@@ -73,8 +73,8 @@ services:
     profiles: [postgres]
     restart: unless-stopped
     environment:
-      POSTGRES_USER: investopen
-      POSTGRES_DB: investopen
+      POSTGRES_USER: tickerglass
+      POSTGRES_DB: tickerglass
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       - pg-data:/var/lib/postgresql/data

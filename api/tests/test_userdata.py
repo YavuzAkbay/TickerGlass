@@ -17,11 +17,11 @@ from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, create_engine, event, insert, inspect, text, update
 
-from investopen_api import models
-from investopen_api.app import create_app
-from investopen_api.db import Base
-from investopen_api.providers.base import BAR_COLUMNS, SymbolNotFound
-from investopen_api.userdata.schemas import MAX_STATE_BYTES
+from tickerglass_api import models
+from tickerglass_api.app import create_app
+from tickerglass_api.db import Base
+from tickerglass_api.providers.base import BAR_COLUMNS, SymbolNotFound
+from tickerglass_api.userdata.schemas import MAX_STATE_BYTES
 
 
 class NullProvider:
@@ -503,7 +503,7 @@ def test_user_scripts_bundle(client: TestClient, tmp_path: Path) -> None:
     res = client.post(
         "/api/import",
         params={"mode": "replace", "confirm": True},
-        json={"version": 1, "app": "investopen"},
+        json={"version": 1, "app": "tickerglass"},
     )
     assert (
         res.json()["userScripts"]["deleted"] == 0
@@ -512,7 +512,7 @@ def test_user_scripts_bundle(client: TestClient, tmp_path: Path) -> None:
     res = client.post(
         "/api/import",
         params={"mode": "replace", "confirm": True},
-        json={"version": 1, "app": "investopen", "userScripts": []},
+        json={"version": 1, "app": "tickerglass", "userScripts": []},
     )
     assert res.json()["userScripts"]["deleted"] == 3 and res.json()["notes"]["deleted"] == 0
     assert client.get("/api/user-scripts").json() == []
@@ -521,7 +521,7 @@ def test_user_scripts_bundle(client: TestClient, tmp_path: Path) -> None:
     one = bundle["userScripts"][0]
     for scripts in ([one, one], [{**one, "id": "bad id"}]):
         res = client.post(
-            "/api/import", json={"version": 1, "app": "investopen", "userScripts": scripts}
+            "/api/import", json={"version": 1, "app": "tickerglass", "userScripts": scripts}
         )
         assert res.status_code == 422
     assert client.get("/api/user-scripts").json() == []
@@ -559,7 +559,7 @@ def strip_volatile(bundle: dict[str, Any]) -> dict[str, Any]:
 def test_export_import_round_trip(client: TestClient, tmp_path: Path) -> None:
     seed(client)
     bundle = client.get("/api/export").json()
-    assert bundle["version"] == 1 and bundle["app"] == "investopen"
+    assert bundle["version"] == 1 and bundle["app"] == "tickerglass"
     assert len(bundle["layouts"]) == 1 and bundle["layouts"][0]["isLastUsed"] is True
     assert {d["id"] for d in bundle["drawings"]} == {"d1", "s1"}
     assert bundle["settings"] == {"favorites": ["sma"], "ui": {"x": 1}}
@@ -614,8 +614,8 @@ def test_import_validation(client: TestClient) -> None:
     def status(body: dict[str, Any], **params: Any) -> int:
         return int(client.post("/api/import", params=params, json=body).status_code)
 
-    app = {"version": 1, "app": "investopen"}
-    assert status({"version": 2, "app": "investopen"}) == 422
+    app = {"version": 1, "app": "tickerglass"}
+    assert status({"version": 2, "app": "tickerglass"}) == 422
     assert status({"version": 1, "app": "other"}) == 422
     assert status({"version": 1}) == 422  # `app` is required
     assert status(app, mode="wipe") == 422
@@ -639,14 +639,14 @@ def test_import_replace_keeps_absent_sections(client: TestClient) -> None:
     res = client.post(
         "/api/import",
         params={"mode": "replace", "confirm": True},
-        json={"version": 1, "app": "investopen"},
+        json={"version": 1, "app": "tickerglass"},
     )
     assert res.status_code == 200
     assert all(c["deleted"] == 0 for k, c in res.json().items() if isinstance(c, dict))
     assert strip_volatile(client.get("/api/export").json()) == strip_volatile(before)
 
     # Only `notes` (explicitly empty) is replaced; everything else is untouched.
-    body = {"version": 1, "app": "investopen", "notes": []}
+    body = {"version": 1, "app": "tickerglass", "notes": []}
     res = client.post("/api/import", params={"mode": "replace", "confirm": True}, json=body)
     assert res.json()["notes"]["deleted"] == 1 and res.json()["layouts"]["deleted"] == 0
     after = strip_volatile(client.get("/api/export").json())
@@ -660,7 +660,7 @@ def test_import_regenerates_reserved_layout_ids(client: TestClient) -> None:
         {"id": "a/b", "name": "C", "state": STATE},
         {"id": "keep-me", "name": "D", "state": STATE},
     ]
-    res = client.post("/api/import", json={"version": 1, "app": "investopen", "layouts": layouts})
+    res = client.post("/api/import", json={"version": 1, "app": "tickerglass", "layouts": layouts})
     assert res.status_code == 200 and res.json()["layouts"]["created"] == 4
     ids = {x["name"]: x["id"] for x in client.get("/api/layouts").json()}
     assert ids["D"] == "keep-me"

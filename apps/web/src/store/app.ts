@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { tryParseSymbolExpression, type CrosshairMode, type MagnetMode } from '@investopen/engine';
+import { tryParseSymbolExpression, type CrosshairMode, type MagnetMode } from '@tickerglass/engine';
 import type { ChartViewData } from './chartView';
 import { DEFAULT_FAVORITE_INTERVALS } from '../topbar/intervals';
 
 export type Theme = 'dark' | 'light';
-export type { ChartType } from '@investopen/engine';
+export type { ChartType } from '@tickerglass/engine';
 
 /** Persisted user preferences (a chart's symbol and settings live in its chart view). */
 interface AppState {
@@ -78,7 +78,7 @@ export const useAppStore = create<AppState>()(
       set: (patch) => set(patch),
     }),
     {
-      name: 'investopen-app',
+      name: 'tickerglass-app',
       version: 4,
       // v3 -> v4: symbol, interval and chart settings moved to the per-chart view;
       // the old values seed the first chart (see legacyChartView).

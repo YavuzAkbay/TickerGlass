@@ -7,7 +7,7 @@ import {
   type ReplayInfo,
   type ReplayUpdate,
   type UTCTimestamp,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { REPLAY_SPEEDS, useReplayStore } from './store';
 
 /** The part of ReplayFeed the controller drives. */

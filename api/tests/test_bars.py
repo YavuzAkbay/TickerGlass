@@ -10,18 +10,18 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from yfinance.exceptions import YFRateLimitError
 
-from investopen_api.app import create_app
-from investopen_api.db import make_engine, run_migrations
-from investopen_api.intervals import resolve_interval
-from investopen_api.providers.base import (
+from tickerglass_api.app import create_app
+from tickerglass_api.db import make_engine, run_migrations
+from tickerglass_api.intervals import resolve_interval
+from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     ProviderError,
     RateLimited,
     SymbolNotFound,
     UpstreamUnavailable,
 )
-from investopen_api.providers.yahoo import YahooProvider, _normalize
-from investopen_api.services.bars import BarService
+from tickerglass_api.providers.yahoo import YahooProvider, _normalize
+from tickerglass_api.services.bars import BarService
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -288,7 +288,7 @@ def _fast_provider(retries: int = 1) -> YahooProvider:
 
 
 def test_call_raises_rate_limited_after_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("investopen_api.providers.yahoo.time.sleep", lambda _: None)
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
     calls = 0
 
     def fn() -> int:
@@ -313,7 +313,7 @@ def test_call_raises_rate_limited_after_retries(monkeypatch: pytest.MonkeyPatch)
 def test_call_raises_unavailable_on_connection_failure(
     monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    monkeypatch.setattr("investopen_api.providers.yahoo.time.sleep", lambda _: None)
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
 
     def fn() -> int:
         raise error
@@ -326,7 +326,7 @@ def test_call_raises_unavailable_on_connection_failure(
 def test_call_disk_errors_are_not_unavailable(
     monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    monkeypatch.setattr("investopen_api.providers.yahoo.time.sleep", lambda _: None)
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
 
     def fn() -> int:
         raise error
@@ -337,7 +337,7 @@ def test_call_disk_errors_are_not_unavailable(
 
 
 def test_call_other_failures_stay_provider_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("investopen_api.providers.yahoo.time.sleep", lambda _: None)
+    monkeypatch.setattr("tickerglass_api.providers.yahoo.time.sleep", lambda _: None)
 
     def fn() -> int:
         raise ValueError("junk")

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { DARK_THEME, LIGHT_THEME } from '@investopen/engine';
+import { DARK_THEME, LIGHT_THEME } from '@tickerglass/engine';
 import { ChartError } from './ChartError';
 import { ChartLiveRegion, useChartLabel } from './ChartLiveRegion';
 import { feed } from './feed';

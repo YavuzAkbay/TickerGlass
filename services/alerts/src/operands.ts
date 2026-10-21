@@ -16,9 +16,9 @@ import {
   type IndicatorRef,
   type SampleValues,
   type ValueOperand,
-} from '@investopen/alerts';
-import { getIndicator, isOutputRef, type InputValueMap } from '@investopen/indicators';
-import type { AnchorTimeline } from '@investopen/engine/node';
+} from '@tickerglass/alerts';
+import { getIndicator, isOutputRef, type InputValueMap } from '@tickerglass/indicators';
+import type { AnchorTimeline } from '@tickerglass/engine/node';
 
 /** What operand evaluation needs from a series. */
 export interface OperandEnv {

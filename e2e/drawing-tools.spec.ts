@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 
 declare global {
   interface Window {
-    chart: import('@investopen/engine').Chart;
+    chart: import('@tickerglass/engine').Chart;
   }
 }
 
@@ -19,8 +19,8 @@ test('place a sticker from the Icons flyout', async ({ page }) => {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-drawing-templates');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-drawing-templates');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
@@ -165,8 +165,8 @@ for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
     await page.addInitScript(() => {
       if (sessionStorage.getItem('drw-e2e')) return;
       sessionStorage.setItem('drw-e2e', '1');
-      localStorage.removeItem('investopen-drawings');
-      localStorage.removeItem('investopen-drawing-templates');
+      localStorage.removeItem('tickerglass-drawings');
+      localStorage.removeItem('tickerglass-drawing-templates');
     });
     await page.goto('/?feed=synthetic');
     await waitForChart(page);
@@ -232,8 +232,8 @@ async function openFresh(page: Page) {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('drw-e2e')) return;
     sessionStorage.setItem('drw-e2e', '1');
-    localStorage.removeItem('investopen-drawings');
-    localStorage.removeItem('investopen-drawing-templates');
+    localStorage.removeItem('tickerglass-drawings');
+    localStorage.removeItem('tickerglass-drawing-templates');
   });
   await page.goto('/?feed=synthetic');
   await waitForChart(page);

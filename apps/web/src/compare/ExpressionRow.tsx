@@ -1,4 +1,4 @@
-import { tryParseSymbolExpression, type ExpressionError } from '@investopen/engine';
+import { tryParseSymbolExpression, type ExpressionError } from '@tickerglass/engine';
 import { SquareFunction } from 'lucide-react';
 import type { ReactNode } from 'react';
 

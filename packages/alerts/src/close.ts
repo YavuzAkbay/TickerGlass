@@ -12,7 +12,7 @@ import {
   type Interval,
   type SymbolInfo,
   type TzConverter,
-} from '@investopen/engine/node';
+} from '@tickerglass/engine/node';
 import { DEFAULT_CLOSE_GRACE_S } from './trigger';
 
 const DAY = 86_400;

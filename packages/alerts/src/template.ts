@@ -3,7 +3,7 @@
  * and no expressions; unknown placeholders and an unmatched `{{` stay literal.
  * The output is truncated to 2000 characters (with `…`).
  */
-import { defaultRegistry, type IndicatorRegistry } from '@investopen/indicators';
+import { defaultRegistry, type IndicatorRegistry } from '@tickerglass/indicators';
 import { isChannelOp, isMovingOp } from './condition';
 import { describeCondition, type DescribeNames } from './describe';
 import type { AlertIn, SampleValues, SeriesOperand, ValueOperand } from './types';

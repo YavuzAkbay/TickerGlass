@@ -66,7 +66,7 @@ candidate whose history reaches the start: `start >= now - lookback(T) + 1 day`.
 replayed and the bar shows a warning ("Intrabar data for 1m only covers the last 29 days; replaying whole bars.").
 Before the first step an availability probe falls back to the next candidate when a tick page is empty.
 
-Lookback (`limits.ts`, mirrors `api/src/investopen_api/intervals.py`, keep both in sync): 1m 29 days; 2m, 5m, 15m,
+Lookback (`limits.ts`, mirrors `api/src/tickerglass_api/intervals.py`, keep both in sync): 1m 29 days; 2m, 5m, 15m,
 30m, 90m 59 days; 1h 729 days; daily and above unlimited. The synthetic feed has no limits.
 
 | Chart | Start age | Tick       |
@@ -98,7 +98,7 @@ uses whole bars (the synthetic dev feed's intervals are unrelated random walks, 
   0.1 s, 30 ms per step), Update, a warning badge, the clock date, Jump to realtime, Exit.
 - The play loop awaits `step()` and then waits the speed delay, so a slow step never overlaps the next.
 - Store (`useReplayStore`): `status` (`off`, `picking`, `loading`, `paused`, `playing`, `ended`), `last`, `next`,
-  `tick`, `warning`, `speed`, `update`. Only `speed` and `update` persist (`localStorage` `investopen-replay`).
+  `tick`, `warning`, `speed`, `update`. Only `speed` and `update` persist (`localStorage` `tickerglass-replay`).
 - Commands: `replay.toggle` Shift+Alt+R, `replay.selectBar`, `replay.playPause` Shift+Alt+Space, `replay.step`
   Shift+Alt+ArrowRight, `replay.realtime`, `replay.speedUp`, `replay.speedDown`, `replay.exit`. The engine lets
   Alt+arrows and Shift+Alt+R through to the app.

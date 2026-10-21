@@ -2,7 +2,7 @@
 // legend rows and context menus all go through these. Adding the first
 // visible 'same' overlay switches the main pane to percent (one undo step
 // with the add); removing the last 'same' overlay switches it back.
-import type { Chart, PriceScaleMode } from '@investopen/engine';
+import type { Chart, PriceScaleMode } from '@tickerglass/engine';
 import { useHistory } from '../commands/history';
 import { getChart } from '../store/chart';
 import { toast } from '../ui/Toast';

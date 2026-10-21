@@ -28,7 +28,7 @@ import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
 import { isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
-export const SETTINGS_SYNC_KEY = 'investopen-settings-sync';
+export const SETTINGS_SYNC_KEY = 'tickerglass-settings-sync';
 
 export type SettingsApi = Pick<typeof persistence, 'getSettings' | 'patchSettings'>;
 

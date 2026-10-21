@@ -8,7 +8,7 @@ import {
   type AnyIndicatorDefinition,
   type IndicatorCategory,
   type OutputSourceRef,
-} from '@investopen/indicators';
+} from '@tickerglass/indicators';
 import {
   Activity,
   ArrowLeftRight,

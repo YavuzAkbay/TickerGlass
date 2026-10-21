@@ -17,7 +17,7 @@ import {
   type StudyTarget,
   type SubscribeRequest,
   type SymbolInfo,
-} from '@investopen/engine';
+} from '@tickerglass/engine';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistory } from '../commands/history';
 import { removeCompares } from './actions';

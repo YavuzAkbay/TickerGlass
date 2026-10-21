@@ -1,4 +1,4 @@
-import { isExpressionSymbol } from '@investopen/engine';
+import { isExpressionSymbol } from '@tickerglass/engine';
 import { Newspaper } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { NewsItem } from '../../api/types';

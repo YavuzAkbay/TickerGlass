@@ -4,7 +4,7 @@
  * default is stored as the template named DEFAULT_TEMPLATE_NAME with
  * `isDefault: true` (docs/persistence.md §6).
  */
-import { resolveDrawingType, type DrawingStyle } from '@investopen/engine';
+import { resolveDrawingType, type DrawingStyle } from '@tickerglass/engine';
 import { createAutosaver, type Autosaver } from '../api/autosave';
 import { errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
@@ -12,7 +12,7 @@ import type { DrawingTemplate } from '../api/types';
 import { useDrawingTemplates } from '../drawings/store';
 import { isNotFound, isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
-export const DRAWING_TEMPLATES_SYNC_KEY = 'investopen-drawing-templates-sync';
+export const DRAWING_TEMPLATES_SYNC_KEY = 'tickerglass-drawing-templates-sync';
 /** Server name of a tool's default style (reserved: user templates can't use it). */
 export const DEFAULT_TEMPLATE_NAME = 'Default';
 

@@ -1,4 +1,4 @@
-import type { MagnetMode } from '@investopen/engine';
+import type { MagnetMode } from '@tickerglass/engine';
 import { commands, type Command } from '../commands/registry';
 import { removeAllDrawings, removeAllObjects } from '../drawings/actions';
 import { removeAllIndicators } from '../indicators/actions';

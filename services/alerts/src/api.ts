@@ -5,7 +5,7 @@ import type {
   ServiceHeartbeat,
   AlertLogEntry,
   AlertRuntimeState,
-} from '@investopen/alerts';
+} from '@tickerglass/alerts';
 
 /** HTTP failure. `status` 0 = network error. 409 carries `current`. */
 export class ApiError extends Error {

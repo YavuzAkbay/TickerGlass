@@ -2,7 +2,7 @@
  * Live alert events from `/ws` topic `alerts` (docs/alerts.md §1.6, §5.1):
  * fires, changed ids and log changes, plus the catch-up after a reconnect.
  */
-import type { Alert, AlertLogEntry } from '@investopen/alerts';
+import type { Alert, AlertLogEntry } from '@tickerglass/alerts';
 import * as alertsApi from '../api/alerts';
 import { errorMessage } from '../api/client';
 import { getQuoteStream, type EventFrame, type QuoteStream } from '../quotes/stream';

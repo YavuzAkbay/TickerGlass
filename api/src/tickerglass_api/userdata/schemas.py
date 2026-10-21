@@ -521,7 +521,7 @@ class Bundle(ApiModel):
 
     version: int = BUNDLE_VERSION
     #: Required: guards against importing an arbitrary JSON object.
-    app: Literal["investopen"]
+    app: Literal["tickerglass"]
     exported_at: datetime | None = None
     # Sections absent from the request are left untouched, even in replace mode
     # (`model_fields_set` tells absent from explicitly empty).
