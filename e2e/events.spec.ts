@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, openChartSettings } from './fixtures';
 
 declare global {
   interface Window {
@@ -60,7 +60,7 @@ async function openWithEvents(page: Page) {
 }
 
 async function openEventsTab(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await openChartSettings(page);
   await page.getByRole('dialog').getByRole('tab', { name: 'Events' }).click();
 }
 

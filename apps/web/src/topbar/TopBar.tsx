@@ -1,39 +1,31 @@
 import {
   AlarmClock,
-  Camera,
-  ChevronDown,
-  Keyboard,
-  Maximize,
-  Minimize,
   Moon,
-  PanelRightClose,
-  PanelRightOpen,
   Plus,
   Redo2,
   Rewind,
   Search,
-  Settings,
   SquareFunction,
   Sun,
   Undo2,
 } from 'lucide-react';
-import { useState, useSyncExternalStore, type ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
 import { useT } from '../i18n';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
 import { useReplayStore } from '../replay/store';
-import { useChartStore } from '../store/chart';
-import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
-import { DropdownMenu, Menu, type MenuItem } from '../ui/Menu';
+import { Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
 import { CHART_TYPE_MENU, chartTypeDef } from './chartTypes';
 import { IndicatorTemplatesButton } from './IndicatorTemplatesButton';
 import { IntervalControl } from './IntervalControl';
 import { LayoutMenu } from './LayoutMenu';
 import { LayoutPicker } from './LayoutPicker';
+import { OverflowMenu } from './OverflowMenu';
+import { PaletteButton } from './PaletteButton';
 import { firstShortcut, useCommand } from './useCommand';
 import './topbar.css';
 
@@ -45,6 +37,8 @@ export function TopBar() {
   const replayOn = useReplayStore((s) => s.status !== 'off');
   return (
     <div className="top-bar" role="toolbar" aria-label={t('topbar.toolbar')}>
+      <PaletteButton />
+      <div className="tb-sep" />
       <SymbolButton />
       <IconButton
         icon={Plus}
@@ -78,36 +72,15 @@ export function TopBar() {
         text={t('topbar.replayShort')}
         active={replayOn}
       />
-      <div className="tb-sep" />
+      <div className="tb-spacer" />
       <LayoutPicker />
       <LayoutMenu />
       <div className="tb-sep" />
-      <CommandButton id="chart.settings" icon={Settings} label={t('topbar.settings')} />
-      <div className="tb-spacer" />
+      <div className="tb-sep" />
       <UndoRedo />
-      <div className="tb-sep" />
-      <FullscreenButton />
-      <ScreenshotButton />
       <ThemeButton />
-      <CommandButton id="view.shortcuts" icon={Keyboard} label={t('topbar.shortcuts')} />
-      <div className="tb-sep" />
-      <ToolRailToggle />
+      <OverflowMenu />
     </div>
-  );
-}
-
-function ToolRailToggle() {
-  const t = useT();
-  const hidden = useUiStore((s) => s.toolRailHidden);
-  const shortcut = firstShortcut(useCommand('view.toggleToolRail'));
-  return (
-    <IconButton
-      icon={hidden ? PanelRightOpen : PanelRightClose}
-      label={hidden ? t('topbar.showTools') : t('topbar.hideTools')}
-      {...(shortcut ? { shortcut } : {})}
-      active={!hidden}
-      onClick={() => useUiStore.getState().toggleToolRail()}
-    />
   );
 }
 
@@ -228,77 +201,6 @@ function ChartTypeButton() {
         <Menu items={items} onClose={() => setOpen(false)} />
       </Popover>
     </>
-  );
-}
-
-const subscribeFullscreen = (fn: () => void) => {
-  document.addEventListener('fullscreenchange', fn);
-  return () => document.removeEventListener('fullscreenchange', fn);
-};
-
-function FullscreenButton() {
-  const t = useT();
-  const full = useSyncExternalStore(subscribeFullscreen, () => !!document.fullscreenElement);
-  const shortcut = firstShortcut(useCommand('view.fullscreen'));
-  return (
-    <IconButton
-      icon={full ? Minimize : Maximize}
-      label={full ? t('topbar.exitFullscreen') : t('topbar.fullscreen')}
-      {...(shortcut ? { shortcut } : {})}
-      onClick={() => run('view.fullscreen')}
-    />
-  );
-}
-
-function ScreenshotButton() {
-  const t = useT();
-  const hasChart = useChartStore((s) => !!s.chart);
-  const shortcut = firstShortcut(useCommand('chart.screenshot'));
-  const copyShortcut = firstShortcut(useCommand('chart.screenshot.copy'));
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const items: MenuItem[] = [
-    {
-      label: t('topbar.downloadImage'),
-      icon: Camera,
-      ...(shortcut ? { shortcut } : {}),
-      onSelect: () => run('chart.screenshot'),
-    },
-    {
-      label: t('topbar.copyImage'),
-      ...(copyShortcut ? { shortcut: copyShortcut } : {}),
-      onSelect: () => run('chart.screenshot.copy'),
-    },
-  ];
-  return (
-    <div className="tb-split">
-      <IconButton
-        icon={Camera}
-        label={t('topbar.snapshot')}
-        {...(shortcut ? { shortcut } : {})}
-        disabled={!hasChart}
-        onClick={() => run('chart.screenshot')}
-      />
-      <button
-        ref={setAnchor}
-        type="button"
-        className={`tb-btn tb-split-chevron${open ? ' open' : ''}`}
-        aria-label={t('topbar.snapshotOptions')}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={!hasChart}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <ChevronDown size={14} strokeWidth={1.6} />
-      </button>
-      <DropdownMenu
-        anchor={anchor}
-        open={open}
-        onClose={() => setOpen(false)}
-        items={items}
-        placement="bottom-end"
-      />
-    </div>
   );
 }
 

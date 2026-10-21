@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect, test, openChartSettings, openOverflowItem } from './fixtures';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/?feed=synthetic');
@@ -10,9 +10,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('modal has dialog semantics, traps Tab and restores focus on close', async ({ page }) => {
-  const opener = page.getByRole('button', { name: 'Keyboard shortcuts' });
-  await opener.focus();
-  await page.keyboard.press('Enter');
+  const opener = page.getByRole('button', { name: 'More', exact: true });
+  await openOverflowItem(page, 'Keyboard shortcuts');
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute('aria-modal', 'true');
@@ -49,7 +48,7 @@ test('a re-rendering parent does not take Escape or Tab from the nested modal', 
     await held;
     await route.fulfill({ json: [] });
   });
-  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await openChartSettings(page);
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
   await page.getByRole('button', { name: 'Template', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Save as…' }).click();

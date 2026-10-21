@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, test, openChartSettings } from './fixtures';
 
 declare global {
   interface Window {
@@ -135,7 +135,7 @@ test('Settings > Status line: turning OHLC off removes the values from the legen
   const labels = legend.locator('.io-legend-label', { hasText: /^[OHLC]$/ });
   await expect(labels).toHaveCount(4);
   await expect(legend).toContainText('%');
-  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await openChartSettings(page);
   await page.getByRole('tab', { name: 'Status line' }).click();
   await page.getByLabel('Open, high, low and close').uncheck();
   // The title and the change stay; the four values are gone.

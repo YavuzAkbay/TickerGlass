@@ -366,9 +366,11 @@ test('closed /ws: quotes fall back to polling /api/quotes', async ({ page, serve
   const before = market.quoteRequests.length;
   // The stream polls every 15 s while its socket is down.
   await expect
-    .poll(() => market.quoteRequests.length, { timeout: 40_000, intervals: [1000] })
-    .toBeGreaterThan(before);
-  expect(market.quoteRequests.at(-1)).toMatch(/AAPL/);
+    .poll(() => market.quoteRequests.slice(before).some((r) => /AAPL/.test(r)), {
+      timeout: 40_000,
+      intervals: [1000],
+    })
+    .toBe(true);
 });
 
 test('API down: edits queue and sync later; a stale save offers "Keep mine"', async ({
