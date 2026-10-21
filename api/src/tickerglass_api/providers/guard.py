@@ -25,7 +25,9 @@ from .base import (
     ProviderError,
     RateLimited,
     SymbolNotFound,
+    UpstreamDegraded,
     UpstreamUnavailable,
+    metering,
 )
 
 log = logging.getLogger(__name__)
@@ -49,7 +51,10 @@ class UpstreamGuard:
       bucket and leaves it in debt, which later calls pay back.
     - Rate-limit breaker: after the upstream refuses, nothing is sent for
       max(retry_after, backoff) seconds, capped at `cooldown_max_s`. The backoff starts
-      at `cooldown_initial_s`, doubles on every refusal and resets on a success.
+      at `cooldown_initial_s`, doubles on every refusal and resets on a success. Each
+      opening starts a new epoch; `acquire` returns the epoch a request was sent in, and
+      outcomes of requests sent before the latest opening neither escalate nor reset
+      (several requests in flight when the upstream refuses count as one refusal).
     - Unavailable breaker: after a connection failure, nothing is sent for
       `unavailable_cooldown_s` seconds.
     """
@@ -80,6 +85,7 @@ class UpstreamGuard:
         self._tokens = float(burst)
         self._refilled_at = clock()
         self._backoff = self._cooldown_initial
+        self._epoch = 0
         self._rate_limited_until: float | None = None
         self._unavailable_until: float | None = None
         self._refused: dict[str, int] = {"rate_limited": 0, "unavailable": 0, "budget": 0}
@@ -99,8 +105,9 @@ class UpstreamGuard:
     def in_background() -> bool:
         return _BACKGROUND.get()
 
-    def acquire(self, cost: int = 1) -> None:
-        """Take `cost` tokens or raise without contacting the upstream.
+    def acquire(self, cost: int = 1) -> int:
+        """Take `cost` tokens or raise without contacting the upstream; returns the breaker
+        epoch to pass to `on_success` / `on_rate_limited` with the outcome.
 
         Raises `RateLimited` while the rate-limit breaker is open or when no tokens are
         available in time, `UpstreamUnavailable` while the unavailable breaker is open.
@@ -112,7 +119,7 @@ class UpstreamGuard:
                 now = self._clock()
                 self._check_breakers(now)
                 if cost <= 0:
-                    return
+                    return self._epoch
                 self._refill(now)
                 if background:
                     # Never wait, and leave the reserve untouched (a cost too large to
@@ -126,11 +133,11 @@ class UpstreamGuard:
                             retry_after=max(1, math.ceil(short / self._rate_per_s)),
                         )
                     self._tokens -= cost
-                    return
+                    return self._epoch
                 need = min(cost, self._burst)
                 if self._tokens >= need:
                     self._tokens -= cost
-                    return
+                    return self._epoch
                 wait = (need - self._tokens) / self._rate_per_s
                 if deadline is None:
                     deadline = now + self._max_wait
@@ -141,16 +148,25 @@ class UpstreamGuard:
                     )
             self._sleep(wait)
 
-    def on_success(self) -> None:
+    def on_success(self, epoch: int | None = None) -> None:
+        """Reset the backoff, unless the request was sent in an earlier `epoch`."""
         with self._lock:
-            self._backoff = self._cooldown_initial
+            if epoch is None or epoch == self._epoch:
+                self._backoff = self._cooldown_initial
 
-    def on_rate_limited(self, retry_after: float | None = None) -> float:
-        """Open the rate-limit breaker; returns how long it stays open, in seconds."""
+    def on_rate_limited(self, retry_after: float | None = None, epoch: int | None = None) -> float:
+        """Open the rate-limit breaker; returns how long it stays open, in seconds.
+
+        A refusal of a request sent in an earlier `epoch` (the breaker has opened since)
+        changes nothing and returns the time left."""
         with self._lock:
+            now = self._clock()
+            if epoch is not None and epoch != self._epoch:
+                return _remaining(self._rate_limited_until, now)
             duration = min(max(retry_after or 0, self._backoff), self._cooldown_max)
-            self._rate_limited_until = self._clock() + duration
+            self._rate_limited_until = now + duration
             self._backoff = min(self._backoff * 2, self._cooldown_max)
+            self._epoch += 1
         if duration > 0:
             log.warning("upstream rate limited; pausing upstream calls for %.0fs", duration)
         return duration
@@ -218,25 +234,46 @@ class GuardedProvider:
     def _run(self, op: str, cost: int, fn: Callable[[], T]) -> T:
         prefix = f"upstream.{op}"
         try:
-            self._guard.acquire(cost)
+            epoch = self._guard.acquire(cost)
         except ProviderError:
             self._stats.incr(f"{prefix}.refused")
             raise
         self._stats.incr(f"{prefix}.calls")
         self._stats.incr(f"{prefix}.requests", cost)
+        refusals: list[ProviderError] = []
+
+        def charge(requests: int) -> None:
+            # Extra requests of this call (retries, fallbacks): same budget and breakers.
+            try:
+                self._guard.acquire(requests)
+            except ProviderError as exc:
+                self._stats.incr(f"{prefix}.refused")
+                refusals.append(exc)
+                raise
+            self._stats.incr(f"{prefix}.requests", requests)
+
         try:
-            result = fn()
+            with metering(charge):
+                result = fn()
         except SymbolNotFound:
             # A definite answer from a healthy upstream.
             self._stats.incr(f"{prefix}.not_found")
-            self._guard.on_success()
+            self._guard.on_success(epoch)
             raise
         except RateLimited as exc:
+            if any(exc is r for r in refusals):
+                raise  # refused locally by `charge`: the upstream did not refuse
             self._stats.incr(f"{prefix}.rate_limited")
-            cooldown = self._guard.on_rate_limited(exc.retry_after)
+            cooldown = self._guard.on_rate_limited(exc.retry_after, epoch)
             exc.retry_after = max(exc.retry_after, math.ceil(cooldown))
             raise
-        except UpstreamUnavailable:
+        except UpstreamDegraded:
+            # One endpoint failing while the upstream answers: no outage breaker.
+            self._stats.incr(f"{prefix}.errors")
+            raise
+        except UpstreamUnavailable as exc:
+            if any(exc is r for r in refusals):
+                raise
             self._stats.incr(f"{prefix}.unavailable")
             self._guard.on_unavailable()
             raise
@@ -247,7 +284,7 @@ class GuardedProvider:
         except Exception:
             self._stats.incr(f"{prefix}.errors")
             raise
-        self._guard.on_success()
+        self._guard.on_success(epoch)
         return result
 
     def history(
@@ -269,7 +306,7 @@ class GuardedProvider:
         return self._run("search", 1, lambda: self._inner.search(query, limit))
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
-        # One v7 request per 50 symbols (the rarely used download fallback costs more).
+        # One v7 request per 50 symbols; a fallback charges its own cost on top.
         cost = math.ceil(len(symbols) / V7_CHUNK)
         return self._run("quotes", cost, lambda: self._inner.quotes(symbols))
 

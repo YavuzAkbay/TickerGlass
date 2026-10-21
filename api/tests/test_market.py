@@ -509,7 +509,7 @@ def test_yahoo_quotes_chunks_of_fifty() -> None:
     yahoo, seen = _yahoo_v7([])
     out = yahoo.quotes([f"S{i}" for i in range(120)])
     assert [len(c) for c in seen] == [50, 50, 20]
-    assert out == [] and isinstance(out, QuoteList) and out.confirmed
+    assert out == [] and isinstance(out, QuoteList) and not out.confirmed  # empty answers
     assert yahoo.quotes([]) == [] and len(seen) == 3
 
 
@@ -638,7 +638,7 @@ def test_market_poller_shares_the_quote_cache(tmp_path: Path) -> None:
     fake = FakeProvider()
     app = create_app(provider=fake, database_url=f"sqlite:///{tmp_path}/p.db")
     with TestClient(app) as client:
-        poll = market_poller(app.state.market_service, app.state.upstream_guard, max_age=15)
+        poll = market_poller(app.state.market_service, app.state.upstream_guard)
         polled = poll_once(poll, ["AAPL", "MSFT", "NOPE"])
         assert polled == {
             s: {"price": 101.0, "change": 1.0, "changePercent": 1.0, "dayVolume": 5}
@@ -663,8 +663,151 @@ def test_market_poller_runs_in_background_and_skips_rate_limits() -> None:
         return []
 
     fake.quotes = quotes  # type: ignore[method-assign]
-    poll = market_poller(MarketService(fake), guard, max_age=15)
+    poll = market_poller(MarketService(fake), guard)
     assert poll_once(poll, ["AAPL"]) == {}
     outcome.append(RateLimited("cooling down", 30))
     assert poll_once(poll, ["MSFT"]) == {}  # skipped, not raised
     assert modes == [True, True] and not guard.in_background()
+
+
+# ---------------------------------------------------------------- v7 circuit
+
+
+def _broken_v7(
+    monkeypatch: pytest.MonkeyPatch, clock: Clock
+) -> tuple[YahooProvider, list[list[str]], list[list[str]]]:
+    """A YahooProvider whose v7 endpoint fails with a payload error; returns it, the v7
+    chunks asked and the symbols downloaded."""
+    v7_calls: list[list[str]] = []
+    downloads: list[list[str]] = []
+
+    def download(symbols: list[str], **kwargs: Any) -> pd.DataFrame:
+        downloads.append(list(symbols))
+        return _download_frame()
+
+    monkeypatch.setattr(yf, "download", download)
+    yahoo = YahooProvider(min_interval=0, retries=0, quote_v7_retry_s=300, clock=clock)
+
+    def v7(chunk: list[str]) -> list[dict[str, Any]]:
+        v7_calls.append(chunk)
+        raise ProviderError("Yahoo v7 quote: unexpected payload")
+
+    yahoo._v7_quote = v7  # type: ignore[method-assign]
+    return yahoo, v7_calls, downloads
+
+
+def test_v7_failure_skips_v7_for_a_while(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = Clock()
+    yahoo, v7_calls, downloads = _broken_v7(monkeypatch, clock)
+    yahoo.quotes(["AAPL"])
+    assert len(v7_calls) == 1 and len(downloads) == 1
+    clock.now += 200
+    yahoo.quotes(["AAPL"])
+    assert len(v7_calls) == 1 and len(downloads) == 2  # v7 skipped, small batch downloaded
+    clock.now += 101
+    yahoo.quotes(["AAPL"])
+    assert len(v7_calls) == 2  # retried after `quote_v7_retry_s`
+
+
+def test_large_batches_are_not_downloaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = Clock()
+    yahoo, v7_calls, downloads = _broken_v7(monkeypatch, clock)
+    many = [f"S{i}" for i in range(11)]
+    with pytest.raises(UpstreamUnavailable):
+        yahoo.quotes(many)
+    assert len(v7_calls) == 1 and downloads == []
+    with pytest.raises(UpstreamUnavailable):
+        yahoo.quotes(many)
+    assert len(v7_calls) == 1 and downloads == []
+
+
+def test_skipped_quotes_do_not_open_the_unavailable_breaker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tickerglass_api.providers.guard import GuardedProvider
+
+    yahoo, _, _ = _broken_v7(monkeypatch, Clock())
+    guard = UpstreamGuard(burst=1000, rate_per_min=1e6)
+    prov = GuardedProvider(yahoo, guard)
+    with pytest.raises(UpstreamUnavailable):
+        prov.quotes([f"S{i}" for i in range(11)])
+    assert guard.snapshot()["unavailable"] is False
+
+
+# ---------------------------------------------------------------- unknown quote symbols
+
+
+def test_empty_v7_answer_is_not_confirmed() -> None:
+    yahoo, _ = _yahoo_v7([])
+    out = yahoo.quotes(["AAPL", "MSFT"])
+    assert out == [] and not (isinstance(out, QuoteList) and out.confirmed)
+    # A chunk that answered with some rows still confirms the rest of it.
+    out = _yahoo_v7()[0].quotes(["AAPL", "NOPE"])
+    assert isinstance(out, QuoteList) and out.confirmed
+
+
+def test_unknown_quote_symbols_use_the_short_negative_ttl() -> None:
+    prov = V7Provider()
+    clock = Clock()
+    settings = Settings(quote_negative_ttl_s=300, cache_negative_ttl_s=3600)
+    market = MarketService(prov, settings=settings, clock=clock)
+    market.quotes(["AAPL", "NOPE"])
+    clock.now += 299
+    market.quotes(["NOPE"])
+    assert prov.quote_calls == [["AAPL", "NOPE"]]
+    clock.now += 2
+    market.quotes(["NOPE"])
+    assert prov.quote_calls == [["AAPL", "NOPE"], ["NOPE"]]
+
+
+# ---------------------------------------------------------------- live poller
+
+
+class StatefulQuotes(FakeProvider):
+    def __init__(self, state: str | None) -> None:
+        super().__init__()
+        self.state = state
+
+    def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        self.quote_calls.append(list(symbols))
+        return [
+            {"symbol": s, "last": 101.0, "change": 1.0, "marketState": self.state}
+            for s in symbols
+            if s in KNOWN
+        ]
+
+
+def test_closed_market_poll_respects_the_closed_ttl(tmp_path: Path) -> None:
+    import time
+
+    fake = StatefulQuotes("CLOSED")
+    settings = Settings(live_poll_interval_s=0.01, quote_closed_ttl_s=600)
+    app = create_app(
+        provider=fake, database_url=f"sqlite:///{tmp_path}/c.db", settings_override=settings
+    )
+    with TestClient(app):
+        poll = app.state.live_hub._poller
+        assert set(poll_once(poll, ["AAPL"])) == {"AAPL"}
+        time.sleep(0.05)
+        assert set(poll_once(poll, ["AAPL"])) == {"AAPL"}
+    assert fake.quote_calls == [["AAPL"]]  # the second poll came from the cache
+
+
+def test_poll_during_cooldown_broadcasts_nothing(tmp_path: Path) -> None:
+    import time
+
+    fake = StatefulQuotes("REGULAR")
+    settings = Settings(quote_ttl_s=0.01, upstream_cooldown_max_s=900)
+    app = create_app(
+        provider=fake, database_url=f"sqlite:///{tmp_path}/d.db", settings_override=settings
+    )
+    with TestClient(app) as client:
+        poll = app.state.live_hub._poller
+        assert set(poll_once(poll, ["AAPL", "MSFT"])) == {"AAPL", "MSFT"}
+        time.sleep(0.05)
+        app.state.upstream_guard.on_rate_limited(60)
+        assert poll_once(poll, ["AAPL", "MSFT"]) == {}  # stale values are not live ticks
+        # Interactive requests still get the stale values.
+        res = client.get("/api/quotes", params={"symbols": "AAPL,MSFT"})
+        assert [q["symbol"] for q in res.json()] == ["AAPL", "MSFT"]
+    assert fake.quote_calls == [["AAPL", "MSFT"]]

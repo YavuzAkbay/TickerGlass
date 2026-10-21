@@ -81,6 +81,7 @@ def create_app(
             inner: MarketDataProvider = YahooProvider(
                 retries=settings.upstream_retries,
                 rate_limit_retries=settings.upstream_rate_limit_retries,
+                quote_v7_retry_s=settings.quote_v7_retry_s,
             )
         else:
             inner = provider
@@ -132,9 +133,7 @@ def create_app(
             source,
             live_poller
             if live_poller is not None
-            else market_poller(
-                app.state.market_service, guard, max_age=settings.live_poll_interval_s
-            ),
+            else market_poller(app.state.market_service, guard),
             poll_after_s=settings.live_poll_after_s,
             poll_interval_s=settings.live_poll_interval_s,
             poll_closed_interval_s=settings.live_poll_closed_interval_s,

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+import yfinance as yf
 from fastapi.testclient import TestClient
 from yfinance.exceptions import YFRateLimitError
 
@@ -380,3 +382,174 @@ def test_currency_cache_is_bounded_lru(monkeypatch: pytest.MonkeyPatch) -> None:
     remember("7203.T", "JPY")
     assert prov._currency("SAP.DE") is None
     assert prov._currency("AAPL") == "USD" and prov._currency("7203.T") == "JPY"
+
+
+# ---------------------------------------------------------------- extra upstream cost
+
+
+def _v7_broken_yahoo(
+    monkeypatch: pytest.MonkeyPatch, downloads: list[list[str]], **kw: Any
+) -> YahooProvider:
+    """A YahooProvider whose v7 endpoint fails with a payload error and whose download
+    fallback records the symbols it was asked for."""
+
+    def download(symbols: list[str], **kwargs: Any) -> pd.DataFrame:
+        downloads.append(list(symbols))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(yf, "download", download)
+    prov = YahooProvider(min_interval=0, retries=0, **kw)
+
+    def v7(chunk: list[str]) -> list[dict[str, Any]]:
+        raise ProviderError("Yahoo v7 quote: unexpected payload")
+
+    prov._v7_quote = v7  # type: ignore[method-assign]
+    return prov
+
+
+def test_quote_download_fallback_is_charged_per_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
+    downloads: list[list[str]] = []
+    stats = CacheStats()
+    guard = UpstreamGuard(burst=1000, rate_per_min=1e6)
+    prov = GuardedProvider(_v7_broken_yahoo(monkeypatch, downloads), guard, stats)
+    prov.quotes(["A", "B", "C"])
+    assert downloads == [["A", "B", "C"]]
+    # One v7 request, then one download request per symbol.
+    assert stats.counter("upstream.quotes.requests") == 4
+
+
+def test_quote_fallback_refused_when_budget_cannot_cover_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    downloads: list[list[str]] = []
+    clock = FakeClock()
+    stats = CacheStats()
+    guard = make_guard(clock, rate_per_min=6, burst=4)
+    prov = GuardedProvider(_v7_broken_yahoo(monkeypatch, downloads), guard, stats)
+    with pytest.raises(RateLimited):
+        prov.quotes(["A", "B", "C", "D", "E"])  # 3 tokens left after v7, 5 needed
+    assert downloads == []
+    snap = guard.snapshot()
+    assert snap["rateLimited"] is False and snap["backoffS"] == 30  # a local refusal
+    assert stats.counter("upstream.quotes.refused") == 1
+    assert stats.counter("upstream.quotes.rate_limited") == 0
+
+
+def test_provider_retries_are_charged(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_sleep(monkeypatch)
+    failures: list[Exception] = [TimeoutError("t"), TimeoutError("t"), ValueError("junk")]
+    attempts: list[int] = []
+
+    class FakeSearch:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            attempts.append(1)
+            if failures:
+                raise failures.pop(0)
+            self.quotes: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(yf, "Search", FakeSearch)
+    stats = CacheStats()
+    guard = UpstreamGuard(burst=1000, rate_per_min=1e6)
+    prov = GuardedProvider(YahooProvider(min_interval=0, retries=2), guard, stats)
+    assert prov.search("apple", 5) == []
+    assert len(attempts) == 4  # two network retries, one generic retry
+    assert stats.counter("upstream.search.requests") == 4
+
+
+def test_retry_skipped_when_budget_is_gone(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_sleep(monkeypatch)
+    attempts: list[int] = []
+
+    class FakeSearch:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            attempts.append(1)
+            raise TimeoutError("t")
+
+    monkeypatch.setattr(yf, "Search", FakeSearch)
+    clock = FakeClock()
+    guard = make_guard(clock, rate_per_min=6, burst=1)
+    prov = GuardedProvider(YahooProvider(min_interval=0, retries=4), guard)
+    with pytest.raises(UpstreamUnavailable):
+        prov.search("apple", 5)
+    assert len(attempts) == 1  # no token left for a retry: the original failure is raised
+
+
+# ---------------------------------------------------------------- breaker epochs
+
+
+class NestedProvider(CountingProvider):
+    """`history` calls itself `depth` times before answering, so every call is issued
+    before any of them returns; each then raises `errors[level]` (or succeeds)."""
+
+    def __init__(self, prov: list[GuardedProvider], errors: list[Exception | None]) -> None:
+        super().__init__()
+        self.prov = prov
+        self.errors = errors
+        self.level = 0
+
+    def history(
+        self,
+        symbol: str,
+        interval: str,
+        start: datetime | None,
+        end: datetime | None,
+        prepost: bool,
+    ) -> pd.DataFrame:
+        level = self.level
+        self.level += 1
+        if self.level < len(self.errors):
+            with contextlib.suppress(RateLimited):
+                self.prov[0].history(symbol, interval, start, end, prepost)
+        error = self.errors[level]
+        if error is not None:
+            raise error
+        return pd.DataFrame(columns=BAR_COLUMNS)
+
+
+def test_concurrent_rate_limits_escalate_once() -> None:
+    clock = FakeClock()
+    guard = make_guard(clock, burst=10, cooldown_max_s=10_000)
+    holder: list[GuardedProvider] = []
+    inner = NestedProvider(holder, [RateLimited("slow down", 1) for _ in range(5)])
+    holder.append(GuardedProvider(inner, guard))
+    with pytest.raises(RateLimited) as info:
+        holder[0].history("AAPL", "1d", None, None, False)
+    snap = guard.snapshot()
+    assert snap["backoffS"] == 60  # doubled once, not five times
+    assert snap["rateLimitedForS"] == 30
+    assert info.value.retry_after == 30
+
+
+def test_late_success_does_not_reset_backoff() -> None:
+    clock = FakeClock()
+    guard = make_guard(clock)
+    holder: list[GuardedProvider] = []
+    # The outer call was issued first, the inner one is refused, then the outer succeeds.
+    inner = NestedProvider(holder, [None, RateLimited("slow down", 1)])
+    holder.append(GuardedProvider(inner, guard))
+    holder[0].history("AAPL", "1d", None, None, False)
+    assert guard.snapshot()["backoffS"] == 60
+    clock.now += 30
+    holder[0].symbol_info("AAPL")  # issued after the cooldown: resets
+    assert guard.snapshot()["backoffS"] == 30
+
+
+def test_news_search_fallback_is_charged(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeTicker:
+        def __init__(self, symbol: str) -> None:
+            pass
+
+        def get_news(self, count: int) -> list[dict[str, Any]]:
+            return []  # the primary news endpoint answers with nothing
+
+    class FakeSearch:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.news: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(yf, "Search", FakeSearch)
+    stats = CacheStats()
+    guard = UpstreamGuard(burst=1000, rate_per_min=1e6)
+    prov = GuardedProvider(YahooProvider(min_interval=0), guard, stats)
+    assert prov.news("AAPL", 5) == []
+    assert stats.counter("upstream.news.requests") == 2

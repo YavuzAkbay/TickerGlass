@@ -24,7 +24,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
-from ..providers.base import ProviderError, SymbolNotFound
+from ..providers.base import ProviderError, SymbolNotFound, UpstreamUnavailable
 from .stats import CacheStats
 
 log = logging.getLogger(__name__)
@@ -184,13 +184,15 @@ class SmartCache(Generic[K, V]):
         load_many: Callable[[list[K]], BatchResult[K, V]],
         *,
         max_age: float | None = None,
+        stale_ok: bool = True,
     ) -> dict[K, V]:
         """Values for those of `keys` that have one (no stale-while-revalidate).
 
         Fresh keys are served from the cache, keys another caller is loading are waited
         for, and the rest are loaded with one `load_many(keys)` call (see `BatchResult`).
         When that call raises a `ProviderError`, its keys fall back to stale values; if
-        one has none, the error is raised.
+        one has none, the error is raised. `stale_ok=False` skips the stale fallback, so
+        every value returned is fresh.
         """
         result: dict[K, V] = {}
         waits: dict[K, Future[_Outcome[V]]] = {}
@@ -226,7 +228,7 @@ class SmartCache(Generic[K, V]):
                 continue  # the upstream says there is no such key
             if not isinstance(outcome.error, ProviderError):
                 raise outcome.error
-            stale = self._stale_fallback(key)
+            stale = self._stale_fallback(key) if stale_ok else None
             if stale is not None:
                 result[key] = _value(key, stale)
             else:
@@ -402,18 +404,23 @@ class SmartCache(Generic[K, V]):
         except RuntimeError as exc:  # executor shut down
             self._incr("refresh_error")
             log.warning("cache %s: refresh of %r not started: %s", self._name, key, exc)
-            self._finish(key, fut, _Outcome(error=exc), None)
+            error = UpstreamUnavailable(f"cache {self._name}: refresh not started")
+            self._finish(key, fut, _Outcome(error=error), None)
             return
 
         def cancelled(job: Future[None]) -> None:
+            # Waiters get stale values (a `ProviderError` allows that) or a 503, not a 500.
             if job.cancelled():
-                self._finish(key, fut, _Outcome(error=RuntimeError("refresh cancelled")), None)
+                error = UpstreamUnavailable(f"cache {self._name}: refresh cancelled")
+                self._finish(key, fut, _Outcome(error=error), None)
 
         job.add_done_callback(cancelled)
 
     def _refresh(self, key: K, load: Callable[[], V], fut: Future[_Outcome[V]]) -> None:
         """Background reload of a stale entry: failures are logged and counted only."""
-        outcome: _Outcome[V] = _Outcome(error=RuntimeError("refresh aborted"))
+        outcome: _Outcome[V] = _Outcome(
+            error=UpstreamUnavailable(f"cache {self._name}: refresh aborted")
+        )
         entry: _Entry[V] | None = None
         try:
             value = load()
