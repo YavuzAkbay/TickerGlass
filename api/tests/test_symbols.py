@@ -14,6 +14,7 @@ from tickerglass_api.providers.base import (
     UpstreamUnavailable,
 )
 from tickerglass_api.services.symbols import SYMBOL_TTL, SymbolService
+from tickerglass_api.settings import Settings
 
 
 class InfoProvider:
@@ -163,3 +164,23 @@ def test_search_errors_without_cached_result(engine: Engine) -> None:
         svc.search("a", 5)
     provider.error = None
     assert svc.search("a", 5)
+
+
+def test_unknown_symbol_is_remembered(engine: Engine) -> None:
+    provider = InfoProvider()
+    provider.error = SymbolNotFound("NOPE")
+    clock = Clock()
+    svc = SymbolService(
+        engine,
+        provider,  # type: ignore[arg-type]
+        settings=Settings(cache_negative_ttl_s=3600),
+        clock=clock,
+    )
+    for _ in range(3):
+        with pytest.raises(SymbolNotFound):
+            svc.info("nope")
+    assert provider.calls == 1
+    clock.now += 3601
+    with pytest.raises(SymbolNotFound):
+        svc.info("NOPE")
+    assert provider.calls == 2

@@ -11,6 +11,7 @@ from test_userdata import alembic_config
 
 from tickerglass_api.app import create_app
 from tickerglass_api.db import Base, make_engine
+from tickerglass_api.intervals import resolve_interval
 from tickerglass_api.models import Bar, SeriesMeta, SymbolMeta
 from tickerglass_api.services import maintenance
 from tickerglass_api.services.bars import BarService, PruneReport
@@ -322,5 +323,52 @@ BARS_COLUMNS = (
 def test_model_creates_bars_without_rowid(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path}/c.db")
     Base.metadata.create_all(engine)
+    assert "WITHOUT ROWID" in bars_sql(engine)
+    engine.dispose()
+
+
+def make_free_pages(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE junk (x BLOB)"))
+        conn.execute(text("INSERT INTO junk VALUES (zeroblob(400000))"))
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE junk"))
+
+
+def test_vacuum_waits_until_bar_requests_go_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, bars, stats = make_service(tmp_path)
+    monkeypatch.setattr(maintenance, "VACUUM_MIN_FREE_BYTES", 1024)
+    monkeypatch.setattr(maintenance, "VACUUM_MIN_FREE_RATIO", 0.1)
+    add_series(engine, "AAPL", "1d", NOW)
+    # A bar request a minute ago (served from the cache, no upstream call).
+    bars.get_bars("AAPL", resolve_interval("1d"), False, now=NOW - timedelta(minutes=1))
+    make_free_pages(engine)
+    cm = CacheMaintenance(engine, bars, Settings(), stats)
+    report = cm.run_once(NOW)
+    assert not report.vacuumed and report.vacuum_deferred
+    assert stats.counter("maintenance.vacuum_deferred") == 1
+    report = cm.run_once(NOW + maintenance.VACUUM_IDLE)
+    assert report.vacuumed
+    engine.dispose()
+
+
+def test_sqlite_writers_wait_for_a_busy_database(tmp_path: Path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path}/b.db")
+    with engine.connect() as conn:
+        assert conn.execute(text("PRAGMA busy_timeout")).scalar_one() >= 30_000
+    engine.dispose()
+
+
+def test_bars_without_rowid_migration_survives_a_leftover_table(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path}/l.db"
+    cfg = alembic_config(url)
+    engine = create_engine(url)
+    command.upgrade(cfg, PREVIOUS)
+    # An earlier upgrade crashed after creating the copy.
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE bars_new (x INTEGER)"))
+    command.upgrade(cfg, "head")
     assert "WITHOUT ROWID" in bars_sql(engine)
     engine.dispose()

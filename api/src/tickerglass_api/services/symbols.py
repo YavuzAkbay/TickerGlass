@@ -14,6 +14,7 @@ from ..models import SymbolMeta
 from ..providers.base import MarketDataProvider, ProviderError, SymbolNotFound
 from ..settings import Settings
 from .cache import SmartCache
+from .sessions import StoredInfo
 from .stats import CacheStats
 
 log = logging.getLogger(__name__)
@@ -21,6 +22,8 @@ log = logging.getLogger(__name__)
 SYMBOL_TTL = timedelta(hours=24)
 # Distinct search queries remembered (least recently used dropped first).
 SEARCH_MAX_ENTRIES = 1024
+# Symbols whose metadata fetch is remembered (only "unknown" outcomes are kept long).
+INFO_MAX_ENTRIES = 1024
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,17 @@ class SymbolService:
             refresher=refresher,
             background=background,
         )
+        # Metadata itself is stored in the DB; this only remembers unknown symbols (and
+        # merges concurrent fetches). A fetched value is stale at once (TTL 0).
+        self._fetches: SmartCache[str, dict[str, Any]] = SmartCache(
+            "symbol_info",
+            ttl=0,
+            stale_ttl=0,
+            max_entries=INFO_MAX_ENTRIES,
+            negative_ttl=s.cache_negative_ttl_s,
+            stats=stats,
+            clock=clock,
+        )
 
     def info(self, symbol: str) -> dict[str, Any]:
         symbol = symbol.upper()
@@ -72,7 +86,9 @@ class SymbolService:
                 if now - fetched < SYMBOL_TTL:
                     return row.data
             try:
-                data = self._provider.symbol_info(symbol)
+                data = self._fetches.get(
+                    symbol, lambda: self._provider.symbol_info(symbol), swr=False
+                )
             except SymbolNotFound:
                 raise
             except ProviderError as exc:
@@ -85,11 +101,12 @@ class SymbolService:
             s.commit()
             return data
 
-    def cached_info(self, symbol: str) -> dict[str, Any] | None:
-        """Stored metadata of `symbol` whatever its age, or None; never calls upstream."""
+    def cached_info(self, symbol: str) -> StoredInfo | None:
+        """Stored metadata of `symbol` whatever its age (`fetched_at` tells it), or None;
+        never calls upstream."""
         with Session(self._engine) as s:
             row = s.get(SymbolMeta, symbol.upper())
-            return None if row is None else row.data
+            return None if row is None else StoredInfo(row.data, fetched_at=row.fetched_at)
 
     def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Best `limit` matches. Queries differing in case or surrounding spaces share one
