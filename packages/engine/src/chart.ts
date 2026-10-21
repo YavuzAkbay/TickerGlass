@@ -261,6 +261,29 @@ interface CrosshairPos {
   rawY: number;
 }
 
+/** One text line per legend row (price info, compares, study rows); spans are space-separated. */
+function legendLines(pane: Pane): string[] {
+  const text = (el: Element): string => {
+    const parts: string[] = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = (n.textContent ?? '').trim();
+      if (t) parts.push(t);
+    }
+    return parts.join(' ');
+  };
+  const lines: string[] = [];
+  const add = (t: string) => {
+    if (t) lines.push(t);
+  };
+  add(text(pane.legendInfo));
+  for (const host of [pane.legendCompare, pane.legendSlot]) {
+    if (host.children.length === 0) add(text(host));
+    else for (const row of Array.from(host.children)) add(text(row));
+  }
+  return lines;
+}
+
 export class Chart implements StudyApi, DrawingApi {
   readonly root: HTMLDivElement;
   /** Bars as loaded from the feed. */
@@ -1354,7 +1377,7 @@ export class Chart implements StudyApi, DrawingApi {
       ctx.font = font(this.theme, 13);
       ctx.fillStyle = this.theme.text;
       ctx.textBaseline = 'top';
-      ctx.fillText(pane.legendEl.textContent ?? '', 8, pane.top + 8);
+      legendLines(pane).forEach((line, n) => ctx.fillText(line, 8, pane.top + 8 + n * 18));
       ctx.restore();
     }
     blit(this.timeAxisMain, 0, this.timeAxisTop);

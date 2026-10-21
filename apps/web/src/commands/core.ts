@@ -1,3 +1,4 @@
+import type { Chart } from '@investopen/engine';
 import {
   Camera,
   Expand,
@@ -14,7 +15,10 @@ import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dial
 import { changeScale, toggleScaleMode } from './scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
 import { activeChartId, syncBus } from '../layout/sync';
-import { getChart } from '../store/chart';
+import { composeScreenshot, screenshotFilename } from '../chart/screenshot';
+import { leaves } from '../layout/grid';
+import { useLayoutGrid } from '../layout/store';
+import { getChart, useChartStore } from '../store/chart';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
 import { useUiStore, type RightPanel } from '../store/ui';
@@ -37,21 +41,34 @@ const open = (
   arg?: unknown,
 ) => useUiStore.getState().openDialog(id, arg);
 
-export async function saveScreenshot(copy: boolean): Promise<void> {
-  const chart = getChart();
-  if (!chart) return;
-  const canvas = chart.takeScreenshot();
+/** Charts to capture: the focused one, or every chart of the layout in grid order. */
+function screenshotCharts(layout: boolean): Chart[] {
+  const active = getChart();
+  if (!active) return [];
+  const { grid, maximizedId } = useLayoutGrid.getState();
+  if (!layout || maximizedId !== null) return [active];
+  const { sessions } = useChartStore.getState();
+  const charts = leaves(grid).flatMap((id) => sessions.get(id)?.chart ?? []);
+  return charts.length ? charts : [active];
+}
+
+export async function saveScreenshot(copy: boolean, layout = false): Promise<void> {
+  const charts = screenshotCharts(layout);
+  const first = charts[0];
+  if (!first) return;
+  const now = new Date();
+  const canvas = composeScreenshot(charts, now);
   const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
   if (!blob) return;
+  const what = charts.length > 1 ? 'Layout' : 'Chart';
   if (copy && 'ClipboardItem' in window) {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-    toast('Chart image copied to clipboard', 'success');
+    toast(`${what} image copied to clipboard`, 'success');
     return;
   }
   const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
   a.href = URL.createObjectURL(blob);
-  a.download = `${chart.getSymbol()}_${chart.getInterval()}_${stamp}.png`;
+  a.download = screenshotFilename(first.getSymbol(), first.getInterval(), now);
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -201,6 +218,22 @@ export function registerCoreCommands(): () => void {
       icon: Camera,
       enabled: hasChart,
       run: () => saveScreenshot(true),
+    },
+    {
+      id: 'chart.screenshotLayout',
+      title: 'Download layout image',
+      category: 'Chart',
+      icon: Camera,
+      enabled: hasChart,
+      run: () => saveScreenshot(false, true),
+    },
+    {
+      id: 'chart.screenshotLayout.copy',
+      title: 'Copy layout image',
+      category: 'Chart',
+      icon: Camera,
+      enabled: hasChart,
+      run: () => saveScreenshot(true, true),
     },
     {
       id: 'view.fullscreen',

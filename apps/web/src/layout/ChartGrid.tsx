@@ -12,16 +12,26 @@ import { useLayoutGrid } from './store';
  */
 export function ChartGrid() {
   const grid = useLayoutGrid((s) => s.grid);
+  const maximizedId = useLayoutGrid((s) => s.maximizedId);
   const geometry = useMemo(() => gridGeometry(grid), [grid]);
+  const maximized = geometry.cells.some((c) => c.chartId === maximizedId) ? maximizedId : null;
   useEffect(() => markGridMounted(), []);
   return (
     <div className="chart-stack">
       {geometry.cells.map((c) => (
-        <ChartCell key={c.chartId} chartId={c.chartId} box={c.box} />
+        <ChartCell
+          key={c.chartId}
+          chartId={c.chartId}
+          box={c.box}
+          maximized={maximized === c.chartId}
+          covered={maximized !== null && maximized !== c.chartId}
+        />
       ))}
-      {geometry.splitters.map((g) => (
-        <SplitHandle key={`${g.path.join('.')}:${g.index}`} geometry={g} />
-      ))}
+      {maximized !== null
+        ? null
+        : geometry.splitters.map((g) => (
+            <SplitHandle key={`${g.path.join('.')}:${g.index}`} geometry={g} />
+          ))}
     </div>
   );
 }

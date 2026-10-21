@@ -13,6 +13,10 @@ export function markGridMounted(): () => void {
   mounts++;
   const sync = () => {
     const { activeId, sessions } = useChartStore.getState();
+    // Moving focus to another chart (or losing the maximized one) restores the grid.
+    const { maximizedId } = useLayoutGrid.getState();
+    if (maximizedId !== null && maximizedId !== activeId)
+      useLayoutGrid.setState({ maximizedId: null });
     if (
       activeId !== null &&
       sessions.has(activeId) &&

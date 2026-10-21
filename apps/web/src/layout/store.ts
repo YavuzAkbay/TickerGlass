@@ -18,6 +18,8 @@ export interface LayoutGridState {
   activeId: string;
   /** Saved state of each chart, by id. */
   slots: Record<string, ChartSlotState>;
+  /** The chart filling the whole grid (view only, never saved); null: all cells shown. */
+  maximizedId: string | null;
 }
 
 export const defaultLayoutGrid = (): LayoutGridState => ({
@@ -26,6 +28,7 @@ export const defaultLayoutGrid = (): LayoutGridState => ({
   sync: { ...DEFAULT_SYNC_FLAGS },
   activeId: PRIMARY_CHART_ID,
   slots: {},
+  maximizedId: null,
 });
 
 export const useLayoutGrid = create<LayoutGridState>()(defaultLayoutGrid);
