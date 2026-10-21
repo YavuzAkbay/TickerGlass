@@ -118,6 +118,23 @@
   z-index: 5;
 }
 
+/* Profiling readout (?perf=1). */
+.perf-overlay {
+  position: absolute;
+  left: 8px;
+  bottom: 36px;
+  z-index: 4;
+  padding: 4px 8px;
+  font:
+    11px/1.4 ui-monospace,
+    monospace;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  pointer-events: none;
+}
+
 .chart-error {
   position: absolute;
   inset: 0;

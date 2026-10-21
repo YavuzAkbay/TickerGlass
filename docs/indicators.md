@@ -125,6 +125,10 @@ skipped (warm-up starts at the first value), later NaNs return NaN without chang
 - `computeAll(bars)`: new `setup`, step all bars; snapshot (`save`) all primitives right before the last bar.
 - `computeLast(bars, 'update')`: `restore` the snapshot, re-run bar n-1 (live tick, exact).
 - `computeLast(bars, 'append')`: `save`, then step the new bar n-1. Count mismatch falls back to `computeAll`.
+- `computeFrom(bars, from)`: inputs of bars `>= from` changed. With `checkpointAt` set (the runtime sets it to the
+  first chart bar of the forming bar of the timeframe instances read, directly or through others), stepping that
+  bar first copies every primitive's full state (`Stateful.checkpoint`); `computeFrom` rewinds to the checkpoint and
+  re-runs from it when it is at or before `from`, else falls back to `computeAll` (also for repainting definitions).
 - An exception in `setup`/`step` sets `status = { state: 'error', message }` and all outputs NaN.
 
 `IndicatorRuntime` (all instances of one chart; pure, no DOM; also used by the alerts service):
@@ -186,7 +190,8 @@ type ToWorker =
   | { type: 'bar'; revision: number; index: number; bar: Bar } // 'update' / 'append'
   | { type: 'tfBars'; tf: string; bars: BarColumns }
   | { type: 'tfBar'; tf: string; bar: Bar }
-  | { type: 'clear' }; // symbol change
+  | { type: 'clear' } // symbol change
+  | { type: 'profile'; on: boolean }; // ?perf=1: performance.measure per message, `ms` on results
 type ResultChange = {
   id: string;
   from: number;
@@ -195,7 +200,7 @@ type ResultChange = {
   colors: Record<string, Uint8Array>;
 };
 type FromWorker =
-  | { type: 'results'; revision: number; length: number; changes: ResultChange[] }
+  | { type: 'results'; revision: number; length: number; changes: ResultChange[]; ms?: number }
   | { type: 'timeframes'; timeframes: string[] } // after add/setInputs/timeframeMap
   | { type: 'resync'; revision: number; bars: number } // `bar` index mismatch (RangeError)
   | { type: 'error'; id?: string; message: string }; // id: add/setInputs; no id: fatal

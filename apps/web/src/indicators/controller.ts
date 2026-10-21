@@ -106,6 +106,10 @@ export interface ControllerOptions {
    * events (VWAP anchors). Default: none (such indicators get no events).
    */
   loadEvents?: (symbol: string) => Promise<EventsResponse>;
+  /** Profile the worker (`?perf=1`): performance measures and compute times. Default: off. */
+  profile?: boolean;
+  /** While profiling: ms the worker spent computing each batch of results. */
+  onComputeTime?: (ms: number) => void;
 }
 
 interface Applied {
@@ -122,14 +126,23 @@ interface TfSeries {
   loaded: boolean;
   /** First bar time (meaningful once loaded). */
   first: number;
-  /** No older history available (or the request cap was hit). */
+  /** No older history available. */
   complete: boolean;
+  /** The bars sent to the worker, kept current with live bars (resent after a page). */
+  bars: BarColumns | null;
+  /** An older page is in flight. */
+  busy: boolean;
+  /** Older pages fetched since the chart's series last reset. */
+  pages: number;
   unsub: Unsubscribe | null;
 }
 
 /** Bars of warm-up requested before the chart's first bar for timeframe series. */
 const TF_WARMUP = 300;
+/** Bars per timeframe request (the first one and each older page). */
 const TF_MAX_BARS = 5000;
+/** Older pages per timeframe series and chart reset (bounds requests when history is long). */
+const TF_MAX_PAGES = 10;
 /** Consecutive resyncs of one series revision before the worker is given up on. */
 const MAX_RESYNCS = 3;
 
@@ -170,6 +183,49 @@ export function copyColumns(src: ChartHost['store'] | BarColumns, n: number, fro
     close: src.close.slice(from, n),
     volume: src.volume.slice(from, n),
   };
+}
+
+/** Bars `[0, n)` of `older` followed by all of `newer`. */
+function concatColumns(older: BarColumns, n: number, newer: BarColumns): BarColumns {
+  const join = (a: Float64Array, b: Float64Array) => {
+    const out = new Float64Array(n + b.length);
+    out.set(a.subarray(0, n));
+    out.set(b, n);
+    return out;
+  };
+  return {
+    time: join(older.time, newer.time),
+    open: join(older.open, newer.open),
+    high: join(older.high, newer.high),
+    low: join(older.low, newer.low),
+    close: join(older.close, newer.close),
+    volume: join(older.volume, newer.volume),
+  };
+}
+
+/** The columns with a live bar applied: same time as the last = update, later = append. */
+export function upsertBar(cols: BarColumns, bar: Bar): BarColumns {
+  const n = cols.time.length;
+  const lastTime = n ? cols.time[n - 1]! : -Infinity;
+  if (bar.time < lastTime) return cols;
+  const out =
+    bar.time === lastTime
+      ? cols
+      : concatColumns(cols, n, {
+          time: Float64Array.of(bar.time),
+          open: new Float64Array(1),
+          high: new Float64Array(1),
+          low: new Float64Array(1),
+          close: new Float64Array(1),
+          volume: new Float64Array(1),
+        });
+  const i = out.time.length - 1;
+  out.open[i] = bar.open;
+  out.high[i] = bar.high;
+  out.low[i] = bar.low;
+  out.close[i] = bar.close;
+  out.volume[i] = bar.volume;
+  return out;
 }
 
 const buffers = (c: BarColumns): Transferable[] => [
@@ -243,6 +299,7 @@ export class IndicatorController {
       onProblem: (symbol, message) => this.onSymbolProblem(symbol, message),
     });
     this.worker.listen((msg) => this.onMessage(msg));
+    if (opts.profile) this.worker.post({ type: 'profile', on: true });
     this.offs.push(
       this.chart.on('seriesChange', (c) => this.onSeriesChange(c)),
       this.chart.on('paneRemoved', () => this.onPaneRemoved()),
@@ -686,8 +743,12 @@ export class IndicatorController {
     if (!n) return;
     const chartFirst = store.time[0]!;
     const cur = this.tfSeries.get(tf);
-    if (cur && (!cur.loaded || cur.complete || cur.first <= chartFirst)) return;
-    cur?.unsub?.();
+    if (cur) {
+      // The chart's series reset (e.g. older history loaded): page older bars again.
+      cur.pages = 0;
+      this.extendTimeframe(tf, cur);
+      return;
+    }
     let interval;
     try {
       interval = parseInterval(tf);
@@ -695,7 +756,15 @@ export class IndicatorController {
       this.onError(errText(err));
       return;
     }
-    const entry: TfSeries = { loaded: false, first: Infinity, complete: false, unsub: null };
+    const entry: TfSeries = {
+      loaded: false,
+      first: Infinity,
+      complete: false,
+      bars: null,
+      busy: false,
+      pages: 0,
+      unsub: null,
+    };
     this.tfSeries.set(tf, entry);
     const end = Math.max(store.time[n - 1]!, Date.now() / 1000);
     const limit = Math.min(
@@ -717,10 +786,11 @@ export class IndicatorController {
         }
         entry.loaded = true;
         entry.first = res.bars.time[0]!;
-        entry.complete = !res.hasMore || len < limit || limit >= TF_MAX_BARS;
+        entry.complete = !res.hasMore;
         // Copies: the feed may cache the arrays it returned.
         const bars = copyColumns(res.bars, len);
-        this.worker.post({ type: 'tfBars', tf, bars }, buffers(bars));
+        entry.bars = bars;
+        this.sendTimeframeBars(tf, bars);
         const last = {
           time: bars.time[len - 1]!,
           open: bars.open[len - 1]!,
@@ -740,15 +810,77 @@ export class IndicatorController {
           },
           last,
           (bar) => {
-            if (current()) this.worker.post({ type: 'tfBar', tf, bar });
+            if (!current()) return;
+            if (entry.bars) entry.bars = upsertBar(entry.bars, bar);
+            this.worker.post({ type: 'tfBar', tf, bar });
           },
         );
+        this.extendTimeframe(tf, entry);
       })
       .catch((err: unknown) => {
         if (!current()) return;
         // Retry on the next reset.
         this.tfSeries.delete(tf);
         this.onError(`Could not load ${tf} bars: ${errText(err)}`);
+      });
+  }
+
+  /** A copy of the series to the worker (the posted arrays are transferred). */
+  private sendTimeframeBars(tf: string, src: BarColumns): void {
+    const bars = copyColumns(src, src.time.length);
+    this.worker.post({ type: 'tfBars', tf, bars }, buffers(bars));
+  }
+
+  /**
+   * Page older bars of a loaded timeframe series with `getBars({ to })` while
+   * the chart starts before it, then resend the whole series. Stops when the
+   * provider has no more (or returns nothing older) and after `TF_MAX_PAGES`.
+   */
+  private extendTimeframe(tf: string, entry: TfSeries): void {
+    if (this.destroyed || !entry.loaded || entry.complete || entry.busy || !entry.bars) return;
+    if (entry.pages >= TF_MAX_PAGES) return;
+    const store = this.chart.store;
+    if (!store.length) return;
+    const chartFirst = store.time[0]!;
+    if (entry.first <= chartFirst) return;
+    let interval;
+    try {
+      interval = parseInterval(tf);
+    } catch {
+      // Unreachable: the series was loaded with this interval.
+      return;
+    }
+    entry.busy = true;
+    entry.pages++;
+    const to = entry.first;
+    const limit = Math.min(
+      TF_MAX_BARS,
+      Math.ceil((to - chartFirst) / intervalSeconds(interval)) + TF_WARMUP,
+    );
+    const prepost = this.opts.prepost?.() ?? false;
+    const current = () => !this.destroyed && this.tfSeries.get(tf) === entry;
+    this.feed
+      .getBars({ symbol: this.chart.getSymbol(), interval, to, limit, prepost })
+      .then((res) => {
+        entry.busy = false;
+        if (!current() || !entry.bars) return;
+        let len = res.bars.time.length;
+        // Only bars strictly older than the series (a provider may include `to`).
+        while (len > 0 && res.bars.time[len - 1]! >= to) len--;
+        // Nothing older came back: stop, even if the provider claims more.
+        entry.complete = !res.hasMore || len === 0;
+        if (!len) return;
+        entry.bars = concatColumns(res.bars, len, entry.bars);
+        entry.first = entry.bars.time[0]!;
+        this.sendTimeframeBars(tf, entry.bars);
+        this.extendTimeframe(tf, entry);
+      })
+      .catch((err: unknown) => {
+        entry.busy = false;
+        if (!current()) return;
+        // Keep what is loaded; older bars are retried after the next reset.
+        entry.pages = TF_MAX_PAGES;
+        this.onError(`Could not load older ${tf} bars: ${errText(err)}`);
       });
   }
 
@@ -841,6 +973,7 @@ export class IndicatorController {
   }
 
   private onResults(msg: Extract<FromWorker, { type: 'results' }>): void {
+    if (msg.ms !== undefined) this.opts.onComputeTime?.(msg.ms);
     // A live bar applied cleanly: the worker is in step again. Only the
     // indicator worker's own (non-script) results count: sandboxes have their
     // own resync budget in the router, and must not reset this one.

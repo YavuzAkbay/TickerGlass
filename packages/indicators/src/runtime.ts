@@ -396,11 +396,7 @@ export class IndicatorRuntime {
     const kind = store.upsert(bar);
     if (kind === 'ignored') return [];
     const seeds = new Map<string, number>();
-    // First chart bar inside the (new) last timeframe bar. (Subtracting an
-    // epsilon from the start time is a no-op at unix-second magnitudes.)
-    const start = store.time[store.length - 1]!;
-    let from = this.bars.indexAtOrBefore(start) + 1;
-    while (from > 0 && this.bars.time[from - 1]! >= start) from--;
+    const from = this.formingStart(store);
     for (const node of this.order) {
       if (node.tf !== tf) continue;
       node.inst.computeLast(store, kind);
@@ -409,6 +405,16 @@ export class IndicatorRuntime {
     // Only chart bars whose aligned values actually changed propagate (Pivot
     // Points and confirmed alignment ignore ticks of the forming bar).
     return this.propagate(seeds, 'none', true);
+  }
+
+  /** First chart bar inside the last (forming) bar of a timeframe series; Infinity if empty. */
+  private formingStart(store: BarStore | undefined): number {
+    if (!store || !store.length) return Infinity;
+    // (Subtracting an epsilon from the start time is a no-op at unix-second magnitudes.)
+    const start = store.time[store.length - 1]!;
+    let from = this.bars.indexAtOrBefore(start) + 1;
+    while (from > 0 && this.bars.time[from - 1]! >= start) from--;
+    return from;
   }
 
   // ------------------------------------------------------------ internals
@@ -475,10 +481,17 @@ export class IndicatorRuntime {
    * Walk instances in dependency order. `seeds` hold the first index already
    * known to change per instance (timeframe instances: re-align from there;
    * chart instances: 0 forces a full compute).
+   *
+   * Chart instances that read a timeframe instance (directly or through
+   * others) checkpoint their state at the first chart bar of its forming
+   * timeframe bar, so a change there re-runs only the bars from that one.
    */
   private propagate(seeds: Map<string, number>, bars: BarChange, diff = false): Change[] {
     const n = this.bars.length;
     const changed = new Map<string, number>();
+    /** Per instance: first chart bar of the forming bar of the timeframes it reads. */
+    const forming = new Map<string, number>();
+    const starts = new Map<string, number>();
     const refs: RefResolver = (ref) => {
       if (!ref.instanceId.startsWith(EXTERNAL_SOURCE_PREFIX))
         return this.result(ref.instanceId)?.values[ref.outputId];
@@ -488,8 +501,18 @@ export class IndicatorRuntime {
     for (const node of this.order) {
       const id = node.spec.id;
       let from = seeds.get(id) ?? Infinity;
-      for (const dep of node.deps) from = Math.min(from, changed.get(dep) ?? Infinity);
+      let checkpointAt = Infinity;
+      for (const dep of node.deps) {
+        from = Math.min(from, changed.get(dep) ?? Infinity);
+        checkpointAt = Math.min(checkpointAt, forming.get(dep) ?? Infinity);
+      }
       if (node.tf) {
+        let start = starts.get(node.tf);
+        if (start === undefined) {
+          start = this.formingStart(this.tfBars.get(node.tf));
+          starts.set(node.tf, start);
+        }
+        forming.set(id, start);
         if (bars === 'append') from = Math.min(from, n - 1);
         if (from === Infinity) continue;
         from = Math.max(0, from);
@@ -497,6 +520,8 @@ export class IndicatorRuntime {
         if (first < n || first === 0) changed.set(id, first);
         continue;
       }
+      node.inst.checkpointAt = checkpointAt;
+      if (checkpointAt !== Infinity) forming.set(id, checkpointAt);
       if (this.waitingSymbol(node) !== null) {
         node.stale = true;
         if (from !== Infinity || bars !== 'none') changed.set(id, 0);
@@ -508,10 +533,13 @@ export class IndicatorRuntime {
         changed.set(id, 0);
         continue;
       }
-      // A change before the last bar (inputs, upstream history) needs a full pass.
-      if (bars === 'full' || from < n - 1) {
+      // A change before the last bar (inputs, upstream history) needs a full
+      // pass, unless it is at or after the instance's checkpoint.
+      if (bars === 'full' || from <= 0) {
         node.inst.computeAll(this.bars, refs);
         changed.set(id, 0);
+      } else if (from < n - 1) {
+        changed.set(id, node.inst.computeFrom(this.bars, from, refs));
       } else if (bars === 'update' || bars === 'append' || from === n - 1) {
         const kind = bars === 'append' ? 'append' : 'update';
         changed.set(id, node.inst.computeLast(this.bars, kind, refs));

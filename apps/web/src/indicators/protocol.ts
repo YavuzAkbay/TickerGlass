@@ -36,7 +36,12 @@ export type ToWorker =
   /** Aligned rows [from, from + bars length) of an external symbol (live). */
   | { type: 'extUpdate'; revision: number; symbol: string; from: number; bars: BarColumns }
   /** Symbol change: drop all bar data, keep instances. */
-  | { type: 'clear' };
+  | { type: 'clear' }
+  /**
+   * Profiling on/off (`?perf=1`): the worker records a `performance.measure`
+   * per handled message and reports compute times in `results.ms`.
+   */
+  | { type: 'profile'; on: boolean };
 
 export interface ResultChange {
   id: string;
@@ -48,7 +53,14 @@ export interface ResultChange {
 }
 
 export type FromWorker =
-  | { type: 'results'; revision: number; length: number; changes: ResultChange[] }
+  | {
+      type: 'results';
+      revision: number;
+      length: number;
+      changes: ResultChange[];
+      /** While profiling: ms the runtime spent computing these changes. */
+      ms?: number;
+    }
   /** Timeframe series the runtime needs (after add/setInputs/timeframeMap). */
   | { type: 'timeframes'; timeframes: string[] }
   /** External symbols the runtime needs (after add/setInputs/remove). */

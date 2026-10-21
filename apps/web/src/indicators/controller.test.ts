@@ -30,6 +30,7 @@ import {
   type ChartHost,
   type ControllerOptions,
   type WorkerPort,
+  upsertBar,
 } from './controller';
 import { createInstance, type IndicatorState } from './model';
 import type { FromWorker, ToWorker } from './protocol';
@@ -804,6 +805,99 @@ describe('IndicatorController', () => {
     await settle();
     expect(feed.requests).toHaveLength(2);
     expect(useIndicatorRuntime.getState().status[tf.id]).toEqual({ state: 'ok' });
+  });
+
+  /** Serves the newest `cap` bars of `all` before `req.to`, with an honest hasMore. */
+  function pagedFeed(all: BarColumns, cap: number, opts: { ignoreTo?: boolean } = {}) {
+    const requests: GetBarsRequest[] = [];
+    const feed: DataFeed = {
+      resolveSymbol: () => Promise.reject(new Error('unused')),
+      searchSymbols: () => Promise.resolve([]),
+      getBars: async (req) => {
+        requests.push(req);
+        let end = all.time.length;
+        if (req.to !== undefined && !opts.ignoreTo)
+          while (end > 0 && all.time[end - 1]! >= req.to) end--;
+        const start = Math.max(0, end - Math.min(cap, req.limit));
+        const pick = (a: Float64Array) => a.slice(start, end);
+        return {
+          bars: {
+            time: pick(all.time),
+            open: pick(all.open),
+            high: pick(all.high),
+            low: pick(all.low),
+            close: pick(all.close),
+            volume: pick(all.volume),
+          },
+          hasMore: start > 0,
+        };
+      },
+      subscribe: () => () => {},
+    };
+    return { feed, requests };
+  }
+
+  const settleMany = async (n = 30) => {
+    for (let i = 0; i < n; i++) await settle();
+  };
+
+  it('pages older timeframe bars until they cover the chart, then resends them', async () => {
+    // 60 weeks from 50 weeks before START; the chart starts 10 weeks before it; 8 bars per request.
+    const weekly = makeBars(60, 7 * DAY, START - 7 * DAY * 50, 3);
+    const { feed, requests } = pagedFeed(weekly, 8);
+    const { chart, log, ctl } = setup({ feed });
+    const tf = inst('test_tf_close');
+    ctl.sync([tf]);
+    const daily = makeBars(40, DAY, START - 70 * DAY);
+    chart.load(daily);
+    await settleMany();
+    // First request, then pages before the oldest bar until it is at or before the chart's first.
+    expect(requests.map((r) => r.to)).toEqual([undefined, weekly.time[52], weekly.time[44]]);
+    const sent = log.filter((m) => m.type === 'tfBars');
+    expect(sent.map((m) => m.bars.time.length)).toEqual([8, 16, 24]);
+    expect(Array.from(sent.at(-1)!.bars.time)).toEqual(Array.from(weekly.time.slice(36)));
+    const s = chart.studies.get(tf.id)!;
+    for (const j of [0, 6, 7, 39]) {
+      let k = 0;
+      while (k + 1 < weekly.time.length && weekly.time[k + 1]! <= daily.time[j]!) k++;
+      expect(s.values.v![j]).toBe(weekly.close[k]);
+    }
+    expect(useIndicatorRuntime.getState().status[tf.id]).toEqual({ state: 'ok' });
+  });
+
+  it('stops paging when nothing older comes back or after the page limit', async () => {
+    const weekly = makeBars(60, 7 * DAY, START - 7 * DAY * 50, 3);
+    // A provider that ignores `to` (returns the same newest bars) while claiming more.
+    const same = pagedFeed(weekly, 8, { ignoreTo: true });
+    const a = setup({ feed: same.feed });
+    a.ctl.sync([inst('test_tf_close')]);
+    a.chart.load(makeBars(40));
+    await settleMany();
+    expect(same.requests).toHaveLength(2);
+    a.ctl.destroy();
+
+    // One bar per request and a chart far older than the series: bounded requests.
+    const one = pagedFeed(weekly, 1);
+    const b = setup({ feed: one.feed });
+    b.ctl.sync([inst('test_tf_close')]);
+    b.chart.load(makeBars(400, DAY, START - 400 * DAY));
+    await settleMany(60);
+    expect(one.requests).toHaveLength(11);
+    expect(b.log.filter((m) => m.type === 'tfBars').at(-1)!.bars.time.length).toBe(11);
+  });
+});
+
+describe('upsertBar', () => {
+  it('updates the last bar, appends a later one and ignores older ones', () => {
+    const cols = makeBars(3);
+    const t = cols.time[2]!;
+    const up = upsertBar(cols, { time: t, open: 1, high: 9, low: 0, close: 5, volume: 7 });
+    expect(up).toBe(cols);
+    expect([up.close[2], up.high[2], up.volume[2]]).toEqual([5, 9, 7]);
+    const app = upsertBar(cols, { time: t + DAY, open: 2, high: 3, low: 1, close: 2, volume: 1 });
+    expect(Array.from(app.time)).toEqual([...Array.from(cols.time), t + DAY]);
+    expect(app.close[3]).toBe(2);
+    expect(upsertBar(cols, { ...makeBar(0), time: cols.time[0]! })).toBe(cols);
   });
 });
 

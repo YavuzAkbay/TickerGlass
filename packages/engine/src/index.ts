@@ -7,6 +7,7 @@ export type {
   CrosshairInfo,
   HitTarget,
   PaneState,
+  RenderStats,
   SyncedCrosshair,
   ViewChangeCause,
 } from './chart';
