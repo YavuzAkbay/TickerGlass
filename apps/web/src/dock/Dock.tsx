@@ -11,9 +11,10 @@ import {
   Rows3,
   TableProperties,
 } from 'lucide-react';
-import { useEffect, useRef, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import { useAlerts } from '../alerts/store';
 import { commands } from '../commands/registry';
+import { useT, type MessageKey } from '../i18n';
 import { ReplayTrading } from '../replay/ReplayTrading';
 import { useReplayStore } from '../replay/store';
 import { Alerts } from '../sidebar/panels/Alerts';
@@ -30,36 +31,42 @@ import './dock.css';
 
 interface PanelDef {
   id: RightPanel;
-  title: string;
+  title: MessageKey;
   icon: ComponentType<{ size?: number; strokeWidth?: number }>;
   render: () => ReactNode;
 }
 
 const PANELS: PanelDef[] = [
-  { id: 'watchlist', title: 'Watchlist', icon: Rows3, render: () => <Watchlist /> },
-  { id: 'details', title: 'Details', icon: FileText, render: () => <Details /> },
-  { id: 'news', title: 'News', icon: Newspaper, render: () => <News /> },
-  { id: 'alerts', title: 'Alerts', icon: AlarmClock, render: () => <Alerts /> },
+  { id: 'watchlist', title: 'dock.watchlist', icon: Rows3, render: () => <Watchlist /> },
+  { id: 'details', title: 'dock.details', icon: FileText, render: () => <Details /> },
+  { id: 'news', title: 'dock.news', icon: Newspaper, render: () => <News /> },
+  { id: 'alerts', title: 'dock.alerts', icon: AlarmClock, render: () => <Alerts /> },
   {
     id: 'replayTrading',
-    title: 'Replay trading',
+    title: 'dock.replayTrading',
     icon: ArrowUpDown,
     render: () => <ReplayTrading />,
   },
-  { id: 'objectTree', title: 'Object tree', icon: ListTree, render: () => <ObjectTree /> },
-  { id: 'dataWindow', title: 'Data window', icon: TableProperties, render: () => <DataWindow /> },
-  { id: 'notes', title: 'Notes', icon: NotebookPen, render: () => <Notes /> },
+  { id: 'objectTree', title: 'dock.objectTree', icon: ListTree, render: () => <ObjectTree /> },
+  {
+    id: 'dataWindow',
+    title: 'dock.dataWindow',
+    icon: TableProperties,
+    render: () => <DataWindow />,
+  },
+  { id: 'notes', title: 'dock.notes', icon: NotebookPen, render: () => <Notes /> },
 ];
 
 /** Drag handle on the top edge of the dock; double-click restores the default height. */
 function ResizeHandle() {
+  const t = useT();
   const start = useRef<{ y: number; h: number } | null>(null);
   return (
     <div
       className="dock-resize"
       role="separator"
       aria-orientation="horizontal"
-      aria-label="Resize dock (double-click to reset)"
+      aria-label={t('dock.resize')}
       onPointerDown={(e) => {
         start.current = { y: e.clientY, h: useUiStore.getState().dockHeight };
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -80,6 +87,7 @@ function ResizeHandle() {
 
 /** Bottom dock under the chart: a tab per panel, collapsible, resizable by its top edge. */
 export function Dock() {
+  const t = useT();
   const panel = useUiStore((s) => s.rightPanel);
   const dockTab = useUiStore((s) => s.dockTab);
   const height = useUiStore((s) => s.dockHeight);
@@ -99,37 +107,77 @@ export function Dock() {
     useUiStore.setState({ rightPanel: tab === 'replayTrading' && !replaying ? 'watchlist' : tab });
   };
 
+  const visible = PANELS.filter((p) => p.id !== 'replayTrading' || replaying);
+
+  /** Left/Right/Home/End move between tabs; an open dock follows the focused tab. */
+  const onTabKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = visible.length - 1;
+    const next =
+      e.key === 'ArrowRight'
+        ? index === last
+          ? 0
+          : index + 1
+        : e.key === 'ArrowLeft'
+          ? index === 0
+            ? last
+            : index - 1
+          : e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? last
+              : -1;
+    const target = visible[next];
+    if (!target) return;
+    e.preventDefault();
+    if (open) useUiStore.setState({ rightPanel: target.id, dockTab: target.id });
+    // Focus after the roving tabindex has moved with the selection.
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(`#dock-tab-${target.id}`)?.focus(),
+    );
+  };
+
   return (
     <div className={`dock${open ? ' open' : ''}`} style={open ? { height } : undefined}>
       {open ? <ResizeHandle /> : null}
-      <div className="dock-tabs" role="toolbar" aria-label="Panels">
-        {PANELS.filter((p) => p.id !== 'replayTrading' || replaying).map((p) => {
-          const Icon = p.icon;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              className={`dock-tab${panel === p.id ? ' active' : ''}`}
-              aria-label={p.title}
-              aria-pressed={panel === p.id}
-              data-panel={p.id}
-              onClick={() => togglePanel(p.id)}
-            >
-              <Icon size={15} strokeWidth={1.8} />
-              <span className="dock-tab-text">{p.title}</span>
-              {p.id === 'alerts' && unreadAlerts ? (
-                <span className="rs-badge rs-icon-badge" aria-label={`${unreadAlerts} unread`}>
-                  {unreadAlerts > 99 ? '99+' : unreadAlerts}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
+      <div className="dock-tabs">
+        <div className="dock-tablist" role="tablist" aria-label={t('dock.panels')}>
+          {visible.map((p, i) => {
+            const Icon = p.icon;
+            const selected = panel === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                id={`dock-tab-${p.id}`}
+                className={`dock-tab${selected ? ' active' : ''}`}
+                aria-label={t(p.title)}
+                aria-selected={selected}
+                aria-controls={selected ? 'dock-panel' : undefined}
+                tabIndex={selected || (!def && i === 0) ? 0 : -1}
+                data-panel={p.id}
+                onClick={() => togglePanel(p.id)}
+                onKeyDown={(e) => onTabKeyDown(e, i)}
+              >
+                <Icon size={15} strokeWidth={1.8} />
+                <span className="dock-tab-text">{t(p.title)}</span>
+                {p.id === 'alerts' && unreadAlerts ? (
+                  <span
+                    className="rs-badge rs-icon-badge"
+                    aria-label={t('dock.unread', { count: unreadAlerts })}
+                  >
+                    {unreadAlerts > 99 ? '99+' : unreadAlerts}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
         <div className="dock-spacer" />
         {def?.id === 'watchlist' ? (
           <IconButton
             icon={Plus}
-            label="Add symbol"
+            label={t('dock.addSymbol')}
             tipSide="top"
             className="rs-head-btn"
             onClick={() => commands.execute('watchlist.searchAdd')}
@@ -138,7 +186,7 @@ export function Dock() {
         {def?.id === 'alerts' ? (
           <IconButton
             icon={Plus}
-            label="Create alert"
+            label={t('topbar.alert')}
             tipSide="top"
             className="rs-head-btn"
             onClick={() => commands.execute('alert.create', {})}
@@ -146,14 +194,20 @@ export function Dock() {
         ) : null}
         <IconButton
           icon={open ? ChevronDown : ChevronUp}
-          label={open ? 'Collapse dock' : 'Expand dock'}
+          label={open ? t('dock.collapse') : t('dock.expand')}
           tipSide="top"
           className="rs-head-btn"
           onClick={() => (open ? useUiStore.setState({ rightPanel: null }) : expand())}
         />
       </div>
       {def ? (
-        <section className="dock-body" aria-label={def.title} key={def.id}>
+        <section
+          className="dock-body"
+          id="dock-panel"
+          role="tabpanel"
+          aria-labelledby={`dock-tab-${def.id}`}
+          key={def.id}
+        >
           {def.render()}
         </section>
       ) : null}

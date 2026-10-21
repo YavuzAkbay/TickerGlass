@@ -336,7 +336,7 @@ test('paper trading: buy, step, sell shows realized P&L and two trades in the pa
   await expect.poll(() => group('replay-position')).toBe(0);
 
   await page.locator('[data-panel="replayTrading"]').click();
-  const panel = page.getByRole('region', { name: 'Replay trading' });
+  const panel = page.getByRole('tabpanel', { name: 'Replay trading' });
   await expect(panel.getByRole('table', { name: 'Replay trades' }).locator('tbody tr')).toHaveCount(
     2,
   );

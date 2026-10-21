@@ -222,7 +222,7 @@ test('"Open in new chart" in the watchlist adds a chart with that symbol', async
     quotes: { AAPL: quote('AAPL', 101, 100), MSFT: quote('MSFT', 98, 100) },
   });
   await open(page);
-  const panel = page.getByRole('region', { name: 'Watchlist', exact: true });
+  const panel = page.getByRole('tabpanel', { name: 'Watchlist', exact: true });
   if (!(await panel.isVisible())) await page.locator('[data-panel="watchlist"]').click();
   await expect(panel).toBeVisible();
   await expect(cells(page)).toHaveCount(1);

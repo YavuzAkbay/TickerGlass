@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useState, useSyncExternalStore, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
+import { useT } from '../i18n';
 import { commands } from '../commands/registry';
 import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
@@ -40,13 +41,14 @@ const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
 /** Single-row command bar: symbol | interval | chart type | studies | alerts and replay | layout | settings. */
 export function TopBar() {
+  const t = useT();
   const replayOn = useReplayStore((s) => s.status !== 'off');
   return (
-    <div className="top-bar" role="toolbar" aria-label="Chart toolbar">
+    <div className="top-bar" role="toolbar" aria-label={t('topbar.toolbar')}>
       <SymbolButton />
       <IconButton
         icon={Plus}
-        label="Compare or add symbol"
+        label={t('topbar.compare')}
         className="tb-compare"
         onClick={() => run('chart.compare')}
       />
@@ -55,29 +57,39 @@ export function TopBar() {
       <div className="tb-sep" />
       <ChartTypeButton />
       <div className="tb-sep" />
-      <CommandButton id="chart.indicators" icon={SquareFunction} label="Indicators" showLabel />
+      <CommandButton
+        id="chart.indicators"
+        icon={SquareFunction}
+        label={t('topbar.indicators')}
+        showLabel
+      />
       <IndicatorTemplatesButton />
       <div className="tb-sep" />
-      <CommandButton id="alert.create" icon={AlarmClock} label="Create alert" text="Alert" />
+      <CommandButton
+        id="alert.create"
+        icon={AlarmClock}
+        label={t('topbar.alert')}
+        text={t('topbar.alertShort')}
+      />
       <CommandButton
         id="replay.toggle"
         icon={Rewind}
-        label="Bar replay"
-        text="Replay"
+        label={t('topbar.replay')}
+        text={t('topbar.replayShort')}
         active={replayOn}
       />
       <div className="tb-sep" />
       <LayoutPicker />
       <LayoutMenu />
       <div className="tb-sep" />
-      <CommandButton id="chart.settings" icon={Settings} label="Settings" />
+      <CommandButton id="chart.settings" icon={Settings} label={t('topbar.settings')} />
       <div className="tb-spacer" />
       <UndoRedo />
       <div className="tb-sep" />
       <FullscreenButton />
       <ScreenshotButton />
       <ThemeButton />
-      <CommandButton id="view.shortcuts" icon={Keyboard} label="Keyboard shortcuts" />
+      <CommandButton id="view.shortcuts" icon={Keyboard} label={t('topbar.shortcuts')} />
       <div className="tb-sep" />
       <ToolRailToggle />
     </div>
@@ -85,12 +97,13 @@ export function TopBar() {
 }
 
 function ToolRailToggle() {
+  const t = useT();
   const hidden = useUiStore((s) => s.toolRailHidden);
   const shortcut = firstShortcut(useCommand('view.toggleToolRail'));
   return (
     <IconButton
       icon={hidden ? PanelRightOpen : PanelRightClose}
-      label={hidden ? 'Show drawing tools' : 'Hide drawing tools'}
+      label={hidden ? t('topbar.showTools') : t('topbar.hideTools')}
       {...(shortcut ? { shortcut } : {})}
       active={!hidden}
       onClick={() => useUiStore.getState().toggleToolRail()}
@@ -99,13 +112,14 @@ function ToolRailToggle() {
 }
 
 function SymbolButton() {
+  const t = useT();
   const symbol = useChartView((s) => s.symbol);
   return (
     <button
       type="button"
       className="tb-btn tb-symbol"
-      aria-label={`Symbol search, current symbol ${symbol}`}
-      data-tip="Symbol search"
+      aria-label={t('topbar.symbolSearchCurrent', { symbol })}
+      data-tip={t('topbar.symbolSearch')}
       data-tip-side="bottom"
       onClick={() => run('chart.symbolSearch')}
     >
@@ -149,6 +163,7 @@ function CommandButton({ id, icon, label, showLabel, text, active }: CommandButt
 }
 
 function UndoRedo() {
+  const t = useT();
   const canUndo = useHistory((s) => s.past.length > 0);
   const canRedo = useHistory((s) => s.future.length > 0);
   const undoLabel = useHistory((s) => s.past.at(-1)?.label);
@@ -159,14 +174,14 @@ function UndoRedo() {
     <>
       <IconButton
         icon={Undo2}
-        label={undoLabel ? `Undo ${undoLabel}` : 'Undo'}
+        label={undoLabel ? t('topbar.undoItem', { label: undoLabel }) : t('topbar.undo')}
         {...(undo ? { shortcut: undo } : {})}
         disabled={!canUndo}
         onClick={() => run('edit.undo')}
       />
       <IconButton
         icon={Redo2}
-        label={redoLabel ? `Redo ${redoLabel}` : 'Redo'}
+        label={redoLabel ? t('topbar.redoItem', { label: redoLabel }) : t('topbar.redo')}
         {...(redo ? { shortcut: redo } : {})}
         disabled={!canRedo}
         onClick={() => run('edit.redo')}
@@ -176,6 +191,7 @@ function UndoRedo() {
 }
 
 function ChartTypeButton() {
+  const t = useT();
   const chartType = useChartView((s) => s.chartType);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -199,7 +215,7 @@ function ChartTypeButton() {
         ref={setAnchor}
         type="button"
         className={`tb-btn tb-charttype${open ? ' open' : ''}`}
-        aria-label={`Chart type: ${current?.label ?? chartType}`}
+        aria-label={t('topbar.chartType', { type: current?.label ?? chartType })}
         aria-haspopup="menu"
         aria-expanded={open}
         data-tip={open ? undefined : current?.label}
@@ -221,12 +237,13 @@ const subscribeFullscreen = (fn: () => void) => {
 };
 
 function FullscreenButton() {
+  const t = useT();
   const full = useSyncExternalStore(subscribeFullscreen, () => !!document.fullscreenElement);
   const shortcut = firstShortcut(useCommand('view.fullscreen'));
   return (
     <IconButton
       icon={full ? Minimize : Maximize}
-      label={full ? 'Exit fullscreen' : 'Fullscreen mode'}
+      label={full ? t('topbar.exitFullscreen') : t('topbar.fullscreen')}
       {...(shortcut ? { shortcut } : {})}
       onClick={() => run('view.fullscreen')}
     />
@@ -234,6 +251,7 @@ function FullscreenButton() {
 }
 
 function ScreenshotButton() {
+  const t = useT();
   const hasChart = useChartStore((s) => !!s.chart);
   const shortcut = firstShortcut(useCommand('chart.screenshot'));
   const copyShortcut = firstShortcut(useCommand('chart.screenshot.copy'));
@@ -241,13 +259,13 @@ function ScreenshotButton() {
   const [open, setOpen] = useState(false);
   const items: MenuItem[] = [
     {
-      label: 'Download image',
+      label: t('topbar.downloadImage'),
       icon: Camera,
       ...(shortcut ? { shortcut } : {}),
       onSelect: () => run('chart.screenshot'),
     },
     {
-      label: 'Copy image',
+      label: t('topbar.copyImage'),
       ...(copyShortcut ? { shortcut: copyShortcut } : {}),
       onSelect: () => run('chart.screenshot.copy'),
     },
@@ -256,7 +274,7 @@ function ScreenshotButton() {
     <div className="tb-split">
       <IconButton
         icon={Camera}
-        label="Take a snapshot"
+        label={t('topbar.snapshot')}
         {...(shortcut ? { shortcut } : {})}
         disabled={!hasChart}
         onClick={() => run('chart.screenshot')}
@@ -265,7 +283,7 @@ function ScreenshotButton() {
         ref={setAnchor}
         type="button"
         className={`tb-btn tb-split-chevron${open ? ' open' : ''}`}
-        aria-label="Snapshot options"
+        aria-label={t('topbar.snapshotOptions')}
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={!hasChart}
@@ -285,11 +303,12 @@ function ScreenshotButton() {
 }
 
 function ThemeButton() {
+  const t = useT();
   const theme = useAppStore((s) => s.theme);
   return (
     <IconButton
       icon={theme === 'dark' ? Sun : Moon}
-      label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      label={theme === 'dark' ? t('topbar.themeLight') : t('topbar.themeDark')}
       onClick={() => run('view.toggleTheme')}
     />
   );

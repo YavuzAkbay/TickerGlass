@@ -1,6 +1,7 @@
 import { resolveDrawingType } from '@investopen/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Locale } from '../i18n';
 
 export type RightPanel =
   | 'watchlist'
@@ -33,6 +34,8 @@ export type DialogId =
 export type DrawingToolId = string;
 
 interface UiState {
+  /** Interface language (messages in i18n/; only English for now). */
+  locale: Locale;
   /** Active dock tab; null while the bottom dock is collapsed. */
   rightPanel: RightPanel | null;
   /** Last active dock tab, shown again when the dock is expanded. */
@@ -110,6 +113,7 @@ export function migrateToolIds<T extends object>(state: T): T {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
+      locale: 'en',
       rightPanel: null,
       dockTab: 'watchlist',
       dockHeight: DEFAULT_DOCK_HEIGHT,

@@ -68,7 +68,7 @@ test('chart context menu opens and scale change is undoable', async ({ page }) =
 });
 
 test('dock panel opens in the bottom dock', async ({ page }) => {
-  await page.getByRole('button', { name: 'Notes' }).first().click();
+  await page.getByRole('tab', { name: 'Notes' }).click();
   await expect(page.locator('.dock textarea')).toBeVisible();
 });
 

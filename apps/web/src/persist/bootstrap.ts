@@ -16,6 +16,7 @@ import { useUiStore } from '../store/ui';
 import { actionToast, toast } from '../ui/Toast';
 import { DrawingSync } from './drawingSync';
 import { DrawingTemplatesSync } from './drawingTemplatesSync';
+import { chartTemplates, indicatorTemplates } from './templateCache';
 import { activeSlot, captureLayoutState, parseLayoutState, type LayoutState } from './layoutState';
 import { LayoutSession, useLayoutStatus, type Notifier } from './layouts';
 import {
@@ -256,6 +257,8 @@ export function startPersistence(): () => void {
       notes.load(),
       watchlists.load(),
       userScripts.load(),
+      indicatorTemplates.sync(),
+      chartTemplates.sync(),
     ]);
     if (disposed) return;
     const failed = results.find((r) => r.status === 'rejected');
