@@ -13,7 +13,14 @@ import pandas as pd
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
-from .base import BAR_COLUMNS, PartialQuotes, ProviderError, SymbolNotFound
+from .base import (
+    BAR_COLUMNS,
+    PartialQuotes,
+    ProviderError,
+    RateLimited,
+    SymbolNotFound,
+    UpstreamUnavailable,
+)
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -49,12 +56,17 @@ class YahooProvider:
                 return fn()
             except YFRateLimitError as exc:
                 if attempt == self._retries:
-                    raise ProviderError("Yahoo rate limit exceeded") from exc
+                    raise RateLimited("Yahoo rate limit exceeded", 2**self._retries) from exc
                 backoff = 2**attempt
                 log.warning("Yahoo rate limited, retrying in %ss", backoff)
                 time.sleep(backoff)
             except ProviderError:
                 raise
+            except OSError as exc:
+                # Connection failures and timeouts (builtin and curl_cffi ones).
+                if attempt == self._retries:
+                    raise UpstreamUnavailable(f"Yahoo unreachable: {exc}") from exc
+                time.sleep(0.5 * 2**attempt)
             except Exception as exc:
                 if attempt == self._retries:
                     raise ProviderError(f"Yahoo request failed: {exc}") from exc

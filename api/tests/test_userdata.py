@@ -746,6 +746,30 @@ def test_layout_save_race_is_a_conflict(race_client: TestClient) -> None:
     assert client.get(f"/api/layouts/{lid}").json()["state"] == theirs
 
 
+def test_template_upsert_retries_after_integrity_error(race_client: TestClient) -> None:
+    client = race_client
+    body = {"name": "Trend", "instances": [{"type": "sma", "inputs": {"length": 20}}]}
+
+    def other(conn: Connection) -> None:
+        conn.execute(
+            insert(models.IndicatorTemplate).values(
+                id="theirs",
+                name="Trend",
+                instances=[],
+                schema_version=1,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+
+    # A competing writer takes the name between our lookup and insert: the retry
+    # sees the row and replaces it (200), instead of a 409/500.
+    with interleave(client, "INSERT INTO indicator_templates", other):
+        res = client.post("/api/indicator-templates", json=body)
+    assert res.status_code == 200 and res.json()["id"] == "theirs"
+    assert client.get("/api/indicator-templates").json()[0]["instances"] == body["instances"]
+
+
 def test_note_update_race_is_a_conflict(race_client: TestClient) -> None:
     client = race_client
     nid = client.post("/api/notes", json={"text": "v1"}).json()["id"]
@@ -822,8 +846,15 @@ def test_template_name_race_is_a_conflict(race_client: TestClient) -> None:
             )
         )
 
-    with interleave(client, "INSERT INTO indicator_templates", create):
-        res = client.post("/api/indicator-templates", json={"name": "Trend", "instances": []})
+    # POST retries once and replaces the racing row (see the retry test above); PUT by
+    # id does not retry, so the same race is a 409.
+    tid_it = client.post("/api/indicator-templates", json={"name": "Osc", "instances": []}).json()[
+        "id"
+    ]
+    with interleave(client, "UPDATE indicator_templates", create):
+        res = client.put(
+            f"/api/indicator-templates/{tid_it}", json={"name": "Trend", "instances": []}
+        )
     assert res.status_code == 409
 
     def create_ct(conn: Connection) -> None:

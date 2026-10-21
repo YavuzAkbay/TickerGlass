@@ -3,9 +3,11 @@
 POST creates or replaces by natural key (name; tool type + name for drawing
 templates): 201 when created, 200 when replaced. PUT /{id} edits by id and
 returns 409 if the new name is taken by another template. A unique-key race
-(two writers creating the same name at once) is also a 409, never a 500.
+(two writers creating the same name at once) is also a 409, never a 500; POST
+retries once first, since the competing writer may be a delete that is now gone.
 """
 
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Response
@@ -42,6 +44,21 @@ def _flush(session: Session, what: str, name: str) -> None:
         raise _name_taken(what, name) from exc
 
 
+def _upsert(session: Session, what: str, name: str, build: Callable[[], Any]) -> Any:
+    """Run `build` (look up, create or edit, flush) and retry it once when the flush
+    hits a unique violation: the row that raced us may be gone by the second look.
+    A second failure is the usual 409."""
+    try:
+        return build()
+    except IntegrityError:
+        session.rollback()
+    try:
+        return build()
+    except IntegrityError as exc:
+        session.rollback()
+        raise _name_taken(what, name) from exc
+
+
 def _commit(session: Session, what: str, name: str) -> None:
     _flush(session, what, name)
     session.commit()
@@ -60,15 +77,24 @@ def list_indicator_templates(session: SessionDep) -> list[s.IndicatorTemplate]:
 def put_indicator_template(
     session: SessionDep, body: s.IndicatorTemplateIn, response: Response
 ) -> s.IndicatorTemplate:
-    t = s.now()
-    row = session.scalar(select(m.IndicatorTemplate).where(m.IndicatorTemplate.name == body.name))
-    if row is None:
-        row = m.IndicatorTemplate(id=s.new_id(), name=body.name, created_at=t)
-        session.add(row)
-    else:
-        response.status_code = 200
-    row.instances, row.schema_version, row.updated_at = body.instances, body.schema_version, t
-    _commit(session, "indicator template", body.name)
+
+    def build() -> Any:
+        t = s.now()
+        row = session.scalar(
+            select(m.IndicatorTemplate).where(m.IndicatorTemplate.name == body.name)
+        )
+        if row is None:
+            row = m.IndicatorTemplate(id=s.new_id(), name=body.name, created_at=t)
+            session.add(row)
+            response.status_code = 201
+        else:
+            response.status_code = 200
+        row.instances, row.schema_version, row.updated_at = body.instances, body.schema_version, t
+        session.flush()
+        return row
+
+    row = _upsert(session, "indicator template", body.name, build)
+    session.commit()
     return store.indicator_template(row)
 
 
@@ -117,22 +143,28 @@ def put_drawing_template(
     session: SessionDep, body: s.DrawingTemplateIn, response: Response
 ) -> s.DrawingTemplate:
     """Create or replace by (toolType, name). `isDefault` clears the tool's other default."""
-    t = s.now()
-    row = session.scalar(
-        select(m.DrawingTemplate).where(
-            m.DrawingTemplate.tool_type == body.tool_type, m.DrawingTemplate.name == body.name
+
+    def build() -> Any:
+        t = s.now()
+        row = session.scalar(
+            select(m.DrawingTemplate).where(
+                m.DrawingTemplate.tool_type == body.tool_type, m.DrawingTemplate.name == body.name
+            )
         )
-    )
-    if row is None:
-        row = m.DrawingTemplate(
-            id=s.new_id(), tool_type=body.tool_type, name=body.name, created_at=t
-        )
-        session.add(row)
-    else:
-        response.status_code = 200
-    row.style, row.is_default, row.schema_version = body.style, body.is_default, body.schema_version
-    row.updated_at = t
-    _flush(session, f"{body.tool_type} template", body.name)
+        if row is None:
+            row = m.DrawingTemplate(
+                id=s.new_id(), tool_type=body.tool_type, name=body.name, created_at=t
+            )
+            session.add(row)
+            response.status_code = 201
+        else:
+            response.status_code = 200
+        row.style, row.is_default = body.style, body.is_default
+        row.schema_version, row.updated_at = body.schema_version, t
+        session.flush()
+        return row
+
+    row = _upsert(session, f"{body.tool_type} template", body.name, build)
     if body.is_default:
         store.clear_other_defaults(session, body.tool_type, row.id)
     session.commit()
@@ -186,15 +218,22 @@ def list_chart_templates(session: SessionDep) -> list[s.ChartTemplate]:
 def put_chart_template(
     session: SessionDep, body: s.ChartTemplateIn, response: Response
 ) -> s.ChartTemplate:
-    t = s.now()
-    row = session.scalar(select(m.ChartTemplate).where(m.ChartTemplate.name == body.name))
-    if row is None:
-        row = m.ChartTemplate(id=s.new_id(), name=body.name, created_at=t)
-        session.add(row)
-    else:
-        response.status_code = 200
-    row.data, row.schema_version, row.updated_at = body.data, body.schema_version, t
-    _commit(session, "chart template", body.name)
+
+    def build() -> Any:
+        t = s.now()
+        row = session.scalar(select(m.ChartTemplate).where(m.ChartTemplate.name == body.name))
+        if row is None:
+            row = m.ChartTemplate(id=s.new_id(), name=body.name, created_at=t)
+            session.add(row)
+            response.status_code = 201
+        else:
+            response.status_code = 200
+        row.data, row.schema_version, row.updated_at = body.data, body.schema_version, t
+        session.flush()
+        return row
+
+    row = _upsert(session, "chart template", body.name, build)
+    session.commit()
     return store.chart_template(row)
 
 

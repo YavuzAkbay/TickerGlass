@@ -9,7 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from investopen_api.app import create_app
-from investopen_api.providers.base import BAR_COLUMNS, PartialQuotes, ProviderError, SymbolNotFound
+from investopen_api.providers.base import (
+    BAR_COLUMNS,
+    PartialQuotes,
+    ProviderError,
+    RateLimited,
+    SymbolNotFound,
+    UpstreamUnavailable,
+)
 from investopen_api.providers.yahoo import YahooProvider
 
 KNOWN = {"AAPL", "MSFT"}
@@ -334,3 +341,17 @@ def test_news_multi_keeps_items_without_id_or_url(client: TestClient, fake: Fake
     fake.news_by_symbol = {"AAPL": [item("one"), item("two")], "MSFT": [item("three")]}
     res = client.get("/api/news", params={"symbols": "aapl,msft"})
     assert sorted(n["title"] for n in res.json()) == ["one", "three", "two"]
+
+
+def test_provider_error_statuses(client: TestClient, fake: FakeProvider) -> None:
+    errors: dict[str, ProviderError] = {
+        "RATE": RateLimited("limited", 9),
+        "DOWN": UpstreamUnavailable("offline"),
+        "BAD": ProviderError("bad"),
+    }
+    expected = {"RATE": 429, "DOWN": 503, "BAD": 502}
+    fake.events = lambda symbol: (_ for _ in ()).throw(errors[symbol])  # type: ignore[method-assign]
+    for symbol, status in expected.items():
+        res = client.get(f"/api/events/{symbol}")
+        assert res.status_code == status, symbol
+        assert res.headers.get("Retry-After") == ("9" if status == 429 else None)
