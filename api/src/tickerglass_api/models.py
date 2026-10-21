@@ -49,6 +49,12 @@ class SeriesMeta(Base):
     prepost: Mapped[bool] = mapped_column(Boolean, primary_key=True)
     backfilled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     tail_fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    #: Earliest next tail refresh (market-session aware); null = derive from `tail_fetched_at`.
+    next_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Consecutive tail refreshes in open hours that brought no overdue newer bar.
+    quiet_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Last time the series was read (updated at most hourly); used to prune unused series.
+    last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SymbolMeta(Base):

@@ -41,7 +41,7 @@ from .routes import (
     user_settings,
     watchlists,
 )
-from .services.bars import BarService
+from .services.bars import BarService, TailPolicy
 from .services.market import MarketService
 from .services.stats import CacheStats
 from .services.symbols import SymbolService
@@ -96,7 +96,6 @@ def create_app(
         app.state.cache_stats = stats
         app.state.upstream_guard = guard
         app.state.provider = prov
-        app.state.bar_service = BarService(engine, prov, stats=stats)
         # Background refreshes of stale cache entries, shared by every in-memory cache.
         refresher = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cache-refresh")
         app.state.cache_refresher = refresher
@@ -107,6 +106,14 @@ def create_app(
             stats=stats,
             refresher=refresher,
             background=guard.background,
+        )
+        # Bar tails follow the market session of the symbol's stored metadata.
+        app.state.bar_service = BarService(
+            engine,
+            prov,
+            stats=stats,
+            session_lookup=app.state.symbol_service.cached_info,
+            policy=TailPolicy.from_settings(settings),
         )
         app.state.market_service = MarketService(
             prov,

@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     #: How long an unknown symbol is remembered as unknown.
     cache_negative_ttl_s: float = 3600
 
+    # Bar tail refresh (services/bars.py, services/sessions.py), seconds.
+    #: Intraday tail TTL while the market is open.
+    bars_tail_ttl_intraday_s: float = 30
+    #: Daily/weekly/monthly tail TTL while the market is open.
+    bars_tail_ttl_daily_s: float = 300
+    #: Delay after the session close before the one final refresh of the day.
+    bars_settle_after_close_s: float = 1200
+    #: Cap of the doubling TTL for series that stop receiving bars while open.
+    bars_quiet_backoff_max_s: float = 1800
+
     # Alerts (docs/alerts.md §4.1). Secrets live only here, never in the browser.
     alerts_webhook_url: str | None = None
     alerts_webhook_secret: str | None = None
