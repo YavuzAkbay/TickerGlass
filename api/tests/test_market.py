@@ -18,6 +18,8 @@ from tickerglass_api.providers.base import (
     UpstreamUnavailable,
 )
 from tickerglass_api.providers.yahoo import YahooProvider
+from tickerglass_api.services.market import MarketService
+from tickerglass_api.settings import Settings
 
 KNOWN = {"AAPL", "MSFT"}
 V7_FIXTURE = Path(__file__).parent / "fixtures" / "v7_quote_mixed.json"
@@ -32,6 +34,7 @@ class FakeProvider:
     def __init__(self) -> None:
         self.quote_calls: list[list[str]] = []
         self.news_calls = 0
+        self.news_limits: list[int] = []
         self.extended_calls: list[list[str]] = []
         self.news_by_symbol: dict[str, list[dict[str, Any]]] | None = None
         self.news_fail: set[str] = set()
@@ -87,6 +90,7 @@ class FakeProvider:
 
     def news(self, symbol: str, limit: int) -> list[dict[str, Any]]:
         self.news_calls += 1
+        self.news_limits.append(limit)
         if symbol in self.news_fail:
             raise ProviderError(f"boom {symbol}")
         if self.news_by_symbol is not None:
@@ -307,7 +311,9 @@ def test_news_multi_failures_and_limits(client: TestClient, fake: FakeProvider) 
     assert ok.status_code == 200 and ok.json()[0]["symbol"] == "MSFT"
     fake.news_fail = {"AAPL", "MSFT"}
     assert client.get("/api/news", params={"symbols": "AAPL,MSFT,TSLA"}).status_code == 200
-    both = client.get("/api/news", params={"symbols": "AAPL,MSFT", "limit": 7})
+    # MSFT and TSLA are cached per symbol now; two never-fetched symbols that both fail:
+    fake.news_fail = {"AAPL", "AMZN"}
+    both = client.get("/api/news", params={"symbols": "AAPL,AMZN", "limit": 7})
     assert both.status_code == 502
     eleven = ",".join(f"S{i}" for i in range(11))
     assert client.get("/api/news", params={"symbols": eleven}).status_code == 422
@@ -355,3 +361,88 @@ def test_provider_error_statuses(client: TestClient, fake: FakeProvider) -> None
         res = client.get(f"/api/events/{symbol}")
         assert res.status_code == status, symbol
         assert res.headers.get("Retry-After") == ("9" if status == 429 else None)
+
+
+def test_quotes_twice_within_ttl_one_call(client: TestClient, fake: FakeProvider) -> None:
+    for _ in range(2):
+        res = client.get("/api/quotes", params={"symbols": "AAPL,MSFT"})
+        assert [q["symbol"] for q in res.json()] == ["AAPL", "MSFT"]
+    assert fake.quote_calls == [["AAPL", "MSFT"]]
+
+
+def test_unknown_quote_symbols_are_asked_again(client: TestClient, fake: FakeProvider) -> None:
+    client.get("/api/quotes", params={"symbols": "AAPL,NOPE"})
+    client.get("/api/quotes", params={"symbols": "AAPL,NOPE"})
+    # The quote batch does not confirm absence, so NOPE is not remembered as unknown.
+    assert fake.quote_calls == [["AAPL", "NOPE"], ["NOPE"]]
+
+
+def test_news_routes_share_one_fetch(client: TestClient, fake: FakeProvider) -> None:
+    assert client.get("/api/news", params={"symbols": "AAPL", "limit": 30}).status_code == 200
+    assert client.get("/api/news/AAPL", params={"limit": 20}).status_code == 200
+    assert fake.news_calls == 1 and fake.news_limits == [50]
+
+
+def test_news_wider_request_refetches() -> None:
+    fake = FakeProvider()
+    fake.news_by_symbol = {"AAPL": [_news(f"n{i}", i) for i in range(100)]}
+    market = MarketService(fake)
+    assert len(market.news("aapl", 10)) == 10
+    assert len(market.news("AAPL", 80)) == 80
+    assert len(market.news("AAPL", 60)) == 60
+    assert fake.news_limits == [50, 80]
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_quotes_stale_only_on_error() -> None:
+    fake = FakeProvider()
+    clock = Clock()
+    market = MarketService(fake, settings=Settings(quote_ttl_s=15), clock=clock)
+    first = market.quotes(["AAPL"])
+    clock.now += 16
+    # Stale: fetched again rather than served stale.
+    assert market.quotes(["AAPL"]) == first
+    assert len(fake.quote_calls) == 2
+    clock.now += 16
+    fake.quotes = lambda symbols: (_ for _ in ()).throw(UpstreamUnavailable("down"))  # type: ignore[method-assign]
+    assert market.quotes(["AAPL"]) == first
+    with pytest.raises(UpstreamUnavailable):
+        market.quotes(["AAPL", "MSFT"])
+
+
+def test_events_served_stale_while_refreshing() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    fake = FakeProvider()
+    clock = Clock()
+    calls: list[str] = []
+    real_events = fake.events
+
+    def events(symbol: str) -> dict[str, Any]:
+        calls.append(symbol)
+        return {**real_events(symbol), "n": len(calls)}
+
+    fake.events = events  # type: ignore[method-assign]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        market = MarketService(fake, refresher=pool, clock=clock)
+        assert market.events("AAPL")["n"] == 1
+        clock.now += 6 * 3600 + 1
+        assert market.events("AAPL")["n"] == 1  # stale, refresh queued
+    assert market.events("AAPL")["n"] == 2
+    assert calls == ["AAPL", "AAPL"]
+
+
+def test_refresher_on_app_state(tmp_path: Path) -> None:
+    app = create_app(provider=FakeProvider(), database_url=f"sqlite:///{tmp_path}/r.db")
+    with TestClient(app):
+        pool = app.state.cache_refresher
+        assert pool.submit(lambda: 7).result(timeout=5) == 7
+    with pytest.raises(RuntimeError):
+        pool.submit(lambda: 7)

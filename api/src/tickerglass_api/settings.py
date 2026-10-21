@@ -27,6 +27,21 @@ class Settings(BaseSettings):
     #: Provider-level retries after a rate-limit refusal (the guard's cooldown takes over).
     upstream_rate_limit_retries: int = 0
 
+    # In-memory market data caches (services/cache.py), seconds unless noted.
+    quote_ttl_s: float = 15
+    extended_ttl_s: float = 60
+    events_ttl_s: float = 6 * 3600
+    fundamentals_ttl_s: float = 6 * 3600
+    news_ttl_s: float = 300
+    #: News items fetched per symbol; smaller requests are sliced from that one fetch.
+    news_fetch_limit: int = 50
+    #: Oldest value served stale (in the background-refresh window or after an upstream error).
+    cache_stale_max_s: float = 7 * 86400
+    #: Entries per cache (least recently used dropped first).
+    cache_max_entries: int = 4096
+    #: How long an unknown symbol is remembered as unknown.
+    cache_negative_ttl_s: float = 3600
+
     # Alerts (docs/alerts.md §4.1). Secrets live only here, never in the browser.
     alerts_webhook_url: str | None = None
     alerts_webhook_secret: str | None = None

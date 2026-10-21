@@ -1,15 +1,17 @@
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Executor
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import Any
 
 from ..providers.base import MarketDataProvider, PartialQuotes
+from ..settings import Settings
+from .cache import BatchResult, SmartCache
+from .stats import CacheStats
 
-QUOTE_TTL = 15.0
-EXTENDED_TTL = 60.0
-EVENTS_TTL = 6 * 3600.0
-NEWS_TTL = 5 * 60.0
-FUNDAMENTALS_TTL = 6 * 3600.0
+Row = dict[str, Any]
 
 
 class TTLCache:
@@ -47,76 +49,108 @@ class TTLCache:
         return value
 
 
+@dataclass(frozen=True)
+class _News:
+    """News of one symbol as fetched: up to `limit` items, newest first."""
+
+    limit: int
+    items: list[Row]
+
+
 class MarketService:
-    def __init__(self, provider: MarketDataProvider) -> None:
+    """Quotes, events, news and fundamentals, cached in memory (see `SmartCache`).
+
+    Quotes are served fresh or fetched, and stale only when the upstream fails. Events
+    and fundamentals are served stale while one background refresh runs on `refresher`
+    (under `background()`), so slow data never blocks a request once cached.
+    """
+
+    def __init__(
+        self,
+        provider: MarketDataProvider,
+        *,
+        settings: Settings | None = None,
+        stats: CacheStats | None = None,
+        refresher: Executor | None = None,
+        background: Callable[[], AbstractContextManager[object]] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._provider = provider
-        self._quotes = TTLCache(QUOTE_TTL, max_entries=4096)
-        self._extended = TTLCache(EXTENDED_TTL, max_entries=4096)
-        self._events = TTLCache(EVENTS_TTL)
-        self._news = TTLCache(NEWS_TTL)
-        self._fundamentals = TTLCache(FUNDAMENTALS_TTL)
+        s = settings if settings is not None else Settings()
+        self._news_fetch_limit = s.news_fetch_limit
+        stats = stats if stats is not None else CacheStats()
 
-    def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        def cache(name: str, ttl: float) -> SmartCache[str, Any]:
+            return SmartCache(
+                name,
+                ttl=ttl,
+                stale_ttl=s.cache_stale_max_s,
+                max_entries=s.cache_max_entries,
+                negative_ttl=s.cache_negative_ttl_s,
+                stats=stats,
+                clock=clock,
+                refresher=refresher,
+                background=background,
+            )
+
+        self._quotes: SmartCache[str, Row] = cache("quotes", s.quote_ttl_s)
+        self._extended: SmartCache[str, Row] = cache("extended", s.extended_ttl_s)
+        self._events: SmartCache[str, Row] = cache("events", s.events_ttl_s)
+        self._news: SmartCache[str, _News] = cache("news", s.news_ttl_s)
+        self._fundamentals: SmartCache[str, Row] = cache("fundamentals", s.fundamentals_ttl_s)
+
+    def quotes(self, symbols: list[str], *, max_age: float | None = None) -> list[Row]:
+        """Latest quote per known symbol, in request order; unknown symbols are omitted."""
         wanted = list(dict.fromkeys(s.upper() for s in symbols))
-        found: dict[str, dict[str, Any] | None] = {}
-        missing: list[str] = []
-        for sym in wanted:
-            hit, value = self._quotes.get(sym)
-            if hit:
-                found[sym] = value
-            else:
-                missing.append(sym)
-        if missing:
-            fetched = {q["symbol"].upper(): q for q in self._provider.quotes(missing)}
-            for sym in missing:
-                value = fetched.get(sym)  # unknown symbols are cached as None
-                self._quotes.put(sym, value)
-                found[sym] = value
-        return [q for sym in wanted if (q := found.get(sym)) is not None]
+        found = self._quotes.get_many(wanted, self._load_quotes, max_age=max_age)
+        return [found[sym] for sym in wanted if sym in found]
 
-    def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+    def _load_quotes(self, symbols: list[str]) -> BatchResult[str, Row]:
+        rows = self._provider.quotes(symbols)
+        # The provider also drops symbols it merely failed to fetch, so a missing one is
+        # not confirmed unknown: it is asked for again next time.
+        return BatchResult({q["symbol"].upper(): q for q in rows}, complete=False)
+
+    def extended_quotes(self, symbols: list[str], *, max_age: float | None = None) -> list[Row]:
+        """Pre/post-market quote per known symbol, in request order.
+
+        Raises `PartialQuotes` only when nothing at all can be returned.
+        """
         wanted = list(dict.fromkeys(s.upper() for s in symbols))
-        found: dict[str, dict[str, Any] | None] = {}
-        missing: list[str] = []
-        for sym in wanted:
-            hit, value = self._extended.get(sym)
-            if hit:
-                found[sym] = value
-            else:
-                missing.append(sym)
-        if missing:
-            failed: set[str] = set()
-            try:
-                rows = self._provider.extended_quotes(missing)
-            except PartialQuotes as exc:
-                rows, failed = exc.quotes, {s.upper() for s in exc.failed}
-                if not rows and failed.issuperset(missing) and not any(found.values()):
-                    raise  # nothing at all to return: surface as a provider error
-            fetched = {q["symbol"].upper(): q for q in rows}
-            for sym in missing:
-                if sym in failed and sym not in fetched:
-                    continue  # failed chunk: unknown, so never cache it as absent
-                value = fetched.get(sym)  # symbols Yahoo returned no row for: cached None
-                self._extended.put(sym, value)
-                found[sym] = value
-        return [q for sym in wanted if (q := found.get(sym)) is not None]
+        found = self._extended.get_many(wanted, self._load_extended, max_age=max_age)
+        return [found[sym] for sym in wanted if sym in found]
 
-    def events(self, symbol: str) -> dict[str, Any]:
-        sym = symbol.upper()
-        result: dict[str, Any] = self._events.get_or_load(sym, lambda: self._provider.events(sym))
-        return result
+    def _load_extended(self, symbols: list[str]) -> BatchResult[str, Row]:
+        try:
+            rows = self._provider.extended_quotes(symbols)
+        except PartialQuotes as exc:
+            # A failed chunk is "unknown", never cached as absent; the rest answered.
+            return BatchResult(
+                {q["symbol"].upper(): q for q in exc.quotes},
+                complete=True,
+                failed=[s.upper() for s in exc.failed],
+                error=exc,
+            )
+        # Every chunk answered: a symbol without a row does not exist upstream.
+        return BatchResult({q["symbol"].upper(): q for q in rows}, complete=True)
 
-    def news(self, symbol: str, limit: int) -> list[dict[str, Any]]:
+    def events(self, symbol: str) -> Row:
         sym = symbol.upper()
-        # Cache the widest request per symbol would complicate things; key on limit.
-        result: list[dict[str, Any]] = self._news.get_or_load(
-            (sym, limit), lambda: self._provider.news(sym, limit)
+        return self._events.get(sym, lambda: self._provider.events(sym))
+
+    def news(self, symbol: str, limit: int) -> list[Row]:
+        """Newest `limit` items. One fetch of at least `news_fetch_limit` items per symbol
+        serves every smaller limit."""
+        sym = symbol.upper()
+        fetch = max(limit, self._news_fetch_limit)
+        cached = self._news.get(
+            sym,
+            lambda: _News(fetch, self._provider.news(sym, fetch)),
+            swr=False,
+            accept=lambda n: n.limit >= limit,
         )
-        return result
+        return cached.items[:limit]
 
-    def fundamentals(self, symbol: str) -> dict[str, Any]:
+    def fundamentals(self, symbol: str) -> Row:
         sym = symbol.upper()
-        result: dict[str, Any] = self._fundamentals.get_or_load(
-            sym, lambda: self._provider.fundamentals(sym)
-        )
-        return result
+        return self._fundamentals.get(sym, lambda: self._provider.fundamentals(sym))
