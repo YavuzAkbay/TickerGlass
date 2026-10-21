@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -37,6 +38,16 @@ class SymbolNotFound(ProviderError):
     pass
 
 
+class QuoteList(list[dict[str, Any]]):
+    """Rows returned by `MarketDataProvider.quotes`, plus whether the upstream answered
+    for every requested symbol (`confirmed`): then a symbol without a row is known not to
+    exist. Providers returning a plain list never confirm."""
+
+    def __init__(self, rows: Iterable[dict[str, Any]] = (), *, confirmed: bool = False) -> None:
+        super().__init__(rows)
+        self.confirmed = confirmed
+
+
 class MarketDataProvider(Protocol):
     def history(
         self,
@@ -58,7 +69,8 @@ class MarketDataProvider(Protocol):
     def search(self, query: str, limit: int) -> list[dict[str, Any]]: ...
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
-        """Latest quote per known symbol; unknown symbols are omitted."""
+        """Latest quote per known symbol; unknown symbols are omitted. Return a `QuoteList`
+        with `confirmed=True` only when the omission proves the symbol does not exist."""
         ...
 
     def extended_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:

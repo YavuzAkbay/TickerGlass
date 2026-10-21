@@ -268,9 +268,10 @@ def test_costs_follow_upstream_requests() -> None:
     stats = CacheStats()
     prov = GuardedProvider(CountingProvider(), UpstreamGuard(burst=1000, rate_per_min=1e6), stats)
     prov.quotes(["A", "B", "C"])
+    prov.quotes([f"S{i}" for i in range(51)])
     prov.extended_quotes([f"S{i}" for i in range(120)])
     prov.extended_quotes([])
-    assert stats.counter("upstream.quotes.requests") == 3
+    assert stats.counter("upstream.quotes.requests") == 3  # one v7 request, then two
     assert stats.counter("upstream.extended_quotes.requests") == 3
     assert stats.counter("upstream.extended_quotes.calls") == 2
 

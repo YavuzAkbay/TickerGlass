@@ -28,11 +28,17 @@ class Settings(BaseSettings):
     upstream_rate_limit_retries: int = 0
 
     # In-memory market data caches (services/cache.py), seconds unless noted.
+    #: Quote TTL while the market is open (`marketState` REGULAR) and when it is unknown.
     quote_ttl_s: float = 15
+    #: Quote TTL while the market is closed (CLOSED): prices cannot change.
+    quote_closed_ttl_s: float = 600
+    #: Pre/post-market quotes, and the quote TTL during those sessions.
     extended_ttl_s: float = 60
     events_ttl_s: float = 6 * 3600
     fundamentals_ttl_s: float = 6 * 3600
     news_ttl_s: float = 300
+    #: Symbol search results.
+    search_ttl_s: float = 86400
     #: News items fetched per symbol; smaller requests are sliced from that one fetch.
     news_fetch_limit: int = 50
     #: Oldest value served stale (in the background-refresh window or after an upstream error).

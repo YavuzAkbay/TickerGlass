@@ -85,3 +85,81 @@ def test_info_not_found_is_not_masked_by_stale_row(engine: Engine) -> None:
     provider.error = SymbolNotFound("AAPL")
     with pytest.raises(SymbolNotFound):
         svc.info("AAPL")
+
+
+class SearchProvider:
+    """Counts `search` calls and returns `limit` rows (at most `total`)."""
+
+    def __init__(self, total: int = 20) -> None:
+        self.calls: list[tuple[str, int]] = []
+        self.total = total
+        self.error: Exception | None = None
+
+    def search(self, query: str, limit: int) -> list[dict[str, Any]]:
+        self.calls.append((query, limit))
+        if self.error is not None:
+            raise self.error
+        return [{"symbol": f"{query.upper()}{i}"} for i in range(min(limit, self.total))]
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_search_repeat_query_is_one_call(engine: Engine) -> None:
+    provider = SearchProvider()
+    svc = SymbolService(engine, provider)  # type: ignore[arg-type]
+    first = svc.search("app", 5)
+    assert svc.search("app", 5) == first
+    assert len(provider.calls) == 1
+
+
+def test_search_normalizes_case_and_whitespace(engine: Engine) -> None:
+    provider = SearchProvider()
+    svc = SymbolService(engine, provider)  # type: ignore[arg-type]
+    svc.search("Apple", 5)
+    for variant in ("apple", "  APPLE ", "aPPle\t"):
+        assert svc.search(variant, 5)
+    assert provider.calls == [("Apple", 5)]
+
+
+def test_search_smaller_limit_slices_larger_refetches(engine: Engine) -> None:
+    provider = SearchProvider()
+    svc = SymbolService(engine, provider)  # type: ignore[arg-type]
+    assert len(svc.search("a", 10)) == 10
+    assert [r["symbol"] for r in svc.search("a", 3)] == ["A0", "A1", "A2"]
+    assert len(svc.search("a", 10)) == 10
+    assert provider.calls == [("a", 10)]
+    assert len(svc.search("a", 15)) == 15
+    assert provider.calls == [("a", 10), ("a", 15)]
+    # The wider fetch now serves the narrower ones.
+    assert len(svc.search("a", 10)) == 10
+    assert len(provider.calls) == 2
+
+
+def test_search_expires_and_serves_stale_on_error(engine: Engine) -> None:
+    provider = SearchProvider()
+    clock = Clock()
+    svc = SymbolService(engine, provider, clock=clock)  # type: ignore[arg-type]
+    first = svc.search("a", 5)
+    clock.now += 86400 + 1
+    provider.error = UpstreamUnavailable("offline")
+    assert svc.search("a", 5) == first  # refetch failed, stale result served
+    assert len(provider.calls) == 2
+    provider.error = None
+    assert svc.search("a", 5) == first
+    assert len(provider.calls) == 3
+
+
+def test_search_errors_without_cached_result(engine: Engine) -> None:
+    provider = SearchProvider()
+    provider.error = RateLimited("slow down", 30)
+    svc = SymbolService(engine, provider)  # type: ignore[arg-type]
+    with pytest.raises(RateLimited):
+        svc.search("a", 5)
+    provider.error = None
+    assert svc.search("a", 5)

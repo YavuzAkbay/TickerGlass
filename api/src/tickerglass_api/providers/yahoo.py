@@ -19,6 +19,7 @@ from .base import (
     BAR_COLUMNS,
     PartialQuotes,
     ProviderError,
+    QuoteList,
     RateLimited,
     SymbolNotFound,
     UpstreamUnavailable,
@@ -204,6 +205,24 @@ class YahooProvider:
         ]
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """Latest quote per known symbol from Yahoo's v7 quote endpoint, 50 symbols per
+        request. When every chunk answered, the result is `confirmed`: a symbol without a
+        row does not exist. If v7 fails for another reason than a rate limit or an outage,
+        the daily bars are downloaded instead (one request per symbol, unconfirmed)."""
+        if not symbols:
+            return QuoteList(confirmed=True)
+        rows: list[dict[str, Any]] = []
+        try:
+            for i in range(0, len(symbols), _V7_CHUNK):
+                rows.extend(self._call(partial(self._v7_quote, symbols[i : i + _V7_CHUNK])))
+        except (RateLimited, UpstreamUnavailable):
+            raise  # the guard's breakers need to see these; a fallback would only add load
+        except ProviderError:
+            log.warning("v7 quotes unavailable, downloading daily bars", exc_info=True)
+            return QuoteList(self._download_quotes(symbols))
+        return QuoteList((q for r in rows if (q := _v7_to_quote(r)) is not None), confirmed=True)
+
+    def _download_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
         def fetch() -> pd.DataFrame:
             df: pd.DataFrame = yf.download(
                 symbols,
@@ -212,7 +231,7 @@ class YahooProvider:
                 auto_adjust=False,
                 progress=False,
                 group_by="ticker",
-                threads=True,
+                threads=False,
             )
             return df
 
@@ -482,6 +501,36 @@ def _extended_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
         "regularMarketTime": int(rtime) if rtime is not None else None,
         **session("preMarket"),
         **session("postMarket"),
+    }
+
+
+def _v7_to_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Map a v7 row to the `quotes` shape; change fields fall back to the previous close."""
+    sym = raw.get("symbol")
+    if not isinstance(sym, str) or not sym:
+        return None
+    last = _num(raw.get("regularMarketPrice"))
+    prev = _num(raw.get("regularMarketPreviousClose"))
+    change = _num(raw.get("regularMarketChange"))
+    if change is None and last is not None and prev is not None:
+        change = last - prev
+    pct = _num(raw.get("regularMarketChangePercent"))
+    if pct is None and change is not None and prev:
+        pct = change / prev * 100
+    volume = _num(raw.get("regularMarketVolume"))
+    when = _num(raw.get("regularMarketTime"))
+    currency = raw.get("currency")
+    state = raw.get("marketState")
+    return {
+        "symbol": sym,
+        "last": last,
+        "prevClose": prev,
+        "change": change,
+        "changePercent": pct,
+        "volume": int(volume) if volume is not None else None,
+        "currency": currency if isinstance(currency, str) else None,
+        "marketState": state if isinstance(state, str) else None,
+        "time": int(when) if when is not None else None,
     }
 
 

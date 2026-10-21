@@ -6,12 +6,15 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any
 
-from ..providers.base import MarketDataProvider, PartialQuotes
+from ..providers.base import MarketDataProvider, PartialQuotes, QuoteList
 from ..settings import Settings
 from .cache import BatchResult, SmartCache
 from .stats import CacheStats
 
 Row = dict[str, Any]
+
+# `marketState` values of an extended session (before or after the regular one).
+_SESSION_STATES = frozenset({"PRE", "PREPRE", "POST", "POSTPOST"})
 
 
 class TTLCache:
@@ -80,7 +83,13 @@ class MarketService:
         self._news_fetch_limit = s.news_fetch_limit
         stats = stats if stats is not None else CacheStats()
 
-        def cache(name: str, ttl: float) -> SmartCache[str, Any]:
+        self._quote_ttl = s.quote_ttl_s
+        self._closed_ttl = s.quote_closed_ttl_s
+        self._session_ttl = s.extended_ttl_s
+
+        def cache(
+            name: str, ttl: float, ttl_for: Callable[[Row], float] | None = None
+        ) -> SmartCache[str, Any]:
             return SmartCache(
                 name,
                 ttl=ttl,
@@ -91,9 +100,10 @@ class MarketService:
                 clock=clock,
                 refresher=refresher,
                 background=background,
+                ttl_for=ttl_for,
             )
 
-        self._quotes: SmartCache[str, Row] = cache("quotes", s.quote_ttl_s)
+        self._quotes: SmartCache[str, Row] = cache("quotes", s.quote_ttl_s, self._quote_ttl_for)
         self._extended: SmartCache[str, Row] = cache("extended", s.extended_ttl_s)
         self._events: SmartCache[str, Row] = cache("events", s.events_ttl_s)
         self._news: SmartCache[str, _News] = cache("news", s.news_ttl_s)
@@ -105,11 +115,22 @@ class MarketService:
         found = self._quotes.get_many(wanted, self._load_quotes, max_age=max_age)
         return [found[sym] for sym in wanted if sym in found]
 
+    def _quote_ttl_for(self, row: Row) -> float:
+        """Freshness of a quote by its session: closed markets barely change."""
+        state = row.get("marketState")
+        if state == "CLOSED":
+            return self._closed_ttl
+        if state in _SESSION_STATES:
+            return self._session_ttl
+        return self._quote_ttl
+
     def _load_quotes(self, symbols: list[str]) -> BatchResult[str, Row]:
         rows = self._provider.quotes(symbols)
-        # The provider also drops symbols it merely failed to fetch, so a missing one is
-        # not confirmed unknown: it is asked for again next time.
-        return BatchResult({q["symbol"].upper(): q for q in rows}, complete=False)
+        # A symbol without a row is cached as unknown only when the provider says its
+        # answer covered every symbol; otherwise it may merely have failed to load, and
+        # is asked for again next time.
+        confirmed = isinstance(rows, QuoteList) and rows.confirmed
+        return BatchResult({q["symbol"].upper(): q for q in rows}, complete=confirmed)
 
     def extended_quotes(self, symbols: list[str], *, max_age: float | None = None) -> list[Row]:
         """Pre/post-market quote per known symbol, in request order.

@@ -1,4 +1,9 @@
 import logging
+import time
+from collections.abc import Callable
+from concurrent.futures import Executor
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -7,16 +12,53 @@ from sqlalchemy.orm import Session
 
 from ..models import SymbolMeta
 from ..providers.base import MarketDataProvider, ProviderError, SymbolNotFound
+from ..settings import Settings
+from .cache import SmartCache
+from .stats import CacheStats
 
 log = logging.getLogger(__name__)
 
 SYMBOL_TTL = timedelta(hours=24)
+# Distinct search queries remembered (least recently used dropped first).
+SEARCH_MAX_ENTRIES = 1024
+
+
+@dataclass(frozen=True)
+class _Search:
+    """Results of one query as fetched: up to `limit` rows, best match first."""
+
+    limit: int
+    rows: list[dict[str, Any]]
 
 
 class SymbolService:
-    def __init__(self, engine: Engine, provider: MarketDataProvider) -> None:
+    """Symbol metadata (persisted) and search (cached in memory, see `SmartCache`)."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        provider: MarketDataProvider,
+        *,
+        settings: Settings | None = None,
+        stats: CacheStats | None = None,
+        refresher: Executor | None = None,
+        background: Callable[[], AbstractContextManager[object]] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._engine = engine
         self._provider = provider
+        s = settings if settings is not None else Settings()
+        self._search: SmartCache[str, _Search] = SmartCache(
+            "search",
+            ttl=s.search_ttl_s,
+            stale_ttl=s.cache_stale_max_s,
+            max_entries=SEARCH_MAX_ENTRIES,
+            negative_ttl=s.cache_negative_ttl_s,
+            stats=stats,
+            clock=clock,
+            refresher=refresher,
+            background=background,
+        )
 
     def info(self, symbol: str) -> dict[str, Any]:
         symbol = symbol.upper()
@@ -44,4 +86,12 @@ class SymbolService:
             return data
 
     def search(self, query: str, limit: int) -> list[dict[str, Any]]:
-        return self._provider.search(query, limit)
+        """Best `limit` matches. Queries differing in case or surrounding spaces share one
+        entry, and one fetch serves every smaller limit; a larger one fetches again."""
+        text = query.strip()
+        found = self._search.get(
+            text.casefold(),
+            lambda: _Search(limit, self._provider.search(text, limit)),
+            accept=lambda r: r.limit >= limit,
+        )
+        return found.rows[:limit]

@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .db import make_engine, run_migrations
-from .live import LiveHub, LiveSource, Poller, provider_poller
+from .live import LiveHub, LiveSource, Poller, market_poller
 from .notifications.dispatcher import Dispatcher
 from .providers.base import (
     MarketDataProvider,
@@ -97,10 +97,17 @@ def create_app(
         app.state.upstream_guard = guard
         app.state.provider = prov
         app.state.bar_service = BarService(engine, prov, stats=stats)
-        app.state.symbol_service = SymbolService(engine, prov)
         # Background refreshes of stale cache entries, shared by every in-memory cache.
         refresher = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cache-refresh")
         app.state.cache_refresher = refresher
+        app.state.symbol_service = SymbolService(
+            engine,
+            prov,
+            settings=settings,
+            stats=stats,
+            refresher=refresher,
+            background=guard.background,
+        )
         app.state.market_service = MarketService(
             prov,
             settings=settings,
@@ -115,7 +122,11 @@ def create_app(
             source = YahooLiveSource()
         app.state.live_hub = LiveHub(
             source,
-            live_poller if live_poller is not None else provider_poller(prov),
+            live_poller
+            if live_poller is not None
+            else market_poller(
+                app.state.market_service, guard, max_age=settings.live_poll_interval_s
+            ),
             poll_after_s=settings.live_poll_after_s,
             poll_interval_s=settings.live_poll_interval_s,
             poll_closed_interval_s=settings.live_poll_closed_interval_s,
