@@ -27,6 +27,7 @@ import './App.css';
 export function App() {
   const theme = useAppStore((s) => s.theme);
   const railHidden = useUiStore((s) => s.toolRailHidden);
+  const inspectorOpen = useUiStore((s) => s.inspector !== null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -62,7 +63,7 @@ export function App() {
   useEffect(() => startPersistence(), []);
 
   return (
-    <div className="app">
+    <div className={`app${inspectorOpen ? '' : ' no-inspector'}`}>
       <header className="app-top">
         <TopBar />
       </header>

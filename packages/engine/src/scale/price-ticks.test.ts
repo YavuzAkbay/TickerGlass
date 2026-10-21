@@ -6,6 +6,7 @@ import {
   formatVolume,
   linearTicks,
   logTicks,
+  logTickSet,
   logTicksSpaced,
   niceStep,
 } from './price-ticks';
@@ -112,6 +113,50 @@ describe('logTicksSpaced', () => {
   });
   it('very narrow range still finds ticks', () => {
     check(100, 101, 34);
+  });
+  /** Each value is a round multiple of a 1/2/5 x 10^k step no finer than `maxDec` decimals. */
+  function nice(values: number[], maxDec: number): void {
+    for (const v of values) {
+      const s = String(v);
+      const dec = s.includes('.') ? s.split('.')[1]!.length : 0;
+      expect(dec).toBeLessThanOrEqual(maxDec);
+    }
+  }
+  it('refines each gap with one even step (no lone odd values)', () => {
+    const a = check(3.4, 165, 34);
+    expect(a).not.toContain(24.5);
+    expect(a).toEqual([4, 5, 10, 15, 20, 30, 40, 50, 100, 150]);
+    const b = check(150, 900, 34);
+    for (const v of [164, 274, 546]) expect(b).not.toContain(v);
+    expect(b.every((v) => v % 50 === 0)).toBe(true);
+    const c = check(21, 95, 34);
+    expect(c).not.toContain(32.5);
+    expect(c.every((v) => v % 5 === 0)).toBe(true);
+    const d = check(0.8, 4.1, 34);
+    expect(d).not.toContain(1.65);
+    expect(d).not.toContain(2.75);
+    nice(d, 1);
+  });
+  it('reports decimals of the finest step used', () => {
+    const f = yOf(3.4, 165);
+    expect(logTickSet(3.4, 165, 34, f).decimals).toBe(0);
+    const g = yOf(0.8, 4.1);
+    expect(logTickSet(0.8, 4.1, 34, g).decimals).toBe(1);
+    const h = yOf(0.00034, 0.00165);
+    expect(logTickSet(0.00034, 0.00165, 34, h).decimals).toBe(5);
+  });
+  it('narrow ranges fall back to pixel-spaced linear ticks', () => {
+    const t = check(1523.2, 1524.6, 34);
+    expect(t.length).toBeGreaterThan(8);
+    expect(logTickSet(1523.2, 1524.6, 34, yOf(1523.2, 1524.6)).decimals).toBe(1);
+    const u = check(100.2, 100.3, 34);
+    expect(u.length).toBeGreaterThan(3);
+  });
+  it('tiny narrow prices keep enough decimals', () => {
+    const t = check(0.000148, 0.000156, 34);
+    const set = logTickSet(0.000148, 0.000156, 34, yOf(0.000148, 0.000156));
+    expect(set.decimals).toBeGreaterThanOrEqual(6);
+    for (const v of t) expect(v.toFixed(set.decimals)).not.toMatch(/^0\.0+$/);
   });
   it('degenerate input', () => {
     expect(logTicksSpaced(0, 10, 30, (p) => p)).toEqual([]);

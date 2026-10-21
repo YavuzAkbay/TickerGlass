@@ -99,7 +99,8 @@ export const DEFAULT_INSPECTOR_WIDTH = 300;
 export const MIN_INSPECTOR_WIDTH = 260;
 export const MAX_INSPECTOR_WIDTH = 480;
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+export const clamp = (v: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, Math.round(v)));
 
 /** Add the tool rail field to preferences saved before version 2. */
 export function migrateDockDefaults<T extends object>(state: T): T {
@@ -118,7 +119,11 @@ const isNavSection = (v: unknown): v is NavSection =>
  * with the Navigator ones. The removed details panel and the replay trading panel
  * (which only exists while replaying) fall back to the watchlist. Idempotent.
  */
-export function migrateNavigator<T extends object>(state: T): T {
+export function migrateNavigator<T extends object>(
+  state: T,
+  /** Settings sync: never inject a width, so the local one survives a payload without nav keys. */
+  keepWidth = false,
+): T {
   const {
     rightPanel,
     dockTab,
@@ -138,7 +143,7 @@ export function migrateNavigator<T extends object>(state: T): T {
     ...s,
     navSection: isNavSection(src) && src !== 'replayTrading' ? src : 'watchlist',
     navOpen: 'rightPanel' in state ? rightPanel != null : true,
-    navWidth: DEFAULT_NAV_WIDTH,
+    ...(keepWidth ? {} : { navWidth: DEFAULT_NAV_WIDTH }),
   } as unknown as T;
 }
 

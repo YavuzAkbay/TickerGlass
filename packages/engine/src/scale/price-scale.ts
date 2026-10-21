@@ -1,4 +1,4 @@
-import { linearTicks, logTicksSpaced } from './price-ticks';
+import { linearTicks, logTickSet } from './price-ticks';
 
 export type PriceScaleMode = 'linear' | 'log' | 'percent' | 'indexed';
 
@@ -22,6 +22,11 @@ export class PriceScale {
   invert = false;
   marginTop = 0.1;
   marginBottom = 0.08;
+  /**
+   * Minimum empty band (CSS px) kept along the visual bottom edge, e.g. for a
+   * marker strip; the bottom margin is max(marginBottom * height, this).
+   */
+  reserveBottomPx = 0;
   /** Reference price for percent/indexed modes (first visible close). */
   base = 1;
   min = 0;
@@ -58,12 +63,23 @@ export class PriceScale {
     return this.mode === 'percent' || this.mode === 'indexed' ? this.toInternal(price) : price;
   }
 
+  /** Margins in px, before the invert flip (the reserve sits at the visual bottom). */
+  private get topPx(): number {
+    const m = this.height * this.marginTop;
+    return this.invert ? Math.max(m, this.reserveBottomPx) : m;
+  }
+
+  private get bottomPx(): number {
+    const m = this.height * this.marginBottom;
+    return this.invert ? m : Math.max(m, this.reserveBottomPx);
+  }
+
   private get innerTop(): number {
-    return this.height * this.marginTop;
+    return this.topPx;
   }
 
   private get innerHeight(): number {
-    return Math.max(1, this.height * (1 - this.marginTop - this.marginBottom));
+    return Math.max(1, this.height - this.topPx - this.bottomPx);
   }
 
   internalToY(v: number): number {
@@ -133,18 +149,30 @@ export class PriceScale {
   }
 
   ticks(minSpacingPx = 30): PriceTick[] {
+    return this.tickSet(minSpacingPx).ticks;
+  }
+
+  /**
+   * Axis ticks plus, for the log mode, the decimals of the finest tick step
+   * used (null for the other modes, whose ticks share one step).
+   */
+  tickSet(minSpacingPx = 30): { ticks: PriceTick[]; decimals: number | null } {
     const target = Math.max(2, Math.floor(this.height / minSpacingPx));
     const lo = Math.min(this.yToInternal(this.height), this.yToInternal(0));
     const hi = Math.max(this.yToInternal(this.height), this.yToInternal(0));
     if (this.mode === 'log') {
       const pLo = 10 ** lo;
       const pHi = 10 ** hi;
-      return logTicksSpaced(pLo, pHi, minSpacingPx, (p) => this.priceToY(p)).map((p) => ({
-        value: p,
-        y: this.priceToY(p),
-      }));
+      const set = logTickSet(pLo, pHi, minSpacingPx, (p) => this.priceToY(p));
+      return {
+        ticks: set.values.map((p) => ({ value: p, y: this.priceToY(p) })),
+        decimals: set.decimals,
+      };
     }
     // Linear, percent and indexed: nice steps in display units.
-    return linearTicks(lo, hi, target).map((v) => ({ value: v, y: this.internalToY(v) }));
+    return {
+      ticks: linearTicks(lo, hi, target).map((v) => ({ value: v, y: this.internalToY(v) })),
+      decimals: null,
+    };
   }
 }

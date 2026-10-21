@@ -4,8 +4,11 @@ import type { Interval } from '../types';
 import {
   MARKER_SIZE,
   drawGlyph,
+  STRIP_LEVELS,
   hitMarker,
   layoutMarkers,
+  layoutStrip,
+  stripReservePx,
   type ChartMarker,
   type MarkerLayoutInput,
 } from './markers';
@@ -165,8 +168,47 @@ describe('paneBottom strip', () => {
     const step = MARKER_SIZE + 2;
     expect(y.a).toBe(base);
     expect(y.b).toBe(base - step);
-    expect(y.c).toBe(base - 2 * step); // 10px from both a and b
+    expect(y.c).toBe(base - step); // overflows: 10px from both a and b, capped at the top level
     expect(y.d).toBe(base);
+  });
+
+  it('caps the stack at the top level and combines covered tooltips', () => {
+    const tip = (id: string, i: number) => ({ ...bm(id, i), tooltip: id.toUpperCase() });
+    // Given in reverse x order: layout sorts by x first.
+    const list = [tip('e', 7), tip('d', 2), tip('c', 2), tip('b', 2), tip('a', 2)];
+    const out = layoutMarkers(groups(...list), input(times, iv));
+    const step = MARKER_SIZE + 2;
+    expect(STRIP_LEVELS).toBe(2);
+    expect(Math.min(...out.map((p) => p.y))).toBe(base - step);
+    const top = out.filter((p) => p.x === 25 && p.y === base - step);
+    expect(top).toHaveLength(3);
+    const hov = hitMarker(out, 25, base - step);
+    expect(hov?.tooltip).toBe('C · B · A');
+    expect(out.find((p) => p.marker.id === 'e')?.y).toBe(base);
+    expect(layoutStrip(groups(...list), input(times, iv)).levels).toBe(2);
+  });
+
+  it('keeps stacking stable when neighbours scroll out of view', () => {
+    const all = groups(bm('a', 2), bm('b', 3));
+    const wide = layoutMarkers(all, input(times, iv));
+    // Only bar 3 visible: b keeps its level even though a is culled.
+    const narrow = layoutMarkers(all, input(times, iv, { indexToX: (i) => (i - 3) * 10 - 5 }));
+    expect(narrow.map((p) => p.marker.id)).toEqual(['b']);
+    expect(narrow[0]!.y).toBe(wide.find((p) => p.marker.id === 'b')!.y);
+  });
+
+  it('reports the levels used and the matching bottom reserve', () => {
+    expect(layoutStrip(new Map(), input(times, iv)).levels).toBe(0);
+    expect(layoutStrip(groups(m('x', START)), input(times, iv)).levels).toBe(0);
+    expect(layoutStrip(groups(bm('a', 2), bm('b', 5)), input(times, iv)).levels).toBe(1);
+    expect(layoutStrip(groups(bm('a', 2), bm('b', 2)), input(times, iv)).levels).toBe(2);
+    expect(stripReservePx(0)).toBe(0);
+    expect(stripReservePx(1)).toBe(6 + MARKER_SIZE + 4);
+    expect(stripReservePx(2)).toBe(6 + MARKER_SIZE + (MARKER_SIZE + 2) + 4);
+    // The reserve clears the top of the highest strip marker.
+    const out = layoutMarkers(groups(bm('a', 2), bm('b', 2)), input(times, iv));
+    const topEdge = Math.min(...out.map((p) => p.y)) - MARKER_SIZE / 2;
+    expect(300 - stripReservePx(2)).toBeLessThanOrEqual(topEdge);
   });
 
   it('still culls by x and hit-tests at the strip', () => {

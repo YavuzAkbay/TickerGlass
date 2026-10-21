@@ -9,6 +9,15 @@
   gap: 1px;
 }
 
+/* Without the Inspector there is no fourth column (an empty one would add a second hairline). */
+.app.no-inspector {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.app.no-inspector .app-rail {
+  grid-area: 2 / 3 / 3 / 4;
+}
+
 .app-top {
   grid-area: 1 / 1 / 2 / -1;
   display: flex;

@@ -179,3 +179,61 @@ test('inspector edits the selected drawing, closes on Escape, and shows symbol d
   await inspector.getByRole('button', { name: 'Close inspector' }).click();
   await expect(inspector).toHaveCount(0);
 });
+
+test('inspector moves focus in, restores it, closes on symbol change, and leaves one hairline', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('drw-e2e')) return;
+    sessionStorage.setItem('drw-e2e', '1');
+    localStorage.removeItem('investopen-drawings');
+  });
+  await page.goto('/?feed=synthetic');
+  await waitForChart(page);
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  const gapBetweenChartAndRail = () =>
+    page.evaluate(() => {
+      const c = document.querySelector('.center')!.getBoundingClientRect();
+      const r = document.querySelector('.app-rail')!.getBoundingClientRect();
+      return r.left - c.right;
+    });
+  // No Inspector: a single 1px hairline between the chart and the tool rail.
+  expect(await gapBetweenChartAndRail()).toBe(1);
+
+  // Focus moves in on open and returns to the opener on close.
+  const symbolButton = page.getByRole('button', { name: /^Open details for/ });
+  await symbolButton.focus();
+  await page.keyboard.press('Enter');
+  await expect(inspector).toBeVisible();
+  await expect(inspector.getByRole('heading', { name: 'Symbol details' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(inspector).toHaveCount(0);
+  await expect(symbolButton).toBeFocused();
+
+  // With the Inspector: still one hairline on each side.
+  await symbolButton.click();
+  await expect(inspector).toBeVisible();
+  const box = await inspector.boundingBox();
+  const rail = await page.locator('.app-rail').boundingBox();
+  expect(Math.round(rail!.x - (box!.x + box!.width))).toBe(1);
+  await inspector.getByRole('button', { name: 'Close inspector' }).click();
+
+  // A drawing's properties close when the symbol changes.
+  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await page.mouse.click(500, 300);
+  await page.mouse.click(800, 420);
+  await expect.poll(async () => (await drawings(page)).length).toBe(1);
+  await page.keyboard.press('Escape');
+  await page.mouse.click(650, 360);
+  await page
+    .getByRole('toolbar', { name: 'Drawing toolbar' })
+    .getByRole('button', { name: 'Properties', exact: true })
+    .click();
+  await expect(inspector).toBeVisible();
+  await page.getByRole('button', { name: /^Symbol search/ }).click();
+  const input = page.getByLabel('Search symbols');
+  await input.fill('MSFT');
+  await input.press('Enter');
+  await expect.poll(() => page.evaluate(() => window.chart.getState().symbol)).toBe('MSFT');
+  await expect(inspector).toHaveCount(0);
+});
