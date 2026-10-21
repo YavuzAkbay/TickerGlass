@@ -26,6 +26,8 @@ class Bar(Base):
     """
 
     __tablename__ = "bars"
+    # SQLite stores the table clustered on its primary key (migration 9b4e1c7a5d23).
+    __table_args__ = {"sqlite_with_rowid": False}
 
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     interval: Mapped[str] = mapped_column(String(8), primary_key=True)

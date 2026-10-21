@@ -22,6 +22,8 @@ def permissive_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         "UPSTREAM_BURST": "1000000",
         "UPSTREAM_COOLDOWN_MAX_S": "0",
         "UPSTREAM_UNAVAILABLE_COOLDOWN_S": "0",
+        # No background upkeep while a test runs.
+        "CACHE_MAINTENANCE_ENABLED": "false",
     }.items():
         monkeypatch.setenv(name, value)
     get_settings.cache_clear()
