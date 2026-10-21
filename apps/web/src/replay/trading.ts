@@ -14,8 +14,8 @@ import { useTradingPrefs } from './prefs';
 
 export const TRADE_MARKER_GROUP = 'replay-trades';
 export const POSITION_LINE_GROUP = 'replay-position';
-const UP = '#18a383';
-const DOWN = '#e5484d';
+const UP = '#7FB069';
+const DOWN = '#DE6A4F';
 
 interface TradingStore {
   paper: PaperState;

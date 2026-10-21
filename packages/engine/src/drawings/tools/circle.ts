@@ -11,8 +11,8 @@ import {
 } from './shape-common';
 
 export const CIRCLE_DEFAULTS = {
-  ...shapeDefaults('#f2a93b', 'rgba(242, 169, 59, 0.2)'),
-  ...textDefaults('#f2a93b'),
+  ...shapeDefaults('#E0A93B', 'rgba(224, 169, 59, 0.2)'),
+  ...textDefaults('#E0A93B'),
 };
 
 /** Centre (anchor 0) and radius in px (distance to anchor 1), or null. */

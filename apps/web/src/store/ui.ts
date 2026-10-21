@@ -3,16 +3,27 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Locale } from '../i18n';
 
-export type RightPanel =
-  | 'watchlist'
-  | 'alerts'
-  | 'objectTree'
-  | 'dataWindow'
-  | 'details'
-  | 'news'
-  | 'notes'
+/** Sections of the Navigator panel, in rail order. */
+export const NAV_SECTIONS = [
+  'watchlist',
+  'alerts',
+  'events',
+  'news',
+  'notes',
+  'objectTree',
+  'dataWindow',
   /** Paper trades of the running replay (only while replaying; never saved). */
-  | 'replayTrading';
+  'replayTrading',
+] as const;
+export type NavSection = (typeof NAV_SECTIONS)[number];
+/** @deprecated Alias of `NavSection`, kept for one phase. */
+export type RightPanel = NavSection;
+
+/** Content of the Inspector (transient; never saved). */
+export interface InspectorState {
+  view: 'symbol' | 'drawing';
+  id?: string;
+}
 
 export type DialogId =
   | 'symbolSearch'
@@ -36,12 +47,16 @@ export type DrawingToolId = string;
 interface UiState {
   /** Interface language (messages in i18n/; only English for now). */
   locale: Locale;
-  /** Active dock tab; null while the bottom dock is collapsed. */
-  rightPanel: RightPanel | null;
-  /** Last active dock tab, shown again when the dock is expanded. */
-  dockTab: RightPanel;
-  /** Height of the expanded bottom dock in px. */
-  dockHeight: number;
+  /** The Navigator panel is expanded (its rail is always visible). */
+  navOpen: boolean;
+  /** Section shown by the Navigator (remembered while collapsed). */
+  navSection: NavSection;
+  /** Width of the expanded Navigator panel in px. */
+  navWidth: number;
+  /** Width of the Inspector in px. */
+  inspectorWidth: number;
+  /** What the Inspector shows; null while it is hidden. Not saved. */
+  inspector: InspectorState | null;
   /** The drawing tool rail on the right edge is collapsed to zero width. */
   toolRailHidden: boolean;
   dialog: DialogId | null;
@@ -59,29 +74,71 @@ interface UiState {
   hideAll: boolean;
   /** Legacy (before Phase 7): the general note, now in persist/notes. Read once to seed it. */
   notes: string;
-  togglePanel: (panel: RightPanel) => void;
-  setDockHeight: (h: number) => void;
+  /** Open `section`, or collapse the Navigator if it is the open one. */
+  toggleNav: (section: NavSection) => void;
+  /** Open the Navigator on `section`. */
+  showNav: (section: NavSection) => void;
+  setNavOpen: (open: boolean) => void;
+  setNavWidth: (w: number) => void;
+  setInspectorWidth: (w: number) => void;
+  openInspector: (view: InspectorState['view'], id?: string) => void;
+  closeInspector: () => void;
   toggleToolRail: () => void;
   openDialog: (id: DialogId, arg?: unknown) => void;
   closeDialog: () => void;
   set: (patch: Partial<UiState>) => void;
 }
 
-/** Persisted `investopen-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail. */
-export const UI_STORE_VERSION = 2;
+/** Persisted `investopen-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator. */
+export const UI_STORE_VERSION = 3;
 
-export const DEFAULT_DOCK_HEIGHT = 260;
-export const MIN_DOCK_HEIGHT = 120;
-export const MAX_DOCK_HEIGHT = 640;
+export const DEFAULT_NAV_WIDTH = 260;
+export const MIN_NAV_WIDTH = 200;
+export const MAX_NAV_WIDTH = 480;
+export const DEFAULT_INSPECTOR_WIDTH = 300;
+export const MIN_INSPECTOR_WIDTH = 260;
+export const MAX_INSPECTOR_WIDTH = 480;
 
-/** Add the dock and tool rail fields to preferences saved before version 2. */
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+
+/** Add the tool rail field to preferences saved before version 2. */
 export function migrateDockDefaults<T extends object>(state: T): T {
-  const { rightWidth: _legacy, ...s } = state as { rightWidth?: unknown; [k: string]: unknown };
+  const s = state as { toolRailHidden?: unknown; [k: string]: unknown };
   return {
     ...s,
-    dockHeight: typeof s.dockHeight === 'number' ? s.dockHeight : DEFAULT_DOCK_HEIGHT,
-    dockTab: typeof s.dockTab === 'string' ? s.dockTab : (s.rightPanel ?? 'watchlist'),
     toolRailHidden: typeof s.toolRailHidden === 'boolean' ? s.toolRailHidden : false,
+  } as unknown as T;
+}
+
+const isNavSection = (v: unknown): v is NavSection =>
+  typeof v === 'string' && (NAV_SECTIONS as readonly string[]).includes(v);
+
+/**
+ * Replace the bottom dock fields (`rightPanel`, `dockTab`, `dockHeight`, `rightWidth`)
+ * with the Navigator ones. The removed details panel and the replay trading panel
+ * (which only exists while replaying) fall back to the watchlist. Idempotent.
+ */
+export function migrateNavigator<T extends object>(state: T): T {
+  const {
+    rightPanel,
+    dockTab,
+    dockHeight: _h,
+    rightWidth: _w,
+    ...s
+  } = state as {
+    rightPanel?: unknown;
+    dockTab?: unknown;
+    dockHeight?: unknown;
+    rightWidth?: unknown;
+    [k: string]: unknown;
+  };
+  if (typeof s.navSection === 'string') return s as unknown as T;
+  const src = rightPanel ?? dockTab ?? 'watchlist';
+  return {
+    ...s,
+    navSection: isNavSection(src) && src !== 'replayTrading' ? src : 'watchlist',
+    navOpen: 'rightPanel' in state ? rightPanel != null : true,
+    navWidth: DEFAULT_NAV_WIDTH,
   } as unknown as T;
 }
 
@@ -110,13 +167,29 @@ export function migrateToolIds<T extends object>(state: T): T {
   return out as T;
 }
 
+/** The saved part of the store: no dialog or Inspector state, no replay trading section. */
+export function partializeUi({
+  dialog: _d,
+  dialogArg: _a,
+  inspector: _i,
+  ...rest
+}: UiState): Omit<UiState, 'dialog' | 'dialogArg' | 'inspector'> {
+  return {
+    ...rest,
+    // The trading panel only exists while replaying.
+    navSection: rest.navSection === 'replayTrading' ? 'watchlist' : rest.navSection,
+  };
+}
+
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       locale: 'en',
-      rightPanel: null,
-      dockTab: 'watchlist',
-      dockHeight: DEFAULT_DOCK_HEIGHT,
+      navOpen: true,
+      navSection: 'watchlist',
+      navWidth: DEFAULT_NAV_WIDTH,
+      inspectorWidth: DEFAULT_INSPECTOR_WIDTH,
+      inspector: null,
       toolRailHidden: false,
       dialog: null,
       dialogArg: undefined,
@@ -129,12 +202,19 @@ export const useUiStore = create<UiState>()(
       lockAll: false,
       hideAll: false,
       notes: '',
-      togglePanel: (panel) =>
+      toggleNav: (section) =>
         set((s) =>
-          s.rightPanel === panel ? { rightPanel: null } : { rightPanel: panel, dockTab: panel },
+          s.navOpen && s.navSection === section
+            ? { navOpen: false }
+            : { navOpen: true, navSection: section },
         ),
-      setDockHeight: (h) =>
-        set({ dockHeight: Math.max(MIN_DOCK_HEIGHT, Math.min(MAX_DOCK_HEIGHT, Math.round(h))) }),
+      showNav: (section) => set({ navOpen: true, navSection: section }),
+      setNavOpen: (open) => set({ navOpen: open }),
+      setNavWidth: (w) => set({ navWidth: clamp(w, MIN_NAV_WIDTH, MAX_NAV_WIDTH) }),
+      setInspectorWidth: (w) =>
+        set({ inspectorWidth: clamp(w, MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH) }),
+      openInspector: (view, id) => set({ inspector: id === undefined ? { view } : { view, id } }),
+      closeInspector: () => set({ inspector: null }),
       toggleToolRail: () => set((s) => ({ toolRailHidden: !s.toolRailHidden })),
       openDialog: (id, arg) => set({ dialog: id, dialogArg: arg }),
       closeDialog: () => set({ dialog: null, dialogArg: undefined }),
@@ -145,12 +225,8 @@ export const useUiStore = create<UiState>()(
       version: UI_STORE_VERSION,
       // The persisted shape is the `partialize` result; unknown fields pass through untouched.
       migrate: (persisted) =>
-        migrateDockDefaults(migrateToolIds((persisted ?? {}) as object)) as never,
-      partialize: ({ dialog: _d, dialogArg: _a, ...rest }) => ({
-        ...rest,
-        // The trading panel only exists while replaying.
-        rightPanel: rest.rightPanel === 'replayTrading' ? null : rest.rightPanel,
-      }),
+        migrateNavigator(migrateDockDefaults(migrateToolIds((persisted ?? {}) as object))) as never,
+      partialize: partializeUi,
     },
   ),
 );

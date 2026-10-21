@@ -177,7 +177,7 @@ describe('Chart drawing API', () => {
     chart.on('selectionChanged', (e) => sel.push(e.ids));
     const d = chart.addDrawing({ type: 'trend-line', points: [{ time: START, price: 1 }] });
     expect(d).toMatchObject({ symbol: 'TEST', paneId: 'main', scope: 'symbol', zIndex: 1 });
-    expect(d.style.lineColor).toBe('#4f6bed');
+    expect(d.style.lineColor).toBe('#6E9BD6');
     expect(() => chart.addDrawing({ ...d })).toThrow();
     expect(() => chart.addDrawing({ type: 'nope', points: [] })).toThrow();
     chart.updateDrawing(d.id, { text: 'hi', style: { lineWidth: 3 } });

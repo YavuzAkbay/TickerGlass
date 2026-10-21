@@ -3,7 +3,7 @@ import { defineDrawingTool } from '../registry';
 import type { DrawingGeometry, DrawingLineStyle } from '../types';
 
 export const CYCLE_LINES_DEFAULTS = {
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
 };

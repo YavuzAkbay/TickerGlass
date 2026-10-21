@@ -23,15 +23,15 @@ defineIndicator({
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
   outputs: [
-    { type: 'plot', id: 'fast', title: 'Fast', kind: 'line', color: '#4f6bed' },
-    { type: 'plot', id: 'slow', title: 'Slow', kind: 'line', color: '#f2a93b' },
+    { type: 'plot', id: 'fast', title: 'Fast', kind: 'line', color: '#6E9BD6' },
+    { type: 'plot', id: 'slow', title: 'Slow', kind: 'line', color: '#E0A93B' },
     {
       type: 'shape',
       id: 'up',
       title: 'Cross up',
       shape: 'triangleUp',
       location: 'belowBar',
-      color: '#18a383',
+      color: '#7FB069',
     },
     {
       type: 'shape',
@@ -39,7 +39,7 @@ defineIndicator({
       title: 'Cross down',
       shape: 'triangleDown',
       location: 'aboveBar',
-      color: '#e5484d',
+      color: '#DE6A4F',
     },
   ],
   setup({ inputs, ta }) {
@@ -131,7 +131,7 @@ values. A function there is rejected with a message saying so. The reason: the a
 without running your code, so only the sandbox ever runs it. To make something depend on an input, plot it
 (`c.set`) instead of declaring it as an `hline`.
 
-Colours are checked: hex (`#18a383`, `#4f6bed80`), `rgb()`, `rgba()`, `hsl()`, `hsla()` or a CSS colour name.
+Colours are checked: hex (`#7FB069`, `#6E9BD680`), `rgb()`, `rgba()`, `hsl()`, `hsla()` or a CSS colour name.
 Anything else (notably `url(...)`) is rejected.
 
 **Palettes.** `color` may be an array. Then `c.set(id, value, k)` (or `c.setColor(id, k)` for fills) picks entry
@@ -372,8 +372,8 @@ defineIndicator({
     source: { kind: 'source', label: 'Source', default: 'close' },
   },
   outputs: [
-    { type: 'hline', id: 'upper', title: 'Upper band', value: 70, color: '#9aa4b2' },
-    { type: 'hline', id: 'lower', title: 'Lower band', value: 30, color: '#9aa4b2' },
+    { type: 'hline', id: 'upper', title: 'Upper band', value: 70, color: '#A39E8F' },
+    { type: 'hline', id: 'lower', title: 'Lower band', value: 30, color: '#A39E8F' },
     {
       type: 'fill',
       id: 'zone',
@@ -420,10 +420,10 @@ defineIndicator({
       title: 'Histogram',
       kind: 'columns',
       // Palette: index 0..3 below, chosen per bar in step().
-      color: ['#18a383', '#b2dfdb', '#ffcdd2', '#e5484d'],
+      color: ['#7FB069', '#b2dfdb', '#ffcdd2', '#DE6A4F'],
     },
-    { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: '#4f6bed' },
-    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#f2a93b' },
+    { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: '#6E9BD6' },
+    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#E0A93B' },
   ],
   setup({ inputs, ta }) {
     const GROW_ABOVE = 0;
@@ -490,7 +490,7 @@ defineIndicator({
       id: 'zz',
       title: 'ZigZag',
       kind: 'line',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       lineWidth: 2,
       connectGaps: true,
       showLastValue: false,
@@ -501,7 +501,7 @@ defineIndicator({
       title: 'High Label',
       shape: 'labelDown',
       location: 'absolute',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       textColor: '#ffffff',
       textFromValue: true,
     },
@@ -511,7 +511,7 @@ defineIndicator({
       title: 'Low Label',
       shape: 'labelUp',
       location: 'absolute',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       textColor: '#ffffff',
       textFromValue: true,
     },

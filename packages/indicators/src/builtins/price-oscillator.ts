@@ -19,7 +19,7 @@ export const PRICE_OSCILLATOR = defineIndicator({
   },
   outputs: [
     { type: 'hline', id: 'zero', title: 'Zero Line', value: 0, color: COLOR.level },
-    { type: 'plot', id: 'po', title: 'Price Oscillator', kind: 'line', color: '#18a383' },
+    { type: 'plot', id: 'po', title: 'Price Oscillator', kind: 'line', color: '#7FB069' },
   ],
   setup({ inputs, ta }) {
     const ma = (n: number) => (inputs.exponential ? ta.ema(n) : ta.sma(n));

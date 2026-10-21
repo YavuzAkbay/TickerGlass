@@ -7,7 +7,7 @@ import type { DrawingGeometry, DrawingHitPart, DrawingLineStyle, DrawingStyle } 
 export { segmentDistance };
 
 /** Selection/handle colour when a tool has no `lineColor`. */
-export const DEFAULT_DRAWING_COLOR = '#4f6bed';
+export const DEFAULT_DRAWING_COLOR = '#6E9BD6';
 export const HANDLE_RADIUS = 5;
 /** Hit tolerance (px) around strokes. */
 export const HIT_TOLERANCE = 4;
@@ -140,7 +140,7 @@ export function infoLabel(
   x: number,
   y: number,
   theme: ChartTheme,
-  bg = 'rgba(79, 107, 237, 0.85)',
+  bg = 'rgba(110, 155, 214, 0.85)',
   fg = '#ffffff',
 ): { x: number; y: number; w: number; h: number } {
   const size = theme.fontSize + 1;

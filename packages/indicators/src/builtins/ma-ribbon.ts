@@ -86,10 +86,10 @@ export const MA_RIBBON = defineIndicator({
     },
   },
   outputs: [
-    { type: 'plot', id: 'ma1', title: 'MA #1', kind: 'line', color: '#f2a93b' },
+    { type: 'plot', id: 'ma1', title: 'MA #1', kind: 'line', color: '#E0A93B' },
     { type: 'plot', id: 'ma2', title: 'MA #2', kind: 'line', color: '#8bc34a' },
     { type: 'plot', id: 'ma3', title: 'MA #3', kind: 'line', color: '#0fb5c9' },
-    { type: 'plot', id: 'ma4', title: 'MA #4', kind: 'line', color: '#e5484d' },
+    { type: 'plot', id: 'ma4', title: 'MA #4', kind: 'line', color: '#DE6A4F' },
   ],
   setup({ inputs, ta }) {
     const ma1 = movingAverage(ta, inputs.type1, inputs.length1);

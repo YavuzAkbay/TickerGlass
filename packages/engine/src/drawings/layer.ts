@@ -433,8 +433,8 @@ export class DrawingLayer {
     const m = this.marquee;
     if (m?.paneId === pane.id) {
       ctx.save();
-      ctx.fillStyle = 'rgba(79, 107, 237, 0.1)';
-      ctx.strokeStyle = 'rgba(79, 107, 237, 0.8)';
+      ctx.fillStyle = 'rgba(110, 155, 214, 0.1)';
+      ctx.strokeStyle = 'rgba(110, 155, 214, 0.8)';
       ctx.lineWidth = 1;
       ctx.fillRect(m.left, m.top, m.right - m.left, m.bottom - m.top);
       ctx.strokeRect(m.left + 0.5, m.top + 0.5, m.right - m.left, m.bottom - m.top);

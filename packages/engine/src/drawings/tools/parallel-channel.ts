@@ -15,15 +15,15 @@ const segA = [0, 0, 0, 0];
 const segB = [0, 0, 0, 0];
 
 export const PARALLEL_CHANNEL_DEFAULTS = {
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 2,
   lineStyle: 'solid' as DrawingLineStyle,
   extendLeft: false,
   extendRight: false,
   fillBackground: true,
-  backgroundColor: 'rgba(79, 107, 237, 0.2)',
+  backgroundColor: 'rgba(110, 155, 214, 0.2)',
   showMiddleLine: true,
-  middleLineColor: '#4f6bed',
+  middleLineColor: '#6E9BD6',
   middleLineWidth: 1,
   middleLineStyle: 'dashed' as DrawingLineStyle,
 };

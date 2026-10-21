@@ -15,9 +15,9 @@ import { pointsInView } from './shape-common';
 
 export const PATH_SKETCH_DEFAULTS = {
   /** Path while selected; also the handle colour. */
-  lineColor: '#4f6bed',
-  upColor: 'rgba(24, 163, 131, 0.5)',
-  downColor: 'rgba(229, 72, 77, 0.5)',
+  lineColor: '#6E9BD6',
+  upColor: 'rgba(127, 176, 105, 0.5)',
+  downColor: 'rgba(222, 106, 79, 0.5)',
   /** Noise multiplier (0 = candles exactly on the path). */
   volatility: 1,
   /** PRNG seed (set when the drawing is created). */

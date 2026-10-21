@@ -26,10 +26,10 @@ defineIndicator({
       id: 'hist',
       title: 'Histogram',
       kind: 'columns',
-      color: ['#26a69a', '#b2dfdb', '#ffcdd2', '#ff5252'],
+      color: ['#7fb069', '#b2dfdb', '#ffcdd2', '#de6a4f'],
     },
-    { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: '#2962ff' },
-    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#ff6d00' },
+    { type: 'plot', id: 'macd', title: 'MACD', kind: 'line', color: '#6e9bd6' },
+    { type: 'plot', id: 'signal', title: 'Signal', kind: 'line', color: '#e0a93b' },
   ],
   setup({ inputs, ta }) {
     const GROW_ABOVE = 0;

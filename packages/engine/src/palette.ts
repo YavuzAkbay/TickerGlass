@@ -7,17 +7,17 @@ export type PaletteColor =
   'up' | 'down' | 'primary' | 'amber' | 'violet' | 'cyan' | 'pink' | 'lime' | 'slate' | 'neutral';
 
 export const PALETTE: Readonly<Record<PaletteColor, string>> = {
-  up: '#18a383',
-  down: '#e5484d',
-  primary: '#4f6bed',
-  amber: '#f2a93b',
+  up: '#7FB069',
+  down: '#DE6A4F',
+  primary: '#6E9BD6',
+  amber: '#E0A93B',
   violet: '#8e5cf6',
   cyan: '#0fb5c9',
   pink: '#e8618c',
   lime: '#8bc34a',
   slate: '#7a8a99',
   /** Neutral line / level colour. */
-  neutral: '#9aa4b2',
+  neutral: '#A39E8F',
 };
 
 const hex = (c: string, o: number): number => parseInt(c.slice(o, o + 2), 16);

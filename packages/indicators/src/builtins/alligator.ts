@@ -26,7 +26,7 @@ export const ALLIGATOR = defineIndicator({
       id: 'jaw',
       title: 'Jaw',
       kind: 'line',
-      color: '#4f6bed',
+      color: '#6E9BD6',
       offset: (inputs) => inputs.jawOffset,
     },
     {

@@ -18,12 +18,12 @@ const TEXT_GAP = 4;
 type LineEnd = 'normal' | 'arrow';
 
 export const ARROW_LINE_DEFAULTS = {
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 2,
   lineStyle: 'solid' as DrawingLineStyle,
   leftEnd: 'normal' as LineEnd,
   rightEnd: 'arrow' as LineEnd,
-  textColor: '#4f6bed',
+  textColor: '#6E9BD6',
   fontSize: 14,
   bold: false,
   italic: false,

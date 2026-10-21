@@ -7,15 +7,15 @@ import { zigZagPivots } from './zigzag';
  * (conventional defaults). Ids and keys never change.
  */
 const LEVELS = [
-  { id: 'l0', show: 'show0', ratio: 0, on: true, color: '#9aa4b2' },
-  { id: 'l236', show: 'show236', ratio: 0.236, on: true, color: '#e5484d' },
+  { id: 'l0', show: 'show0', ratio: 0, on: true, color: '#A39E8F' },
+  { id: 'l236', show: 'show236', ratio: 0.236, on: true, color: '#DE6A4F' },
   { id: 'l382', show: 'show382', ratio: 0.382, on: true, color: '#8bc34a' },
   { id: 'l500', show: 'show500', ratio: 0.5, on: true, color: '#8bc34a' },
   { id: 'l618', show: 'show618', ratio: 0.618, on: true, color: '#0fb5c9' },
-  { id: 'l786', show: 'show786', ratio: 0.786, on: true, color: '#4f6bed' },
-  { id: 'l1000', show: 'show1000', ratio: 1, on: true, color: '#9aa4b2' },
-  { id: 'l1618', show: 'show1618', ratio: 1.618, on: false, color: '#4f6bed' },
-  { id: 'l2618', show: 'show2618', ratio: 2.618, on: false, color: '#e5484d' },
+  { id: 'l786', show: 'show786', ratio: 0.786, on: true, color: '#6E9BD6' },
+  { id: 'l1000', show: 'show1000', ratio: 1, on: true, color: '#A39E8F' },
+  { id: 'l1618', show: 'show1618', ratio: 1.618, on: false, color: '#6E9BD6' },
+  { id: 'l2618', show: 'show2618', ratio: 2.618, on: false, color: '#DE6A4F' },
   { id: 'l3618', show: 'show3618', ratio: 3.618, on: false, color: '#8e5cf6' },
   { id: 'l4236', show: 'show4236', ratio: 4.236, on: false, color: '#e8618c' },
 ] as const;

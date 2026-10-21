@@ -39,7 +39,7 @@ export const useAlerts = create<AlertsState>()(() => ({
 /** Show the Alerts panel on its Log tab, optionally pointing at one entry. */
 export function openAlertLog(entryId?: number): void {
   useAlerts.setState({ tab: 'log', focusEntry: entryId ?? null });
-  useUiStore.setState({ rightPanel: 'alerts' });
+  useUiStore.getState().showNav('alerts');
 }
 
 /** Insert or replace by id, newest first, no duplicates. */

@@ -15,22 +15,22 @@ export const VP_DEFAULTS = {
   /** Histogram width in % of the range width. */
   widthPercent: 30,
   placement: 'left' as 'left' | 'right',
-  upColor: 'rgba(79, 107, 237, 0.3)',
-  downColor: 'rgba(242, 169, 59, 0.3)',
-  valueAreaUpColor: 'rgba(79, 107, 237, 0.7)',
-  valueAreaDownColor: 'rgba(242, 169, 59, 0.7)',
+  upColor: 'rgba(110, 155, 214, 0.3)',
+  downColor: 'rgba(224, 169, 59, 0.3)',
+  valueAreaUpColor: 'rgba(110, 155, 214, 0.7)',
+  valueAreaDownColor: 'rgba(224, 169, 59, 0.7)',
   showPoc: true,
-  pocColor: '#e5484d',
+  pocColor: '#DE6A4F',
   pocWidth: 1,
   /** VAH/VAL lines; also the handle colour. */
   showValueAreaLines: true,
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 1,
   lineStyle: 'solid' as DrawingLineStyle,
   extendPoc: false,
   extendValueArea: false,
   showBackground: true,
-  backgroundColor: 'rgba(79, 107, 237, 0.06)',
+  backgroundColor: 'rgba(110, 155, 214, 0.06)',
 };
 
 export type VpStyle = typeof VP_DEFAULTS;

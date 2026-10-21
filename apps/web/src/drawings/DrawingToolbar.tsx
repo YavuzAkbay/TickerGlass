@@ -173,7 +173,7 @@ function ToolbarBody({ ids }: { ids: string[] }) {
   const color = (p: DrawingProperty | undefined, label: string) =>
     p ? (
       <ColorSwatch
-        value={typeof val(p.key) === 'string' ? (val(p.key) as string) : '#4f6bed'}
+        value={typeof val(p.key) === 'string' ? (val(p.key) as string) : '#6E9BD6'}
         label={label}
         onChange={(v) =>
           setDrawingStyle(ids, { [p.key]: v }, `Change ${label.toLowerCase()}`, `color:${p.key}`)

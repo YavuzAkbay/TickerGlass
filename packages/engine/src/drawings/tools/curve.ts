@@ -4,7 +4,7 @@ import { quadBezierDistance } from '../shape-utils';
 import type { DrawingGeometry, PixelPoint } from '../types';
 import { LINE_PROPERTIES, lineDefaults, pointsInView, upNormal } from './shape-common';
 
-export const CURVE_DEFAULTS = lineDefaults('#4f6bed');
+export const CURVE_DEFAULTS = lineDefaults('#6E9BD6');
 
 /** Default bow of a fresh curve: the curve midpoint sits this fraction of the
  * chord length above the chord midpoint (screen). */

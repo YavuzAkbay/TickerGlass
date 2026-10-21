@@ -67,7 +67,7 @@ export const FRACTALS = defineIndicator({
       shape: 'triangleDown',
       location: 'belowBar',
       size: 'small',
-      color: '#e5484d',
+      color: '#DE6A4F',
       offset: (inputs) => -inputs.periods,
     },
   ],

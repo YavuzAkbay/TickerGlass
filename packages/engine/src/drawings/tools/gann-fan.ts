@@ -6,7 +6,7 @@ import { defaultGannFanLevels, gannFanRays, gannRatioText, positiveLevels } from
 
 export const GANN_FAN_DEFAULTS = {
   /** Handle colour. */
-  lineColor: '#9aa4b2',
+  lineColor: '#A39E8F',
   levelsLineWidth: 1,
   levelsLineStyle: 'solid' as DrawingLineStyle,
   /** Slope multipliers of the 1x1 ray (anchor 1 -> anchor 2): 1x8 = 1/8 .. 8x1 = 8. */

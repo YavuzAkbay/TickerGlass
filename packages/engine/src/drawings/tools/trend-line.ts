@@ -25,7 +25,7 @@ const seg = [0, 0, 0, 0];
 const TEXT_GAP = 4;
 
 export const TREND_LINE_DEFAULTS = {
-  lineColor: '#4f6bed',
+  lineColor: '#6E9BD6',
   lineWidth: 2,
   lineStyle: 'solid' as DrawingLineStyle,
   extendLeft: false,
@@ -34,7 +34,7 @@ export const TREND_LINE_DEFAULTS = {
   showPriceRange: false,
   showBarsRange: false,
   showAngle: false,
-  textColor: '#4f6bed',
+  textColor: '#6E9BD6',
   fontSize: 14,
   bold: false,
   italic: false,

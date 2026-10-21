@@ -18,6 +18,7 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@investopen/alerts": "workspace:*",
     "@investopen/engine": "workspace:*",
     "@investopen/indicators": "workspace:*",

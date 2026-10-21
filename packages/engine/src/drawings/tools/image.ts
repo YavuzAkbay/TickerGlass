@@ -6,7 +6,7 @@ export const IMAGE_DEFAULTS = {
   src: '',
   keepAspect: true,
   showBorder: false,
-  borderColor: '#9aa4b2',
+  borderColor: '#A39E8F',
 };
 
 /** Whether `src` is an embedded image data URL (the only source the tool loads). */

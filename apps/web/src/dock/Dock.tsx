@@ -3,7 +3,6 @@ import {
   ArrowUpDown,
   ChevronDown,
   ChevronUp,
-  FileText,
   ListTree,
   Newspaper,
   NotebookPen,
@@ -11,7 +10,7 @@ import {
   Rows3,
   TableProperties,
 } from 'lucide-react';
-import { useEffect, useRef, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
+import { type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import { useAlerts } from '../alerts/store';
 import { commands } from '../commands/registry';
 import { useT, type MessageKey } from '../i18n';
@@ -19,12 +18,11 @@ import { ReplayTrading } from '../replay/ReplayTrading';
 import { useReplayStore } from '../replay/store';
 import { Alerts } from '../sidebar/panels/Alerts';
 import { DataWindow } from '../sidebar/panels/DataWindow';
-import { Details } from '../sidebar/panels/Details';
 import { News } from '../sidebar/panels/News';
 import { Notes } from '../sidebar/panels/Notes';
 import { ObjectTree } from '../sidebar/panels/ObjectTree';
 import { Watchlist } from '../sidebar/panels/Watchlist';
-import { DEFAULT_DOCK_HEIGHT, useUiStore, type RightPanel } from '../store/ui';
+import { useUiStore, type NavSection as RightPanel } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import '../sidebar/sidebar.css';
 import './dock.css';
@@ -38,7 +36,6 @@ interface PanelDef {
 
 const PANELS: PanelDef[] = [
   { id: 'watchlist', title: 'dock.watchlist', icon: Rows3, render: () => <Watchlist /> },
-  { id: 'details', title: 'dock.details', icon: FileText, render: () => <Details /> },
   { id: 'news', title: 'dock.news', icon: Newspaper, render: () => <News /> },
   { id: 'alerts', title: 'dock.alerts', icon: AlarmClock, render: () => <Alerts /> },
   {
@@ -57,30 +54,18 @@ const PANELS: PanelDef[] = [
   { id: 'notes', title: 'dock.notes', icon: NotebookPen, render: () => <Notes /> },
 ];
 
-/** Drag handle on the top edge of the dock; double-click restores the default height. */
+/** Temporary fixed height until the Navigator replaces the dock. */
+const DOCK_HEIGHT = 260;
+
+/** Resize is a no-op until the Navigator replaces the dock. */
 function ResizeHandle() {
   const t = useT();
-  const start = useRef<{ y: number; h: number } | null>(null);
   return (
     <div
       className="dock-resize"
       role="separator"
       aria-orientation="horizontal"
       aria-label={t('dock.resize')}
-      onPointerDown={(e) => {
-        start.current = { y: e.clientY, h: useUiStore.getState().dockHeight };
-        e.currentTarget.setPointerCapture(e.pointerId);
-        e.currentTarget.classList.add('dragging');
-      }}
-      onPointerMove={(e) => {
-        const s = start.current;
-        if (s) useUiStore.getState().setDockHeight(s.h + (s.y - e.clientY));
-      }}
-      onPointerUp={(e) => {
-        start.current = null;
-        e.currentTarget.classList.remove('dragging');
-      }}
-      onDoubleClick={() => useUiStore.getState().setDockHeight(DEFAULT_DOCK_HEIGHT)}
     />
   );
 }
@@ -88,23 +73,19 @@ function ResizeHandle() {
 /** Bottom dock under the chart: a tab per panel, collapsible, resizable by its top edge. */
 export function Dock() {
   const t = useT();
-  const panel = useUiStore((s) => s.rightPanel);
-  const dockTab = useUiStore((s) => s.dockTab);
-  const height = useUiStore((s) => s.dockHeight);
-  const togglePanel = useUiStore((s) => s.togglePanel);
+  const navOpen = useUiStore((s) => s.navOpen);
+  const dockTab = useUiStore((s) => s.navSection);
+  const panel = navOpen ? dockTab : null;
+  const height = DOCK_HEIGHT;
+  const togglePanel = useUiStore((s) => s.toggleNav);
   const unreadAlerts = useAlerts((s) => s.unread);
   const replaying = useReplayStore((s) => s.status !== 'off');
-
-  // Remember the last open tab, however it was opened (e.g. the alerts toast).
-  useEffect(() => {
-    if (panel && panel !== dockTab) useUiStore.setState({ dockTab: panel });
-  }, [panel, dockTab]);
 
   const open = panel !== null;
   const def = PANELS.find((p) => p.id === panel);
   const expand = () => {
     const tab = PANELS.some((p) => p.id === dockTab) ? dockTab : 'watchlist';
-    useUiStore.setState({ rightPanel: tab === 'replayTrading' && !replaying ? 'watchlist' : tab });
+    useUiStore.getState().showNav(tab === 'replayTrading' && !replaying ? 'watchlist' : tab);
   };
 
   const visible = PANELS.filter((p) => p.id !== 'replayTrading' || replaying);
@@ -129,7 +110,7 @@ export function Dock() {
     const target = visible[next];
     if (!target) return;
     e.preventDefault();
-    if (open) useUiStore.setState({ rightPanel: target.id, dockTab: target.id });
+    if (open) useUiStore.getState().showNav(target.id);
     // Focus after the roving tabindex has moved with the selection.
     requestAnimationFrame(() =>
       document.querySelector<HTMLElement>(`#dock-tab-${target.id}`)?.focus(),
@@ -197,7 +178,7 @@ export function Dock() {
           label={open ? t('dock.collapse') : t('dock.expand')}
           tipSide="top"
           className="rs-head-btn"
-          onClick={() => (open ? useUiStore.setState({ rightPanel: null }) : expand())}
+          onClick={() => (open ? useUiStore.getState().setNavOpen(false) : expand())}
         />
       </div>
       {def ? (

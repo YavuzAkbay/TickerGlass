@@ -10,7 +10,7 @@ import {
   type Rect,
 } from './annotation-common';
 
-export const PRICE_LABEL_DEFAULTS = annotationDefaults('#ffffff', '#4f6bed');
+export const PRICE_LABEL_DEFAULTS = annotationDefaults('#ffffff', '#6E9BD6');
 
 type PriceLabelStyle = typeof PRICE_LABEL_DEFAULTS;
 

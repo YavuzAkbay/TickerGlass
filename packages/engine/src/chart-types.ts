@@ -224,7 +224,7 @@ const alpha = (hex: string, a: number): string => {
 export function defaultChartStyle(theme: ChartTheme): ChartStyle {
   const up = theme.up;
   const down = theme.down;
-  const blue = '#4f6bed';
+  const blue = '#6E9BD6';
   const candle: CandleStyle = {
     upColor: up,
     downColor: down,

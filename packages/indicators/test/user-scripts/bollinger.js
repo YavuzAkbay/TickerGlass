@@ -18,9 +18,9 @@ defineIndicator({
     mult: { kind: 'float', label: 'StdDev', default: 2, min: 0.001, max: 50, step: 0.1 },
   },
   outputs: [
-    { type: 'plot', id: 'basis', title: 'Basis', kind: 'line', color: '#ff6d00' },
-    { type: 'plot', id: 'upper', title: 'Upper', kind: 'line', color: '#2962ff' },
-    { type: 'plot', id: 'lower', title: 'Lower', kind: 'line', color: '#2962ff' },
+    { type: 'plot', id: 'basis', title: 'Basis', kind: 'line', color: '#e0a93b' },
+    { type: 'plot', id: 'upper', title: 'Upper', kind: 'line', color: '#6e9bd6' },
+    { type: 'plot', id: 'lower', title: 'Lower', kind: 'line', color: '#6e9bd6' },
     {
       type: 'fill',
       id: 'band',

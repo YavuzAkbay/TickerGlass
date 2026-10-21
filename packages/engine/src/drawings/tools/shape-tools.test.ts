@@ -138,8 +138,8 @@ describe('up and down markers', () => {
     expect(down.at(X(30), Y(50) - 15)).toEqual(BODY);
     expect(down.at(X(30), Y(50) + 10)).toBeNull();
     expect(down.at(X(30), Y(50) - 32)).toEqual(TEXT);
-    expect(up.d.style.arrowColor).toBe('#18a383');
-    expect(down.d.style.arrowColor).toBe('#e5484d');
+    expect(up.d.style.arrowColor).toBe('#7FB069');
+    expect(down.d.style.arrowColor).toBe('#DE6A4F');
   });
 });
 

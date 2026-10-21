@@ -13,18 +13,9 @@ import { parseTradingPrefs, readTradingPrefs, useTradingPrefs } from '../replay/
 import { parseEventPrefs, readEventPrefs, useEventPrefs } from '../events/prefs';
 import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
-import { migrateToolIds, useUiStore, type RightPanel } from '../store/ui';
+import { migrateNavigator, migrateToolIds, NAV_SECTIONS, useUiStore } from '../store/ui';
 import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
-const PANELS: (RightPanel | null)[] = [
-  'watchlist',
-  'alerts',
-  'objectTree',
-  'dataWindow',
-  'details',
-  'news',
-  'notes',
-];
 import { isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
 
 export const SETTINGS_SYNC_KEY = 'investopen-settings-sync';
@@ -66,8 +57,10 @@ const APP_PREFS = [
 ] as const;
 
 const UI_PREFS = [
-  'rightPanel',
-  'dockHeight',
+  'navOpen',
+  'navSection',
+  'navWidth',
+  'inspectorWidth',
   'toolRailHidden',
   'groupTools',
   'favoriteTools',
@@ -103,18 +96,21 @@ export const SETTING_DEFS: SettingDef[] = [
     read: () => {
       const prefs = pickKeys(useUiStore.getState(), UI_PREFS);
       // The replay trading panel only exists while replaying: never synced.
-      return prefs.rightPanel === 'replayTrading' ? { ...prefs, rightPanel: null } : prefs;
+      return prefs.navSection === 'replayTrading' ? { ...prefs, navSection: 'watchlist' } : prefs;
     },
     write: (v) => {
-      const { rightPanel: _p, ...cur } = pickKeys(useUiStore.getState(), UI_PREFS);
+      const cur = pickKeys(useUiStore.getState(), UI_PREFS);
+      // The server may still hold the bottom dock fields.
+      const incoming = isObj(v) ? migrateNavigator(v) : v;
       const patch: Partial<ReturnType<typeof useUiStore.getState>> = migrateToolIds(
-        pickTyped(cur, v),
+        pickTyped(cur, incoming),
       );
-      // Nullable: validated against the known panels.
-      if (isObj(v) && (v.rightPanel === null || typeof v.rightPanel === 'string'))
-        patch.rightPanel = PANELS.includes(v.rightPanel as RightPanel)
-          ? (v.rightPanel as RightPanel)
-          : null;
+      // Validated against the known sections.
+      if (
+        patch.navSection !== undefined &&
+        (!NAV_SECTIONS.includes(patch.navSection) || patch.navSection === 'replayTrading')
+      )
+        delete patch.navSection;
       useUiStore.getState().set(patch);
     },
     subscribe: (fn) => useUiStore.subscribe(fn),

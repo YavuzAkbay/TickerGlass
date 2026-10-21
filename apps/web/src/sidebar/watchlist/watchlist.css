@@ -1,11 +1,11 @@
 /* Watchlist panel. Flag colors are shared by rows, menus and the switcher. */
 :root {
-  --wl-flag-red: #e5484d;
-  --wl-flag-orange: #f2a93b;
+  --wl-flag-red: #de6a4f;
+  --wl-flag-orange: #e0a93b;
   --wl-flag-yellow: #f2d03b;
-  --wl-flag-green: #18a383;
+  --wl-flag-green: #7fb069;
   --wl-flag-cyan: #0fb5c9;
-  --wl-flag-blue: #4f6bed;
+  --wl-flag-blue: #6e9bd6;
   --wl-flag-purple: #8e5cf6;
   --wl-flash-up-bg: color-mix(in srgb, var(--up) 30%, transparent);
   --wl-flash-down-bg: color-mix(in srgb, var(--down) 30%, transparent);

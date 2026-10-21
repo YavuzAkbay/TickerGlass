@@ -14,7 +14,7 @@ export const VORTEX = defineIndicator({
     length: { kind: 'int', label: 'Length', default: 14, min: 2, max: 5000 },
   },
   outputs: [
-    { type: 'plot', id: 'plus', title: 'VI +', kind: 'line', color: '#4f6bed' },
+    { type: 'plot', id: 'plus', title: 'VI +', kind: 'line', color: '#6E9BD6' },
     { type: 'plot', id: 'minus', title: 'VI -', kind: 'line', color: '#e8618c' },
   ],
   setup({ inputs, ta }) {

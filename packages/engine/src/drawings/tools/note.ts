@@ -16,8 +16,8 @@ import {
 
 export const NOTE_DEFAULTS = {
   ...annotationDefaults('#131722', 'rgba(255, 235, 150, 0.95)'),
-  borderColor: '#f2a93b',
-  pinColor: '#f2a93b',
+  borderColor: '#E0A93B',
+  pinColor: '#E0A93B',
   wrapWidth: 200,
 };
 

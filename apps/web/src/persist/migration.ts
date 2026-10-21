@@ -8,7 +8,7 @@ import { resolveDrawingType } from '@investopen/engine';
 import * as persistence from '../api/persistence';
 import { BUNDLE_VERSION, type Bundle } from '../api/types';
 import { parseStoredDrawings, STORAGE_KEY as DRAWINGS_KEY } from '../drawings/store';
-import { migrateToolIds } from '../store/ui';
+import { migrateNavigator, migrateToolIds } from '../store/ui';
 import { LAYOUT_SCHEMA_VERSION, type LayoutState } from './layoutState';
 import { DEFAULT_TEMPLATE_NAME } from './drawingTemplatesSync';
 import { isNotFound, isObj, readJson, type SafeStorage } from './net';
@@ -130,17 +130,24 @@ export function buildMigrationBundle(
   const ui = persisted(storage, 'investopen-ui');
   if (ui) {
     bundle.settings!['ui.prefs'] = migrateToolIds(
-      pick(ui, [
-        'rightPanel',
-        'rightWidth',
-        'groupTools',
-        'favoriteTools',
-        'showFavoritesBar',
-        'stayInDrawingMode',
-        'syncNewDrawings',
-        'lockAll',
-        'hideAll',
-      ]),
+      migrateNavigator(
+        pick(ui, [
+          'rightPanel',
+          'dockTab',
+          'rightWidth',
+          'navOpen',
+          'navSection',
+          'navWidth',
+          'inspectorWidth',
+          'groupTools',
+          'favoriteTools',
+          'showFavoritesBar',
+          'stayInDrawingMode',
+          'syncNewDrawings',
+          'lockAll',
+          'hideAll',
+        ]),
+      ),
     );
     if (typeof ui.notes === 'string' && ui.notes)
       bundle.notes!.push({ id: MIGRATED_NOTE_ID, symbol: null, text: ui.notes });
