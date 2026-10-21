@@ -25,14 +25,14 @@ import {
 import { AlertsSettingsTab } from '../alerts/SettingsTab';
 import { EventsTab } from '../events/EventsTab';
 import { errorMessage } from '../api/client';
-import * as persistence from '../api/persistence';
-import type { ChartTemplate } from '../api/types';
 import { changeScale } from '../commands/scaleActions';
 import {
   CHART_TEMPLATE_SCHEMA_VERSION,
   readChartTemplate,
   templateData,
 } from '../persist/chartTemplates';
+import { useT, type MessageKey } from '../i18n';
+import { chartTemplates, type TemplateRow } from '../persist/templateCache';
 import { confirmDialog, promptName } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
@@ -50,16 +50,16 @@ type TabId = 'symbol' | 'status' | 'scales' | 'canvas' | 'trading' | 'alerts' | 
 
 const TABS: {
   id: TabId;
-  label: string;
+  label: MessageKey;
   icon: ComponentType<{ size?: number; strokeWidth?: number }>;
 }[] = [
-  { id: 'symbol', label: 'Symbol', icon: ChartCandlestick },
-  { id: 'status', label: 'Status line', icon: PanelTop },
-  { id: 'scales', label: 'Scales and lines', icon: Ruler },
-  { id: 'canvas', label: 'Canvas', icon: Paintbrush },
-  { id: 'trading', label: 'Trading', icon: Briefcase },
-  { id: 'alerts', label: 'Alerts', icon: AlarmClock },
-  { id: 'events', label: 'Events', icon: CalendarDays },
+  { id: 'symbol', label: 'settings.tab.symbol', icon: ChartCandlestick },
+  { id: 'status', label: 'settings.tab.status', icon: PanelTop },
+  { id: 'scales', label: 'settings.tab.scales', icon: Ruler },
+  { id: 'canvas', label: 'settings.tab.canvas', icon: Paintbrush },
+  { id: 'trading', label: 'settings.tab.trading', icon: Briefcase },
+  { id: 'alerts', label: 'settings.tab.alerts', icon: AlarmClock },
+  { id: 'events', label: 'settings.tab.events', icon: CalendarDays },
 ];
 
 const TIMEZONES = [
@@ -155,20 +155,21 @@ const sameScale = (a: Draft['scale'], b: Draft['scale']) =>
 
 /** Chart settings: tabs on the left, live preview, Ok applies, Cancel reverts. */
 export default function SettingsDialog({ onClose }: { onClose: () => void; arg?: unknown }) {
+  const t = useT();
   const [initial] = useState(readDraft);
   const [draft, setDraft] = useState(initial);
   const [tab, setTab] = useState<TabId>('symbol');
   const chartType = useChartView((st) => st.chartType);
   const [templateBtn, setTemplateBtn] = useState<HTMLButtonElement | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
-  const [templates, setTemplates] = useState<ChartTemplate[] | null>(null);
+  const [templates, setTemplates] = useState<TemplateRow<Record<string, unknown>>[] | null>(null);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const settled = useRef(false);
 
   const loadTemplates = () =>
-    persistence
-      .listChartTemplates()
-      .then((list) => {
+    chartTemplates
+      .list()
+      .then(({ items: list }) => {
         setTemplates([...list].sort((a, b) => a.name.localeCompare(b.name)));
         setTemplatesError(null);
       })
@@ -187,18 +188,20 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     )
       return;
     try {
-      await persistence.saveChartTemplate({
+      const { offline } = await chartTemplates.save(
         name,
-        data: templateData(draft) as unknown as Record<string, unknown>,
-        schemaVersion: CHART_TEMPLATE_SCHEMA_VERSION,
-      });
-      toast(`Chart template "${name}" saved`, 'success');
+        templateData(draft) as unknown as Record<string, unknown>,
+        CHART_TEMPLATE_SCHEMA_VERSION,
+      );
+      if (offline)
+        toast(`Chart template "${name}" saved (server unreachable: it will sync later)`, 'info');
+      else toast(`Chart template "${name}" saved`, 'success');
     } catch (err) {
       toast(`Template could not be saved: ${errorMessage(err)}`, 'error', 6000);
     }
   };
 
-  const removeTemplate = async (t: ChartTemplate) => {
+  const removeTemplate = async (t: TemplateRow<Record<string, unknown>>) => {
     const yes = await confirmDialog({
       title: 'Delete template',
       message: `Delete the chart template "${t.name}"?`,
@@ -207,7 +210,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     });
     if (!yes) return;
     try {
-      await persistence.deleteChartTemplate(t.id);
+      await chartTemplates.remove(t);
     } catch (err) {
       toast(`Template could not be deleted: ${errorMessage(err)}`, 'error', 6000);
     }
@@ -580,19 +583,19 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
           aria-orientation="vertical"
           aria-label="Settings sections"
         >
-          {TABS.map((t) => {
-            const Icon = t.icon;
+          {TABS.map((def) => {
+            const Icon = def.icon;
             return (
               <button
-                key={t.id}
+                key={def.id}
                 type="button"
                 role="tab"
-                aria-selected={tab === t.id}
-                className={`dlg-side-item${tab === t.id ? ' active' : ''}`}
-                onClick={() => setTab(t.id)}
+                aria-selected={tab === def.id}
+                className={`dlg-side-item${tab === def.id ? ' active' : ''}`}
+                onClick={() => setTab(def.id)}
               >
                 <Icon size={18} strokeWidth={1.6} />
-                <span>{t.label}</span>
+                <span>{t(def.label)}</span>
               </button>
             );
           })}

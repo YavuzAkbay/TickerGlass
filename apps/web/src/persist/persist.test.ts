@@ -26,6 +26,7 @@ import {
   useChartView,
 } from '../store/chartView';
 import { readChartTemplate } from './chartTemplates';
+import { OfflineTemplates, type TemplateApi, type TemplateRow } from './templateCache';
 import { DrawingSync, DRAWING_SYNC_KEY, type DrawingApi } from './drawingSync';
 import { capToasts } from '../ui/Toast';
 import { retryableLazy } from '../ui/lazyRetry';
@@ -1562,6 +1563,88 @@ describe('drawing templates sync', () => {
     });
     expect(useDrawingTemplates.getState().defaults.ray).toEqual({ lineColor: 'green' });
     await next.dispose();
+  });
+});
+
+describe('offline templates', () => {
+  function fakeServer() {
+    const rows = new Map<string, TemplateRow<string>>();
+    let seq = 0;
+    let down = false;
+    const api: TemplateApi<string> = {
+      list: vi.fn(async () => {
+        if (down) throw offline();
+        return [...rows.values()];
+      }),
+      save: vi.fn(async (b) => {
+        if (down) throw offline();
+        const row = { id: rows.get(b.name)?.id ?? `s${++seq}`, ...b };
+        rows.set(b.name, row);
+        return row;
+      }),
+      remove: vi.fn(async (id: string) => {
+        if (down) throw offline();
+        for (const [k, r] of rows) if (r.id === id) rows.delete(k);
+      }),
+    };
+    return { api, rows, setDown: (v: boolean) => (down = v) };
+  }
+
+  it('lists from the cache while unreachable', async () => {
+    const server = fakeServer();
+    const store = new OfflineTemplates('k', server.api, memStorage());
+    await store.save('A', 'one', 1);
+    expect((await store.list()).offline).toBe(false);
+    server.setDown(true);
+    const res = await store.list();
+    expect(res.offline).toBe(true);
+    expect(res.items.map((r) => r.name)).toEqual(['A']);
+  });
+
+  it('queues offline saves and deletes and pushes them later', async () => {
+    const server = fakeServer();
+    const store = new OfflineTemplates('k', server.api, memStorage());
+    await store.save('Keep', 'k', 1);
+    await store.save('Gone', 'g', 1);
+    const gone = (await store.list()).items.find((r) => r.name === 'Gone')!;
+    server.setDown(true);
+    expect(await store.save('New', 'n', 1)).toEqual({ offline: true });
+    expect(await store.remove(gone)).toEqual({ offline: true });
+    expect(store.hasPending()).toBe(true);
+    expect(
+      store
+        .cached()
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual(['Keep', 'New']);
+    await expect(store.sync()).rejects.toBeInstanceOf(ApiError);
+    server.setDown(false);
+    const res = await store.list();
+    expect(res.offline).toBe(false);
+    expect([...server.rows.keys()].sort()).toEqual(['Keep', 'New']);
+    expect(res.items.map((r) => r.name).sort()).toEqual(['Keep', 'New']);
+    expect(store.hasPending()).toBe(false);
+  });
+
+  it('removing a template that never reached the server just drops it', async () => {
+    const server = fakeServer();
+    server.setDown(true);
+    const store = new OfflineTemplates('k', server.api, memStorage());
+    await store.save('Tmp', 't', 1);
+    await store.remove(store.cached()[0]!);
+    server.setDown(false);
+    await store.list();
+    expect(server.rows.size).toBe(0);
+  });
+
+  it('permanent API errors are thrown, not cached', async () => {
+    const server = fakeServer();
+    (server.api.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError('invalid', 422),
+    );
+    const store = new OfflineTemplates('k', server.api, memStorage());
+    await expect(store.save('X', 'x', 1)).rejects.toBeInstanceOf(ApiError);
+    expect(store.cached()).toEqual([]);
   });
 });
 

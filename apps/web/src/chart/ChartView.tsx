@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DARK_THEME, LIGHT_THEME } from '@investopen/engine';
 import { ChartError } from './ChartError';
+import { ChartLiveRegion, useChartLabel } from './ChartLiveRegion';
 import { feed } from './feed';
 import { PerfOverlay } from './PerfOverlay';
 import { dropComputeTimes, perfEnabled } from './perf';
@@ -78,6 +79,7 @@ function sandboxProbe(
 export function ChartView({ id }: { id: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<ChartSession | null>(null);
+  const label = useChartLabel(session);
   const theme = useAppStore((s) => s.theme);
   const crosshair = useAppStore((s) => s.crosshair);
   const magnet = useAppStore((s) => s.magnet);
@@ -192,7 +194,8 @@ export function ChartView({ id }: { id: string }) {
       data-chart-id={id}
       onPointerDownCapture={() => setActiveChart(id)}
     >
-      <div ref={hostRef} className="chart-host" />
+      <div ref={hostRef} className="chart-host" role="img" aria-label={label} />
+      {session ? <ChartLiveRegion session={session} /> : null}
       {session ? <ChartError session={session} /> : null}
       {PERF && session ? <PerfOverlay session={session} /> : null}
       {session ? <CompareLegends session={session} /> : null}

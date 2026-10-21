@@ -41,6 +41,11 @@
 .dock.open .dock-tabs {
   border-bottom: 1px solid var(--border);
 }
+.dock-tablist {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .dock-tab {
   position: relative;
   display: inline-flex;

@@ -69,7 +69,7 @@ async function open(page: Page) {
 }
 
 async function openPanel(page: Page) {
-  const panel = page.getByRole('region', { name: 'Alerts', exact: true });
+  const panel = page.getByRole('tabpanel', { name: 'Alerts', exact: true });
   if (!(await panel.isVisible())) await page.locator('[data-panel="alerts"]').click();
   await expect(panel).toBeVisible();
   return panel;

@@ -304,7 +304,7 @@ trend-angle, swing-projection, channel widths and curve bows are computed in scr
 
 Renamed tool ids: `LEGACY_DRAWING_TYPES` / `resolveDrawingType` (`drawings/legacy-ids.ts`) map old ids to the current ones. The web app applies the map when it reads saved drawings (local cache, API rows with `schemaVersion` 1 or 2, imports), per-tool templates and default styles, and the toolbar preferences; migrated API rows are saved back under the new id.
 
-Semantics not yet cross-checked against an independent reference (documented choices, revisit in the Phase 15 parity sweep):
+Semantics not yet cross-checked against an independent reference (documented choices, deferred to the drawing tools completeness pass):
 
 - Inner pitchfork: handle = midpoint(p1, p2) -> p3; the median is parallel to the line from midpoint(p2, p3).
 - Fib circles: centre = midpoint of the two anchors (level 1 has the anchors as diameter). Fib arcs:

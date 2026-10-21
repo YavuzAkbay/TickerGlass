@@ -1,5 +1,6 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { commands, formatShortcut } from '../commands/registry';
+import { useT } from '../i18n';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
@@ -284,29 +285,30 @@ function MenuFlyout({ items, onClose }: { items: MenuItem[]; onClose: () => void
 }
 
 function MagnetButton() {
+  const t = useT();
   const magnet = useAppStore((s) => s.magnet);
   const remembered = useUiStore((s) => s.groupTools.magnet);
   const strong = (magnet === 'off' ? remembered : magnet) === 'strong';
-  const label = strong ? 'Strong magnet' : 'Weak magnet';
+  const label = strong ? t('rail.strongMagnet') : t('rail.weakMagnet');
   return (
     <SplitButton
       label={label}
       active={magnet !== 'off'}
       icon={strong ? <I.IconMagnetStrong /> : <I.IconMagnet />}
       onClick={() => commands.execute('drawings.toggleMagnet')}
-      flyoutLabel="Magnet modes"
+      flyoutLabel={t('rail.magnetModes')}
       flyout={(close) => (
         <MenuFlyout
           onClose={close}
           items={[
             {
-              label: 'Weak magnet',
+              label: t('rail.weakMagnet'),
               icon: magnetIcon,
               checked: magnet === 'weak',
               onSelect: () => setMagnet('weak'),
             },
             {
-              label: 'Strong magnet',
+              label: t('rail.strongMagnet'),
               icon: magnetStrongIcon,
               checked: magnet === 'strong',
               onSelect: () => setMagnet('strong'),
@@ -353,28 +355,29 @@ function HideButton() {
 }
 
 function RemoveButton() {
+  const t = useT();
   return (
     <SplitButton
-      label="Remove drawings"
+      label={t('rail.removeDrawings')}
       active={false}
       icon={<I.IconTrash />}
       onClick={() => commands.execute('drawings.removeAll')}
-      flyoutLabel="Remove options"
+      flyoutLabel={t('rail.removeOptions')}
       flyout={(close) => (
         <MenuFlyout
           onClose={close}
           items={[
             {
-              label: 'Remove drawings',
+              label: t('rail.removeDrawings'),
               icon: trashIcon,
               onSelect: () => commands.execute('drawings.removeAll'),
             },
             {
-              label: 'Remove indicators',
+              label: t('rail.removeIndicators'),
               onSelect: () => commands.execute('drawings.removeIndicators'),
             },
             {
-              label: 'Remove drawings & indicators',
+              label: t('rail.removeAll'),
               danger: true,
               onSelect: () => commands.execute('drawings.removeAllObjects'),
             },
@@ -434,6 +437,7 @@ function ToggleButton({
  * drawing definition are dimmed and only show a hint (drawings/attach syncs
  * the active tool and options to the chart). */
 export function ToolRail() {
+  const t = useT();
   const stay = useUiStore((s) => s.stayInDrawingMode);
   const syncNew = useUiStore((s) => s.syncNewDrawings);
   const lockAll = useUiStore((s) => s.lockAll);
@@ -443,7 +447,7 @@ export function ToolRail() {
   useEffect(() => registerToolbarCommands(), []);
 
   return (
-    <nav className="tool-rail" aria-label="Drawing tools">
+    <nav className="tool-rail" aria-label={t('rail.drawingTools')}>
       {TOOL_GROUPS.map((g) => (
         <ToolGroupButton key={g.id} group={g} />
       ))}
@@ -454,19 +458,19 @@ export function ToolRail() {
       <div className="lt-sep" role="separator" />
       <MagnetButton />
       <ToggleButton
-        label="Stay in drawing mode"
+        label={t('rail.stayDrawing')}
         active={stay}
         icon={<I.IconStayDrawing />}
         command="drawings.toggleStayInDrawingMode"
       />
       <ToggleButton
-        label={syncNew ? 'New drawings: synced to all symbols' : 'New drawings: this symbol only'}
+        label={syncNew ? t('rail.syncAll') : t('rail.syncOne')}
         active={syncNew}
         icon={<I.IconSyncDrawings />}
         command="drawings.toggleSyncNew"
       />
       <ToggleButton
-        label={lockAll ? 'Unlock all drawings' : 'Lock all drawings'}
+        label={lockAll ? t('rail.unlockAll') : t('rail.lockAll')}
         active={lockAll}
         icon={lockAll ? <I.IconLock /> : <I.IconUnlock />}
         command="drawings.toggleLockAll"
@@ -476,7 +480,7 @@ export function ToolRail() {
       <div className="lt-spacer" />
       <div className="lt-group">
         <IconButton
-          label={showFav ? 'Hide favorites toolbar' : 'Show favorites toolbar'}
+          label={showFav ? t('rail.hideFavorites') : t('rail.showFavorites')}
           tipSide="left"
           active={showFav}
           className="lt-btn lt-btn-fav"
