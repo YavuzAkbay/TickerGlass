@@ -235,6 +235,21 @@ describe('HttpDataFeed HTTP', () => {
     await expect(feed.resolveSymbol('X')).rejects.toMatchObject({ status: 502 });
     await expect(feed.resolveSymbol('X')).resolves.toMatchObject({ symbol: 'X' });
   });
+
+  it('keeps at most 500 resolved symbols, least recently used dropped first', async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      jsonResponse({ symbol: decodeURIComponent(url.slice('/api/symbols/'.length)) }),
+    );
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    for (let i = 0; i < 500; i++) await feed.resolveSymbol(`S${i}`);
+    await feed.resolveSymbol('S0'); // S0 is now most recent
+    await feed.resolveSymbol('S500'); // evicts S1
+    expect(fetchImpl).toHaveBeenCalledTimes(501);
+    await feed.resolveSymbol('S0');
+    expect(fetchImpl).toHaveBeenCalledTimes(501);
+    await feed.resolveSymbol('S1');
+    expect(fetchImpl).toHaveBeenCalledTimes(502);
+  });
 });
 
 describe('HttpDataFeed live', () => {
