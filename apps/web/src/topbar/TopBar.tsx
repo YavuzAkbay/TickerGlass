@@ -1,5 +1,5 @@
 import { Moon, Redo2, Rewind, SquareFunction, Sun, Undo2 } from 'lucide-react';
-import { useState, type ComponentType } from 'react';
+import { useRef, useState, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
 import { useT } from '../i18n';
 import { commands } from '../commands/registry';
@@ -17,6 +17,7 @@ import { LayoutPicker } from './LayoutPicker';
 import { OverflowMenu } from './OverflowMenu';
 import { PaletteButton } from './PaletteButton';
 import { firstShortcut, useCommand } from './useCommand';
+import { FIT_MAX, useFitLevel } from './useFitLevel';
 import './topbar.css';
 
 const run = (id: string, arg?: unknown) => commands.execute(id, arg);
@@ -29,29 +30,52 @@ const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 export function TopBar() {
   const t = useT();
   const replayOn = useReplayStore((s) => s.status !== 'off');
+  const bar = useRef<HTMLDivElement>(null);
+  const left = useRef<HTMLDivElement>(null);
+  const right = useRef<HTMLDivElement>(null);
+  const palette = useRef<HTMLButtonElement>(null);
+  // Narrow windows fold the bar step by step instead of letting groups overlap.
+  const { level, overflow } = useFitLevel({ bar, left, right, palette });
+  const folded = level >= FIT_MAX;
+  const cls = ['top-bar', ...Array.from({ length: level }, (_, i) => `tb-fit${i + 1}`)];
+  if (overflow) cls.push('tb-overflow');
   return (
-    <div className="top-bar" role="toolbar" aria-label={t('topbar.toolbar')}>
+    <div ref={bar} className={cls.join(' ')} role="toolbar" aria-label={t('topbar.toolbar')}>
       <div className="tb-side tb-left">
-        <IntervalControl />
-        <div className="tb-sep" />
-        <ChartTypeButton />
-        <CommandButton id="chart.indicators" icon={SquareFunction} label={t('topbar.indicators')} />
-        <IndicatorTemplatesButton />
+        <div ref={left} className="tb-group">
+          <IntervalControl compact={level >= 4} />
+          <div className="tb-sep" />
+          <ChartTypeButton />
+          <CommandButton
+            id="chart.indicators"
+            icon={SquareFunction}
+            label={t('topbar.indicators')}
+          />
+          <IndicatorTemplatesButton />
+        </div>
       </div>
-      <PaletteButton />
+      <PaletteButton ref={palette} />
       <div className="tb-side tb-right">
-        <CommandButton
-          id="replay.toggle"
-          icon={Rewind}
-          label={t('topbar.replay')}
-          active={replayOn}
-        />
-        <LayoutPicker />
-        <LayoutMenu />
-        <div className="tb-sep" />
-        <UndoRedo />
-        <ThemeButton />
-        <OverflowMenu />
+        <div ref={right} className="tb-group">
+          {folded ? null : (
+            <CommandButton
+              id="replay.toggle"
+              icon={Rewind}
+              label={t('topbar.replay')}
+              active={replayOn}
+            />
+          )}
+          <LayoutPicker />
+          <LayoutMenu />
+          <div className="tb-sep" />
+          {folded ? null : (
+            <>
+              <UndoRedo />
+              <ThemeButton />
+            </>
+          )}
+          <OverflowMenu folded={folded} />
+        </div>
       </div>
     </div>
   );

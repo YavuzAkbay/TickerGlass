@@ -26,14 +26,17 @@ const UNIT_SUFFIX: Record<IntervalUnit, string> = {
 
 const setInterval = (iv: string) => commands.execute('chart.setInterval', iv);
 
-/** Favorite interval quick buttons plus the full interval dropdown. */
-export function IntervalControl() {
+/**
+ * Favorite interval quick buttons plus the full interval dropdown. `compact`
+ * shows only the active interval (a narrow bar).
+ */
+export function IntervalControl({ compact = false }: { compact?: boolean }) {
   const interval = useChartView((s) => s.interval);
   const favorites = useAppStore((s) => s.favoriteIntervals);
   const [open, setOpen] = useState(false);
   const [chevron, setChevron] = useState<HTMLButtonElement | null>(null);
 
-  const favs = sortIntervals(favorites);
+  const favs = compact ? [] : sortIntervals(favorites);
   const activeIsFav = favs.some((f) => sameInterval(f, interval));
 
   return (
