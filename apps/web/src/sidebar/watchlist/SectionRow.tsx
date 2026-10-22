@@ -2,6 +2,7 @@ import { ChevronRight } from 'lucide-react';
 import { memo, type HTMLAttributes } from 'react';
 import { openContextMenu } from '../../ui/ContextMenu';
 import { promptName } from '../../ui/Prompt';
+import { useLongPress } from '../../ui/useLongPress';
 import { useWatchlistStore } from '../../watchlist/store';
 import type { Row } from '../../watchlist/types';
 
@@ -27,6 +28,20 @@ interface Props {
 export const SectionRow = memo(
   function SectionRow({ listId, row, dnd, dropPos }: Props) {
     const store = useWatchlistStore.getState;
+    const menu = (x: number, y: number) =>
+      openContextMenu(x, y, [
+        { label: 'Rename…', onSelect: () => void renameSection(listId, row) },
+        {
+          label: 'Remove section',
+          onSelect: () => store().removeSection(listId, row.id, true),
+        },
+        {
+          label: 'Remove section and symbols',
+          danger: true,
+          onSelect: () => store().removeSection(listId, row.id, false),
+        },
+      ]);
+    const press = useLongPress(menu);
     return (
       <div
         role="row"
@@ -39,19 +54,9 @@ export const SectionRow = memo(
         onDoubleClick={() => void renameSection(listId, row)}
         onContextMenu={(e) => {
           e.preventDefault();
-          openContextMenu(e.clientX, e.clientY, [
-            { label: 'Rename…', onSelect: () => void renameSection(listId, row) },
-            {
-              label: 'Remove section',
-              onSelect: () => store().removeSection(listId, row.id, true),
-            },
-            {
-              label: 'Remove section and symbols',
-              danger: true,
-              onSelect: () => store().removeSection(listId, row.id, false),
-            },
-          ]);
+          menu(e.clientX, e.clientY);
         }}
+        {...press}
       >
         <div role="gridcell" className="wl-section-cell">
           <button

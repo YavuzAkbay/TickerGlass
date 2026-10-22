@@ -4,6 +4,7 @@ import { removeAllDrawings, removeAllObjects } from '../drawings/actions';
 import { removeAllIndicators } from '../indicators/actions';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
+import { MOBILE_QUERY } from '../ui/useMediaQuery';
 import { dockTools } from './dock';
 import { openQuickTools } from './quick';
 import { isCursorTool, isToolAvailable, resetToCursor, selectTool, TOOL_GROUPS } from './tools';
@@ -111,7 +112,11 @@ export function registerToolbarCommands(): () => void {
       title: 'Show or hide the drawing tool rail',
       category: 'Drawings',
       shortcut: 'Shift+t',
-      run: () => useUiStore.getState().toggleToolRail(),
+      // Phones show the tools as a strip over the chart instead of a docked rail.
+      run: () =>
+        window.matchMedia(MOBILE_QUERY).matches
+          ? useUiStore.getState().toggleMobileTools()
+          : useUiStore.getState().toggleToolRail(),
     },
     {
       id: 'drawings.toggleMagnet',

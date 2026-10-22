@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useIsMobile } from './useMediaQuery';
 
 export type Placement = 'bottom-start' | 'bottom-end' | 'right-start' | 'left-start' | 'top-start';
 
@@ -13,6 +14,26 @@ interface Props {
   className?: string;
   /** Elements whose clicks don't count as "outside" (e.g. the trigger button). */
   ignore?: (HTMLElement | null)[];
+  /** On phones render as a bottom action sheet (with a dimmed backdrop) instead of anchored. */
+  sheet?: boolean;
+}
+
+let insetProbe: HTMLDivElement | null = null;
+/** Current safe-area insets in px (0 where unsupported). */
+function safeInsets(): { top: number; bottom: number; left: number; right: number } {
+  if (!insetProbe) {
+    insetProbe = document.createElement('div');
+    insetProbe.style.cssText =
+      'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  }
+  if (!insetProbe.isConnected) document.body.appendChild(insetProbe);
+  const cs = getComputedStyle(insetProbe);
+  return {
+    top: parseFloat(cs.paddingTop) || 0,
+    right: parseFloat(cs.paddingRight) || 0,
+    bottom: parseFloat(cs.paddingBottom) || 0,
+    left: parseFloat(cs.paddingLeft) || 0,
+  };
 }
 
 /** Floating panel in a portal, positioned next to an anchor and kept on screen.
@@ -25,15 +46,19 @@ export function Popover({
   children,
   className,
   ignore,
+  sheet,
 }: Props) {
+  const mobile = useIsMobile();
+  const asSheet = !!sheet && mobile;
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!open || !anchor || !ref.current) return;
+    if (!open || !anchor || !ref.current || asSheet) return;
     const el = ref.current;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
+    const inset = safeInsets();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     let left: number;
@@ -64,10 +89,10 @@ export function Popover({
       if (top + h > vh) top = anchor.y - h;
     }
     setPos({
-      left: Math.max(4, Math.min(left, vw - w - 4)),
-      top: Math.max(4, Math.min(top, vh - h - 4)),
+      left: Math.max(4 + inset.left, Math.min(left, vw - w - 4 - inset.right)),
+      top: Math.max(4 + inset.top, Math.min(top, vh - h - 4 - inset.bottom)),
     });
-  }, [open, anchor, placement, children]);
+  }, [open, anchor, placement, children, asSheet]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,7 +101,7 @@ export function Popover({
       if (ref.current?.contains(t)) return;
       if (ignore?.some((el) => el?.contains(t))) return;
       // Clicks inside nested popovers (submenus) are portaled elsewhere.
-      if ((t as HTMLElement).closest?.('.io-popover')) return;
+      if ((t as HTMLElement).closest?.('.io-popover, .io-popover-backdrop')) return;
       onClose();
     };
     const key = (e: KeyboardEvent) => {
@@ -100,13 +125,18 @@ export function Popover({
 
   if (!open || !anchor) return null;
   return createPortal(
-    <div
-      ref={ref}
-      className={`io-popover ${className ?? ''}`}
-      style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: -9999 }}
-    >
-      {children}
-    </div>,
+    <>
+      {asSheet ? <div className="io-popover-backdrop" onClick={onClose} /> : null}
+      <div
+        ref={ref}
+        className={`io-popover ${asSheet ? 'io-sheet ' : ''}${className ?? ''}`}
+        style={
+          asSheet ? undefined : pos ? { left: pos.left, top: pos.top } : { left: -9999, top: -9999 }
+        }
+      >
+        {children}
+      </div>
+    </>,
     document.body,
   );
 }

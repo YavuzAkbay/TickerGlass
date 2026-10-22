@@ -2,6 +2,7 @@ import { resolveDrawingType } from '@tickerglass/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Locale } from '../i18n';
+import { MOBILE_QUERY } from '../ui/useMediaQuery';
 
 /** Sections of the Navigator panel, in rail order. */
 export const NAV_SECTIONS = [
@@ -51,6 +52,12 @@ interface UiState {
   locale: Locale;
   /** The Navigator panel is expanded (its rail is always visible). */
   navOpen: boolean;
+  /**
+   * Phone layout: the Navigator panel is shown as a sheet over the chart (transient; never
+   * saved or synced, so a phone always starts with the chart uncovered). On phones the
+   * Navigator actions below drive this instead of `navOpen`.
+   */
+  navSheet: boolean;
   /** Section shown by the Navigator (remembered while collapsed). */
   navSection: NavSection;
   /** Width of the expanded Navigator panel in px. */
@@ -61,6 +68,8 @@ interface UiState {
   inspector: InspectorState | null;
   /** The drawing tool rail on the right edge is collapsed to zero width. */
   toolRailHidden: boolean;
+  /** Phone layout: the drawing tool strip is shown over the chart (transient; never saved). */
+  mobileToolsOpen: boolean;
   dialog: DialogId | null;
   /** Payload for the open dialog (e.g. initial search text). */
   dialogArg: unknown;
@@ -90,6 +99,7 @@ interface UiState {
   ) => void;
   closeInspector: () => void;
   toggleToolRail: () => void;
+  toggleMobileTools: () => void;
   openDialog: (id: DialogId, arg?: unknown) => void;
   closeDialog: () => void;
   set: (patch: Partial<UiState>) => void;
@@ -104,6 +114,12 @@ export const MAX_NAV_WIDTH = 480;
 export const DEFAULT_INSPECTOR_WIDTH = 300;
 export const MIN_INSPECTOR_WIDTH = 260;
 export const MAX_INSPECTOR_WIDTH = 480;
+
+/** Phone layout is on (MOBILE_QUERY); false outside a browser. */
+const isPhone = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia(MOBILE_QUERY).matches;
 
 export const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, Math.round(v)));
@@ -185,13 +201,15 @@ export function migrateToolIds<T extends object>(state: T): T {
   return out as T;
 }
 
-/** The saved part of the store: no dialog or Inspector state, no replay trading section. */
+/** The saved part of the store: no dialog, Inspector or phone tool strip state, no replay trading section. */
 export function partializeUi({
   dialog: _d,
   dialogArg: _a,
   inspector: _i,
+  mobileToolsOpen: _m,
+  navSheet: _n,
   ...rest
-}: UiState): Omit<UiState, 'dialog' | 'dialogArg' | 'inspector'> {
+}: UiState): Omit<UiState, 'dialog' | 'dialogArg' | 'inspector' | 'mobileToolsOpen' | 'navSheet'> {
   return {
     ...rest,
     // The trading panel only exists while replaying.
@@ -204,11 +222,13 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       locale: 'en',
       navOpen: true,
+      navSheet: false,
       navSection: 'watchlist',
       navWidth: DEFAULT_NAV_WIDTH,
       inspectorWidth: DEFAULT_INSPECTOR_WIDTH,
       inspector: null,
       toolRailHidden: false,
+      mobileToolsOpen: false,
       dialog: null,
       dialogArg: undefined,
       activeTool: 'cross',
@@ -220,14 +240,24 @@ export const useUiStore = create<UiState>()(
       lockAll: false,
       hideAll: false,
       notes: '',
+      // Phones toggle the sheet only, leaving the synced desktop preference alone.
       toggleNav: (section) =>
         set((s) =>
-          s.navOpen && s.navSection === section
-            ? { navOpen: false }
+          isPhone()
+            ? s.navSheet && s.navSection === section
+              ? { navSheet: false }
+              : { navSheet: true, navSection: section }
+            : s.navOpen && s.navSection === section
+              ? { navOpen: false }
+              : { navOpen: true, navSection: section },
+        ),
+      showNav: (section) =>
+        set(
+          isPhone()
+            ? { navSheet: true, navSection: section }
             : { navOpen: true, navSection: section },
         ),
-      showNav: (section) => set({ navOpen: true, navSection: section }),
-      setNavOpen: (open) => set({ navOpen: open }),
+      setNavOpen: (open) => set(open ? { navOpen: true } : { navOpen: false, navSheet: false }),
       setNavWidth: (w) => set({ navWidth: clamp(w, MIN_NAV_WIDTH, MAX_NAV_WIDTH) }),
       setInspectorWidth: (w) =>
         set({ inspectorWidth: clamp(w, MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH) }),
@@ -235,6 +265,7 @@ export const useUiStore = create<UiState>()(
         set({ inspector: { view, ...(id === undefined ? {} : { id }), ...opts } }),
       closeInspector: () => set({ inspector: null }),
       toggleToolRail: () => set((s) => ({ toolRailHidden: !s.toolRailHidden })),
+      toggleMobileTools: () => set((s) => ({ mobileToolsOpen: !s.mobileToolsOpen })),
       openDialog: (id, arg) => set({ dialog: id, dialogArg: arg }),
       closeDialog: () => set({ dialog: null, dialogArg: undefined }),
       set: (patch) => set(patch),

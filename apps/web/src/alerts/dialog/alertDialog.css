@@ -46,3 +46,19 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+@media (max-width: 768px) {
+  .alert-dlg-body {
+    height: auto;
+    max-height: none;
+  }
+  .alert-number .io-input {
+    width: 100%;
+  }
+  .alert-target {
+    width: 100%;
+  }
+  .alert-message {
+    font-size: 16px;
+  }
+}

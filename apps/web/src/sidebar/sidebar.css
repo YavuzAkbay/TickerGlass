@@ -446,3 +446,75 @@
   border-color: var(--border);
   color: var(--text);
 }
+
+/* ======== touch + phone ======== */
+.navigator,
+.rs-datawin,
+.rs-tree {
+  min-width: 0;
+}
+@media (pointer: coarse) {
+  .rs-tree-row {
+    height: 44px;
+  }
+  .rs-tree-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .rs-tree-btn-spacer {
+    width: 40px;
+  }
+  .rs-kv {
+    min-height: 40px;
+  }
+  .rs-datawin .rs-kv {
+    min-height: 36px;
+  }
+  .rs-notes-tab {
+    padding: 8px 14px;
+  }
+  .io-btn.rs-error-btn {
+    height: 36px;
+  }
+  .rs-link {
+    padding: 6px 0;
+  }
+  .rs-news-item {
+    padding: 12px 14px;
+  }
+}
+@media (max-width: 768px) {
+  .rs-notes-input,
+  .al-search,
+  .al-log-filter {
+    font-size: 16px;
+  }
+  .rs-notes-input {
+    min-height: 200px;
+  }
+  .rs-kv {
+    flex-wrap: wrap;
+  }
+  .rs-kv-value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .rs-error span,
+  .rs-about-text,
+  .rs-news-title {
+    overflow-wrap: anywhere;
+  }
+  .rs-det-last {
+    font-size: 30px;
+  }
+  .rs-det-symbol,
+  .rs-det-name {
+    overflow-wrap: anywhere;
+  }
+  .rs-news-title {
+    font-size: 14px;
+  }
+  .rs-pad {
+    padding: 10px 14px;
+  }
+}

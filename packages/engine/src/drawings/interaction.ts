@@ -439,6 +439,14 @@ export class DrawingInteraction {
     return true;
   }
 
+  /** Touch long-press on a drawing: a still press ends without dragging (the caller opens the
+   * drawing menu on release). Returns false for any other gesture (drags, creation, erasing). */
+  holdPress(): boolean {
+    if (this.gesture?.kind !== 'press') return false;
+    this.gesture = null;
+    return true;
+  }
+
   doubleClick(target: DrawingPointerTarget | null, clientX: number, clientY: number): boolean {
     // A double-click finishes a multi-point creation.
     const g = this.gesture;

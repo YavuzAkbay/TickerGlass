@@ -168,3 +168,28 @@
   font-size: 10px;
   line-height: 15px;
 }
+
+@media (pointer: coarse) {
+  .al-row {
+    padding: 12px 8px;
+  }
+  .al-more {
+    align-self: center;
+  }
+}
+@media (max-width: 768px) {
+  .al-tools {
+    flex-wrap: wrap;
+  }
+  .al-name,
+  .al-cond,
+  .al-meta {
+    overflow-wrap: anywhere;
+  }
+  .al-name {
+    white-space: normal;
+  }
+  .al-entry-head {
+    flex-wrap: wrap;
+  }
+}

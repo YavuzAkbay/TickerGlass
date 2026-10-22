@@ -65,6 +65,8 @@
   --row-h: 26px;
   --bar-h: 36px;
   --rail-w: 40px;
+  /* Phone layout: the bottom tab bar (above the home indicator inset). */
+  --tabbar-h: 48px;
   /* Keyboard focus ring (accent, readable on both themes). */
   --focus-ring: 2px solid var(--accent);
   --focus-ring-offset: 1px;
@@ -100,6 +102,30 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
+}
+
+/* The app is a fixed shell: no rubber-band scrolling or pull-to-refresh on the page itself
+   (scrollable panels keep their own scrolling). */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+/* Touch devices: wider rails for 40px buttons. */
+@media (pointer: coarse) {
+  :root {
+    --rail-w: 48px;
+  }
+}
+
+/* Touch devices: iOS zooms into text fields under 16px on focus. Keeping them at 16px avoids
+   that without disabling pinch zoom for the page (no maximum-scale in the viewport). */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 body {
