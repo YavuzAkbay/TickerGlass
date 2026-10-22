@@ -173,29 +173,32 @@ async function loadLaid(n = 50) {
 }
 
 describe('Chart price-axis "+" button', () => {
-  it('shows the "+" hit area only on the label under the axis hover', async () => {
+  it('shows the "+" hit area only inside the pane, level with the axis hover', async () => {
     const { chart } = await loadLaid();
     const pane = chart.panes[0]!;
     const w = chart.paneWidth;
-    // No label yet: the axis is plain.
-    expect(chart.hitTest(w + 5, pane.top + 100)).toMatchObject({ kind: 'priceAxis' });
-    expect(chart.hitTest(w + 5, pane.top + 100)).not.toHaveProperty('plus');
+    // No label yet: nothing to hit.
+    expect(chart.hitTest(w - 5, pane.top + 100)).not.toHaveProperty('plus');
     chart.setAxisHover(pane, 100);
-    expect(chart.hitTest(w + 5, pane.top + 100)).toMatchObject({ kind: 'priceAxis', plus: true });
-    expect(chart.hitTest(w + 5, pane.top + 91)).toMatchObject({ plus: true });
-    expect(chart.hitTest(w + 5, pane.top + 80)).not.toHaveProperty('plus');
-    // Right of the "+" box, still the plain label.
-    expect(chart.hitTest(w + 30, pane.top + 100)).not.toHaveProperty('plus');
-    expect(chart.hitTest(w + 0.5, pane.top + 100)).not.toHaveProperty('plus');
+    expect(chart.hitTest(w - 5, pane.top + 100)).toMatchObject({ kind: 'priceAxis', plus: true });
+    expect(chart.hitTest(w - 5, pane.top + 91)).toMatchObject({ plus: true });
+    expect(chart.hitTest(w - 5, pane.top + 80)).not.toHaveProperty('plus');
+    // Left of the "+" box is the plain pane.
+    expect(chart.hitTest(w - 30, pane.top + 100)).toMatchObject({ kind: 'pane' });
+    // The axis itself never carries the "+", so dragging it to rescale cannot grab it.
+    for (const dx of [0.5, 5, 30]) {
+      expect(chart.hitTest(w + dx, pane.top + 100)).toMatchObject({ kind: 'priceAxis' });
+      expect(chart.hitTest(w + dx, pane.top + 100)).not.toHaveProperty('plus');
+    }
     chart.setAxisHover(null, 0);
-    expect(chart.hitTest(w + 5, pane.top + 100)).not.toHaveProperty('plus');
+    expect(chart.hitTest(w - 5, pane.top + 100)).not.toHaveProperty('plus');
   });
 
-  it('also appears on the crosshair label while over the pane', async () => {
+  it('also appears beside the crosshair label while over the pane', async () => {
     const { chart } = await loadLaid();
     const pane = chart.panes[0]!;
     chart.setCrosshair(pane, 100, 120);
-    expect(chart.hitTest(chart.paneWidth + 5, pane.top + 120)).toMatchObject({ plus: true });
+    expect(chart.hitTest(chart.paneWidth - 5, pane.top + 120)).toMatchObject({ plus: true });
   });
 
   it('is off with priceAxisPlusButton: false', async () => {
@@ -203,7 +206,7 @@ describe('Chart price-axis "+" button', () => {
     const pane = chart.panes[0]!;
     chart.applyOptions({ priceAxisPlusButton: false });
     chart.setAxisHover(pane, 100);
-    expect(chart.hitTest(chart.paneWidth + 5, pane.top + 100)).not.toHaveProperty('plus');
+    expect(chart.hitTest(chart.paneWidth - 5, pane.top + 100)).not.toHaveProperty('plus');
   });
 
   it('emits priceAxisPlus with the pane and price under the label', async () => {
@@ -237,7 +240,7 @@ describe('Chart price-axis "+" button', () => {
       metaKey: false,
       target: null,
     });
-    const x = chart.paneWidth + 5;
+    const x = chart.paneWidth - 5;
     root.fire('pointermove', ev(x, pane.top + 100));
     root.fire('pointerdown', ev(x, pane.top + 100));
     root.fire('pointerup', ev(x, pane.top + 100));
@@ -246,6 +249,25 @@ describe('Chart price-axis "+" button', () => {
     root.fire('pointerdown', ev(x, pane.top + 100));
     root.fire('pointerup', ev(x + 40, pane.top + 100));
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe('Chart crosshair into the future', () => {
+  it('keeps counting dates past the last bar instead of pinning to it', async () => {
+    const { chart } = await loadLaid();
+    const pane = chart.panes[0]!;
+    const ts = chart.timeScale;
+    const last = chart.store.length - 1;
+    chart.setCrosshair(pane, ts.indexToX(last + 3), 100);
+    const c = (chart as unknown as { crosshair: { index: number; logical: number } }).crosshair;
+    expect(c.index).toBe(last);
+    expect(c.logical).toBe(last + 3);
+    const time = (chart as unknown as { crosshairTime(l: number): number | undefined })
+      .crosshairTime;
+    const t = (l: number) => time.call(chart, l)!;
+    expect(t(last)).toBe(chart.store.time[last]);
+    expect(t(last + 3)).toBeGreaterThan(t(last + 2));
+    expect(t(last + 2)).toBeGreaterThan(t(last));
   });
 });
 

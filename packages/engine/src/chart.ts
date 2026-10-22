@@ -98,12 +98,14 @@ import type {
 import './drawings/tools';
 
 const TIME_AXIS_HEIGHT = 28;
+/** Empty bar slots after the last bar that get time axis labels. */
+const FUTURE_SLOTS = 1500;
 const MIN_AXIS_WIDTH = 56;
 const COLLAPSED_PANE_HEIGHT = 24;
 const MIN_PANE_HEIGHT = 30;
 const LAZY_LOAD_THRESHOLD = 150;
 const AXIS_LABEL_HEIGHT = 20;
-/** Width of the "+" box at the left edge of the price label (axis-relative from x = 1). */
+/** Width of the "+" box at the right edge of the pane, left of the price axis. */
 const PLUS_WIDTH = 18;
 
 const INVALIDATE_OVERLAY = 1;
@@ -262,7 +264,7 @@ export type HitTarget =
       kind: 'priceAxis';
       pane: Pane;
       y: number;
-      /** The "+" box of the price label is under the pointer. */
+      /** The "+" box beside the price axis is under the pointer. */
       plus?: boolean;
       /** A price line's axis label is under the pointer. */
       priceLine?: { group: string; id: string };
@@ -276,6 +278,8 @@ interface CrosshairPos {
   x: number; // snapped to bar centre
   y: number; // snapped by magnet
   index: number;
+  /** Slot under the pointer, unclamped: past the last bar when pointing into the future. */
+  logical: number;
   rawX: number;
   rawY: number;
 }
@@ -331,6 +335,7 @@ export class Chart implements StudyApi, DrawingApi {
   private interval: Interval = { unit: 'day', count: 1 };
   private tz: TzConverter = createTzConverter('UTC');
   private weights = new Uint8Array(0);
+  private futureCache: { key: string; times: Float64Array; weights: Uint8Array } | null = null;
   private decimals = 2;
   private hasMore = false;
   private loadingMore = false;
@@ -1565,15 +1570,6 @@ export class Chart implements StudyApi, DrawingApi {
     if (!pane) return { kind: 'none' };
     const py = y - pane.top;
     if (x >= this.paneWidth) {
-      const axisX = x - this.paneWidth;
-      const plus = this.plusRect(pane);
-      const inPlus =
-        plus !== null &&
-        axisX >= 1 &&
-        axisX < 1 + PLUS_WIDTH &&
-        py >= plus.top &&
-        py < plus.top + AXIS_LABEL_HEIGHT;
-      if (inPlus) return { kind: 'priceAxis', pane, y: py, plus: true };
       const line = hitPriceLine(this.placedLines(pane), x, py, this.paneWidth, pane.height);
       return {
         kind: 'priceAxis',
@@ -1582,6 +1578,14 @@ export class Chart implements StudyApi, DrawingApi {
         ...(line ? { priceLine: { group: line.group, id: line.line.id } } : {}),
       };
     }
+    const plus = this.plusRect(pane);
+    if (
+      plus !== null &&
+      x >= this.paneWidth - PLUS_WIDTH &&
+      py >= plus.top &&
+      py < plus.top + AXIS_LABEL_HEIGHT
+    )
+      return { kind: 'priceAxis', pane, y: py, plus: true };
     const s = this.hitSeries(pane, x, py);
     const marker = pane.id === 'main' ? hitMarker(this.placedMarkers(), x, py) : null;
     const line = marker
@@ -1777,13 +1781,15 @@ export class Chart implements StudyApi, DrawingApi {
       }
       return;
     }
-    const index = Math.max(0, Math.min(this.store.length - 1, this.timeScale.xToIndex(x)));
-    const snappedX = this.timeScale.indexToX(this.timeScale.xToIndex(x));
+    const logical = this.timeScale.xToIndex(x);
+    const index = Math.max(0, Math.min(this.store.length - 1, logical));
+    const snappedX = this.timeScale.indexToX(logical);
     this.crosshair = {
       pane,
       x: snappedX,
       y: this.magnetY(pane, index, y),
       index,
+      logical,
       rawX: x,
       rawY: y,
     };
@@ -2051,6 +2057,38 @@ export class Chart implements StudyApi, DrawingApi {
     this.invalidate(INVALIDATE_MAIN);
   }
 
+  /** Time under logical slot `l`: a bar's own time, or an extrapolated slot past either end of the data. */
+  private crosshairTime(l: number): number | undefined {
+    const n = this.store.length;
+    if (l >= 0 && l < n) return this.store.time[l];
+    return logicalToTime(this.refreshTimeline(), l)?.time;
+  }
+
+  /**
+   * Times and tick weights of the empty slots after the last bar, so the time
+   * axis keeps its labels into the future. Capped at FUTURE_SLOTS (computed once
+   * per data/timezone change, not per frame); none on brick charts, whose
+   * slots have no time.
+   */
+  private futureSlots(): { times: Float64Array; weights: Uint8Array } | undefined {
+    const n = this.store.length;
+    if (!n || this.usesTransform) return undefined;
+    const key = `${this._seriesRevision}|${this.rawEpoch}|${n}|${this._chartType}|${this.options.timezone}|${this.intervalString()}`;
+    if (this.futureCache?.key !== key) {
+      const tl = this.refreshTimeline();
+      const times = new Float64Array(FUTURE_SLOTS + 1);
+      times[0] = this.store.time[n - 1]!;
+      for (let k = 1; k <= FUTURE_SLOTS; k++) times[k] = logicalToTime(tl, n - 1 + k)!.time;
+      const weights = computeTimeWeights(times, this.tz);
+      this.futureCache = {
+        key,
+        times: times.subarray(1),
+        weights: weights.subarray(1),
+      };
+    }
+    return this.futureCache;
+  }
+
   private recomputeWeights(): void {
     const n = this.store.length;
     if (this.weights.length < n) this.weights = new Uint8Array(Math.ceil(n * 1.25) + 64);
@@ -2225,8 +2263,9 @@ export class Chart implements StudyApi, DrawingApi {
         ? selectTimeMarks({
             times: this.store.time.subarray(0, n),
             weights: this.weights.subarray(0, n),
+            future: this.futureSlots(),
             from,
-            to,
+            to: Math.max(to, Math.ceil(this.timeScale.logicalRange().to)),
             indexToX: (i) => this.timeScale.indexToX(i),
             minSpacingPx: 64,
             tz: this.tz,
@@ -2350,13 +2389,12 @@ export class Chart implements StudyApi, DrawingApi {
       : formatAxisNumber(value, pane.labelDecimals);
   }
 
-  /** Crosshair-style price label at pane-relative `y`, with the "+" box when `plus` (default: enabled). */
+  /** Crosshair-style price label at pane-relative `y`. */
   private drawPriceLabel(
     ax: CanvasRenderingContext2D,
     pane: Pane,
     y: number,
     fontStr: string,
-    plus = this.options.priceAxisPlusButton,
   ): void {
     const t = this.theme;
     const top = Math.max(0, Math.min(pane.height - AXIS_LABEL_HEIGHT, y - AXIS_LABEL_HEIGHT / 2));
@@ -2371,17 +2409,27 @@ export class Chart implements StudyApi, DrawingApi {
       t.crosshairLabelText,
       fontStr,
       'left',
-      plus ? PLUS_WIDTH + 4 : 6,
+      6,
     );
-    if (!plus) return;
-    const cx = 1 + PLUS_WIDTH / 2;
-    const cy = top + AXIS_LABEL_HEIGHT / 2;
-    ax.fillStyle = t.crosshairLabelText;
-    ax.globalAlpha = 0.18;
-    ax.fillRect(1, top, PLUS_WIDTH, AXIS_LABEL_HEIGHT);
-    ax.globalAlpha = 1;
-    ax.fillRect(cx - 4, cy - 0.5, 8, 1);
-    ax.fillRect(cx - 0.5, cy - 4, 1, 8);
+  }
+
+  /**
+   * The "+" box at the right edge of the pane, level with the price label. It
+   * sits inside the pane, not on the axis, so dragging the axis to rescale
+   * never grabs it.
+   */
+  private drawPlusButton(ctx: CanvasRenderingContext2D, pane: Pane): void {
+    const r = this.plusRect(pane);
+    if (!r) return;
+    const t = this.theme;
+    const x = this.paneWidth - PLUS_WIDTH;
+    const cx = x + PLUS_WIDTH / 2;
+    const cy = r.top + AXIS_LABEL_HEIGHT / 2;
+    ctx.fillStyle = t.crosshairLabelBg;
+    ctx.fillRect(x, r.top, PLUS_WIDTH, AXIS_LABEL_HEIGHT);
+    ctx.fillStyle = t.crosshairLabelText;
+    ctx.fillRect(cx - 4, cy - 0.5, 8, 1);
+    ctx.fillRect(cx - 0.5, cy - 4, 1, 8);
   }
 
   private renderOverlay(): void {
@@ -2512,6 +2560,7 @@ export class Chart implements StudyApi, DrawingApi {
       const hover = this.axisHover;
       if (!c && hover && hover.pane === pane) {
         this.drawPriceLabel(ax, pane, hover.y, fontStr);
+        this.drawPlusButton(ctx, pane);
       }
 
       if (!c) {
@@ -2522,7 +2571,7 @@ export class Chart implements StudyApi, DrawingApi {
         const y = ps.priceToY(syncPrice);
         if (!(y >= 0 && y <= pane.height)) continue;
         dashedLine(ctx, 0, y, paneW, y, this.dpr, [4, 4]);
-        this.drawPriceLabel(ax, pane, y, fontStr, false);
+        this.drawPriceLabel(ax, pane, y, fontStr);
         continue;
       }
       ctx.strokeStyle = t.crosshair;
@@ -2536,6 +2585,7 @@ export class Chart implements StudyApi, DrawingApi {
           ctx.fill();
         }
         this.drawPriceLabel(ax, pane, c.y, fontStr);
+        this.drawPlusButton(ctx, pane);
       }
     }
 
@@ -2567,7 +2617,7 @@ export class Chart implements StudyApi, DrawingApi {
       }
     }
     const cross = c
-      ? { time: this.store.time[c.index], x: c.x }
+      ? { time: this.crosshairTime(c.logical), x: c.x }
       : Number.isNaN(syncIndex)
         ? null
         : { time: logicalToTime(this.refreshTimeline(), syncIndex)?.time, x: syncX };
