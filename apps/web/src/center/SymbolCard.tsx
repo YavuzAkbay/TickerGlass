@@ -1,4 +1,6 @@
 import { isExpressionSymbol } from '@tickerglass/engine';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 import type { ChartSession } from '../chart/session';
@@ -20,6 +22,7 @@ import { useApi, useChartTick, useNow } from '../sidebar/hooks';
 import { earningsStat } from '../sidebar/panels/Details';
 import { setActiveChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
+import { useIsMobile } from '../ui/useMediaQuery';
 import { SessionClock } from './SessionClock';
 import './symbolCard.css';
 
@@ -90,9 +93,48 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
   const state = marketState(q);
   const source = meta.data?.exchangeName ?? meta.data?.exchange;
   const focus = () => setActiveChart(session.id);
+  // Phones show one price line and the bar values; a tap on the chevron opens the rest.
+  const mobile = useIsMobile();
+  const [open, setOpen] = useState(false);
+  const compact = mobile && !open;
+
+  const toggle = mobile ? (
+    <button
+      type="button"
+      className="sc-toggle"
+      aria-expanded={open}
+      aria-label={open ? 'Hide details' : 'Show details'}
+      onClick={() => setOpen((o) => !o)}
+    >
+      {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+    </button>
+  ) : null;
+
+  const last =
+    q && isNum(q.last) ? (
+      <>
+        {/* Re-mounted per tick so the flash replays. */}
+        <span
+          key={q.flash?.target === 'last' ? q.flash.seq : 0}
+          className={`sh-last${q.flash?.target === 'last' ? (q.flash.dir > 0 ? ' flash-up' : ' flash-down') : ''}`}
+        >
+          {fmtPrice(q.last, d)}
+        </span>
+        {abs !== null ? (
+          <span className={`sh-change ${cls}`}>
+            {glyph ? <span aria-hidden>{glyph}</span> : null}{' '}
+            {compact && pct ? pct : `${abs}${pct ? ` (${pct})` : ''}`}
+          </span>
+        ) : null}
+      </>
+    ) : null;
 
   return (
-    <div className="sc-card" role="group" aria-label={t('symbolHeader.label')}>
+    <div
+      className={`sc-card${compact ? ' compact' : ''}`}
+      role="group"
+      aria-label={t('symbolHeader.label')}
+    >
       <div className="sc-top">
         <button
           type="button"
@@ -115,7 +157,8 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
             title={STATE_LABEL[state]}
           />
         ) : null}
-        {name ? (
+        {compact ? last : null}
+        {name && !compact ? (
           <button
             type="button"
             className="sh-name"
@@ -128,41 +171,30 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
             {name}
           </button>
         ) : null}
-        <SessionClock session={session} />
+        {compact ? null : <SessionClock session={session} />}
+        {toggle}
       </div>
-      <div className="sc-price">
-        {q && isNum(q.last) ? (
-          <>
-            {/* Re-mounted per tick so the flash replays. */}
-            <span
-              key={q.flash?.target === 'last' ? q.flash.seq : 0}
-              className={`sh-last${q.flash?.target === 'last' ? (q.flash.dir > 0 ? ' flash-up' : ' flash-down') : ''}`}
-            >
-              {fmtPrice(q.last, d)}
-            </span>
-            {abs !== null ? (
-              <span className={`sh-change ${cls}`}>
-                {glyph ? <span aria-hidden>{glyph}</span> : null} {abs}
-                {pct ? ` (${pct})` : ''}
+      {compact ? null : (
+        <>
+          <div className="sc-price">
+            {last}
+            {q && isNum(q.dayLow) && isNum(q.dayHigh) && isNum(q.last) ? (
+              <DayRange low={q.dayLow} high={q.dayHigh} last={q.last} d={d} />
+            ) : null}
+          </div>
+          <div className="sc-stats">
+            {q && isNum(q.volume) ? (
+              <Stat label={t('symbolHeader.volume')} value={fmtCompact(q.volume)} />
+            ) : null}
+            {nextEarn ? <Stat label={t('symbolHeader.earnings')} value={nextEarn} /> : null}
+            {source ? (
+              <span className="sc-source" title="Exchange / data source">
+                {source}
               </span>
             ) : null}
-          </>
-        ) : null}
-        {q && isNum(q.dayLow) && isNum(q.dayHigh) && isNum(q.last) ? (
-          <DayRange low={q.dayLow} high={q.dayHigh} last={q.last} d={d} />
-        ) : null}
-      </div>
-      <div className="sc-stats">
-        {q && isNum(q.volume) ? (
-          <Stat label={t('symbolHeader.volume')} value={fmtCompact(q.volume)} />
-        ) : null}
-        {nextEarn ? <Stat label={t('symbolHeader.earnings')} value={nextEarn} /> : null}
-        {source ? (
-          <span className="sc-source" title="Exchange / data source">
-            {source}
-          </span>
-        ) : null}
-      </div>
+          </div>
+        </>
+      )}
       <BarRow session={session} d={d} />
     </div>
   );

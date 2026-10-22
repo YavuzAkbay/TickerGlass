@@ -417,3 +417,102 @@
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ---- phones: search, interval, chart type and indicators; the rest is in "More" ---- */
+@media (hover: none) {
+  /* No hover on touch: the favorite/remove icons of an interval row are always shown. */
+  .tb-ivicon {
+    opacity: 1;
+  }
+}
+@media (max-width: 768px) {
+  :root:root {
+    /* Taller bar for finger-sized targets (the app grid reads it for its first row). */
+    --bar-h: 48px;
+  }
+  .top-bar.tb-mobile {
+    gap: 4px;
+    padding: 0 max(8px, env(safe-area-inset-left)) 0 max(8px, env(safe-area-inset-right));
+    overflow: hidden;
+  }
+  .tb-mobile .tb-side {
+    flex: none;
+    min-width: 0;
+  }
+  .tb-mobile .tb-left {
+    order: 1;
+  }
+  .tb-mobile .tb-right {
+    order: 2;
+    margin-left: auto;
+  }
+  .tb-mobile .tb-group {
+    gap: 0;
+  }
+  .top-bar.tb-mobile .io-icon-btn,
+  .tb-mobile .tb-btn {
+    height: 44px;
+    min-width: 44px;
+  }
+  .top-bar.tb-mobile .tb-interval {
+    min-width: 44px;
+    padding: 0 8px;
+    font-size: 14px;
+  }
+  .tb-mobile .tb-chevron {
+    min-width: 28px;
+    padding: 0 2px;
+  }
+  .tb-mobile .tb-layout {
+    min-width: 44px;
+    padding: 0 6px;
+  }
+  /* Search icon button first, then the chart controls. */
+  .top-bar.tb-mobile .tb-palette {
+    order: 0;
+    flex: none;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text);
+  }
+  .tb-mobile .tb-palette svg {
+    width: 20px;
+    height: 20px;
+  }
+  .tb-mobile .tb-layout-name,
+  .tb-mobile .tb-palette-text,
+  .tb-mobile .tb-palette-hint {
+    display: none;
+  }
+  .tb-ivmenu {
+    width: min(260px, calc(100vw - 24px));
+  }
+  .tb-ivrow {
+    height: 44px;
+  }
+  .tb-ivheader {
+    height: 36px;
+  }
+  .tb-ivicon {
+    width: 36px;
+    height: 36px;
+  }
+  .tb-ivcount,
+  .tb-ivunit {
+    height: 40px;
+    /* 16px keeps iOS from zooming the page on focus. */
+    font-size: 16px;
+  }
+  .tb-small-btn {
+    height: 40px;
+  }
+  .lp-panel {
+    width: min(292px, calc(100vw - 24px));
+  }
+}

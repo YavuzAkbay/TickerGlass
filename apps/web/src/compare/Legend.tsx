@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Chart } from '@tickerglass/engine';
 import { useStore } from 'zustand';
+import { LegendGroup } from '../chart/LegendGroup';
 import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';
 import { DropdownMenu } from '../ui/Menu';
@@ -64,16 +65,18 @@ export function CompareLegends({ session }: { session: ChartSession }) {
         if (!slot) return null;
         return createPortal(
           <div className="cmp-legend" ref={shieldFromChart}>
-            {list.map((item) => (
-              <LegendRow
-                key={item.id}
-                chart={chart}
-                item={item}
-                index={index}
-                status={status[item.id]}
-                statusLine={statusLine}
-              />
-            ))}
+            <LegendGroup label="Compare" count={list.length}>
+              {list.map((item) => (
+                <LegendRow
+                  key={item.id}
+                  chart={chart}
+                  item={item}
+                  index={index}
+                  status={status[item.id]}
+                  statusLine={statusLine}
+                />
+              ))}
+            </LegendGroup>
           </div>,
           slot,
           paneId,
@@ -150,7 +153,7 @@ function LegendRow({
         <button
           ref={setMoreBtn}
           type="button"
-          className="cmp-legend-btn"
+          className="cmp-legend-btn cmp-legend-more"
           aria-label="More"
           title="More"
           aria-haspopup="menu"

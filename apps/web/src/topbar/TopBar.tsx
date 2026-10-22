@@ -7,6 +7,7 @@ import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
 import { useReplayStore } from '../replay/store';
 import { IconButton } from '../ui/IconButton';
+import { useIsMobile } from '../ui/useMediaQuery';
 import { Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
 import { CHART_TYPE_MENU, chartTypeDef } from './chartTypes';
@@ -35,23 +36,28 @@ export function TopBar() {
   const right = useRef<HTMLDivElement>(null);
   const palette = useRef<HTMLButtonElement>(null);
   // Narrow windows fold the bar step by step instead of letting groups overlap.
-  const { level, overflow } = useFitLevel({ bar, left, right, palette });
+  const mobile = useIsMobile();
+  const fit = useFitLevel({ bar, left, right, palette, enabled: !mobile });
+  // Phones: search, interval, chart type and indicators stay; the rest folds into "More".
+  const level = mobile ? FIT_MAX : fit.level;
+  const overflow = mobile ? false : fit.overflow;
   const folded = level >= FIT_MAX;
   const cls = ['top-bar', ...Array.from({ length: level }, (_, i) => `tb-fit${i + 1}`)];
+  if (mobile) cls.push('tb-mobile');
   if (overflow) cls.push('tb-overflow');
   return (
     <div ref={bar} className={cls.join(' ')} role="toolbar" aria-label={t('topbar.toolbar')}>
       <div className="tb-side tb-left">
         <div ref={left} className="tb-group">
           <IntervalControl compact={level >= 4} />
-          <div className="tb-sep" />
+          {mobile ? null : <div className="tb-sep" />}
           <ChartTypeButton />
           <CommandButton
             id="chart.indicators"
             icon={SquareFunction}
             label={t('topbar.indicators')}
           />
-          <IndicatorTemplatesButton />
+          {mobile ? null : <IndicatorTemplatesButton />}
         </div>
       </div>
       <PaletteButton ref={palette} />
@@ -65,9 +71,9 @@ export function TopBar() {
               active={replayOn}
             />
           )}
-          <LayoutPicker />
+          {mobile ? null : <LayoutPicker />}
           <LayoutMenu />
-          <div className="tb-sep" />
+          {mobile ? null : <div className="tb-sep" />}
           {folded ? null : (
             <>
               <UndoRedo />

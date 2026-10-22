@@ -115,3 +115,61 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
 }
+
+/* ---- touch and phones ---- */
+@media (pointer: coarse) {
+  .drw-toolbar {
+    height: 46px;
+  }
+  .drw-tb-grip {
+    padding: 0 10px;
+  }
+  .io-icon-btn.drw-tb-btn {
+    min-width: 40px;
+    height: 40px;
+  }
+  .drw-toolbar .cp-swatch {
+    width: 36px;
+    height: 36px;
+  }
+  .drw-tb-width {
+    font-size: 13px;
+  }
+  .drw-text-editor {
+    /* 16px keeps iOS from zooming the page on focus. */
+    font-size: 16px;
+  }
+}
+@media (max-width: 768px) {
+  .drw-toolbar {
+    /* Scrolls sideways when the controls are wider than the screen. */
+    max-width: calc(100vw - 8px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .drw-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .drw-toolbar > * {
+    flex: none;
+  }
+  .drw-text-editor {
+    max-width: calc(100vw - 8px);
+  }
+}
+@media (pointer: coarse) and (max-width: 480px) {
+  /* Narrow phones: slightly tighter so the whole toolbar fits at 360px. */
+  .drw-tb-grip {
+    padding: 0 6px;
+  }
+  .io-icon-btn.drw-tb-btn {
+    min-width: 36px;
+  }
+  .drw-toolbar .cp-swatch {
+    width: 34px;
+    height: 34px;
+  }
+  .drw-tb-sep {
+    margin: 0 2px;
+  }
+}

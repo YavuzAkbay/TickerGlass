@@ -160,6 +160,8 @@ function ToolbarBody({ ids }: { ids: string[] }) {
     let y = box ? box.top - h - GAP : top;
     if (box && y < top) y = box.bottom + GAP > bottom ? top : box.bottom + GAP;
     if (area) x = Math.max(area.left + 4, Math.min(x, area.right - w - 4));
+    // The viewport wins over the chart area (a wide toolbar on a phone).
+    x = Math.max(4, Math.min(x, window.innerWidth - w - 4));
     setPos({ x, y: Math.max(top, Math.min(y, bottom)) });
   }, [pos, ids]);
 
@@ -191,9 +193,20 @@ function ToolbarBody({ ids }: { ids: string[] }) {
       e.currentTarget.setPointerCapture(e.pointerId);
     },
     onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
-      if (drag.current) setPos({ x: e.clientX - drag.current.dx, y: e.clientY - drag.current.dy });
+      const el = ref.current;
+      if (!drag.current || !el) return;
+      // Keep the toolbar inside the viewport (a finger can drag it off screen).
+      const x = e.clientX - drag.current.dx;
+      const y = e.clientY - drag.current.dy;
+      setPos({
+        x: Math.max(4, Math.min(x, window.innerWidth - el.offsetWidth - 4)),
+        y: Math.max(4, Math.min(y, window.innerHeight - el.offsetHeight - 4)),
+      });
     },
     onPointerUp: () => {
+      drag.current = null;
+    },
+    onPointerCancel: () => {
       drag.current = null;
     },
   };

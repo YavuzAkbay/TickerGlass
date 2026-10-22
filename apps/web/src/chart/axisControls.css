@@ -1,3 +1,8 @@
+/* Wrapper only: it adds no box on desktop, so the controls position against the chart cell. */
+.ax-strip {
+  display: contents;
+}
+
 /* Range chips above the time axis: out of the way until the pointer is over the chart. */
 .ax-ranges {
   position: absolute;
@@ -81,4 +86,88 @@
 .ax-scale-btn.active {
   color: var(--accent-text);
   opacity: 1;
+}
+
+/* Touch has no hover to reveal the chips. */
+@media (hover: none) {
+  .ax-ranges {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Finger-sized chips and toggles on tablets too. */
+@media (pointer: coarse) {
+  .ax-chip {
+    height: 32px;
+  }
+  .ax-scale-btn {
+    height: 28px;
+    min-width: 28px;
+  }
+}
+
+/* ---- phones: range chips and scale toggles in a strip below the chart ---- */
+@media (max-width: 768px) {
+  .chart-cell:has(> .ax-strip) > .chart-host {
+    bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+  .ax-strip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: content-box;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .ax-ranges {
+    position: static;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 2px;
+    padding: 0 4px 0 8px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    opacity: 1;
+    transform: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ax-ranges::-webkit-scrollbar {
+    display: none;
+  }
+  .ax-chip {
+    flex: none;
+    height: 32px;
+    min-width: 40px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+  .ax-chip-icon {
+    min-width: 40px;
+    padding: 0;
+  }
+  .ax-scale {
+    position: static;
+    flex: none;
+    gap: 2px;
+    padding: 0 4px;
+    border-left: 1px solid var(--border);
+  }
+  .ax-scale-btn {
+    height: 32px;
+    min-width: 34px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
 }
