@@ -81,7 +81,7 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
     id: 'trend',
     label: 'Trend',
     title: '30-day trend',
-    width: '58px',
+    width: '50px',
     // Drawn by `Sparkline` (SymbolRow); not sortable.
     render: () => ({ text: '' }),
     sortValue: () => null,

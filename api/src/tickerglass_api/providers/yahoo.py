@@ -169,7 +169,25 @@ class YahooProvider:
             self._remember_currency(symbol, ticker)
             return df
 
-        return _normalize(self._call(fetch))
+        frame = self._call(fetch)
+        if frame is None or frame.empty:
+            # yfinance turns connection failures into an empty frame ("possibly delisted"):
+            # make sure Yahoo answers before the symbol is reported as unknown.
+            self._ensure_reachable()
+        return _normalize(frame)
+
+    def _ensure_reachable(self) -> None:
+        """Raise `UpstreamUnavailable` when Yahoo cannot be reached (one cheap request)."""
+        charge_upstream(1)
+
+        def probe() -> None:
+            from yfinance.const import _QUERY1_URL_
+            from yfinance.data import YfData
+
+            # Any HTTP answer will do; only a failed connection raises.
+            YfData()._session.get(_QUERY1_URL_, timeout=10)
+
+        self._call(probe)
 
     def symbol_info(self, symbol: str) -> dict[str, Any]:
         def fetch() -> dict[str, Any]:
@@ -181,6 +199,7 @@ class YahooProvider:
 
         meta = self._call(fetch)
         if not meta.get("symbol"):
+            self._ensure_reachable()
             raise SymbolNotFound(symbol)
         price_hint = int(meta.get("priceHint") or 2)
         regular = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
@@ -358,6 +377,7 @@ class YahooProvider:
 
         dividends, splits, earnings = self._call(fetch, cost=2)
         if dividends is None and splits is None:
+            self._ensure_reachable()
             raise SymbolNotFound(symbol)
         return {
             "dividends": [

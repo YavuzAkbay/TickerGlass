@@ -77,6 +77,8 @@ test('404 names the symbol and offers symbol search', async ({ page }) => {
   await expect(overlay(page)).toBeVisible();
   await expect(overlay(page)).toContainText('Symbol not found');
   await expect(overlay(page)).toContainText('AAPL');
+  // One message: the engine's status line under the overlay is hidden.
+  await expect(page.locator('.io-status')).toBeHidden();
   await page.getByRole('button', { name: 'Search symbols' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
@@ -108,6 +110,11 @@ test('503 shows Retry, which recovers once the service is back', async ({ page }
   await serveBars(page, state);
   await page.goto('/');
   await expect(overlay(page)).toContainText('Data unavailable');
+  // Not "symbol not found": the server's reason, and a way to check the data source.
+  await expect(overlay(page)).not.toContainText('not found');
+  await expect(overlay(page)).toContainText('upstream unreachable');
+  await expect(overlay(page).getByRole('button', { name: 'Data source…' })).toBeVisible();
+  await expect(page.locator('.io-status')).toBeHidden();
   const before = state.calls;
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(overlay(page)).toBeVisible();
