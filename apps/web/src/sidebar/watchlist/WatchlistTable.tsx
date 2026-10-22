@@ -1,3 +1,4 @@
+import { useIsCoarsePointer } from '../../ui/useMediaQuery';
 import { ArrowDown, ArrowUp, Settings2 } from 'lucide-react';
 import {
   useEffect,
@@ -177,7 +178,9 @@ export function WatchlistTable({ listRef }: Props) {
     () => ({ draggable: true, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }),
     [onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd],
   );
-  const dndFor = canDrag ? dnd : NO_DND;
+  // Native HTML5 drag steals the touch long-press (row menu); skip it on touch.
+  const coarse = useIsCoarsePointer();
+  const dndFor = canDrag && !coarse ? dnd : NO_DND;
   const dropPosOf = (row: Row): 'above' | 'below' | null =>
     drop && dragFrom !== null && drop.index === row.index && row.index !== dragFrom
       ? drop.after

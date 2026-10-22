@@ -368,3 +368,66 @@
   border-radius: 2px;
   background: var(--wl-heat, transparent);
 }
+
+/* ======== touch + phone ======== */
+@media (pointer: coarse) {
+  .wl-row {
+    height: 48px;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  .wl-toolbar {
+    height: 44px;
+  }
+  .wl-head {
+    top: 44px;
+    height: 34px;
+  }
+  .wl-switcher {
+    height: 38px;
+  }
+  .wl-section {
+    height: 36px;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  .wl-section-toggle {
+    padding: 8px;
+  }
+  .wl-cols-btn {
+    width: 36px;
+    height: 32px;
+    min-width: 0;
+  }
+  .wl-menu-search input {
+    height: 40px;
+    font-size: 16px;
+  }
+  .wl-seg button {
+    height: 36px;
+  }
+}
+@media (max-width: 768px) {
+  .wl-head,
+  .wl-row {
+    gap: 4px;
+    padding-right: 4px;
+  }
+  /* Keep the grid inside the drawer: the symbol column may shrink, numbers stay compact. */
+  .wl-grid {
+    overflow-x: hidden;
+  }
+  .wl-sym {
+    min-width: 0;
+  }
+  .wl-cell,
+  .wl-th {
+    min-width: 0;
+  }
+  .wl-perf {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wl-menu-search input {
+    font-size: 16px;
+  }
+}

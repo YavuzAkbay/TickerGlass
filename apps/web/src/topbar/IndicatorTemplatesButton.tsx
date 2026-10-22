@@ -19,10 +19,11 @@ const savedOffline = (what: string) =>
 
 const fail = (what: string, err: unknown) => toast(`${what}: ${errorMessage(err)}`, 'error', 6000);
 
-/** "Indicator sets" dropdown: save the current set, apply, rename, delete. */
-export function IndicatorTemplatesButton() {
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  const [open, setOpen] = useState(false);
+/**
+ * Menu items of the "Indicator sets" dropdown (save the current set, apply, rename,
+ * delete) and a `refresh` that loads the saved sets; shared with the phone "More" menu.
+ */
+export function useIndicatorSetItems(): { items: MenuItem[]; refresh: () => Promise<void> } {
   const [templates, setTemplates] = useState<Template[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const hasIndicators = useIndicatorStore((s) => s.instances.length > 0);
@@ -35,11 +36,6 @@ export function IndicatorTemplatesButton() {
         setError(null);
       })
       .catch((err) => setError(errorMessage(err)));
-
-  const toggle = () => {
-    if (!open) void refresh();
-    setOpen((o) => !o);
-  };
 
   const save = async () => {
     const name = await promptName({ title: 'Save indicator set' });
@@ -135,6 +131,19 @@ export function IndicatorTemplatesButton() {
       type: 'custom',
       render: () => <div className="tb-menu-note">No templates yet</div>,
     });
+
+  return { items, refresh };
+}
+
+/** "Indicator sets" dropdown: save the current set, apply, rename, delete. */
+export function IndicatorTemplatesButton() {
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const { items, refresh } = useIndicatorSetItems();
+  const toggle = () => {
+    if (!open) void refresh();
+    setOpen((o) => !o);
+  };
 
   return (
     <>

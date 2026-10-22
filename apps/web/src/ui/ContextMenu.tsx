@@ -22,7 +22,7 @@ export function closeContextMenu(): void {
 export function ContextMenuHost() {
   const { pos, items } = useContextMenu();
   return (
-    <Popover anchor={pos} open={!!pos} onClose={closeContextMenu}>
+    <Popover anchor={pos} open={!!pos} onClose={closeContextMenu} sheet>
       <Menu items={items} onClose={closeContextMenu} />
     </Popover>
   );

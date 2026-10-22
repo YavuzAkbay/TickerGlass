@@ -8,23 +8,27 @@ interface Props {
   sections: SectionDef[];
   /** Section whose panel is open, or null while collapsed. */
   active: string | null;
+  /** Vertical rail (desktop) or horizontal bottom tab bar (phones). */
+  orientation?: 'vertical' | 'horizontal';
 }
 
 /** Vertical tablist: one icon button per section; always visible. */
-export function NavRail({ sections, active }: Props) {
+export function NavRail({ sections, active, orientation = 'vertical' }: Props) {
   const t = useT();
   const unread = useAlerts((s) => s.unread);
   const toggleNav = useUiStore((s) => s.toggleNav);
 
-  /** Up/Down/Home/End move between tabs; an open panel follows the focused tab. */
+  const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight';
+  const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft';
+  /** Up/Down (Left/Right when horizontal)/Home/End move between tabs; an open panel follows the focused tab. */
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = sections.length - 1;
     const next =
-      e.key === 'ArrowDown'
+      e.key === nextKey
         ? index === last
           ? 0
           : index + 1
-        : e.key === 'ArrowUp'
+        : e.key === prevKey
           ? index === 0
             ? last
             : index - 1
@@ -48,7 +52,7 @@ export function NavRail({ sections, active }: Props) {
       className="nav-rail"
       role="tablist"
       aria-label={t('nav.panels')}
-      aria-orientation="vertical"
+      aria-orientation={orientation}
     >
       {sections.map((s, i) => {
         const Icon = s.icon;
@@ -66,7 +70,7 @@ export function NavRail({ sections, active }: Props) {
             aria-controls={selected ? 'nav-panel' : undefined}
             tabIndex={selected || (!active && i === 0) ? 0 : -1}
             data-panel={s.id}
-            data-tip={label}
+            data-tip={orientation === 'vertical' ? label : undefined}
             data-tip-side="right"
             onClick={() => toggleNav(s.id)}
             onKeyDown={(e) => onKeyDown(e, i)}

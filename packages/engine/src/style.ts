@@ -4,7 +4,7 @@ const STYLE_ID = 'tickerglass-engine-style';
 
 const CSS = `
 .io-chart { position: relative; overflow: hidden; user-select: none; -webkit-user-select: none;
-  touch-action: none; outline: none; background: var(--io-bg); color: var(--io-text);
+  -webkit-touch-callout: none; touch-action: none; outline: none; background: var(--io-bg); color: var(--io-text);
   font-family: var(--io-font); font-size: var(--io-font-size); }
 .io-pane, .io-axis { position: absolute; overflow: hidden; }
 .io-price-axis { border-left: 1px solid var(--io-border); box-sizing: border-box; }
