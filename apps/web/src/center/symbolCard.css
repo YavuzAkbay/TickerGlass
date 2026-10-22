@@ -4,8 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: max-content;
-  max-width: min(520px, calc(100vw - 32px));
+  /* Content width, but never wider than the pane the legend sits in: rows wrap instead of clipping. */
+  width: fit-content;
+  max-width: 520px;
   margin-bottom: 6px;
   padding: 8px 12px 8px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
@@ -24,6 +25,9 @@
 .sc-card button {
   pointer-events: auto;
 }
+.sc-card > * {
+  max-width: 100%;
+}
 .sc-top,
 .sc-price,
 .sc-stats,
@@ -41,16 +45,17 @@
 .sc-stats:empty {
   display: none;
 }
-/* The bar under the crosshair, set off by a hairline. */
+/* The bar under the crosshair, set off by a hairline. Each O/H/L/C pair is one unit, so
+   a wrap never splits a label from its value. */
 .sc-bar {
-  gap: 2px 8px;
-  margin-top: 2px;
-  padding-top: 5px;
+  gap: 3px 12px;
+  margin-top: 4px;
+  padding-top: 7px;
   border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  font-size: 11px;
+  font-size: 12px;
 }
 .sc-bar-interval {
-  padding: 0 5px;
+  padding: 1px 6px;
   border-radius: 4px;
   background: var(--raised);
   color: var(--text);
@@ -58,15 +63,16 @@
 }
 .sc-bar-item {
   display: inline-flex;
-  gap: 3px;
+  flex: none;
+  gap: 4px;
 }
 .sc-bar-label {
   color: var(--muted);
 }
 .sc-bar-value {
+  flex: none;
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
 }
 .sc-bar.up .sc-bar-value {
   color: var(--up);
@@ -126,6 +132,8 @@
   background: var(--text-strong);
 }
 .sc-source {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: var(--muted);
   font-size: 11px;
