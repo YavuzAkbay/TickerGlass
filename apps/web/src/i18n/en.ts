@@ -16,6 +16,7 @@ export const en = {
   'topbar.replay': 'Bar replay',
   'topbar.settings': 'Settings',
   'topbar.shortcuts': 'Keyboard shortcuts',
+  'topbar.dataSource': 'Data source…',
   'topbar.symbolSearch': 'Symbol search',
   'topbar.chartType': 'Chart type: {type}',
   'topbar.showTools': 'Show drawing tools',

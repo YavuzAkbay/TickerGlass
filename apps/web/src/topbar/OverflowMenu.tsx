@@ -1,6 +1,7 @@
 import {
   AlarmClock,
   Camera,
+  Database,
   GitCompareArrows,
   Keyboard,
   Maximize,
@@ -88,6 +89,11 @@ export function OverflowMenu() {
       onSelect: run('view.fullscreen'),
     },
     { type: 'separator' },
+    {
+      label: t('topbar.dataSource'),
+      icon: Database,
+      onSelect: run('app.dataSource'),
+    },
     {
       label: t('topbar.shortcuts'),
       icon: Keyboard,

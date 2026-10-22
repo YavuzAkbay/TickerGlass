@@ -40,7 +40,8 @@ export type DialogId =
   | 'loadLayout'
   | 'dataTransfer'
   | 'alert'
-  | 'scriptEditor';
+  | 'scriptEditor'
+  | 'dataSource';
 
 /** Drawing tool ids are defined by the left toolbar (Phase 6 implements them). */
 export type DrawingToolId = string;

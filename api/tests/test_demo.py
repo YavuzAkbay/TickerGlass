@@ -74,3 +74,30 @@ def test_app_serves_demo_data(monkeypatch: pytest.MonkeyPatch, tmp_path: object)
         assert info["exchange"] == "DEMO"
         bars = client.get("/api/bars", params={"symbol": "GLSS", "interval": "1d"}).json()
         assert len(bars["t"]) > 100
+
+
+def test_providers_endpoint_and_connection_test(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+) -> None:
+    monkeypatch.setenv("MARKET_PROVIDER", "demo")
+    get_settings.cache_clear()
+    app = create_app(database_url=f"sqlite:///{tmp_path}/p.db")
+    with TestClient(app) as client:
+        listing = client.get("/api/providers").json()
+        assert listing["active"] == "demo"
+        assert listing["setting"] == "MARKET_PROVIDER"
+        assert {p["id"] for p in listing["providers"]} >= {"yahoo", "demo"}
+        yahoo = next(p for p in listing["providers"] if p["id"] == "yahoo")
+        assert yahoo["network"] is True and "personal use" in yahoo["terms"]
+        test = client.post("/api/providers/test").json()
+        assert test["ok"] is True
+        assert test["symbol"] == "GLSS"
+        assert test["price"] > 0
+
+
+def test_custom_provider_reports_no_active_spec(tmp_path: object) -> None:
+    app = create_app(
+        provider=DemoProvider(clock=lambda: NOW), database_url=f"sqlite:///{tmp_path}/c.db"
+    )
+    with TestClient(app) as client:
+        assert client.get("/api/providers").json()["active"] is None
