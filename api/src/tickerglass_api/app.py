@@ -24,6 +24,7 @@ from .providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
+from .providers.demo import DemoLiveSource, DemoProvider
 from .providers.guard import GuardedProvider, UpstreamGuard
 from .routes import (
     alerts,
@@ -75,10 +76,15 @@ def create_app(
         run_migrations(db_url)
         engine = make_engine(db_url)
         app.state.sessionmaker = sessionmaker(engine, expire_on_commit=False)
-        if provider is None:
+        demo: DemoProvider | None = None
+        inner: MarketDataProvider
+        if provider is None and settings.market_provider == "demo":
+            demo = DemoProvider()
+            inner = demo
+        elif provider is None:
             from .providers.yahoo import YahooProvider
 
-            inner: MarketDataProvider = YahooProvider(
+            inner = YahooProvider(
                 retries=settings.upstream_retries,
                 rate_limit_retries=settings.upstream_rate_limit_retries,
                 quote_v7_retry_s=settings.quote_v7_retry_s,
@@ -125,7 +131,9 @@ def create_app(
             background=guard.background,
         )
         source = live_source
-        if source is None:
+        if source is None and demo is not None:
+            source = DemoLiveSource(demo)
+        elif source is None:
             from .providers.yahoo_live import YahooLiveSource
 
             source = YahooLiveSource()
