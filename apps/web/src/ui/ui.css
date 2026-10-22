@@ -409,7 +409,7 @@
   .io-toasts {
     left: 12px;
     right: 12px;
-    bottom: calc(64px + env(safe-area-inset-bottom));
+    bottom: calc(var(--tabbar-h, 0px) + 8px + env(safe-area-inset-bottom));
   }
   /* Over a full-screen modal, bottom toasts would hide its footer actions. */
   body:has([data-modal-open]) .io-toasts {

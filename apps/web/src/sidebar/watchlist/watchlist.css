@@ -415,7 +415,7 @@
   }
   /* Keep the grid inside the drawer: the symbol column may shrink, numbers stay compact. */
   .wl-grid {
-    overflow-x: hidden;
+    overflow-x: clip;
   }
   .wl-sym {
     min-width: 0;
