@@ -1,4 +1,14 @@
-import { ArrowRightLeft, ChevronRight, Search } from 'lucide-react';
+import { listIndicators } from '@tickerglass/indicators';
+import {
+  AlarmClock,
+  ArrowRightLeft,
+  ChartCandlestick,
+  ChevronRight,
+  Clock,
+  GitCompareArrows,
+  Search,
+  SquareFunction,
+} from 'lucide-react';
 import {
   useEffect,
   useRef,
@@ -7,7 +17,19 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import { openAlertDialog } from '../alerts/dialog/open';
+import { addCompare } from '../compare/actions';
+import {
+  INTENT_EXAMPLES,
+  parseIntents,
+  type IndicatorInfo,
+  type Intent,
+} from '../commands/natural';
 import { commands, formatShortcut, type Command } from '../commands/registry';
+import { addIndicator } from '../indicators/actions';
+import { useChartView } from '../store/chartView';
+import { CHART_TYPE_MENU } from '../topbar/chartTypes';
+import { intervalLabel } from '../topbar/intervals';
 import { Modal } from '../ui/Modal';
 import { useCommandList } from './useCommandList';
 import './dialogs.css';
@@ -89,6 +111,86 @@ interface Entry {
   run: () => void;
 }
 
+function indicatorInfos(): IndicatorInfo[] {
+  return listIndicators().map((d) => ({
+    id: d.id,
+    name: d.name,
+    shortName: d.shortName,
+    numeric: Object.entries(d.inputs).flatMap(([key, def]) =>
+      def.kind === 'int' || def.kind === 'float'
+        ? [
+            {
+              key,
+              label: def.label,
+              kind: def.kind,
+              ...(def.min !== undefined ? { min: def.min } : {}),
+              ...(def.max !== undefined ? { max: def.max } : {}),
+            },
+          ]
+        : [],
+    ),
+  }));
+}
+
+const CHART_TYPES = CHART_TYPE_MENU.flatMap((t) => (t ? [{ id: t.id, label: t.label }] : []));
+
+const ALERT_WORDS = {
+  crossing: 'crosses',
+  crossingUp: 'crosses above',
+  crossingDown: 'crosses below',
+  greater: 'is above',
+  less: 'is below',
+} as const;
+
+/** A palette row for a typed command ("rsi 14", "4h", ...). */
+function intentEntry(intent: Intent, exec: (fn: () => void) => void): Entry {
+  const base = { category: 'Run', shortcut: '', positions: [] };
+  switch (intent.kind) {
+    case 'interval':
+      return {
+        ...base,
+        key: `intent:interval:${intent.interval}`,
+        title: `Switch to ${intervalLabel(intent.interval)}`,
+        icon: Clock,
+        run: () => exec(() => commands.execute('chart.setInterval', intent.interval)),
+      };
+    case 'indicator': {
+      const values = Object.values(intent.inputs);
+      return {
+        ...base,
+        key: `intent:indicator:${intent.type}:${values.join(',')}`,
+        title: `Add ${intent.name}${values.length ? ` (${values.join(', ')})` : ''}`,
+        icon: SquareFunction,
+        run: () => exec(() => void addIndicator(intent.type, { inputs: intent.inputs })),
+      };
+    }
+    case 'compare':
+      return {
+        ...base,
+        key: `intent:compare:${intent.symbol}`,
+        title: `Compare with ${intent.symbol}`,
+        icon: GitCompareArrows,
+        run: () => exec(() => void addCompare(intent.symbol, 'same')),
+      };
+    case 'alert':
+      return {
+        ...base,
+        key: `intent:alert:${intent.op}:${intent.price}`,
+        title: `Alert when price ${ALERT_WORDS[intent.op]} ${intent.price}`,
+        icon: AlarmClock,
+        run: () => exec(() => openAlertDialog({ price: intent.price, op: intent.op })),
+      };
+    case 'chartType':
+      return {
+        ...base,
+        key: `intent:chartType:${intent.chartType}`,
+        title: `Show as ${intent.label}`,
+        icon: ChartCandlestick,
+        run: () => exec(() => useChartView.getState().set({ chartType: intent.chartType })),
+      };
+  }
+}
+
 const TICKER_RE = /^[A-Za-z0-9^][A-Za-z0-9.=^-]{0,14}$/;
 
 /** Mod+K palette: fuzzy search over every visible command, plus "Change symbol to X". */
@@ -121,7 +223,15 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
           a.c.title.localeCompare(b.c.title),
     );
 
-  const entries: Entry[] = matched.map(({ c, m }) => ({
+  const intents = parseIntents(q, { indicators: indicatorInfos(), chartTypes: CHART_TYPES }).map(
+    (i) =>
+      intentEntry(i, (fn) => {
+        onClose();
+        fn();
+      }),
+  );
+
+  const commandEntries: Entry[] = matched.map(({ c, m }) => ({
     key: c.id,
     title: c.title,
     category: c.category ?? 'General',
@@ -130,6 +240,8 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
     positions: m.positions,
     run: () => exec(c.id),
   }));
+  // Typed commands are what the user spelled out: they lead.
+  const entries: Entry[] = [...intents, ...commandEntries];
 
   if (TICKER_RE.test(q)) {
     const ticker = q.toUpperCase();
@@ -151,7 +263,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
         .split(/[^a-z0-9]+/)
         .some((w) => w.startsWith(lower)),
     );
-    const strong = wordHit || (matched[0]?.m.score ?? 0) >= q.length * 3;
+    const strong = intents.length > 0 || wordHit || (matched[0]?.m.score ?? 0) >= q.length * 3;
     if (strong) entries.push(symbolEntry);
     else entries.unshift(symbolEntry);
   }
@@ -180,7 +292,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
         <input
           className="dlg-search-input"
           value={query}
-          placeholder="Search commands or type a ticker"
+          placeholder="Type a command, ticker or indicator…"
           aria-label="Search commands"
           role="combobox"
           aria-expanded
@@ -224,6 +336,34 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
           })
         )}
       </div>
+      <PaletteFooter
+        onExample={(text) => {
+          setQuery(text);
+          setActive(0);
+        }}
+      />
     </Modal>
+  );
+}
+
+/** Example commands to learn the grammar, plus the keys that drive the list. */
+function PaletteFooter({ onExample }: { onExample: (text: string) => void }) {
+  return (
+    <div className="dlg-palette-foot">
+      <span className="dlg-palette-try">Try</span>
+      {INTENT_EXAMPLES.map((ex) => (
+        <button
+          key={ex}
+          type="button"
+          className="dlg-palette-example"
+          onClick={() => onExample(ex)}
+        >
+          {ex}
+        </button>
+      ))}
+      <span className="dlg-palette-keys">
+        <kbd className="dlg-kbd">↑↓</kbd> move <kbd className="dlg-kbd">Enter</kbd> run
+      </span>
+    </div>
   );
 }
