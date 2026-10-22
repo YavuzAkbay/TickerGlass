@@ -29,8 +29,12 @@ function Editor({ edit }: { edit: TextEdit }) {
     finishTextEdit(d.id, edit.created, save ? value : null);
   };
 
-  const x = Math.max(4, Math.min(edit.x, window.innerWidth - 264));
-  const y = Math.max(4, Math.min(edit.y, window.innerHeight - 120));
+  // Narrower than the viewport on phones (the CSS caps the width the same way).
+  const w = Math.min(260, window.innerWidth - 8);
+  const x = Math.max(4, Math.min(edit.x, window.innerWidth - w - 4));
+  // visualViewport shrinks when the on-screen keyboard opens, so the field stays above it.
+  const vh = window.visualViewport?.height ?? window.innerHeight;
+  const y = Math.max(4, Math.min(edit.y, vh - 120));
   const props = {
     className: 'drw-text-editor io-input',
     'aria-label': `${def.name} text`,

@@ -4,6 +4,7 @@ import type { ColumnId, FlagColor } from '../../watchlist/types';
 import { COLUMNS, useFlash } from './columns';
 import { rowMenu } from './rowMenu';
 import { Sparkline } from './Sparkline';
+import { useLongPress } from '../../ui/useLongPress';
 import type { ListRef } from '../../watchlist/types';
 
 interface Props {
@@ -48,6 +49,7 @@ export const SymbolRow = memo(function SymbolRow({
   const lastRef = useRef<HTMLSpanElement>(null);
   const extRef = useRef<HTMLSpanElement>(null);
   useFlash(q, lastRef, extRef);
+  const press = useLongPress((x, y) => rowMenu(symbol, listRef, x, y));
 
   return (
     <div
@@ -66,6 +68,7 @@ export const SymbolRow = memo(function SymbolRow({
         e.preventDefault();
         rowMenu(symbol, listRef, e.clientX, e.clientY);
       }}
+      {...press}
       {...dnd}
     >
       <span role="gridcell" className="wl-sym">

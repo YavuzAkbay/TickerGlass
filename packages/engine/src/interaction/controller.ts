@@ -8,6 +8,24 @@ const CLICK_SLOP = 3;
 const KINETIC_MIN_VELOCITY = 0.25; // px/ms
 const KINETIC_STOP_VELOCITY = 0.02;
 const KINETIC_DECAY = 0.94; // per 16ms
+/** Touch: hold this long without moving to inspect (crosshair) or open the context menu. */
+export const LONG_PRESS_MS = 500;
+/** Touch: finger travel (px) that still counts as holding still / tapping. */
+const TOUCH_SLOP = 8;
+/** Touch: second tap within this time (ms) and distance (px) is a double-tap. */
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DIST = 30;
+
+/** Where and when a touch press started (taps, long-press, double-tap). */
+interface Press {
+  id: number;
+  x: number;
+  y: number;
+  clientX: number;
+  clientY: number;
+  /** Largest distance from the start so far. */
+  moved: number;
+}
 
 type Drag =
   | {
@@ -26,7 +44,12 @@ type Drag =
   | { kind: 'plus'; pane: Pane }
   | { kind: 'timeAxis'; lastX: number }
   | { kind: 'separator'; index: number; lastY: number }
-  | { kind: 'pinch'; pane: Pane; lastDist: number }
+  /** Two-finger pinch: zooms the time axis around the fingers' midpoint and pans with it. */
+  | { kind: 'pinch'; pane: Pane; lastDist: number; lastMid: number }
+  /** Touch long-press on a pane: the finger drives the crosshair; released in place, the menu opens. */
+  | { kind: 'inspect'; moved: boolean }
+  /** Touch long-press on a drawing: its menu opens on release. */
+  | { kind: 'held' }
   /** A drawing gesture owns the pointer (creation, select press, drag). */
   | { kind: 'drawing' };
 
@@ -110,6 +133,11 @@ export class InteractionController {
   /** Wheel zoom still to apply (log of the factor) around `x`, eased in over a few frames. */
   private zoomEase: { x: number; rest: number; frame: number } | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Pointer type of the last press: touch synthesizes its own dblclick/contextmenu. */
+  private lastPointerType = '';
+  private press: Press | null = null;
+  private holdTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastTap: { t: number; x: number; y: number } | null = null;
   private readonly el: HTMLElement;
   private readonly abort = new AbortController();
 
@@ -121,7 +149,7 @@ export class InteractionController {
     this.el.addEventListener('pointerup', (e) => this.onUp(e), opts);
     this.el.addEventListener('pointercancel', (e) => this.onCancel(e), opts);
     this.el.addEventListener('lostpointercapture', (e) => this.onCancel(e), opts);
-    this.el.addEventListener('pointerleave', () => this.onLeave(), opts);
+    this.el.addEventListener('pointerleave', (e) => this.onLeave(e), opts);
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e), opts);
     this.el.addEventListener('wheel', (e) => this.onWheel(e), { ...opts, passive: false });
     this.el.addEventListener('keydown', (e) => this.onKey(e), opts);
@@ -130,11 +158,10 @@ export class InteractionController {
       (e) => {
         if (inLegendSlot(e)) return;
         e.preventDefault();
+        // Touch long-presses are handled by the controller (Android also fires contextmenu).
+        if (this.lastPointerType === 'touch') return;
         this.drag = null;
-        const p = this.local(e);
-        const target = this.chart.drawingTarget(this.chart.hitTest(p.x, p.y));
-        if (this.chart.drawingInput.contextMenu(target, e.clientX, e.clientY)) return;
-        this.chart.events.emit('contextMenu', this.chart.describePoint(e.clientX, e.clientY));
+        this.openContextMenu(e.clientX, e.clientY);
       },
       opts,
     );
@@ -145,6 +172,54 @@ export class InteractionController {
     cancelAnimationFrame(this.kineticFrame);
     if (this.zoomEase) cancelAnimationFrame(this.zoomEase.frame);
     clearTimeout(this.settleTimer);
+    clearTimeout(this.holdTimer);
+  }
+
+  private openContextMenu(clientX: number, clientY: number): void {
+    const p = this.local({ clientX, clientY });
+    const target = this.chart.drawingTarget(this.chart.hitTest(p.x, p.y));
+    if (this.chart.drawingInput.contextMenu(target, clientX, clientY)) return;
+    this.chart.events.emit('contextMenu', this.chart.describePoint(clientX, clientY));
+  }
+
+  private cancelHold(): void {
+    clearTimeout(this.holdTimer);
+    this.holdTimer = undefined;
+  }
+
+  /** The finger stayed put for LONG_PRESS_MS. */
+  private onHold(): void {
+    this.holdTimer = undefined;
+    const pr = this.press;
+    const d = this.drag;
+    if (!pr || this.pointers.size !== 1) return;
+    if (d?.kind === 'drawing') {
+      if (!this.chart.drawingInput.holdPress()) return;
+      this.drag = { kind: 'held' };
+    } else if (d?.kind === 'pan') {
+      this.drag = { kind: 'inspect', moved: false };
+      const hit = this.chart.hitTest(pr.x, pr.y);
+      if (hit.kind === 'pane') {
+        this.chart.hoverStudy(hit);
+        this.chart.setCrosshair(hit.pane, hit.x, hit.y);
+      }
+    } else return;
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function')
+      navigator.vibrate(10);
+  }
+
+  private panDrag(pane: Pane, p: { x: number; y: number }, t: number): Drag {
+    return {
+      kind: 'pan',
+      pane,
+      startX: p.x,
+      startY: p.y,
+      lastX: p.x,
+      lastY: p.y,
+      totalDy: 0,
+      verticalPan: !pane.priceScale.autoScale,
+      samples: [{ t, x: p.x }],
+    };
   }
 
   private local(e: { clientX: number; clientY: number }): { x: number; y: number } {
@@ -158,44 +233,50 @@ export class InteractionController {
     if (inLegendSlot(e)) return;
     this.el.focus({ preventScroll: true });
     this.stopKinetic();
+    this.lastPointerType = e.pointerType;
     const p = this.local(e);
     this.pointers.set(e.pointerId, p);
     this.el.setPointerCapture(e.pointerId);
+    this.cancelHold();
+    this.press = null;
 
     if (this.pointers.size === 2 && this.drag?.kind === 'pan') {
       const [a, b] = [...this.pointers.values()] as [
         { x: number; y: number },
         { x: number; y: number },
       ];
+      this.lastTap = null;
       this.drag = {
         kind: 'pinch',
         pane: this.drag.pane,
         lastDist: Math.hypot(a.x - b.x, a.y - b.y),
+        lastMid: (a.x + b.x) / 2,
       };
       return;
     }
+    if (e.pointerType === 'touch' && this.pointers.size === 1)
+      this.press = {
+        id: e.pointerId,
+        x: p.x,
+        y: p.y,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        moved: 0,
+      };
 
     this.chart.drawingInput.setPointerType(e.pointerType);
     const hit = this.chart.hitTest(p.x, p.y);
     if (this.chart.drawingInput.pointerDown(this.chart.drawingTarget(hit), p.x, p.y, mods(e))) {
       this.drag = { kind: 'drawing' };
       this.updateCursor(hit);
+      if (this.press) this.holdTimer = setTimeout(() => this.onHold(), LONG_PRESS_MS);
       return;
     }
     switch (hit.kind) {
       case 'pane':
-        this.drag = {
-          kind: 'pan',
-          pane: hit.pane,
-          startX: p.x,
-          startY: p.y,
-          lastX: p.x,
-          lastY: p.y,
-          totalDy: 0,
-          verticalPan: !hit.pane.priceScale.autoScale,
-          samples: [{ t: e.timeStamp, x: p.x }],
-        };
+        this.drag = this.panDrag(hit.pane, p, e.timeStamp);
         if (e.pointerType !== 'mouse') this.chart.setCrosshair(null, 0, 0);
+        if (this.press) this.holdTimer = setTimeout(() => this.onHold(), LONG_PRESS_MS);
         break;
       case 'priceAxis':
         this.drag = hit.plus
@@ -217,6 +298,11 @@ export class InteractionController {
   private onMove(e: PointerEvent): void {
     const p = this.local(e);
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, p);
+    const pr = this.press;
+    if (pr?.id === e.pointerId) {
+      pr.moved = Math.max(pr.moved, Math.hypot(p.x - pr.x, p.y - pr.y));
+      if (pr.moved > TOUCH_SLOP) this.cancelHold();
+    }
     const d = this.drag;
     const chart = this.chart;
 
@@ -277,33 +363,71 @@ export class InteractionController {
         if (pts.length < 2) break;
         const [a, b] = pts as [{ x: number; y: number }, { x: number; y: number }];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d.lastDist > 0) chart.timeScale.zoom((a.x + b.x) / 2, dist / d.lastDist);
+        const mid = (a.x + b.x) / 2;
+        // Follow the midpoint (two-finger pan), then spread/pinch zooms around it.
+        if (mid !== d.lastMid) chart.timeScale.pan(mid - d.lastMid);
+        if (d.lastDist > 0 && dist > 0) chart.timeScale.zoom(mid, dist / d.lastDist);
         d.lastDist = dist;
+        d.lastMid = mid;
         chart.viewChanged('user');
         break;
       }
+      case 'inspect': {
+        if (pr && pr.moved > TOUCH_SLOP) d.moved = true;
+        const hit = chart.hitTest(p.x, p.y);
+        if (hit.kind !== 'pane') break;
+        chart.hoverStudy(hit);
+        chart.setCrosshair(hit.pane, hit.x, hit.y);
+        break;
+      }
+      case 'held':
+        break;
     }
   }
 
   private onUp(e: PointerEvent): void {
     this.pointers.delete(e.pointerId);
     if (this.el.hasPointerCapture(e.pointerId)) this.el.releasePointerCapture(e.pointerId);
+    const pr = this.press?.id === e.pointerId ? this.press : null;
+    if (pr) this.press = null;
+    this.cancelHold();
     const d = this.drag;
     if (d?.kind === 'pinch') {
-      // Lifting one finger of a pinch ends the gesture entirely.
-      this.drag = null;
+      // The finger still down carries on panning (no crosshair, no click).
+      const rest = [...this.pointers.values()][0];
+      this.drag = rest ? this.panDrag(d.pane, rest, e.timeStamp) : null;
       this.chart.viewSettled();
+      return;
+    }
+    if (d?.kind === 'inspect' || d?.kind === 'held') {
+      // The crosshair stays where the finger left it (the next touch clears it).
+      this.drag = null;
+      if (pr && (d.kind === 'held' || !d.moved)) {
+        this.openContextMenu(pr.clientX, pr.clientY);
+        swallowNextClick();
+      }
       return;
     }
     this.drag = null;
     const p = this.local(e);
+    // A touch tap that follows another one closely is a double-tap (dblclick for touch).
+    const tap = pr && d && pr.moved <= TOUCH_SLOP ? { t: e.timeStamp, x: p.x, y: p.y } : null;
+    const prev = this.lastTap;
+    const doubleTap =
+      !!tap &&
+      !!prev &&
+      tap.t - prev.t <= DOUBLE_TAP_MS &&
+      Math.hypot(tap.x - prev.x, tap.y - prev.y) <= DOUBLE_TAP_DIST;
+    this.lastTap = doubleTap ? null : tap;
     if (d?.kind === 'drawing') {
       this.chart.drawingInput.pointerUp(p.x, p.y, mods(e));
       this.updateCursor(this.chart.hitTest(p.x, p.y));
+      if (doubleTap) this.doubleClickAt(e.clientX, e.clientY);
       return;
     }
     const hit = this.chart.hitTest(p.x, p.y);
-    if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= CLICK_SLOP) {
+    const slop = e.pointerType === 'touch' ? TOUCH_SLOP : CLICK_SLOP;
+    if (d?.kind === 'pan' && Math.hypot(p.x - d.startX, p.y - d.startY) <= slop) {
       this.chart.drawingInput.clickEmpty();
       if (!this.chart.emitOverlayClick(hit))
         this.chart.emitStudyPointer('studyClick', hit, e.clientX, e.clientY);
@@ -314,6 +438,7 @@ export class InteractionController {
     } else if (d?.kind === 'pan') this.startKinetic(d.samples, e.timeStamp);
     if (d) this.chart.viewSettled();
     this.updateCursor(hit);
+    if (doubleTap) this.doubleClickAt(e.clientX, e.clientY);
   }
 
   /**
@@ -324,6 +449,9 @@ export class InteractionController {
    */
   private onCancel(e: PointerEvent): void {
     if (!this.pointers.delete(e.pointerId)) return;
+    this.cancelHold();
+    this.press = null;
+    this.lastTap = null;
     if (this.el.hasPointerCapture(e.pointerId)) this.el.releasePointerCapture(e.pointerId);
     const d = this.drag;
     this.drag = null;
@@ -332,22 +460,29 @@ export class InteractionController {
     this.el.style.cursor = '';
   }
 
-  private onLeave(): void {
+  private onLeave(e: PointerEvent): void {
     this.chart.hoverStudy(null);
     if (!this.drag) this.chart.drawingInput.hover(null, 0, 0, NO_MODS);
-    if (!this.drag) this.chart.setCrosshair(null, 0, 0);
+    // Touch: a crosshair from a long-press stays after the finger lifts (the next touch clears it).
+    if (!this.drag && e.pointerType !== 'touch') this.chart.setCrosshair(null, 0, 0);
     if (!this.drag) this.chart.setAxisHover(null, 0);
   }
 
   private onDoubleClick(e: MouseEvent): void {
     if (inLegendSlot(e)) return;
-    const p = this.local(e);
+    // Touch double-taps are detected in onUp (browsers differ on synthesizing dblclick).
+    if (this.lastPointerType === 'touch') return;
+    this.doubleClickAt(e.clientX, e.clientY);
+  }
+
+  private doubleClickAt(clientX: number, clientY: number): void {
+    const p = this.local({ clientX, clientY });
     const hit = this.chart.hitTest(p.x, p.y);
-    if (this.chart.drawingInput.doubleClick(this.chart.drawingTarget(hit), e.clientX, e.clientY))
+    if (this.chart.drawingInput.doubleClick(this.chart.drawingTarget(hit), clientX, clientY))
       return;
     if (hit.kind === 'priceAxis') this.chart.setAutoScale(hit.pane.id, true);
     else if (hit.kind === 'timeAxis') this.chart.resetView();
-    else this.chart.emitStudyPointer('studyDoubleClick', hit, e.clientX, e.clientY);
+    else this.chart.emitStudyPointer('studyDoubleClick', hit, clientX, clientY);
   }
 
   private onWheel(e: WheelEvent): void {
@@ -485,6 +620,20 @@ function inLegendSlot(e: Event): boolean {
   return (
     e.target instanceof Element && e.target.closest('.io-legend-slot, .io-legend-header') !== null
   );
+}
+
+/**
+ * The click the browser synthesizes after a touch release would land on the menu just
+ * opened under the finger (or its backdrop) and close it: drop that one click.
+ */
+function swallowNextClick(): void {
+  if (typeof window === 'undefined') return;
+  const swallow = (e: Event) => {
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  window.addEventListener('click', swallow, { capture: true, once: true });
+  setTimeout(() => window.removeEventListener('click', swallow, true), 400);
 }
 
 const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };

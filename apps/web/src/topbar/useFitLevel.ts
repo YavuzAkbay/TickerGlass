@@ -9,6 +9,9 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
  * 3. command box shrinks to a search icon
  * 4. interval favorites fold into the active interval and its dropdown
  * 5. replay, undo/redo and theme move into "More"
+ *
+ * Phones (`enabled: false`) skip the measuring: TopBar pins level 5 and drops the
+ * layout picker and indicator sets too, leaving search, interval, chart type, indicators.
  */
 export const FIT_MAX = 5;
 
@@ -24,6 +27,8 @@ interface Parts {
   left: RefObject<HTMLElement | null>;
   right: RefObject<HTMLElement | null>;
   palette: RefObject<HTMLElement | null>;
+  /** False on phones, where the bar is laid out at `FIT_MAX` by the caller. */
+  enabled?: boolean;
 }
 
 const px = (v: string) => parseFloat(v) || 0;
@@ -64,7 +69,7 @@ function measure({ bar, left, right, palette }: Parts): Need | null {
  * down without trial renders; a stale value (content changed meanwhile) costs
  * one extra layout pass, all before paint.
  */
-export function useFitLevel({ bar, left, right, palette }: Parts): Fit {
+export function useFitLevel({ bar, left, right, palette, enabled = true }: Parts): Fit {
   const [fit, setFit] = useState<Fit>({ level: 0, overflow: false });
   const [tick, setTick] = useState(0);
   const need = useRef<number[]>([]);
@@ -78,6 +83,7 @@ export function useFitLevel({ bar, left, right, palette }: Parts): Fit {
   }, [bar, left, right]);
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     const m = measure({ bar, left, right, palette });
     if (m === null || !bar.current) return;
     // Sides never shrink below their content, so the command box gives way first.
@@ -93,7 +99,7 @@ export function useFitLevel({ bar, left, right, palette }: Parts): Fit {
       next = { level: fit.level - 1, overflow: false };
     else next = { level: fit.level, overflow: !fits(w) };
     if (next.level !== fit.level || next.overflow !== fit.overflow) setFit(next);
-  }, [bar, left, right, palette, fit.level, fit.overflow, tick]);
+  }, [bar, left, right, palette, enabled, fit.level, fit.overflow, tick]);
 
   return fit;
 }

@@ -119,6 +119,27 @@
   flex-wrap: wrap;
 }
 
+/* Phones: a bottom sheet over the chart and the tab bar (with its own safe-area padding). */
+@media (max-width: 768px) {
+  .inspector.sheet {
+    position: fixed;
+    left: env(safe-area-inset-left);
+    right: env(safe-area-inset-right);
+    bottom: 0;
+    z-index: 41;
+    height: min(78dvh, 680px);
+    padding-bottom: env(safe-area-inset-bottom);
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: var(--radius-float) var(--radius-float) 0 0;
+    box-shadow: var(--shadow);
+    animation: sheet-up 180ms ease-out;
+  }
+  .inspector.sheet .inspector-head {
+    padding-left: 16px;
+  }
+}
+
 /* A fade only: the panel's box is final from the first frame (layout reads it at once). */
 @keyframes insp-in {
   from {

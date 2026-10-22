@@ -310,6 +310,9 @@
 .dlg-esc {
   color: var(--text-muted);
 }
+.dlg-palette-close {
+  display: none;
+}
 .dlg-palette-list {
   height: auto;
   max-height: min(440px, calc(100vh - 200px));
@@ -905,4 +908,257 @@
   margin: 0;
   font-family: ui-monospace, monospace;
   font-size: 13px;
+}
+
+/* ======== touch + phone ======== */
+@media (pointer: coarse) {
+  .dlg-side-item {
+    height: 44px;
+  }
+  .dlg-tab {
+    height: 36px;
+  }
+  .dlg-segmented button {
+    height: 36px;
+  }
+  .dlg-widths button {
+    height: 36px;
+    width: 40px;
+  }
+  .dlg-clear,
+  .dlg-row-add {
+    min-width: 40px;
+    height: 40px;
+  }
+  .dlg-select {
+    height: 40px;
+  }
+  .dlg-setting input,
+  .dlg-check input {
+    width: 22px;
+    height: 22px;
+  }
+  .cp-swatch {
+    width: 40px;
+    height: 40px;
+  }
+  .dlg-hints,
+  .dlg-palette-keys {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .dlg-esc {
+    display: none;
+  }
+  .dlg-palette-close {
+    display: inline-flex;
+    min-width: 44px;
+    height: 44px;
+  }
+  .dlg-search {
+    padding: 0 6px 0 16px;
+  }
+  .dlg-search-boxed {
+    margin: 10px 12px;
+  }
+  .dlg-search-boxed .dlg-search-input {
+    height: 44px;
+    font-size: 16px;
+  }
+  .dlg-tabs {
+    padding: 10px 12px;
+  }
+  .dlg-section-title {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .dlg-hints {
+    display: none;
+  }
+
+  /* lists fill the sheet instead of fixed heights */
+  .dlg-list {
+    height: auto;
+    max-height: none;
+  }
+  .dlg-palette-list {
+    max-height: none;
+  }
+  .dlg-palette .io-modal-header,
+  .dlg-interval .io-modal-header {
+    display: none;
+  }
+  .dlg-palette .io-modal-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .dlg-palette .dlg-palette-list {
+    flex: 1;
+    min-height: 0;
+  }
+  .dlg-palette .dlg-search {
+    padding-top: env(safe-area-inset-top);
+    height: calc(56px + env(safe-area-inset-top));
+  }
+  .dlg-palette-foot {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+  .dlg-symrow {
+    height: 56px;
+    margin: 0 4px;
+    padding: 0 8px;
+    gap: 10px;
+  }
+  .dlg-symticker {
+    width: 84px;
+  }
+  .dlg-symexch {
+    display: none;
+  }
+  .dlg-cmdrow {
+    height: 48px;
+    margin: 0 4px;
+  }
+  .dlg-cmdcat {
+    width: auto;
+    max-width: 84px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* two-pane dialogs -> side nav becomes a horizontal strip above the content */
+  .dlg-settings-body,
+  .dlg-picker-body {
+    flex-direction: column;
+    height: auto;
+    max-height: none;
+  }
+  .dlg-side {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    flex-direction: row;
+    width: auto;
+    padding: 6px 8px;
+    gap: 4px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--popover);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .dlg-side::-webkit-scrollbar {
+    display: none;
+  }
+  .dlg-compare-body .dlg-side {
+    width: auto;
+  }
+  .dlg-side-group {
+    display: flex;
+    flex: none;
+    gap: 4px;
+  }
+  .dlg-side-group + .dlg-side-group {
+    margin-top: 0;
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
+  }
+  .dlg-side-title {
+    display: none;
+  }
+  .dlg-side-item {
+    flex: none;
+    width: auto;
+    height: 40px;
+    padding: 0 14px;
+    white-space: nowrap;
+  }
+  .dlg-settings-content {
+    flex: none;
+    padding: 4px 16px 20px;
+    overflow: visible;
+  }
+  .dlg-picker-content {
+    flex: none;
+    overflow: visible;
+  }
+  .dlg-picker .dlg-search-boxed {
+    margin: 10px 12px;
+  }
+  .dlg-emptystate {
+    min-height: 200px;
+  }
+
+  /* settings rows stack label above control */
+  .dlg-row {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    padding: 6px 0;
+  }
+  .dlg-row-label {
+    width: auto;
+    flex: 1 1 100%;
+  }
+  .dlg-row-control {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+  .dlg-row-label.dlg-check {
+    flex: 1 1 auto;
+  }
+  .dlg-select {
+    min-width: 0;
+    width: 100%;
+    font-size: 16px;
+  }
+  .dlg-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .dlg-setting {
+    min-height: 44px;
+    align-items: center;
+  }
+  .dlg-number .io-input {
+    width: 96px;
+  }
+  .dlg-shortcut-list {
+    height: auto;
+    max-height: none;
+    padding: 0 16px 16px;
+  }
+  .dlg-shortcut-row {
+    min-height: 44px;
+    flex-wrap: wrap;
+  }
+
+  .cp-panel {
+    width: min(248px, calc(100vw - 16px));
+  }
+
+  /* alert dialog and others with fixed-height bodies */
+  .alert-dlg-body {
+    height: auto;
+    max-height: none;
+    padding: 4px 16px 16px;
+  }
+  .lay-list {
+    max-height: none;
+  }
+  .lay-row {
+    height: 52px;
+  }
+  .lay-delete {
+    opacity: 1;
+  }
+  .xfer-row {
+    flex-wrap: wrap;
+  }
+  .sym-field-list {
+    max-height: 40dvh;
+  }
 }
