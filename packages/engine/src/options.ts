@@ -98,7 +98,7 @@ export interface ChartOptions {
   /** Dashed line at the previous session's close (intraday). */
   showPrevClose: boolean;
   locale: string;
-  /** "+" box on the price axis crosshair label (emits `priceAxisPlus`). */
+  /** "+" box beside the price axis, level with the crosshair label (emits `priceAxisPlus`). */
   priceAxisPlusButton: boolean;
   legend: LegendOptions;
 }

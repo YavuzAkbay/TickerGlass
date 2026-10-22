@@ -124,6 +124,27 @@ describe('selectTimeMarks', () => {
     }
   });
 
+  it('labels empty slots past the last bar', () => {
+    const day = 86400;
+    const all = series('2025-12-29T00:00:00Z', day, 10);
+    const times = all.subarray(0, 4);
+    const future = all.subarray(3);
+    const weights = computeTimeWeights(all, UTC);
+    const m = selectTimeMarks({
+      times,
+      weights: weights.subarray(0, 4),
+      future: { times: future.subarray(1), weights: weights.subarray(4) },
+      from: 0,
+      to: 9,
+      indexToX: (i: number) => i * 70,
+      minSpacingPx: 64,
+      tz: UTC,
+    });
+    // Jan 1 sits in the future (index 3 is Jan 1: 12-29 + 3 days; index 4+ are future slots).
+    expect(m.some((k) => k.index >= 4)).toBe(true);
+    expect(m.find((k) => k.label === '2026')?.index).toBe(3);
+  });
+
   it('is fast for 5000 visible bars', () => {
     const big = series('2024-01-02T14:30:00Z', 60, 5000);
     const bw = computeTimeWeights(big, UTC);

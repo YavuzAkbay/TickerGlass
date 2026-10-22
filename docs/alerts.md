@@ -563,7 +563,7 @@ with another cumulative or relative value (OBV vs its moving average) are unaffe
 ### 3.1 Modules
 
 | File              | Responsibility                                                                                                                                                                                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `index.ts`        | bootstrap: config, wait for `/api/health` (backoff), load, start loops; SIGINT/SIGTERM -> flush state, close sockets, exit within 5 s                                                                                         |
 | `config.ts`       | env parsing with defaults (§4.1); invalid values are a startup error                                                                                                                                                          |
 | `api.ts`          | typed REST client (`listAlerts getAlert listStates putStates fire setStatus heartbeat getDrawings`); `X-Alerts-Token`; retries with backoff on network/5xx; 409/404/422 surface as typed errors                               |
@@ -785,8 +785,9 @@ error toast, and the dialog stays open.
 | Palette "alert above 200"       | `alert.create {price, op}` (`op`: `crossing`, `crossingUp`, `crossingDown`, `greater`, `less`)                                  | chart symbol, the typed direction and price                                                               |
 | Alerts panel "+"                | `alert.create {}`                                                                                                               | as the More menu                                                                                          |
 
-The price-scale "+" is an engine feature (§5.5): a small "+" box at the left edge of the crosshair's price label
-while the pointer is over the price axis or the pane. Option `priceAxisPlusButton` (default true).
+The price-scale "+" is an engine feature (§5.5): a small "+" box at the right edge of the pane (left of the
+price axis, so rescaling by dragging the axis never grabs it), level with the crosshair's price label while the pointer
+is over the price axis or the pane. Option `priceAxisPlusButton` (default true).
 
 ### 5.4 Alerts panel (`sidebar/panels/Alerts.tsx`, `alerts/panel/`)
 
