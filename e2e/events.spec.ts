@@ -61,10 +61,10 @@ async function openWithEvents(page: Page) {
 
 async function openEventsTab(page: Page) {
   await openChartSettings(page);
-  await page.getByRole('dialog').getByRole('tab', { name: 'Events' }).click();
+  await page.getByRole('dialog').getByRole('tab', { name: 'Markers' }).click();
 }
 
-test('event markers render, show tooltips on hover and follow the Events tab toggles', async ({
+test('event markers render, show tooltips on hover and follow the Markers tab toggles', async ({
   page,
 }) => {
   const state = await openWithEvents(page);

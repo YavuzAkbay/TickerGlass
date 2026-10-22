@@ -50,9 +50,9 @@ test('a re-rendering parent does not take Escape or Tab from the nested modal', 
   });
   await openChartSettings(page);
   await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
-  await page.getByRole('button', { name: 'Template', exact: true }).click();
+  await page.getByRole('button', { name: 'Presets', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Save as…' }).click();
-  const prompt = page.getByRole('dialog', { name: 'Save chart template' });
+  const prompt = page.getByRole('dialog', { name: 'Save chart preset' });
   await expect(prompt).toBeVisible();
 
   release();
@@ -88,7 +88,7 @@ test('navigator tabs use tablist semantics and arrow keys', async ({ page }) => 
   await page.keyboard.press('ArrowUp');
   await expect(watchlist).toBeFocused();
   await page.keyboard.press('ArrowUp');
-  await expect(panels.getByRole('tab', { name: 'Data window' })).toBeFocused();
+  await expect(panels.getByRole('tab', { name: 'Values' })).toBeFocused();
   await page.keyboard.press('Home');
   await expect(watchlist).toBeFocused();
 });
@@ -105,7 +105,7 @@ test('chart host is an image named by symbol and interval', async ({ page }) => 
 
 test('toggle buttons expose their pressed state', async ({ page }) => {
   await page.getByRole('button', { name: 'Drawing options' }).click();
-  const stay = page.getByRole('button', { name: 'Stay in drawing mode' });
+  const stay = page.getByRole('button', { name: 'Keep the tool after drawing' });
   await expect(stay).toHaveAttribute('aria-pressed', 'false');
   await stay.click();
   await expect(stay).toHaveAttribute('aria-pressed', 'true');

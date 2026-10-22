@@ -253,7 +253,7 @@ function TemplateMenu({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        Template <ChevronDown size={14} />
+        Presets <ChevronDown size={14} />
       </button>
       <DropdownMenu
         anchor={btn}

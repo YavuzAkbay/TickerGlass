@@ -74,7 +74,7 @@ export function ReplayTrading() {
           No trades yet. Use Buy and Sell in the replay bar.
         </div>
       ) : (
-        <table className="rt-trades" aria-label="Replay trades">
+        <table className="rt-trades" aria-label="Practice trades">
           <thead>
             <tr>
               <th>#</th>
