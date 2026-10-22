@@ -113,6 +113,7 @@ export function defaultForm(args: CreateArgs, ctx: AlertContext): FormState {
       if (ind) f.left = ind.operand;
     }
     f.right = valueTarget(args.price, f.left.kind === 'indicator' ? dec + 2 : dec);
+    if (args.op) f.op = args.op;
     return f;
   }
 

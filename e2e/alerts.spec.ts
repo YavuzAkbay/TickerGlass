@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, openOverflowItem, pickTool, test } from './fixtures';
 import { mockMarket, type MockMarket } from './market';
 import type { MockServer } from './persistence';
 
@@ -176,12 +176,12 @@ const markers = (page: Page) =>
         ?.map((m) => m.id) ?? [],
   );
 
-test('create from the top bar: dialog -> POST -> row in the panel', async ({ page, server }) => {
+test('create from the More menu: dialog -> POST -> row in the panel', async ({ page, server }) => {
   await mockMarket(page);
   await open(page);
   const last = await lastClose(page);
 
-  await page.getByRole('button', { name: 'Create alert', exact: true }).first().click();
+  await openOverflowItem(page, 'Create alert');
   const dlg = dialog(page);
   await expect(dlg).toBeVisible();
   await expect(dlg.getByLabel('Symbol', { exact: true })).toHaveValue(await chartSymbol(page));
@@ -236,7 +236,7 @@ test('trend line menu: "Add alert…" flushes the drawing and stores a drawing o
 }) => {
   await mockMarket(page);
   await open(page);
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
   await expect.poll(() => page.evaluate(() => window.chart.getDrawings().length)).toBe(1);

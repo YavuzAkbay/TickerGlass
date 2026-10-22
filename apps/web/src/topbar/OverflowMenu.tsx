@@ -1,5 +1,8 @@
 import {
+  AlarmClock,
   Camera,
+  Database,
+  GitCompareArrows,
   Keyboard,
   Maximize,
   MoreHorizontal,
@@ -16,7 +19,7 @@ import { IconButton } from '../ui/IconButton';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { firstShortcut, useCommand } from './useCommand';
 
-/** "More" menu: settings, snapshot, fullscreen, shortcuts and the drawing toolbar toggle. */
+/** "More" menu: compare, alert, settings, snapshot, fullscreen, shortcuts and the drawing toolbar toggle. */
 export function OverflowMenu() {
   const t = useT();
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
@@ -38,7 +41,24 @@ export function OverflowMenu() {
   };
   const run = (id: string) => act(() => void commands.execute(id));
 
+  const compare = firstShortcut(useCommand('chart.compare'));
+  const alert = firstShortcut(useCommand('alert.create'));
+
   const items: MenuItem[] = [
+    {
+      label: t('topbar.compare'),
+      icon: GitCompareArrows,
+      disabled: !hasChart,
+      ...(compare ? { shortcut: compare } : {}),
+      onSelect: run('chart.compare'),
+    },
+    {
+      label: t('topbar.alert'),
+      icon: AlarmClock,
+      ...(alert ? { shortcut: alert } : {}),
+      onSelect: run('alert.create'),
+    },
+    { type: 'separator' },
     {
       label: t('topbar.settings'),
       icon: Settings,
@@ -69,6 +89,11 @@ export function OverflowMenu() {
       onSelect: run('view.fullscreen'),
     },
     { type: 'separator' },
+    {
+      label: t('topbar.dataSource'),
+      icon: Database,
+      onSelect: run('app.dataSource'),
+    },
     {
       label: t('topbar.shortcuts'),
       icon: Keyboard,

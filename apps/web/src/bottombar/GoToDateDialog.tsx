@@ -3,7 +3,7 @@ import { activeChartId, syncBus } from '../layout/sync';
 import { getChart } from '../store/chart';
 import { Modal } from '../ui/Modal';
 import { toast } from '../ui/Toast';
-import './RangeStrip.css';
+import './goToDate.css';
 
 type Tab = 'date' | 'range';
 

@@ -8,7 +8,12 @@ export interface CreateArgs {
   symbol?: string;
   drawingId?: string;
   indicatorId?: string;
+  /** Condition to start with, e.g. "crossingUp" for "alert above 200" in the palette. */
+  op?: CreateOp;
 }
+
+export const CREATE_OPS = ['crossing', 'crossingUp', 'crossingDown', 'greater', 'less'] as const;
+export type CreateOp = (typeof CREATE_OPS)[number];
 
 /** What opens the dialog: a new alert from an entry point, a copy, or an edit. */
 export type AlertDialogArgs = CreateArgs | { cloneOf: string } | { editId: string };
@@ -25,6 +30,9 @@ export function sanitizeCreateArgs(arg: unknown): CreateArgs {
   if (!isObj(arg)) return {};
   const out: CreateArgs = {};
   if (typeof arg['price'] === 'number' && Number.isFinite(arg['price'])) out.price = arg['price'];
+  const op = arg['op'];
+  if (typeof op === 'string' && (CREATE_OPS as readonly string[]).includes(op))
+    out.op = op as CreateOp;
   for (const k of ['paneId', 'symbol', 'drawingId', 'indicatorId'] as const) {
     const v = arg[k];
     if (typeof v === 'string' && v !== '') out[k] = v;

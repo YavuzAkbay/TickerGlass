@@ -42,8 +42,20 @@ test('add an indicator, edit its settings, hide and remove it', async ({ page })
   await row.getByRole('button', { name: 'Settings' }).click();
   const length = page.locator('#ind-in-length');
   await length.fill('21');
-  await page.getByRole('button', { name: 'Ok' }).click();
+  await expect(row.locator('.ind-legend-inputs')).toContainText('21'); // live preview
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('complementary', { name: 'Inspector' })).toHaveCount(0);
   await expect(row.locator('.ind-legend-inputs')).toContainText('21');
+  expect((await study())!.title).toContain('21');
+
+  // Revert drops the edits made since the panel opened; one undo step per session.
+  await row.hover();
+  await row.getByRole('button', { name: 'Settings' }).click();
+  await length.fill('30');
+  await expect(row.locator('.ind-legend-inputs')).toContainText('30');
+  await page.getByRole('button', { name: 'Revert' }).click();
+  await expect(row.locator('.ind-legend-inputs')).toContainText('21');
+  await page.getByRole('button', { name: 'Close inspector' }).click();
   expect((await study())!.title).toContain('21');
 
   // Hide.

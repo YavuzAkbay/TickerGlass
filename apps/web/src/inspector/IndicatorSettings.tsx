@@ -18,8 +18,13 @@ import {
   type SourceValue,
 } from '@tickerglass/indicators';
 import { ChevronDown } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { commitPreview, discardPreview, previewIndicator } from '../indicators/actions';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  commitPreview,
+  discardPreview,
+  findIndicator,
+  previewIndicator,
+} from '../indicators/actions';
 import { overlayOption, sourceOptions } from '../indicators/menu';
 import {
   VISIBILITY_UNITS,
@@ -32,13 +37,13 @@ import { useEffectiveInstances, useIndicatorPrefs } from '../indicators/store';
 import { useCompareStore } from '../compare/store';
 import { INTERVAL_GROUPS, intervalLabel } from '../topbar/intervals';
 import { DropdownMenu } from '../ui/Menu';
-import { Modal } from '../ui/Modal';
 import { toast } from '../ui/Toast';
-import { ColorSwatch } from './ColorPicker';
-import { Check, Row, Section } from './controls';
-import { SymbolField } from './SymbolField';
+import { ColorSwatch } from '../dialogs/ColorPicker';
+import { Check, Row, Section } from '../dialogs/controls';
+import { SymbolField } from '../dialogs/SymbolField';
+import { useUiStore } from '../store/ui';
 import '../indicators/indicators.css';
-import './dialogs.css';
+import '../dialogs/dialogs.css';
 
 type TabId = 'inputs' | 'style' | 'visibility';
 
@@ -67,43 +72,36 @@ const editable = (i: IndicatorState): Editable => ({
 });
 
 /**
- * Settings dialog generated from the indicator's schema. Edits are a live
- * preview (transient, not persisted, not in the undo history); Ok commits them
- * as one undo step, Cancel or closing drops them.
+ * Indicator settings in the Inspector, generated from the indicator's schema.
+ * Every edit previews live on the chart (transient, not persisted). Closing the
+ * panel or Done keeps the edits as one undo step; Revert drops them.
  */
-export default function IndicatorSettingsDialog({
-  onClose,
-  arg,
-}: {
-  onClose: () => void;
-  arg?: unknown;
-}) {
-  const id = (arg as { id?: unknown } | undefined)?.id;
+export function IndicatorSettings({ id }: { id: string }) {
   const all = useEffectiveInstances();
   const inst = all.find((i) => i.id === id);
   const saved = useIndicatorPrefs((s) => (inst ? s.defaults[inst.type] : undefined));
+  const close = useUiStore((s) => s.closeInspector);
   const [tab, setTab] = useState<TabId>('inputs');
   const [menuBtn, setMenuBtn] = useState<HTMLButtonElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const settled = useRef(false);
-
-  // Leaving without Ok (Escape, overlay, another dialog) drops the preview.
-  useEffect(() => {
-    if (typeof id !== 'string') return;
-    settled.current = false;
-    return () => {
-      if (!settled.current) discardPreview(id);
-    };
-  }, [id]);
-
   const def = inst ? getIndicator(inst.type) : undefined;
-  if (!inst || !def) {
-    return (
-      <Modal title="Indicator settings" onClose={onClose} width={420}>
-        <div className="dlg-empty">This indicator is no longer on the chart.</div>
-      </Modal>
-    );
-  }
+
+  // Leaving the panel (closed, or another view) keeps the previewed edits.
+  useEffect(
+    () => () => {
+      const type = findIndicator(id)?.type;
+      const name = type ? getIndicator(type)?.shortName : undefined;
+      commitPreview(id, name ? `Change ${name} settings` : 'Change indicator settings');
+    },
+    [id],
+  );
+
+  // An indicator removed while its settings are open leaves nothing to edit.
+  const missing = !inst || !def;
+  useEffect(() => {
+    if (missing) close();
+  }, [missing, close]);
+  if (!inst || !def) return null;
 
   const apply = (patch: Partial<Editable>) => previewIndicator(inst.id, patch);
   const setInput = (key: string, v: InputValueMap[string]) =>
@@ -125,68 +123,6 @@ export default function IndicatorSettingsDialog({
     }
   };
 
-  const ok = () => {
-    settled.current = true;
-    commitPreview(inst.id, `Change ${def.shortName} settings`);
-    onClose();
-  };
-  const cancel = () => {
-    settled.current = true;
-    discardPreview(inst.id);
-    onClose();
-  };
-
-  const footer = (
-    <>
-      <button
-        ref={setMenuBtn}
-        type="button"
-        className="io-btn dlg-template"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((o) => !o)}
-      >
-        Defaults <ChevronDown size={14} />
-      </button>
-      <DropdownMenu
-        anchor={menuBtn}
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        placement="bottom-start"
-        items={[
-          {
-            label: 'Reset settings',
-            onSelect: () => resetTo(saved ?? { inputs: {}, styles: {}, visibility: null }),
-          },
-          {
-            label: 'Save as default',
-            onSelect: () => {
-              useIndicatorPrefs.getState().saveDefaults(inst.type, structuredClone(editable(inst)));
-              toast(`Saved as default for ${def.shortName}`, 'success');
-            },
-          },
-          { type: 'separator' },
-          {
-            label: 'Reset to factory defaults',
-            onSelect: () => resetTo({ inputs: {}, styles: {}, visibility: null }),
-          },
-          {
-            label: 'Remove saved default',
-            disabled: !saved,
-            onSelect: () => useIndicatorPrefs.getState().clearDefaults(inst.type),
-          },
-        ]}
-      />
-      <div className="dlg-footer-spacer" />
-      <button type="button" className="io-btn" onClick={cancel}>
-        Cancel
-      </button>
-      <button type="button" className="io-btn io-btn-primary" onClick={ok}>
-        Ok
-      </button>
-    </>
-  );
-
   let content: ReactNode;
   if (tab === 'inputs') content = <InputsTab def={def} inst={inst} all={all} set={setInput} />;
   else if (tab === 'style')
@@ -195,13 +131,7 @@ export default function IndicatorSettingsDialog({
     content = <VisibilityTab vis={inst.visibility} set={(visibility) => apply({ visibility })} />;
 
   return (
-    <Modal
-      title={def.name}
-      onClose={cancel}
-      width={520}
-      footer={footer}
-      className="dlg-settings ind-settings"
-    >
+    <div className="insp-settings ind-settings">
       <div className="dlg-tabs" role="tablist" aria-label="Indicator settings sections">
         {(
           [
@@ -209,7 +139,7 @@ export default function IndicatorSettingsDialog({
             ['style', 'Style'],
             ['visibility', 'Visibility'],
           ] as const
-        ).map(([t, label]) => (
+        ).map(([t, tabLabel]) => (
           <button
             key={t}
             type="button"
@@ -218,14 +148,64 @@ export default function IndicatorSettingsDialog({
             className={`dlg-tab${tab === t ? ' active' : ''}`}
             onClick={() => setTab(t)}
           >
-            {label}
+            {tabLabel}
           </button>
         ))}
       </div>
-      <div className="ind-settings-body" role="tabpanel">
+      <div className="ind-settings-body insp-settings-body" role="tabpanel">
         {content}
       </div>
-    </Modal>
+      <footer className="insp-footer">
+        <button
+          ref={setMenuBtn}
+          type="button"
+          className="io-btn dlg-template"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          Defaults <ChevronDown size={14} />
+        </button>
+        <DropdownMenu
+          anchor={menuBtn}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          placement="bottom-start"
+          items={[
+            {
+              label: 'Reset settings',
+              onSelect: () => resetTo(saved ?? { inputs: {}, styles: {}, visibility: null }),
+            },
+            {
+              label: 'Save as default',
+              onSelect: () => {
+                useIndicatorPrefs
+                  .getState()
+                  .saveDefaults(inst.type, structuredClone(editable(inst)));
+                toast(`Saved as default for ${def.shortName}`, 'success');
+              },
+            },
+            { type: 'separator' },
+            {
+              label: 'Reset to factory defaults',
+              onSelect: () => resetTo({ inputs: {}, styles: {}, visibility: null }),
+            },
+            {
+              label: 'Remove saved default',
+              disabled: !saved,
+              onSelect: () => useIndicatorPrefs.getState().clearDefaults(inst.type),
+            },
+          ]}
+        />
+        <div className="dlg-footer-spacer" />
+        <button type="button" className="io-btn" onClick={() => discardPreview(inst.id)}>
+          Revert
+        </button>
+        <button type="button" className="io-btn io-btn-primary" onClick={close}>
+          Done
+        </button>
+      </footer>
+    </div>
   );
 }
 

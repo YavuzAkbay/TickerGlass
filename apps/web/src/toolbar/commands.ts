@@ -4,7 +4,9 @@ import { removeAllDrawings, removeAllObjects } from '../drawings/actions';
 import { removeAllIndicators } from '../indicators/actions';
 import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
-import { isCursorTool, resetToCursor, selectTool, TOOL_GROUPS } from './tools';
+import { dockTools } from './dock';
+import { openQuickTools } from './quick';
+import { isCursorTool, isToolAvailable, resetToCursor, selectTool, TOOL_GROUPS } from './tools';
 
 /** Hide-button modes; the chosen one is remembered in `groupTools.hide`. */
 export type HideMode = 'drawings' | 'indicators' | 'positions' | 'all';
@@ -59,7 +61,32 @@ export function registerToolbarCommands(): () => void {
     ),
   );
 
+  // Every other tool is reachable by name from the palette ("Draw: Gann box").
+  const drawCommands: Command[] = dockTools().flatMap((tool): Command[] =>
+    tool.commandId && tool.shortcut
+      ? []
+      : [
+          {
+            id: `tool.draw.${tool.id}`,
+            title: tool.name,
+            category: 'Draw',
+            searchOnly: true,
+            enabled: () => isToolAvailable(tool.id),
+            run: () => selectTool(tool.id),
+          },
+        ],
+  );
+
   const list: Command[] = [
+    {
+      id: 'tools.quick',
+      title: 'Quick drawing tools at the cursor',
+      category: 'Drawings',
+      shortcut: 'Alt+d',
+      enabled: () => !modalOpen(),
+      run: openQuickTools,
+    },
+    ...drawCommands,
     {
       id: 'tool.select',
       title: 'Select drawing tool',

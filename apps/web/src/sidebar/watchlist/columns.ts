@@ -77,6 +77,15 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
     }),
     sortValue: (q) => num(q?.ext?.changePercent),
   },
+  trend: {
+    id: 'trend',
+    label: 'Trend',
+    title: '30-day trend',
+    width: '50px',
+    // Drawn by `Sparkline` (SymbolRow); not sortable.
+    render: () => ({ text: '' }),
+    sortValue: () => null,
+  },
 };
 
 /**

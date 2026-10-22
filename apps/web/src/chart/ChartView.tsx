@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DARK_THEME, LIGHT_THEME } from '@tickerglass/engine';
+import { SymbolCard } from '../center/SymbolCard';
+import { AxisControls } from './AxisControls';
 import { ChartError } from './ChartError';
 import { ChartLiveRegion, useChartLabel } from './ChartLiveRegion';
 import { feed } from './feed';
@@ -200,6 +202,8 @@ export function ChartView({ id }: { id: string }) {
       {PERF && session ? <PerfOverlay session={session} /> : null}
       {session ? <CompareLegends session={session} /> : null}
       {session ? <IndicatorLegends session={session} /> : null}
+      {session ? <AxisControls session={session} /> : null}
+      {session ? <SymbolCard session={session} /> : null}
       {active ? (
         <>
           <DrawingToolbar />

@@ -18,7 +18,7 @@ function monthsBack(last: number, months: number): number {
   return d.getTime() / 1000;
 }
 
-// Interval pairing for each bottom-bar range (default list: 1D .. Max).
+// Interval pairing for each time-axis range chip (default list: 1D .. Max).
 export const RANGE_PRESETS: RangePreset[] = [
   { label: '1D', title: '1 day in 1 minute intervals', interval: '1m', from: (l) => l - DAY },
   {

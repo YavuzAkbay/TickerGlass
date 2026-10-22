@@ -1,0 +1,35 @@
+/* Go to date dialog. */
+.gtd-tabs {
+  display: flex;
+  gap: 16px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gtd-tabs button {
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.gtd-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.gtd-body {
+  padding: 20px;
+}
+
+.gtd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gtd-row .io-input {
+  flex: 1;
+}

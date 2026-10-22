@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, openOverflowItem, test } from './fixtures';
 
 type ReplayStatus = 'off' | 'picking' | 'loading' | 'paused' | 'playing' | 'ended';
 
@@ -152,7 +152,7 @@ test('changing the interval during replay keeps the clock and shows nothing beyo
 });
 
 test('compare overlays are refetched through the clipped feed', async ({ page }) => {
-  await page.getByRole('button', { name: 'Compare or add symbol' }).click();
+  await openOverflowItem(page, 'Compare or add symbol');
   const input = page.getByLabel('Search symbols to compare');
   await input.fill('MSFT');
   const row = page.getByRole('option').first();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultForm, initialForm } from './defaults';
 import { formToAlert } from './form';
+import { sanitizeCreateArgs } from './open';
 import type { AlertContext, DrawingSummary } from './sources';
 
 const drawings: DrawingSummary[] = [
@@ -63,6 +64,13 @@ describe('defaultForm per entry point', () => {
     const f = defaultForm({ price: 185.5, paneId: 'main' }, ctx());
     expect(f.left).toEqual({ kind: 'price', field: 'close' });
     expect(f.right).toEqual({ kind: 'value', text: '185.5' });
+  });
+
+  it('palette "alert above 200": the typed direction', () => {
+    const f = defaultForm({ price: 200, op: 'crossingUp' }, ctx());
+    expect(f.op).toBe('crossingUp');
+    expect(f.right).toEqual({ kind: 'value', text: '200' });
+    expect(sanitizeCreateArgs({ price: 1, op: 'sideways' })).toEqual({ price: 1 });
   });
 
   it('on an indicator pane: the pane first indicator output crossing the price', () => {

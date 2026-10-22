@@ -1,6 +1,7 @@
 import type { Chart } from '@tickerglass/engine';
 import {
   Camera,
+  Database,
   Expand,
   Keyboard,
   Moon,
@@ -76,11 +77,10 @@ export async function saveScreenshot(copy: boolean, layout = false): Promise<voi
 const PANELS: [NavSection | 'details', string][] = [
   ['watchlist', 'Watchlist'],
   ['alerts', 'Alerts'],
-  ['events', 'Events'],
+  ['timeline', 'Timeline'],
   ['objectTree', 'Object tree'],
   ['dataWindow', 'Data window'],
   ['details', 'Symbol details'],
-  ['news', 'News'],
   ['notes', 'Notes'],
 ];
 
@@ -261,6 +261,13 @@ export function registerCoreCommands(): () => void {
       shortcut: 'Mod+k',
       allowInInput: true,
       run: () => open('commandPalette'),
+    },
+    {
+      id: 'app.dataSource',
+      title: 'Data source…',
+      category: 'App',
+      icon: Database,
+      run: () => open('dataSource'),
     },
     {
       id: 'view.shortcuts',

@@ -94,7 +94,7 @@ export function firstChart(state: Json | undefined): Json | undefined {
 
 /** Routes that may reach the real backend (read-only market data). */
 const MARKET =
-  /^\/api\/(bars|quotes|quotes\/extended|health|news)$|^\/api\/(symbols|events|news|fundamentals|performance)\//;
+  /^\/api\/(bars|quotes|quotes\/extended|health|news|providers)$|^\/api\/(symbols|events|news|fundamentals|performance|providers)\//;
 const USER_DATA =
   /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|alerts|user-scripts|export|import)(\/|$)/;
 const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
