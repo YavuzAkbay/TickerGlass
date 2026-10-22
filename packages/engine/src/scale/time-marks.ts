@@ -104,6 +104,8 @@ export interface TimeMark {
 export interface SelectTimeMarksParams {
   times: Float64Array;
   weights: Uint8Array;
+  /** Empty slots after the last bar (indices `times.length` and up), for marks past the data. */
+  future?: { times: Float64Array; weights: Uint8Array } | undefined;
   from: number;
   to: number;
   indexToX: (i: number) => number;
@@ -114,8 +116,13 @@ export interface SelectTimeMarksParams {
 
 /** Greedy label selection: heaviest weight first, right to left within a weight. */
 export function selectTimeMarks(params: SelectTimeMarksParams): TimeMark[] {
-  const { times, weights, indexToX, minSpacingPx, tz, locale } = params;
-  const n = Math.min(times.length, weights.length);
+  const { times, weights, future, indexToX, minSpacingPx, tz, locale } = params;
+  const nData = Math.min(times.length, weights.length);
+  const n = nData + (future ? Math.min(future.times.length, future.weights.length) : 0);
+  const weightAt = (i: number) =>
+    i < nData ? (weights[i] as number) : (future!.weights[i - nData] as number);
+  const timeAt = (i: number) =>
+    i < nData ? (times[i] as number) : (future!.times[i - nData] as number);
   const from = Math.max(0, Math.floor(params.from));
   const to = Math.min(n - 1, Math.ceil(params.to));
   if (n === 0 || to < from) return [];
@@ -124,7 +131,7 @@ export function selectTimeMarks(params: SelectTimeMarksParams): TimeMark[] {
   const counts = new Int32Array(257);
   let total = 0;
   for (let i = from; i <= to; i++) {
-    const w = weights[i] as number;
+    const w = weightAt(i);
     if (w > 0) {
       counts[w + 1] = (counts[w + 1] as number) + 1;
       total++;
@@ -135,7 +142,7 @@ export function selectTimeMarks(params: SelectTimeMarksParams): TimeMark[] {
   // counts[w] is now the start offset of weight w.
   const order = new Int32Array(total);
   for (let i = from; i <= to; i++) {
-    const w = weights[i] as number;
+    const w = weightAt(i);
     if (w > 0) {
       const pos = counts[w] as number;
       order[pos] = i;
@@ -164,7 +171,7 @@ export function selectTimeMarks(params: SelectTimeMarksParams): TimeMark[] {
       accepted.push({
         index: idx,
         weight: w,
-        label: formatTimeMark(times[idx] as number, w, tz, locale),
+        label: formatTimeMark(timeAt(idx), w, tz, locale),
         x,
       });
     }
