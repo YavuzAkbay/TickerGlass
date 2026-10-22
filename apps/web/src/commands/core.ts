@@ -76,11 +76,10 @@ export async function saveScreenshot(copy: boolean, layout = false): Promise<voi
 const PANELS: [NavSection | 'details', string][] = [
   ['watchlist', 'Watchlist'],
   ['alerts', 'Alerts'],
-  ['events', 'Events'],
+  ['timeline', 'Timeline'],
   ['objectTree', 'Object tree'],
   ['dataWindow', 'Data window'],
   ['details', 'Symbol details'],
-  ['news', 'News'],
   ['notes', 'Notes'],
 ];
 

@@ -35,9 +35,10 @@ describe('migrateNavigator', () => {
 
   it('v1: drops rightWidth and opens by the old panel', () => {
     const out = migrateNavigator({ rightPanel: 'news', rightWidth: 300, activeTool: 'cross' });
+    // News (like Events) now lives in the Timeline.
     expect(out).toEqual({
       navOpen: true,
-      navSection: 'news',
+      navSection: 'timeline',
       navWidth: 260,
       activeTool: 'cross',
     });
@@ -51,8 +52,16 @@ describe('migrateNavigator', () => {
     expect(migrateNavigator({ rightPanel: 'bogus' })).toMatchObject({ navSection: 'watchlist' });
   });
 
+  it('moves the old News and Events sections to the Timeline', () => {
+    for (const old of ['news', 'events'])
+      expect(migrateNavigator({ navOpen: true, navSection: old })).toEqual({
+        navOpen: true,
+        navSection: 'timeline',
+      });
+  });
+
   it('is idempotent and leaves migrated state alone', () => {
-    const migrated = { navOpen: false, navSection: 'events', navWidth: 300, inspectorWidth: 320 };
+    const migrated = { navOpen: false, navSection: 'notes', navWidth: 300, inspectorWidth: 320 };
     expect(migrateNavigator(migrated)).toEqual(migrated);
     const once = migrateNavigator({ rightPanel: null, dockTab: 'notes' });
     expect(migrateNavigator(once)).toEqual(once);
@@ -70,8 +79,8 @@ describe('ui store navigator', () => {
     });
   });
 
-  it('is at version 3', () => {
-    expect(UI_STORE_VERSION).toBe(3);
+  it('is at version 4', () => {
+    expect(UI_STORE_VERSION).toBe(4);
     expect(NAV_SECTIONS[0]).toBe('watchlist');
   });
 
@@ -142,9 +151,9 @@ describe('ui.prefs sync', () => {
   });
 
   it('applies current-shape payloads and never reads replayTrading', () => {
-    uiPrefs.write({ navOpen: true, navSection: 'events', navWidth: 320, inspectorWidth: 280 });
+    uiPrefs.write({ navOpen: true, navSection: 'timeline', navWidth: 320, inspectorWidth: 280 });
     expect(useUiStore.getState()).toMatchObject({
-      navSection: 'events',
+      navSection: 'timeline',
       navWidth: 320,
       inspectorWidth: 280,
     });
@@ -153,11 +162,11 @@ describe('ui.prefs sync', () => {
   });
 
   it('keeps local nav prefs when the payload has no nav keys', () => {
-    useUiStore.setState({ navOpen: false, navSection: 'news', navWidth: 400 });
+    useUiStore.setState({ navOpen: false, navSection: 'timeline', navWidth: 400 });
     uiPrefs.write({ toolRailHidden: true });
     expect(useUiStore.getState()).toMatchObject({
       navOpen: false,
-      navSection: 'news',
+      navSection: 'timeline',
       navWidth: 400,
       toolRailHidden: true,
     });

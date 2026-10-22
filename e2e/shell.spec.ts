@@ -183,3 +183,25 @@ test('Alt+Enter maximizes the focused chart and Escape restores', async ({ page 
   await page.keyboard.press('Escape');
   await expect(page.locator('.grid-cell[data-maximized]')).toHaveCount(0);
 });
+
+test('desks save the workspace; the Timeline replaces News and Events', async ({ page }) => {
+  const panels = page.getByRole('tablist', { name: 'Panels' });
+  await expect(panels.getByRole('tab', { name: 'News' })).toHaveCount(0);
+  await expect(panels.getByRole('tab', { name: 'Events' })).toHaveCount(0);
+  await panels.getByRole('tab', { name: 'Timeline' }).click();
+  await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Timeline');
+  await expect(page.getByRole('group', { name: 'Timeline scope' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Desks' }).click();
+  await page.getByRole('menuitem', { name: 'Save current as desk…' }).click();
+  await page.getByRole('dialog').getByRole('textbox').fill('Morning scan');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  const desk = page.getByRole('button', { name: 'Desk: Morning scan' });
+  await expect(desk).toBeVisible();
+
+  // Another panel, then back to the desk: its panel returns.
+  await panels.getByRole('tab', { name: 'Notes' }).click();
+  await desk.click();
+  await page.getByRole('menuitem', { name: 'Morning scan', exact: true }).click();
+  await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Timeline');
+});

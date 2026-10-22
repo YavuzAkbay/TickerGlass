@@ -6,6 +6,7 @@ import { useReplayStore } from '../replay/store';
 import { DEFAULT_NAV_WIDTH, MAX_NAV_WIDTH, MIN_NAV_WIDTH, useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import '../sidebar/sidebar.css';
+import { DeskButton } from '../desk/DeskButton';
 import { NavRail } from './NavRail';
 import { SECTIONS } from './sections';
 import './navigator.css';
@@ -45,7 +46,12 @@ export function Navigator() {
 
   return (
     <nav className={`navigator${open ? ' open' : ''}`} aria-label={t('nav.panels')}>
-      <NavRail sections={sections} active={open ? def.id : null} />
+      <div className="nav-rail-col">
+        <div className="nav-desk-slot">
+          <DeskButton />
+        </div>
+        <NavRail sections={sections} active={open ? def.id : null} />
+      </div>
       {open ? (
         <section
           className="nav-panel"

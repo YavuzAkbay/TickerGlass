@@ -35,6 +35,8 @@ function sortValue(sym: string, q: LiveQuote | undefined, key: SortKey): number 
       return q?.ext?.price ?? null;
     case 'extChangePercent':
       return q?.ext?.changePercent ?? null;
+    case 'trend':
+      return null;
   }
 }
 

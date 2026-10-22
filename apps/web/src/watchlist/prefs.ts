@@ -11,11 +11,11 @@ import {
   type WatchlistPrefs,
 } from './types';
 
-const SORT_KEYS: readonly string[] = ['symbol', ...ALL_COLUMNS];
+const SORT_KEYS: readonly string[] = ['symbol', ...ALL_COLUMNS.filter((c) => c !== 'trend')];
 
 export const DEFAULT_PREFS: WatchlistPrefs = {
   activeId: null,
-  columns: ['last', 'change', 'changePercent', 'volume'],
+  columns: ['last', 'changePercent', 'trend'],
   sort: null,
 };
 

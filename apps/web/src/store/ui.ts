@@ -7,8 +7,8 @@ import type { Locale } from '../i18n';
 export const NAV_SECTIONS = [
   'watchlist',
   'alerts',
-  'events',
-  'news',
+  /** Alert fires, news and corporate events in one feed (replaced 'events' and 'news'). */
+  'timeline',
   'notes',
   'objectTree',
   'dataWindow',
@@ -94,8 +94,8 @@ interface UiState {
   set: (patch: Partial<UiState>) => void;
 }
 
-/** Persisted `tickerglass-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator. */
-export const UI_STORE_VERSION = 3;
+/** Persisted `tickerglass-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator, 4 = Timeline (News and Events merged). */
+export const UI_STORE_VERSION = 4;
 
 export const DEFAULT_NAV_WIDTH = 260;
 export const MIN_NAV_WIDTH = 200;
@@ -118,6 +118,9 @@ export function migrateDockDefaults<T extends object>(state: T): T {
 
 const isNavSection = (v: unknown): v is NavSection =>
   typeof v === 'string' && (NAV_SECTIONS as readonly string[]).includes(v);
+
+/** Sections folded into others: the Timeline took over News and Events. */
+const RENAMED_SECTIONS: Record<string, NavSection> = { news: 'timeline', events: 'timeline' };
 
 /**
  * Replace the bottom dock fields (`rightPanel`, `dockTab`, `dockHeight`, `rightWidth`)
@@ -142,8 +145,12 @@ export function migrateNavigator<T extends object>(
     rightWidth?: unknown;
     [k: string]: unknown;
   };
-  if (typeof s.navSection === 'string') return s as unknown as T;
-  const src = rightPanel ?? dockTab ?? 'watchlist';
+  if (typeof s.navSection === 'string')
+    return (RENAMED_SECTIONS[s.navSection]
+      ? { ...s, navSection: RENAMED_SECTIONS[s.navSection] }
+      : s) as unknown as T;
+  const raw = rightPanel ?? dockTab ?? 'watchlist';
+  const src = typeof raw === 'string' ? (RENAMED_SECTIONS[raw] ?? raw) : raw;
   return {
     ...s,
     navSection: isNavSection(src) && src !== 'replayTrading' ? src : 'watchlist',

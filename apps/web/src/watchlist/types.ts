@@ -40,7 +40,7 @@ export type ListRef = string;
 export const flagRef = (c: FlagColor): ListRef => `flag:${c}`;
 
 export type ColumnId =
-  'last' | 'change' | 'changePercent' | 'volume' | 'extPrice' | 'extChangePercent';
+  'last' | 'change' | 'changePercent' | 'volume' | 'extPrice' | 'extChangePercent' | 'trend';
 /** Canonical display order. */
 export const ALL_COLUMNS: readonly ColumnId[] = [
   'last',
@@ -49,6 +49,7 @@ export const ALL_COLUMNS: readonly ColumnId[] = [
   'volume',
   'extPrice',
   'extChangePercent',
+  'trend',
 ];
 export type SortKey = 'symbol' | ColumnId;
 export interface SortSpec {
