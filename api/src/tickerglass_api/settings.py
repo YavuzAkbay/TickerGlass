@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite:///./data/tickerglass.db"
+    #: Market data source: "yahoo" (yfinance) or "demo" (generated offline data).
+    market_provider: Literal["yahoo", "demo"] = "yahoo"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     cors_origins: list[str] = ["http://localhost:5173"]
