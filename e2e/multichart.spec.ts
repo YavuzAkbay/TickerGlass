@@ -384,10 +384,13 @@ test('panning follows on the other chart only with time sync', async ({ page }) 
 
 test('a range preset applies to every chart only with date-range sync', async ({ page }) => {
   await twoCharts(page);
+  // Each chart has its own presets on its time axis; these are the first chart's.
   const preset = (label: string) =>
     page
+      .locator('.chart-cell')
+      .nth(0)
       .getByRole('group', { name: 'Range presets' })
-      .locator('.strip-seg-btn', { hasText: new RegExp(`^${label}$`) });
+      .getByRole('button', { name: label, exact: true });
   const DAY = 86_400;
 
   await focusCell(page, 0);

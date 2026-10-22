@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { SymbolHeader } from './center/SymbolHeader';
-import { RangeStrip } from './bottombar/RangeStrip';
 import { ChartGrid } from './layout/ChartGrid';
 import { registerGridCommands } from './layout/commands';
 import { registerCoreCommands } from './commands/core';
@@ -74,7 +73,6 @@ export function App() {
           <div className="chart-area">
             <ChartGrid />
           </div>
-          <RangeStrip />
         </div>
       </main>
       <Inspector />
