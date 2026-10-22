@@ -3,7 +3,7 @@ import { memo } from 'react';
 import { useApi } from '../hooks';
 
 const TEN_MIN = 10 * 60 * 1000;
-const W = 52;
+const W = 44;
 const H = 18;
 
 /** Daily closes of the last 30 sessions as a small line, green or red by the period's move. */
