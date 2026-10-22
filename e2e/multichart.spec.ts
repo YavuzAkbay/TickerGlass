@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, pickTool, test } from './fixtures';
 import { mockMarket, quote } from './market';
 import type { MockServer } from './persistence';
 
@@ -429,7 +429,7 @@ test('drawing sync off: a drawing stays on its chart; selection is per chart', a
   const drawn = (id: string) => page.evaluate((i) => window.charts[i]!.getDrawings().length, id);
   const hostB = cells(page).nth(1).locator('.chart-host');
   const box = (await hostB.boundingBox())!;
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(box.x + 80, box.y + 120);
   await page.mouse.click(box.x + 260, box.y + 200);
   await expect.poll(() => drawn(idB!)).toBe(1);

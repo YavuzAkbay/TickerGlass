@@ -75,20 +75,15 @@ export const en = {
 
   // Tool rail
   'rail.drawingTools': 'Drawing tools',
-  'rail.weakMagnet': 'Weak magnet',
-  'rail.strongMagnet': 'Strong magnet',
-  'rail.magnetModes': 'Magnet modes',
+  'rail.options': 'Drawing options',
+  'rail.syncNew': 'Show new drawings on every symbol',
+  'rail.quickTools': 'Quick drawing tools',
   'rail.stayDrawing': 'Stay in drawing mode',
-  'rail.syncAll': 'New drawings: synced to all symbols',
-  'rail.syncOne': 'New drawings: this symbol only',
-  'rail.unlockAll': 'Unlock all drawings',
   'rail.lockAll': 'Lock all drawings',
-  'rail.hideFavorites': 'Hide favorites toolbar',
-  'rail.showFavorites': 'Show favorites toolbar',
+  'rail.showFavorites': 'Favorites toolbar',
   'rail.removeDrawings': 'Remove drawings',
   'rail.removeIndicators': 'Remove indicators',
   'rail.removeAll': 'Remove drawings & indicators',
-  'rail.removeOptions': 'Remove options',
 
   // Chart
   'chart.label': 'Chart: {symbol}, {interval}',

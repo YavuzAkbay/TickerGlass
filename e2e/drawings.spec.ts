@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, pickTool, test } from './fixtures';
 
 declare global {
   interface Window {
@@ -25,7 +25,7 @@ test('draw a trend line, restyle, drag, undo, persist across reload, delete', as
   await waitForChart(page);
 
   // Pick the tool and draw with two clicks.
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('trend-line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
@@ -104,7 +104,7 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   const study = await page.evaluate(() => window.chart.getStudies().at(-1)!.title);
 
   // A drawing.
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 250);
   await page.mouse.click(700, 300);
   await expect.poll(async () => (await drawings(page)).length).toBe(1);
@@ -137,7 +137,7 @@ test('inspector edits the selected drawing, closes on Escape, and shows symbol d
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
   await expect(inspector).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
   await expect.poll(async () => (await drawings(page)).length).toBe(1);
@@ -219,7 +219,7 @@ test('inspector moves focus in, restores it, closes on symbol change, and leaves
   await inspector.getByRole('button', { name: 'Close inspector' }).click();
 
   // A drawing's properties close when the symbol changes.
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
   await expect.poll(async () => (await drawings(page)).length).toBe(1);

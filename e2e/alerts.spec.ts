@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, openOverflowItem, test } from './fixtures';
+import { expect, openOverflowItem, pickTool, test } from './fixtures';
 import { mockMarket, type MockMarket } from './market';
 import type { MockServer } from './persistence';
 
@@ -236,7 +236,7 @@ test('trend line menu: "Add alert…" flushes the drawing and stores a drawing o
 }) => {
   await mockMarket(page);
   await open(page);
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
   await expect.poll(() => page.evaluate(() => window.chart.getDrawings().length)).toBe(1);

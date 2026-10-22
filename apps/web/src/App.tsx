@@ -16,7 +16,7 @@ import { Inspector } from './inspector/Inspector';
 import { Navigator } from './navigator/Navigator';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
-import { ToolRail } from './toolbar/ToolRail';
+import { QuickTools, ToolRail } from './toolbar/ToolRail';
 import { TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
 import { PromptHost } from './ui/Prompt';
@@ -81,6 +81,7 @@ export function App() {
       <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
         <ToolRail />
       </aside>
+      <QuickTools />
       <DialogHost />
       <ContextMenuHost />
       <PromptHost />

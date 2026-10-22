@@ -287,3 +287,216 @@
   color: var(--text-muted);
   font-size: 11px;
 }
+
+/* ---- dock: search, options panel, quick tools ---- */
+.lt-fly-search {
+  display: block;
+  width: calc(100% - 16px);
+  height: 28px;
+  margin: 2px 8px 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+.lt-fly-search:focus {
+  border-color: var(--accent);
+}
+.lt-fly-empty {
+  padding: 10px 14px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.lt-fly .lt-icons {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+/* A small accent dot on the options button while magnet, lock or hide is on. */
+.io-icon-btn.lt-btn.lt-busy {
+  position: relative;
+}
+.io-icon-btn.lt-btn.lt-busy::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.lt-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 300px;
+  padding: 10px;
+  font-size: var(--font-size-sm);
+}
+.lt-opt-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.lt-opt-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lt-opt-seg {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+}
+.lt-opt-seg button {
+  flex: 1;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.lt-opt-seg button:hover {
+  color: var(--text);
+}
+.lt-opt-seg button.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.lt-opt-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.lt-opt-toggle:hover {
+  background: var(--hover);
+}
+.lt-opt-switch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--border-strong);
+  transition: background 0.15s;
+}
+.lt-opt-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 0.15s;
+}
+.lt-opt-toggle.on .lt-opt-switch {
+  background: var(--accent);
+}
+.lt-opt-toggle.on .lt-opt-switch::after {
+  transform: translateX(12px);
+}
+.lt-opt-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+.lt-opt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lt-opt-action {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.lt-opt-action:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+.lt-opt-action.danger:hover {
+  border-color: var(--down);
+  color: var(--down);
+}
+.lt-opt-hint {
+  margin: 6px 4px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.lt-opt-hint kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font: inherit;
+}
+
+.lt-quick-anchor {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.lt-quick {
+  width: 300px;
+  min-width: 0;
+}
+.lt-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 0 8px;
+}
+.lt-quick-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 2px 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.lt-quick-cell span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lt-quick-cell:hover,
+.lt-quick-cell:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.lt-quick .lt-opt-hint {
+  margin: 8px 12px 2px;
+}
