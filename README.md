@@ -1,84 +1,110 @@
 # TickerGlass
 
-Open-source, self-hosted charting and technical-analysis platform that runs in your browser.
-It aims for feature parity with professional charting tools: multiple chart types, drawing
-tools, indicators, compare, alerts, watchlists (with a plain-text import/export, see [docs/watchlists.md](docs/watchlists.md)), templates, and market replay. Market data
-comes from a pluggable provider: Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance) by
-default, or generated offline demo data (`MARKET_PROVIDER=demo`). See [docs/providers.md](docs/providers.md)
-to switch or add one.
+TickerGlass is a self-hosted stock charting and technical analysis app. Run it on your own computer or server with Docker Compose and use it in a browser. The application and its storage run on infrastructure you control. Yahoo Finance is the recommended default provider, but you can add or select another supported provider. Yahoo mode contacts Yahoo Finance for data; for a fully offline demo, select the generated demo provider.
 
-> **Status:** feature-complete for the planned scope. Known limitations: [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
-> Caching, upstream request limits and the related settings: [docs/caching.md](docs/caching.md).
+Features include multiple chart types, drawing tools, indicators, symbol comparisons, alerts, watchlists, templates, and market replay. Watchlists can be imported and exported as plain text ([guide](docs/watchlists.md)). See [known limitations](docs/LIMITATIONS.md), [market data providers](docs/providers.md), and [caching](docs/caching.md).
 
-## Disclaimer
+## Run with Docker Compose
 
-- TickerGlass is **not affiliated with, endorsed by, or connected to Yahoo, any data vendor,
-  or any third-party platform.** All trademarks belong to their owners.
-- Yahoo Finance data is provided under Yahoo's terms, which allow **personal use only**.
-  Each user runs their own instance and fetches data for themselves. Do not run a public
-  instance that redistributes this data.
-- Nothing here is financial advice. Data may be delayed, incomplete, or wrong.
-
-## Quick start (Docker)
+Requirements: Docker Engine and the Docker Compose plugin.
 
 ```sh
+git clone https://github.com/yavuzakbay/TickerGlass.git
+cd TickerGlass
 cp .env.example .env
 docker compose up -d --build
 ```
 
-Open http://localhost:8080. The API is at http://localhost:8000/api/health.
+Open <http://localhost:8080>. The API health endpoint is <http://localhost:8000/api/health>.
 
-Data is stored in SQLite in the `api-data` volume. To use Postgres instead, see `.env.example`.
+The web and API ports bind to localhost by default. To access TickerGlass from another device, configure a reverse proxy and change the port bindings in `docker-compose.yml` deliberately. Use HTTPS and suitable access controls before exposing a server to the internet. Do not expose the API port publicly by default.
 
-### Alert notifications
+SQLite data is stored in the persistent `api-data` Docker volume. Back up that volume regularly. To use PostgreSQL, follow the commented configuration in `.env.example` and start the optional database profile:
 
-Alerts are evaluated by the `alerts` service, so they fire with the browser closed. In-app toasts, sound and
-browser notifications need no setup. For notifications elsewhere, set these in `.env` (all optional; secrets stay
-on the server, and the Settings dialog's Alerts tab can send a test message):
+```sh
+docker compose --profile postgres up -d --build
+```
 
-| Variable                                                                                   | Meaning                                                                                               |
-| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `ALERTS_WEBHOOK_URL`, `ALERTS_WEBHOOK_SECRET`                                              | Default webhook target (a per-alert URL overrides it) and an HMAC-SHA256 signing secret               |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`                                                   | Telegram bot; both are required                                                                       |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`, `SMTP_TLS` | Email; `SMTP_HOST`, `SMTP_FROM` and `SMTP_TO` are required, `SMTP_TLS` is `starttls`, `ssl` or `none` |
-| `ALERTS_LOG_MAX`                                                                           | Newest N fired-alert log entries kept (default 5000)                                                  |
-| `ALERTS_INTERNAL_TOKEN`                                                                    | When set, the alerts service must send it as `X-Alerts-Token` on its write routes                     |
+To stop the services while keeping data:
 
-Details: [docs/alerts.md](docs/alerts.md) section 4.
+```sh
+docker compose down
+```
+
+To delete the database volume and its data, use `docker compose down -v`.
+
+## Market data and offline use
+
+TickerGlass recommends Yahoo Finance through `yfinance` as its default provider. The API requests data from the provider for your instance; TickerGlass does not package, own, or redistribute Yahoo Finance market data. You can implement or configure another provider; see [provider configuration](docs/providers.md). Each provider has its own availability, terms, and data rights, which are outside this project's control. Review the applicable terms and laws for your location and use case before accessing, displaying, storing, or sharing provider data.
+
+For generated demo prices without market-data network requests, set this in `.env` and restart:
+
+```dotenv
+MARKET_PROVIDER=demo
+```
+
+Demo prices are synthetic and are not real quotes. The app itself can still use optional integrations you configure, such as Telegram, email, or webhooks for alert delivery. See [provider configuration](docs/providers.md).
+
+## Alert notifications
+
+Alerts are evaluated by the `alerts` service and continue to run while the browser is closed. In-app, sound, and browser notifications need no external service. Telegram, email, and webhooks are optional and require credentials or endpoints that you provide in `.env`. Keep that file private; do not commit secrets. Setup details are in [the alerts guide](docs/alerts.md#4-notification-delivery).
+
+## Configuration
+
+Copy `.env.example` to `.env`. Common settings include:
+
+| Variable | Purpose |
+| --- | --- |
+| `WEB_PORT` | Local web UI port (default `8080`) |
+| `API_PORT` | Local API port (default `8000`) |
+| `MARKET_PROVIDER` | `yahoo` (default) or generated `demo` data |
+| `DATABASE_URL` | Optional database connection; SQLite is the default |
+
+The example file documents database and alert settings. Avoid sharing `.env` because it may contain passwords, tokens, and webhook secrets.
 
 ## Development
 
-Requirements: Node 22+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/).
+Requirements: Node.js 22+, [pnpm](https://pnpm.io/), and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 pnpm install
 cd api && uv sync && cd ..
+```
 
-# terminal 1: API on :8000
+Run the API in one terminal and the web app in another:
+
+```sh
 cd api && uv run uvicorn tickerglass_api.app:app --reload
+```
 
-# terminal 2: web app on :5173 (proxies /api and /ws to :8000)
+```sh
 pnpm dev
 ```
 
-Checks:
+The web development server runs on port 5173 and proxies API and WebSocket requests to port 8000.
 
-```sh
-pnpm lint && pnpm typecheck && pnpm test
-cd api && uv run ruff check . && uv run mypy && uv run pytest
-```
+## Project layout
 
-### Layout
+| Path | Contents |
+| --- | --- |
+| `apps/web` | React application and chart interface |
+| `packages/engine` | Framework-independent Canvas 2D chart engine |
+| `packages/indicators` | Indicators shared by the web app and alert service |
+| `services/alerts` | Server-side alert evaluation |
+| `api` | FastAPI market data API, caching, and storage |
 
-| Path                  | What                                           |
-| --------------------- | ---------------------------------------------- |
-| `apps/web`            | React app shell (toolbars, panels, dialogs)    |
-| `packages/engine`     | Framework-free Canvas2D chart engine           |
-| `packages/indicators` | Indicator library, shared by web and alerts    |
-| `services/alerts`     | Node service that evaluates alerts server-side |
-| `api`                 | FastAPI data API (yfinance, cache, storage)    |
+## Privacy
+
+Self-hosting lets you control where the application server and database run. Browser preferences and some chart data are also kept in that browser's local storage. With the default Yahoo provider, your server contacts Yahoo Finance for market data. If you configure notification integrations, alert messages are sent to the services you select. Review the code and configuration for your deployment before making privacy claims about a particular setup.
+
+## Disclaimer
+
+TickerGlass is provided for informational and educational purposes. It is not investment, financial, tax, or legal advice, and it does not recommend buying or selling any security. Market data may be delayed, incomplete, inaccurate, or unavailable. You are responsible for your decisions and for checking data before relying on it.
+
+TickerGlass is independent and is not affiliated with or endorsed by Yahoo or any other data provider. Product names and trademarks belong to their respective owners. This project does not grant rights to third-party data or trademarks. Check each provider's terms before accessing, storing, displaying, or sharing its data.
 
 ## License
 
-[AGPL-3.0](LICENSE). If you run a modified version for others, including as a network
-service, you must publish your source under the same license.
+TickerGlass is licensed under the [GNU Affero General Public License, version 3](LICENSE). You may use, modify, and share the software under that license. If you modify it and let people interact with your modified version over a network, AGPL-3.0 requires you to offer those users the corresponding source code under the license terms. See the license text for the complete terms.
+
+Third-party dependencies and data providers may have separate terms. This README is project information, not legal advice. No README wording can guarantee that a project or its users will never face a legal claim; review dependency, data-provider, and trademark obligations for your intended use.
