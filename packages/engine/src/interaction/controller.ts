@@ -149,7 +149,7 @@ export class InteractionController {
     this.el.addEventListener('pointerup', (e) => this.onUp(e), opts);
     this.el.addEventListener('pointercancel', (e) => this.onCancel(e), opts);
     this.el.addEventListener('lostpointercapture', (e) => this.onCancel(e), opts);
-    this.el.addEventListener('pointerleave', () => this.onLeave(), opts);
+    this.el.addEventListener('pointerleave', (e) => this.onLeave(e), opts);
     this.el.addEventListener('dblclick', (e) => this.onDoubleClick(e), opts);
     this.el.addEventListener('wheel', (e) => this.onWheel(e), { ...opts, passive: false });
     this.el.addEventListener('keydown', (e) => this.onKey(e), opts);
@@ -402,7 +402,10 @@ export class InteractionController {
     if (d?.kind === 'inspect' || d?.kind === 'held') {
       // The crosshair stays where the finger left it (the next touch clears it).
       this.drag = null;
-      if (pr && (d.kind === 'held' || !d.moved)) this.openContextMenu(pr.clientX, pr.clientY);
+      if (pr && (d.kind === 'held' || !d.moved)) {
+        this.openContextMenu(pr.clientX, pr.clientY);
+        swallowNextClick();
+      }
       return;
     }
     this.drag = null;
@@ -457,10 +460,11 @@ export class InteractionController {
     this.el.style.cursor = '';
   }
 
-  private onLeave(): void {
+  private onLeave(e: PointerEvent): void {
     this.chart.hoverStudy(null);
     if (!this.drag) this.chart.drawingInput.hover(null, 0, 0, NO_MODS);
-    if (!this.drag) this.chart.setCrosshair(null, 0, 0);
+    // Touch: a crosshair from a long-press stays after the finger lifts (the next touch clears it).
+    if (!this.drag && e.pointerType !== 'touch') this.chart.setCrosshair(null, 0, 0);
     if (!this.drag) this.chart.setAxisHover(null, 0);
   }
 
@@ -616,6 +620,20 @@ function inLegendSlot(e: Event): boolean {
   return (
     e.target instanceof Element && e.target.closest('.io-legend-slot, .io-legend-header') !== null
   );
+}
+
+/**
+ * The click the browser synthesizes after a touch release would land on the menu just
+ * opened under the finger (or its backdrop) and close it: drop that one click.
+ */
+function swallowNextClick(): void {
+  if (typeof window === 'undefined') return;
+  const swallow = (e: Event) => {
+    e.stopPropagation();
+    e.preventDefault();
+  };
+  window.addEventListener('click', swallow, { capture: true, once: true });
+  setTimeout(() => window.removeEventListener('click', swallow, true), 400);
 }
 
 const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };
