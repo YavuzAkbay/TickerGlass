@@ -110,7 +110,7 @@
 /* ---- phones: range chips and scale toggles in a strip below the chart ---- */
 @media (max-width: 768px) {
   .chart-cell:has(> .ax-strip) > .chart-host {
-    bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+    bottom: 40px;
   }
   .ax-strip {
     position: absolute;
@@ -121,8 +121,7 @@
     display: flex;
     align-items: center;
     height: 40px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    box-sizing: content-box;
+    box-sizing: border-box;
     border-top: 1px solid var(--border);
     background: var(--panel);
   }

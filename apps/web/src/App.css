@@ -291,6 +291,11 @@
   .chart-stack.with-switcher {
     top: 36px;
   }
+
+  /* The tabs already say which chart is shown. */
+  .chart-stack.with-switcher .chart-cell.multi.active::after {
+    display: none;
+  }
 }
 
 .pane-tab {
