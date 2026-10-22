@@ -9,95 +9,54 @@ import {
   type DrawingStyle,
 } from '@tickerglass/engine';
 import { ChevronDown, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { scopePatch, updateDrawings } from '../drawings/actions';
 import { defaultStyleOf, type DrawingSettingsTab } from '../drawings/menu';
 import { PropertyList, TextTab } from '../drawings/DrawingProperties';
-import { deepEqual } from '../drawings/model';
 import { keepPerDrawingStyle } from '../drawings/per-drawing';
-import { lookupDrawing, useDrawingStore, useDrawingTemplates } from '../drawings/store';
+import { useDrawingTemplates } from '../drawings/store';
 import { DEFAULT_TEMPLATE_NAME } from '../persist/drawingTemplatesSync';
-import { getChart, useChartStore } from '../store/chart';
+import { useChartStore } from '../store/chart';
+import { useUiStore } from '../store/ui';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
-import { Modal } from '../ui/Modal';
 import { toast } from '../ui/Toast';
-import { Row, Section, Segmented } from './controls';
-import { NumberInput, VisibilityTab } from './IndicatorSettingsDialog';
+import { Row, Section, Segmented } from '../dialogs/controls';
+import { NumberInput, VisibilityTab } from './IndicatorSettings';
 import '../indicators/indicators.css';
 import '../drawings/drawings.css';
-import './dialogs.css';
-
-interface Arg {
-  id?: unknown;
-  tab?: DrawingSettingsTab;
-  saveTemplate?: boolean;
-}
+import '../dialogs/dialogs.css';
 
 /**
- * Properties dialog generated from the tool's `properties` schema: Style and
- * Text tabs, Coordinates (anchors, honouring `axes`) and Visibility. Edits are
- * a live preview on the chart (engine API only, no store/undo); Ok commits one
- * undo step, Cancel restores the stored drawing.
+ * Drawing settings in the Inspector, generated from the tool's `properties` schema:
+ * Style and Text, Coordinates (anchors, honouring `axes`) and Visibility. Every
+ * edit goes to the drawing store straight away; edits of one property coalesce
+ * into one undo step.
  */
-export default function DrawingSettingsDialog({
-  onClose,
-  arg,
+export function DrawingSettings({
+  drawing,
+  initialTab,
+  saveTemplate = false,
 }: {
-  onClose: () => void;
-  arg?: unknown;
+  drawing: Drawing;
+  initialTab?: DrawingSettingsTab | undefined;
+  saveTemplate?: boolean;
 }) {
-  const a = (arg ?? {}) as Arg;
-  const stored = useDrawingStore((s) => lookupDrawing(s, a.id));
-  const def = stored ? getDrawingTool(stored.type) : undefined;
-  const [draft, setDraft] = useState<Drawing | null>(() =>
-    stored ? structuredClone(stored) : null,
-  );
+  const def = getDrawingTool(drawing.type);
+  const close = useUiStore((s) => s.closeInspector);
   const hasText = !!def?.text || !!def?.properties.some((p) => p.tab === 'text');
   const [tab, setTab] = useState<DrawingSettingsTab>(() =>
-    a.tab === 'text' && !hasText ? 'style' : (a.tab ?? 'style'),
+    initialTab === 'text' && !hasText ? 'style' : (initialTab ?? 'style'),
   );
-  const settled = useRef(false);
-  const original = useRef(stored);
+  if (!def) return <div className="dlg-note">Nothing to style.</div>;
 
-  // Live preview straight on the engine (never the store), replaced wholesale
-  // so a template without some style key previews without it.
-  useEffect(() => {
-    if (draft) getChart()?.replaceDrawing(draft);
-  }, [draft]);
-
-  // Leaving without Ok restores the stored drawing on the chart.
-  useEffect(
-    () => () => {
-      const d = original.current;
-      if (!settled.current && d) getChart()?.replaceDrawing(d);
-    },
-    [],
-  );
-
-  if (!stored || !def || !draft) {
-    return (
-      <Modal title="Drawing settings" onClose={onClose} width={420}>
-        <div className="dlg-empty">This drawing is no longer on the chart.</div>
-      </Modal>
-    );
-  }
-
-  const setStyle = (patch: DrawingStyle) =>
-    setDraft((d) => d && { ...d, style: { ...d.style, ...patch } });
-  const set = (patch: Partial<Drawing>) => setDraft((d) => d && { ...d, ...patch });
-
-  const ok = () => {
-    settled.current = true;
-    if (!deepEqual(draft, stored)) {
-      const { id: _id, type: _type, ...patch } = draft;
-      updateDrawings([stored.id], patch, `Change ${def.name} settings`);
-    }
-    onClose();
+  const label = `Change ${def.name} settings`;
+  const setStyle = (patch: DrawingStyle) => {
+    const key = Object.keys(patch).join(',');
+    updateDrawings([drawing.id], { style: patch }, label, `prop:${key}`);
   };
-  const cancel = () => {
-    settled.current = true;
-    getChart()?.replaceDrawing(stored);
-    onClose();
+  const set = (patch: Partial<Drawing>) => {
+    const key = Object.keys(patch).join(',');
+    updateDrawings([drawing.id], patch, label, `prop:${key}`);
   };
 
   const tabs: [DrawingSettingsTab, string][] = [
@@ -112,27 +71,27 @@ export default function DrawingSettingsDialog({
     content = (
       <PropertyList
         props={def.properties.filter((p) => (p.tab ?? 'style') === 'style')}
-        style={draft.style}
+        style={drawing.style}
         set={setStyle}
-        drawingId={draft.id}
+        drawingId={drawing.id}
       />
     );
   else if (tab === 'text')
-    content = <TextTab def={def} draft={draft} set={set} setStyle={setStyle} />;
-  else if (tab === 'coordinates') content = <CoordinatesTab def={def} draft={draft} set={set} />;
+    content = <TextTab def={def} draft={drawing} set={set} setStyle={setStyle} />;
+  else if (tab === 'coordinates') content = <CoordinatesTab def={def} draft={drawing} set={set} />;
   else
     content = (
       <>
-        <VisibilityTab vis={draft.visibility} set={(visibility) => set({ visibility })} />
+        <VisibilityTab vis={drawing.visibility} set={(visibility) => set({ visibility })} />
         <Section title="Symbols">
           <Row label="Show on">
             <Segmented
-              value={draft.scope}
+              value={drawing.scope}
               options={[
-                ['symbol', `${draft.symbol || 'This symbol'} only`],
+                ['symbol', `${drawing.symbol || 'This symbol'} only`],
                 ['all', 'All symbols'],
               ]}
-              onChange={(scope) => set(scopePatch(draft, scope))}
+              onChange={(scope) => set(scopePatch(drawing, scope))}
             />
           </Row>
         </Section>
@@ -140,33 +99,9 @@ export default function DrawingSettingsDialog({
     );
 
   return (
-    <Modal
-      title={def.name}
-      onClose={cancel}
-      width={480}
-      className="dlg-settings drw-settings"
-      footer={
-        <>
-          <TemplateMenu
-            def={def}
-            style={draft.style}
-            apply={(style) =>
-              setDraft((d) => d && { ...d, style: keepPerDrawingStyle(d.type, style, d.style) })
-            }
-            startSaving={!!a.saveTemplate}
-          />
-          <div className="dlg-footer-spacer" />
-          <button type="button" className="io-btn" onClick={cancel}>
-            Cancel
-          </button>
-          <button type="button" className="io-btn io-btn-primary" onClick={ok}>
-            Ok
-          </button>
-        </>
-      }
-    >
+    <div className="insp-settings drw-settings">
       <div className="dlg-tabs" role="tablist" aria-label="Drawing settings sections">
-        {tabs.map(([t, label]) => (
+        {tabs.map(([t, tabLabel]) => (
           <button
             key={t}
             type="button"
@@ -175,14 +110,32 @@ export default function DrawingSettingsDialog({
             className={`dlg-tab${tab === t ? ' active' : ''}`}
             onClick={() => setTab(t)}
           >
-            {label}
+            {tabLabel}
           </button>
         ))}
       </div>
-      <div className="ind-settings-body drw-settings-body" role="tabpanel">
+      <div className="ind-settings-body drw-settings-body insp-settings-body" role="tabpanel">
         {content}
       </div>
-    </Modal>
+      <footer className="insp-footer">
+        <TemplateMenu
+          def={def}
+          style={drawing.style}
+          apply={(style) =>
+            updateDrawings(
+              [drawing.id],
+              (d) => ({ style: keepPerDrawingStyle(d.type, style, d.style) }),
+              `Apply ${def.name} template`,
+            )
+          }
+          startSaving={saveTemplate}
+        />
+        <div className="dlg-footer-spacer" />
+        <button type="button" className="io-btn io-btn-primary" onClick={close}>
+          Done
+        </button>
+      </footer>
+    </div>
   );
 }
 

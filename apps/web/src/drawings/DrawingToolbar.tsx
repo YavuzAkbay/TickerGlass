@@ -5,7 +5,7 @@ import {
   type DrawingProperty,
   type JsonValue,
 } from '@tickerglass/engine';
-import { Ellipsis, Lock, PanelRight, Settings, Trash2, Type, Unlock } from 'lucide-react';
+import { Ellipsis, Lock, Settings, Trash2, Type, Unlock } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ColorSwatch } from '../dialogs/ColorPicker';
@@ -258,14 +258,7 @@ function ToolbarBody({ ids }: { ids: string[] }) {
       ) : null}
       <div className="drw-tb-sep" />
       <IconButton
-        label={t('drawing.properties')}
-        icon={PanelRight}
-        className="drw-tb-btn"
-        disabled={list.length !== 1 || !def}
-        onClick={() => useUiStore.getState().openInspector('drawing', first.id)}
-      />
-      <IconButton
-        label="Settings"
+        label={t('drawing.settings')}
         icon={Settings}
         className="drw-tb-btn"
         disabled={list.length !== 1 || !def}

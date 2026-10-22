@@ -17,8 +17,6 @@ const DIALOGS: Record<DialogId, DialogComponent | RetryableLazy<DialogComponent>
   intervalInput: IntervalInputDialog,
   compare: retryableLazy(() => import('./CompareDialog')),
   indicators: retryableLazy(() => import('./IndicatorsDialog')),
-  indicatorSettings: retryableLazy(() => import('./IndicatorSettingsDialog')),
-  drawingSettings: retryableLazy(() => import('./DrawingSettingsDialog')),
   settings: retryableLazy(() => import('./SettingsDialog')),
   goToDate: retryableLazy(() => import('../bottombar/GoToDateDialog')),
   shortcuts: retryableLazy(() => import('./ShortcutsDialog')),

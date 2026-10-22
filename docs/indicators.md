@@ -225,9 +225,11 @@ A timeframe request that returns no bars is dropped (the instance stays `waiting
 series reset. Studies the engine drops with a pane (`paneRemoved.studyIds`) are removed from the app store in
 one update and one undo step; after `studiesCleared` the controller re-adds the listed instances.
 
-The settings dialog previews edits through a transient, non-persisted override store
-(`useIndicatorPreview`) merged over the persisted instances for the chart and legends; it never enters the
-undo history. Ok commits the override as one undo step, Cancel/close drops it.
+Indicator settings live in the Inspector (`inspector/IndicatorSettings.tsx`, opened by the legend gear,
+double-click or `openIndicatorSettings`). Edits preview through a transient, non-persisted override store
+(`useIndicatorPreview`) merged over the persisted instances for the chart and legends; the preview never
+enters the undo history. Leaving the panel (Done, close, or another Inspector view) commits the override as
+one undo step; Revert drops it.
 
 ## 5a. User-script sandbox (apps/web, `indicators/sandbox/`)
 
