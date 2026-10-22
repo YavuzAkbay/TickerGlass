@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, pickTool, test } from './fixtures';
 
 declare global {
   interface Window {
@@ -13,7 +13,7 @@ async function waitForChart(page: Page) {
   await page.waitForFunction(() => window.chart?.store.length > 0);
 }
 
-test('place a sticker from the Icons flyout', async ({ page }) => {
+test('place a sticker from the Text flyout', async ({ page }) => {
   const errors: Error[] = [];
   page.on('pageerror', (e) => errors.push(e));
   await page.addInitScript(() => {
@@ -25,7 +25,7 @@ test('place a sticker from the Icons flyout', async ({ page }) => {
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
 
-  await page.getByRole('button', { name: 'Icons, emojis and stickers' }).click();
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
   await page.getByRole('tab', { name: 'Stickers' }).click();
   await page.getByRole('menuitem', { name: 'Diamond hands' }).click();
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('icon');
@@ -56,7 +56,7 @@ const FIVE = zigzag(5);
 const SIX = zigzag(6);
 const SEVEN = zigzag(7);
 const LINES = 'Lines';
-const FIB = 'Fibonacci & Gann';
+const FIB = 'Measure';
 const PATTERNS = 'Patterns';
 
 /** Flyout (toolbar group label), tool name, engine type, clicks (viewport px), stored anchors. */
@@ -171,7 +171,7 @@ for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
     await page.goto('/?feed=synthetic');
     await waitForChart(page);
 
-    await page.getByRole('button', { name: `More ${group.toLowerCase()}` }).click();
+    await page.getByRole('button', { name: group, exact: true }).click();
     await page
       .getByRole('menu', { name: group })
       .getByRole('menuitem')
@@ -219,7 +219,7 @@ const SHAPE_TOOL_CASES: {
 ];
 
 async function pickShapeTool(page: Page, name: string, type: string) {
-  await page.getByRole('button', { name: `More ${SHAPES.toLowerCase()}` }).click();
+  await page.getByRole('button', { name: SHAPES, exact: true }).click();
   await page
     .getByRole('menu', { name: SHAPES })
     .getByRole('menuitem')
@@ -293,11 +293,11 @@ test('finish a path with Enter', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-const ANNOTATION = 'Notes & labels';
+const ANNOTATION = 'Text';
 const ONE: [number, number][] = [[600, 350]];
 
 async function pickAnnotationTool(page: Page, name: string, type: string) {
-  await page.getByRole('button', { name: `More ${ANNOTATION.toLowerCase()}` }).click();
+  await page.getByRole('button', { name: ANNOTATION, exact: true }).click();
   await page
     .getByRole('menu', { name: ANNOTATION })
     .getByRole('menuitem')
@@ -397,7 +397,7 @@ test('image: choose a file in the settings dialog', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-const FORECASTING = 'Projection & measure';
+const FORECASTING = 'Measure';
 
 /** Forecasting/volume tools: clicks, optional double-click finish, stored anchors. */
 const PROJECTION_TOOL_CASES: {
@@ -421,7 +421,7 @@ for (const { name, type, clicks, finish, count } of PROJECTION_TOOL_CASES) {
     const errors: Error[] = [];
     page.on('pageerror', (e) => errors.push(e));
     await openFresh(page);
-    await page.getByRole('button', { name: `More ${FORECASTING.toLowerCase()}` }).click();
+    await page.getByRole('button', { name: FORECASTING, exact: true }).click();
     await page
       .getByRole('menu', { name: FORECASTING })
       .getByRole('menuitem')
@@ -450,7 +450,7 @@ test('zoom in: drag a box to zoom the chart to it', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e));
   await openFresh(page);
   const before = await page.evaluate(() => window.chart.getState());
-  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await pickTool(page, 'Measure', 'Zoom in');
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('zoom-in');
 
   await page.mouse.move(600, 300);
@@ -475,7 +475,7 @@ test('zoom in: Esc cancels the box', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e));
   await openFresh(page);
   const before = await page.evaluate(() => window.chart.getState().timeScale.barSpacing);
-  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await pickTool(page, 'Measure', 'Zoom in');
   await page.mouse.move(600, 300);
   await page.mouse.down();
   await page.mouse.move(800, 450, { steps: 5 });
@@ -489,7 +489,7 @@ test('measure: transient range, cleared by the next click, never stored', async 
   const errors: Error[] = [];
   page.on('pageerror', (e) => errors.push(e));
   await openFresh(page);
-  await page.getByRole('button', { name: 'Measure', exact: true }).click();
+  await pickTool(page, 'Measure', 'Measure');
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('measure');
 
   await page.mouse.move(500, 400);
@@ -505,7 +505,7 @@ test('measure: transient range, cleared by the next click, never stored', async 
   expect(await measurement(page)).toBeNull();
 
   // Esc clears it too.
-  await page.getByRole('button', { name: 'Measure', exact: true }).click();
+  await pickTool(page, 'Measure', 'Measure');
   await page.mouse.click(500, 400);
   await page.mouse.click(650, 330);
   expect(await measurement(page)).toHaveLength(2);
@@ -537,9 +537,9 @@ test('anchored VWAP: a click adds the indicator anchored at that bar', async ({ 
   await openFresh(page);
   const studies = () => page.evaluate(() => window.chart.getStudies().length);
   const before = await studies();
-  await page.getByRole('button', { name: 'More projection & measure' }).click();
+  await page.getByRole('button', { name: 'Measure', exact: true }).click();
   await page
-    .getByRole('menu', { name: 'Projection & measure' })
+    .getByRole('menu', { name: 'Measure' })
     .getByRole('menuitem')
     .filter({ has: page.locator('.lt-fly-name').getByText('Anchored VWAP', { exact: true }) })
     .click();
@@ -551,4 +551,34 @@ test('anchored VWAP: a click adds the indicator anchored at that bar', async ({ 
     await page.evaluate(() => window.chart.getStudies().some((s) => /anchored/i.test(s.title))),
   ).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test('quick tools at the cursor: a default tool, then search across categories', async ({
+  page,
+}) => {
+  await openFresh(page);
+  await page.mouse.move(700, 350);
+  await page.keyboard.press('Alt+d');
+  const quick = page.getByRole('menu', { name: 'Quick drawing tools' });
+  await expect(quick).toBeVisible();
+  await quick.getByRole('menuitem', { name: 'Rectangle' }).click();
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('rectangle');
+  await expect(quick).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+d');
+  await page.keyboard.type('gann box');
+  await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('gann-box');
+});
+
+test('dock search: typing filters a category, Enter arms the first match', async ({ page }) => {
+  await openFresh(page);
+  await page.getByRole('button', { name: 'Lines', exact: true }).click();
+  await page.keyboard.type('pitch');
+  const rows = page.getByRole('menu', { name: 'Lines' }).locator('.lt-fly-name');
+  await expect(rows.first()).toHaveText('Pitchfork');
+  await expect(rows.filter({ hasText: 'Trend line' })).toHaveCount(0);
+  await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('pitchfork');
 });

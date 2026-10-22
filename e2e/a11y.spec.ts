@@ -104,6 +104,7 @@ test('chart host is an image named by symbol and interval', async ({ page }) => 
 });
 
 test('toggle buttons expose their pressed state', async ({ page }) => {
+  await page.getByRole('button', { name: 'Drawing options' }).click();
   const stay = page.getByRole('button', { name: 'Stay in drawing mode' });
   await expect(stay).toHaveAttribute('aria-pressed', 'false');
   await stay.click();

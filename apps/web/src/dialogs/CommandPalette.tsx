@@ -208,7 +208,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
   };
 
   const matched = all
-    .filter((c) => !c.hidden && commands.isEnabled(c.id))
+    .filter((c) => !c.hidden && (!c.searchOnly || q) && commands.isEnabled(c.id))
     .map((c) => {
       const title = fuzzyMatch(c.title, q);
       const full = title ? null : fuzzyMatch(`${c.category ?? ''} ${c.title}`, q);

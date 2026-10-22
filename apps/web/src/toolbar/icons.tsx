@@ -12,6 +12,7 @@ import {
   MousePointer2,
   PenLine,
   Ruler,
+  SlidersHorizontal,
   Smile,
   Star,
   Trash2,
@@ -813,4 +814,5 @@ export const IconEye = lu(Eye);
 export const IconEyeOff = lu(EyeOff);
 export const IconTrash = lu(Trash2);
 export const IconStar = lu(Star);
+export const IconSliders = lu(SlidersHorizontal);
 export const IconStarFilled = lu(Star, true);

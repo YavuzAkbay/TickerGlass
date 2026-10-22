@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, pickTool, test } from './fixtures';
 import { firstChart, freshBoot } from './persistence';
 
 declare global {
@@ -49,7 +49,7 @@ test('draw + add indicator, reload: restored from the server (not the browser ca
   await restored(page);
   expect(server.layouts.size).toBe(1);
 
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
   await expect.poll(() => page.evaluate(() => window.chart.getDrawings().length)).toBe(1);
@@ -156,7 +156,7 @@ test('API down: works from the browser copy, syncs when the server is back', asy
   await expect(page.getByText(/Server unreachable/)).toBeVisible();
   await expect(layoutButton(page)).toHaveAttribute('aria-label', /Layout: Untitled/);
 
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
+  await pickTool(page, 'Lines', 'Trend line');
   await page.mouse.click(500, 300);
   await page.mouse.click(800, 420);
   await expect.poll(() => page.evaluate(() => window.chart.getDrawings().length)).toBe(1);
