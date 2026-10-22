@@ -133,7 +133,13 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
       <div className="sc-price">
         {q && isNum(q.last) ? (
           <>
-            <span className="sh-last">{fmtPrice(q.last, d)}</span>
+            {/* Re-mounted per tick so the flash replays. */}
+            <span
+              key={q.flash?.target === 'last' ? q.flash.seq : 0}
+              className={`sh-last${q.flash?.target === 'last' ? (q.flash.dir > 0 ? ' flash-up' : ' flash-down') : ''}`}
+            >
+              {fmtPrice(q.last, d)}
+            </span>
             {abs !== null ? (
               <span className={`sh-change ${cls}`}>
                 {glyph ? <span aria-hidden>{glyph}</span> : null} {abs}

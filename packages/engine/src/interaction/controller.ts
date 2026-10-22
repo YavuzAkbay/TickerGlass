@@ -107,6 +107,8 @@ export class InteractionController {
   private drag: Drag | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
   private kineticFrame = 0;
+  /** Wheel zoom still to apply (log of the factor) around `x`, eased in over a few frames. */
+  private zoomEase: { x: number; rest: number; frame: number } | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly el: HTMLElement;
   private readonly abort = new AbortController();
@@ -141,6 +143,7 @@ export class InteractionController {
   destroy(): void {
     this.abort.abort();
     cancelAnimationFrame(this.kineticFrame);
+    if (this.zoomEase) cancelAnimationFrame(this.zoomEase.frame);
     clearTimeout(this.settleTimer);
   }
 
@@ -366,7 +369,10 @@ export class InteractionController {
     } else if (Math.abs(dx) > Math.abs(dy)) {
       ts.pan(-dx);
     } else {
-      ts.zoom(hit.kind === 'pane' ? p.x : this.chart.paneWidth, Math.exp(-dy * 0.0015));
+      const x = hit.kind === 'pane' ? p.x : this.chart.paneWidth;
+      // Mouse wheels step in notches: ease those in. Trackpad deltas are smooth already.
+      if (e.deltaMode !== 0 || Math.abs(dy) >= 40) this.easeZoom(x, -dy * 0.0015);
+      else ts.zoom(x, Math.exp(-dy * 0.0015));
     }
     this.chart.viewChanged(hit.kind === 'priceAxis' ? 'price' : 'user');
     if (hit.kind === 'pane') this.chart.setCrosshair(hit.pane, p.x, hit.y);
@@ -410,6 +416,31 @@ export class InteractionController {
       }
     };
     this.kineticFrame = requestAnimationFrame(step);
+  }
+
+  /** Zoom by `exp(log)` around `x`: part now, the rest over the next frames (none with reduced motion). */
+  private easeZoom(x: number, log: number): void {
+    const ts = this.chart.timeScale;
+    const prev = this.zoomEase;
+    if (prev) cancelAnimationFrame(prev.frame);
+    let rest = log + (prev && Math.abs(prev.x - x) < 1 ? prev.rest : 0);
+    if (prev && Math.abs(prev.x - x) >= 1) ts.zoom(prev.x, Math.exp(prev.rest));
+    this.zoomEase = null;
+    const animate = typeof requestAnimationFrame === 'function' && !prefersReducedMotion();
+    const step = (share: number) => {
+      const now = Math.abs(rest) < 0.004 ? rest : rest * share;
+      ts.zoom(x, Math.exp(now));
+      rest -= now;
+    };
+    step(animate ? 0.45 : 1);
+    if (!animate || rest === 0) return;
+    const frame = () => {
+      step(0.4);
+      this.chart.viewChanged('user');
+      if (rest === 0) this.zoomEase = null;
+      else this.zoomEase = { x, rest, frame: requestAnimationFrame(frame) };
+    };
+    this.zoomEase = { x, rest, frame: requestAnimationFrame(frame) };
   }
 
   private stopKinetic(): void {
@@ -460,4 +491,8 @@ const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };
 
 function mods(e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }) {
   return { shift: e.shiftKey, alt: e.altKey, mod: e.ctrlKey || e.metaKey };
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

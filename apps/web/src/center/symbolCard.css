@@ -178,3 +178,23 @@
 .sh-pill-muted {
   color: var(--text-muted);
 }
+
+/* The last price glows briefly in the direction of each tick. */
+.sh-last.flash-up {
+  animation: sc-flash-up 650ms ease-out;
+}
+.sh-last.flash-down {
+  animation: sc-flash-down 650ms ease-out;
+}
+@keyframes sc-flash-up {
+  from {
+    color: var(--up);
+    text-shadow: 0 0 12px var(--up-soft);
+  }
+}
+@keyframes sc-flash-down {
+  from {
+    color: var(--down);
+    text-shadow: 0 0 12px var(--down-soft);
+  }
+}

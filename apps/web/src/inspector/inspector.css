@@ -2,6 +2,7 @@
 .inspector {
   grid-area: 2 / 3 / 3 / 4;
   position: relative;
+  animation: insp-in 160ms ease-out;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -116,4 +117,11 @@
 }
 .insp-settings .ind-vis-row {
   flex-wrap: wrap;
+}
+
+/* A fade only: the panel's box is final from the first frame (layout reads it at once). */
+@keyframes insp-in {
+  from {
+    opacity: 0;
+  }
 }
