@@ -10,10 +10,10 @@ export const en = {
 
   // Command bar
   'topbar.toolbar': 'Chart toolbar',
-  'topbar.compare': 'Compare or add symbol',
+  'topbar.compare': 'Overlay a symbol',
   'topbar.indicators': 'Indicators',
   'topbar.alert': 'Create alert',
-  'topbar.replay': 'Bar replay',
+  'topbar.replay': 'Playback',
   'topbar.settings': 'Settings',
   'topbar.shortcuts': 'Keyboard shortcuts',
   'topbar.dataSource': 'Data source…',
@@ -59,9 +59,9 @@ export const en = {
   'nav.alerts': 'Alerts',
   'nav.timeline': 'Timeline',
   'nav.notes': 'Notes',
-  'nav.objectTree': 'Object tree',
-  'nav.dataWindow': 'Data window',
-  'nav.replayTrading': 'Replay trading',
+  'nav.objectTree': 'Layers',
+  'nav.dataWindow': 'Values',
+  'nav.replayTrading': 'Practice trades',
   'nav.unread': '{count} unread',
   'nav.resize': 'Resize navigator (double-click to reset)',
   'nav.addSymbol': 'Add symbol',
@@ -90,25 +90,25 @@ export const en = {
   'rail.options': 'Drawing options',
   'rail.syncNew': 'Show new drawings on every symbol',
   'rail.quickTools': 'Quick drawing tools',
-  'rail.stayDrawing': 'Stay in drawing mode',
+  'rail.stayDrawing': 'Keep the tool after drawing',
   'rail.lockAll': 'Lock all drawings',
   'rail.showFavorites': 'Favorites toolbar',
   'rail.removeDrawings': 'Remove drawings',
   'rail.removeIndicators': 'Remove indicators',
-  'rail.removeAll': 'Remove drawings & indicators',
+  'rail.removeAll': 'Clear the chart',
 
   // Chart
   'chart.label': 'Chart: {symbol}, {interval}',
   'chart.live': 'Bar {time}: open {open}, high {high}, low {low}, close {close}',
 
   // Settings dialog
-  'settings.tab.symbol': 'Symbol',
-  'settings.tab.status': 'Status line',
-  'settings.tab.scales': 'Scales and lines',
-  'settings.tab.canvas': 'Canvas',
-  'settings.tab.trading': 'Trading',
+  'settings.tab.symbol': 'Series',
+  'settings.tab.status': 'Legend',
+  'settings.tab.scales': 'Axes',
+  'settings.tab.canvas': 'Background',
+  'settings.tab.trading': 'Practice',
   'settings.tab.alerts': 'Alerts',
-  'settings.tab.events': 'Events',
+  'settings.tab.events': 'Markers',
 } satisfies Record<string, string>;
 
 export type MessageKey = keyof typeof en;

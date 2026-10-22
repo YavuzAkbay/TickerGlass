@@ -110,8 +110,8 @@ test('object tree lists drawings and indicators without crashing', async ({ page
   await expect.poll(async () => (await drawings(page)).length).toBe(1);
 
   // Open the Object tree panel: one row per drawing and the study's series.
-  await page.getByRole('tab', { name: 'Object tree' }).click();
-  const tree = page.getByRole('tree', { name: 'Object tree' });
+  await page.getByRole('tab', { name: 'Layers' }).click();
+  const tree = page.getByRole('tree', { name: 'Layers' });
   await expect(tree).toBeVisible();
   await expect(tree.getByRole('treeitem', { name: 'Trend line' })).toHaveCount(1);
   await expect(tree.getByText(study, { exact: false }).first()).toBeVisible();

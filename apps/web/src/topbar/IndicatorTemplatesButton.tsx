@@ -19,7 +19,7 @@ const savedOffline = (what: string) =>
 
 const fail = (what: string, err: unknown) => toast(`${what}: ${errorMessage(err)}`, 'error', 6000);
 
-/** "Indicator templates" dropdown: save the current set, apply, rename, delete. */
+/** "Indicator sets" dropdown: save the current set, apply, rename, delete. */
 export function IndicatorTemplatesButton() {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -42,7 +42,7 @@ export function IndicatorTemplatesButton() {
   };
 
   const save = async () => {
-    const name = await promptName({ title: 'Save indicator template' });
+    const name = await promptName({ title: 'Save indicator set' });
     if (!name) return;
     const existing = templates?.find((t) => t.name === name);
     if (
@@ -94,7 +94,7 @@ export function IndicatorTemplatesButton() {
   const remove = async (t: Template) => {
     const yes = await confirmDialog({
       title: 'Delete template',
-      message: `Delete the indicator template "${t.name}"?`,
+      message: `Delete the indicator set "${t.name}"?`,
       okLabel: 'Delete',
       danger: true,
     });
@@ -108,7 +108,7 @@ export function IndicatorTemplatesButton() {
 
   const items: MenuItem[] = [
     {
-      label: 'Save indicator template…',
+      label: 'Save indicator set…',
       disabled: !hasIndicators,
       onSelect: () => void save(),
     },
@@ -142,10 +142,10 @@ export function IndicatorTemplatesButton() {
         ref={setAnchor}
         type="button"
         className={`tb-btn${open ? ' open' : ''}`}
-        aria-label="Indicator templates"
+        aria-label="Indicator sets"
         aria-haspopup="menu"
         aria-expanded={open}
-        data-tip={open ? undefined : 'Indicator templates'}
+        data-tip={open ? undefined : 'Indicator sets'}
         data-tip-side="bottom"
         onClick={toggle}
       >

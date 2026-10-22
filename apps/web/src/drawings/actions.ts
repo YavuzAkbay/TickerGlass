@@ -471,7 +471,7 @@ export function removeAllObjects(): void {
   applyChanges(changes, 'redo');
   useIndicatorStore.getState().replaceAll([]);
   useHistory.getState().push({
-    label: 'Remove drawings & indicators',
+    label: 'Clear the chart',
     undo: () => {
       applyChanges(changes, 'undo');
       useIndicatorStore.getState().replaceAll(indicators);

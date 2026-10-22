@@ -155,7 +155,7 @@ panel). Nothing is stored or sent anywhere.
   - `unrealized = (last - avg) * q`; total = realized + unrealized (marks: the last revealed close of each symbol)
 - Chart: marker group `replay-trades` (arrow up below the bar for buys, arrow down above for sells) and price line
   group `replay-position` (average price, "Long 2 @ 100.50").
-- The **Replay trading** panel (right icon bar, only while replaying; never saved or synced) shows position, average,
+- The **Practice trades** panel (left icon rail, only while replaying; never saved or synced) shows position, average,
   last, unrealized, realized and total P&L and the trade list. The ReplayBar shows the total as a compact readout.
 - Start and seek reset the account; exit shows a summary toast ("Replay finished: N trades, realized ..., total
   ...") and clears everything.

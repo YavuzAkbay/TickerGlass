@@ -18,12 +18,12 @@ const running = () => ['loading', 'paused', 'playing', 'ended'].includes(status(
 /** Playback controls need a loaded replay. */
 const loaded = () => ['paused', 'playing', 'ended'].includes(status());
 
-/** Bar replay commands. The first four need no running replay (toggle, select bar). */
+/** Playback commands. The first four need no running replay (toggle, select bar). */
 export function registerReplayCommands(): () => void {
   const list: Command[] = [
     {
       id: 'replay.toggle',
-      title: 'Bar replay',
+      title: 'Playback',
       category: 'Replay',
       icon: Rewind,
       shortcut: 'Shift+Alt+r',

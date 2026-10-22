@@ -51,7 +51,7 @@ const order = (error: string | null) => {
   if (error) toast(error, 'error');
 };
 
-/** Replay controls, docked at the bottom of the chart while replay is on. */
+/** Playback controls, docked at the bottom of the chart while replay is on. */
 export function ReplayBar() {
   const status = useReplayStore((s) => s.status);
   const last = useReplayStore((s) => s.last);
@@ -86,7 +86,7 @@ export function ReplayBar() {
   const time = formatReplayTime(last, timezone, exchange, intraday);
 
   return (
-    <div className="replay-bar" role="toolbar" aria-label="Replay controls" data-status={status}>
+    <div className="replay-bar" role="toolbar" aria-label="Playback controls" data-status={status}>
       <IconButton
         icon={Scissors}
         label="Select bar"
