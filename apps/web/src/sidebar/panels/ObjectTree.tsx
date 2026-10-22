@@ -150,7 +150,7 @@ export function ObjectTree() {
   const orphans = drawings.filter((d) => !paneIds.has(d.paneId));
 
   return (
-    <div className="rs-tree" role="tree" aria-label="Object tree">
+    <div className="rs-tree" role="tree" aria-label="Layers">
       {chart.panes.map((pane, i) => {
         const isMain = pane.id === 'main';
         const name = isMain ? 'Main pane' : `Pane ${i + 1}`;

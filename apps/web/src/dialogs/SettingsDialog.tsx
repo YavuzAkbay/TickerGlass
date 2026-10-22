@@ -53,13 +53,14 @@ const TABS: {
   label: MessageKey;
   icon: ComponentType<{ size?: number; strokeWidth?: number }>;
 }[] = [
+  // What the chart draws first, then how it reads, then what sits on it.
   { id: 'symbol', label: 'settings.tab.symbol', icon: ChartCandlestick },
-  { id: 'status', label: 'settings.tab.status', icon: PanelTop },
-  { id: 'scales', label: 'settings.tab.scales', icon: Ruler },
   { id: 'canvas', label: 'settings.tab.canvas', icon: Paintbrush },
+  { id: 'scales', label: 'settings.tab.scales', icon: Ruler },
+  { id: 'status', label: 'settings.tab.status', icon: PanelTop },
+  { id: 'events', label: 'settings.tab.events', icon: CalendarDays },
   { id: 'trading', label: 'settings.tab.trading', icon: Briefcase },
   { id: 'alerts', label: 'settings.tab.alerts', icon: AlarmClock },
-  { id: 'events', label: 'settings.tab.events', icon: CalendarDays },
 ];
 
 const TIMEZONES = [
@@ -176,13 +177,13 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
       .catch((err) => setTemplatesError(errorMessage(err)));
 
   const saveTemplate = async () => {
-    const name = await promptName({ title: 'Save chart template' });
+    const name = await promptName({ title: 'Save chart preset' });
     if (!name) return;
     if (
       templates?.some((t) => t.name === name) &&
       !(await confirmDialog({
         title: 'Replace template',
-        message: `A chart template named "${name}" exists. Replace it?`,
+        message: `A chart preset named "${name}" exists. Replace it?`,
         okLabel: 'Replace',
       }))
     )
@@ -194,8 +195,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         CHART_TEMPLATE_SCHEMA_VERSION,
       );
       if (offline)
-        toast(`Chart template "${name}" saved (server unreachable: it will sync later)`, 'info');
-      else toast(`Chart template "${name}" saved`, 'success');
+        toast(`Chart preset "${name}" saved (server unreachable: it will sync later)`, 'info');
+      else toast(`Chart preset "${name}" saved`, 'success');
     } catch (err) {
       toast(`Template could not be saved: ${errorMessage(err)}`, 'error', 6000);
     }
@@ -204,7 +205,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   const removeTemplate = async (t: TemplateRow<Record<string, unknown>>) => {
     const yes = await confirmDialog({
       title: 'Delete template',
-      message: `Delete the chart template "${t.name}"?`,
+      message: `Delete the chart preset "${t.name}"?`,
       okLabel: 'Delete',
       danger: true,
     });
@@ -277,7 +278,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
           setTemplateOpen((o) => !o);
         }}
       >
-        Template <ChevronDown size={14} />
+        Presets <ChevronDown size={14} />
       </button>
       <DropdownMenu
         anchor={templateBtn}
@@ -308,7 +309,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     if (templatesError)
       items.push({
         type: 'custom',
-        render: () => <div className="dlg-menu-note">Templates unavailable: {templatesError}</div>,
+        render: () => <div className="dlg-menu-note">Presets unavailable: {templatesError}</div>,
       });
     else if (templates?.length) {
       items.push({ type: 'separator' }, { type: 'header', label: 'Templates' });

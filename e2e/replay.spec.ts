@@ -35,7 +35,7 @@ const setUpdate = (page: Page, label: string) =>
 
 /** Top bar Replay, then the scissors click on the bar `BEHIND` bars before the newest. */
 async function startReplay(page: Page): Promise<{ time: number; length: number }> {
-  await page.getByRole('button', { name: 'Bar replay' }).click();
+  await page.getByRole('button', { name: 'Playback' }).click();
   await expect.poll(() => status(page)).toBe('picking');
   const target = await page.evaluate((behind) => {
     const c = window.chart;
@@ -74,7 +74,7 @@ test('scissors pick starts replay at the clicked bar and hides what follows', as
   const picked = await startReplay(page);
   expect(picked.time).toBeLessThan(fullLast);
   expect(await lastBarTime(page)).toBe(picked.time);
-  await expect(page.getByRole('toolbar', { name: 'Replay controls' })).toBeVisible();
+  await expect(page.getByRole('toolbar', { name: 'Playback controls' })).toBeVisible();
   await expect(page.getByTestId('replay-time')).not.toBeEmpty();
   // The tool is released after the pick.
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBeNull();
@@ -83,11 +83,11 @@ test('scissors pick starts replay at the clicked bar and hides what follows', as
 });
 
 test('Escape cancels picking', async ({ page }) => {
-  await page.getByRole('button', { name: 'Bar replay' }).click();
+  await page.getByRole('button', { name: 'Playback' }).click();
   await expect.poll(() => status(page)).toBe('picking');
   await page.keyboard.press('Escape');
   await expect.poll(() => status(page)).toBe('off');
-  await expect(page.getByRole('toolbar', { name: 'Replay controls' })).toHaveCount(0);
+  await expect(page.getByRole('toolbar', { name: 'Playback controls' })).toHaveCount(0);
 });
 
 test('step reveals the next bar without moving earlier ones', async ({ page }) => {
@@ -152,7 +152,7 @@ test('changing the interval during replay keeps the clock and shows nothing beyo
 });
 
 test('compare overlays are refetched through the clipped feed', async ({ page }) => {
-  await openOverflowItem(page, 'Compare or add symbol');
+  await openOverflowItem(page, 'Overlay a symbol');
   const input = page.getByLabel('Search symbols to compare');
   await input.fill('MSFT');
   const row = page.getByRole('option').first();
@@ -229,7 +229,7 @@ test('jump to realtime restores the full history and live data', async ({ page }
   await expect.poll(() => barCount(page)).toBe(full);
   expect(await lastBarTime(page)).toBe(fullLast);
   expect(await page.evaluate(() => window.replay.feed.mode)).toBe('live');
-  await expect(page.getByRole('toolbar', { name: 'Replay controls' })).toHaveCount(0);
+  await expect(page.getByRole('toolbar', { name: 'Playback controls' })).toHaveCount(0);
 });
 
 test('exit leaves replay; Shift+Alt+R toggles it', async ({ page }) => {
@@ -336,10 +336,10 @@ test('paper trading: buy, step, sell shows realized P&L and two trades in the pa
   await expect.poll(() => group('replay-position')).toBe(0);
 
   await page.locator('[data-panel="replayTrading"]').click();
-  const panel = page.getByRole('tabpanel', { name: 'Replay trading' });
-  await expect(panel.getByRole('table', { name: 'Replay trades' }).locator('tbody tr')).toHaveCount(
-    2,
-  );
+  const panel = page.getByRole('tabpanel', { name: 'Practice trades' });
+  await expect(
+    panel.getByRole('table', { name: 'Practice trades' }).locator('tbody tr'),
+  ).toHaveCount(2);
   await expect(panel.getByTestId('rt-position')).toHaveText('Flat');
   // Realized equals (sell - buy) * 2 from the two fills, whatever the synthetic prices are.
   const { realized, expected } = await page.evaluate(() => {
@@ -395,7 +395,7 @@ test('a second chart is clipped to the replay clock; focus moves, the replay sta
   expect(picked.time).toBeLessThan(fullLast);
   // The other chart reloaded through the shared clipped feed.
   await expect.poll(() => lastOf(ids[1]!)).toBeLessThanOrEqual(picked.time);
-  await expect(cells.nth(0).getByRole('toolbar', { name: 'Replay controls' })).toBeVisible();
+  await expect(cells.nth(0).getByRole('toolbar', { name: 'Playback controls' })).toBeVisible();
 
   // Focusing the other chart does not move the replay or its bar.
   await cells
@@ -403,7 +403,7 @@ test('a second chart is clipped to the replay clock; focus moves, the replay sta
     .locator('.chart-host')
     .click({ position: { x: 120, y: 100 } });
   await expect(cells.nth(1)).toHaveClass(/\bactive\b/);
-  await expect(cells.nth(0).getByRole('toolbar', { name: 'Replay controls' })).toBeVisible();
+  await expect(cells.nth(0).getByRole('toolbar', { name: 'Playback controls' })).toBeVisible();
   expect(await status(page)).toBe('paused');
 
   await cells.nth(0).getByRole('button', { name: 'Jump to realtime' }).click();

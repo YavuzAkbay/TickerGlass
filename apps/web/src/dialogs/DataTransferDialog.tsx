@@ -16,9 +16,9 @@ import './persist.css';
 const ENTITIES: [keyof Omit<ImportSummary, 'mode' | 'dryRun'>, string][] = [
   ['layouts', 'Layouts'],
   ['drawings', 'Drawings'],
-  ['indicatorTemplates', 'Indicator templates'],
+  ['indicatorTemplates', 'Indicator sets'],
   ['drawingTemplates', 'Drawing templates'],
-  ['chartTemplates', 'Chart templates'],
+  ['chartTemplates', 'Chart presets'],
   ['settings', 'Settings'],
   ['notes', 'Notes'],
   ['watchlists', 'Watchlists'],
