@@ -16,7 +16,7 @@ import {
   fmtSigned,
   isNum,
 } from '../sidebar/format';
-import { useApi, useNow } from '../sidebar/hooks';
+import { useApi, useChartTick, useNow } from '../sidebar/hooks';
 import { earningsStat } from '../sidebar/panels/Details';
 import { setActiveChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
@@ -151,6 +151,8 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
         {q && isNum(q.dayLow) && isNum(q.dayHigh) && isNum(q.last) ? (
           <DayRange low={q.dayLow} high={q.dayHigh} last={q.last} d={d} />
         ) : null}
+      </div>
+      <div className="sc-stats">
         {q && isNum(q.volume) ? (
           <Stat label={t('symbolHeader.volume')} value={fmtCompact(q.volume)} />
         ) : null}
@@ -161,6 +163,52 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
           </span>
         ) : null}
       </div>
+      <BarRow session={session} d={d} />
+    </div>
+  );
+}
+
+/**
+ * The bar under the crosshair (the last bar otherwise): open, high, low, close and the
+ * change from the previous close. Replaces the engine's legend line under the card and
+ * follows the same status line settings (Settings > Status line).
+ */
+function BarRow({ session, d }: { session: ChartSession; d: number }) {
+  const { chart } = session;
+  const lg = useStore(session.view, (s) => s.statusLine);
+  const interval = useStore(session.view, (s) => s.interval);
+  const cross = useStore(session.info, (s) => s.crosshair?.index ?? null);
+  // Re-read on new and updated bars.
+  useChartTick(chart, ['barUpdate', 'dataLoaded']);
+  const idx = cross ?? chart.store.length - 1;
+  const bar = idx >= 0 ? chart.store.bar(idx) : null;
+  const prev = idx > 0 ? chart.store.bar(idx - 1) : null;
+  if (!bar || (!lg.ohlc && !lg.barChange)) return null;
+  const dir = bar.close >= bar.open ? 'up' : 'down';
+  const change = prev ? bar.close - prev.close : null;
+  return (
+    <div className={`sc-bar ${dir}`} aria-label="Bar values">
+      <span className="sc-bar-interval">{interval}</span>
+      {lg.ohlc
+        ? (
+            [
+              ['O', bar.open],
+              ['H', bar.high],
+              ['L', bar.low],
+              ['C', bar.close],
+            ] as const
+          ).map(([k, v]) => (
+            <span key={k} className="sc-bar-item">
+              <span className="sc-bar-label">{k}</span>
+              <span className="sc-bar-value">{fmtPrice(v, d)}</span>
+            </span>
+          ))
+        : null}
+      {lg.barChange && change !== null && prev ? (
+        <span className="sc-bar-value">
+          {fmtSigned(change, d)} ({fmtSigned((change / prev.close) * 100, 2, '%')})
+        </span>
+      ) : null}
     </div>
   );
 }
