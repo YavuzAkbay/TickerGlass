@@ -414,7 +414,7 @@ function OptionSegments<T extends string>({
 const HIDE_SHORT: Record<HideMode, string> = {
   drawings: 'Drawings',
   indicators: 'Indicators',
-  positions: 'Positions',
+  positions: 'Trades',
   all: 'All',
 };
 

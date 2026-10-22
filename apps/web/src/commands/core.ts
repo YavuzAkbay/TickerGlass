@@ -78,8 +78,8 @@ const PANELS: [NavSection | 'details', string][] = [
   ['watchlist', 'Watchlist'],
   ['alerts', 'Alerts'],
   ['timeline', 'Timeline'],
-  ['objectTree', 'Object tree'],
-  ['dataWindow', 'Data window'],
+  ['objectTree', 'Layers'],
+  ['dataWindow', 'Values'],
   ['details', 'Symbol details'],
   ['notes', 'Notes'],
 ];
@@ -129,7 +129,7 @@ export function registerCoreCommands(): () => void {
     },
     {
       id: 'chart.compare',
-      title: 'Compare or add symbol',
+      title: 'Overlay a symbol',
       category: 'Chart',
       run: () => open('compare'),
     },

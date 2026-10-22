@@ -14,8 +14,8 @@ export type HideMode = 'drawings' | 'indicators' | 'positions' | 'all';
 export const HIDE_MODES: { id: HideMode; label: string }[] = [
   { id: 'drawings', label: 'Hide drawings' },
   { id: 'indicators', label: 'Hide indicators' },
-  { id: 'positions', label: 'Hide positions & orders' },
-  { id: 'all', label: 'Hide all' },
+  { id: 'positions', label: 'Hide practice trades' },
+  { id: 'all', label: 'Hide everything' },
 ];
 
 export function toHideMode(m: string | undefined): HideMode {
@@ -121,7 +121,7 @@ export function registerToolbarCommands(): () => void {
     },
     {
       id: 'drawings.toggleStayInDrawingMode',
-      title: 'Toggle stay in drawing mode',
+      title: 'Toggle keep the tool after drawing',
       category: 'Drawings',
       run: () => useUiStore.setState((s) => ({ stayInDrawingMode: !s.stayInDrawingMode })),
     },
@@ -157,7 +157,7 @@ export function registerToolbarCommands(): () => void {
     },
     {
       id: 'drawings.removeAllObjects',
-      title: 'Remove drawings & indicators',
+      title: 'Clear the chart',
       category: 'Drawings',
       run: removeAllObjects,
     },

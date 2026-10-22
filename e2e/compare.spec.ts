@@ -37,7 +37,7 @@ const comparePanes = (page: Page) =>
   );
 
 async function openCompare(page: Page) {
-  await openOverflowItem(page, 'Compare or add symbol');
+  await openOverflowItem(page, 'Overlay a symbol');
   const input = page.getByLabel('Search symbols to compare');
   await expect(input).toBeVisible();
   return input;

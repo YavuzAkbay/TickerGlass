@@ -60,7 +60,7 @@ export const DOCK_CATEGORIES: DockCategory[] = [
     label: 'Measure',
     icon: I.IconRuler,
     sections: [
-      { title: 'Tools', tools: [MEASURE_TOOL, ZOOM_TOOL] },
+      { title: 'Navigate', tools: [MEASURE_TOOL, ZOOM_TOOL] },
       ...sectionsOf('forecasting'),
       ...sectionsOf('fib'),
     ],

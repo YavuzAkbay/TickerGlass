@@ -136,7 +136,7 @@ test('Settings > Status line: turning OHLC off removes the values from the legen
   await expect(labels).toHaveCount(4);
   await expect(legend).toContainText('%');
   await openChartSettings(page);
-  await page.getByRole('tab', { name: 'Status line' }).click();
+  await page.getByRole('tab', { name: 'Legend' }).click();
   await page.getByLabel('Open, high, low and close').uncheck();
   // The title and the change stay; the four values are gone.
   await expect(labels).toHaveCount(0);

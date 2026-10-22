@@ -190,7 +190,7 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       shortcut: '/',
       onSelect: () => commands.execute('chart.indicators'),
     },
-    { label: 'Compare or add symbol…', onSelect: () => commands.execute('chart.compare') },
+    { label: 'Overlay a symbol…', onSelect: () => commands.execute('chart.compare') },
     { type: 'separator' },
     { label: 'Price scale', submenu: scaleItems(chart, p.paneId) },
     { label: 'Pane', submenu: paneItems(chart, p.paneId) },

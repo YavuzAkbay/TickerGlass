@@ -185,7 +185,7 @@ export function drawingMenuItems(ids: readonly string[]): MenuItem[] {
     },
   );
   if (sameType && getDrawingTool(first.type))
-    items.push({ label: 'Template', icon: Palette, submenu: templateItems(sel, first.type) });
+    items.push({ label: 'Presets', icon: Palette, submenu: templateItems(sel, first.type) });
   items.push(
     { type: 'separator' },
     {

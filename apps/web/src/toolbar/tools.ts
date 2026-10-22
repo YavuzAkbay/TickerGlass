@@ -63,13 +63,9 @@ export const TOOL_GROUPS: ToolGroup[] = [
     label: 'Lines',
     sections: [
       {
-        title: 'Lines',
+        // Price and time levels first: the lines drawn most.
+        title: 'Levels',
         tools: [
-          t('trend-line', 'Trend line', I.IconTrendLine, 'Alt+t', 'tool.trendLine'),
-          t('ray', 'Ray', I.IconRay),
-          t('measured-line', 'Measured line', I.IconMeasuredLine),
-          t('extended-line', 'Extended line', I.IconExtendedLine),
-          t('trend-angle', 'Trend angle', I.IconTrendAngle),
           t(
             'horizontal-line',
             'Horizontal line',
@@ -80,6 +76,16 @@ export const TOOL_GROUPS: ToolGroup[] = [
           t('horizontal-ray', 'Horizontal ray', I.IconHorizontalRay, 'Alt+j', 'tool.horizontalRay'),
           t('vertical-line', 'Vertical line', I.IconVerticalLine, 'Alt+v', 'tool.verticalLine'),
           t('cross-line', 'Cross line', I.IconCrossLine, 'Alt+c', 'tool.crossLine'),
+        ],
+      },
+      {
+        title: 'Trends',
+        tools: [
+          t('trend-line', 'Trend line', I.IconTrendLine, 'Alt+t', 'tool.trendLine'),
+          t('ray', 'Ray', I.IconRay),
+          t('extended-line', 'Extended line', I.IconExtendedLine),
+          t('trend-angle', 'Trend angle', I.IconTrendAngle),
+          t('measured-line', 'Measured line', I.IconMeasuredLine),
         ],
       },
       {
@@ -148,13 +154,14 @@ export const TOOL_GROUPS: ToolGroup[] = [
     label: 'Patterns',
     sections: [
       {
-        title: 'Chart patterns',
+        // Classic shapes, then the harmonic ones.
+        title: 'Price patterns',
         tools: [
+          t('head-shoulders', 'Head and shoulders', I.IconHeadShoulders),
+          t('triangle-pattern', 'Triangle pattern', I.IconTrianglePattern),
+          t('abcd', 'ABCD pattern', I.IconAbcd),
           t('xabcd', 'XABCD pattern', I.IconXabcd),
           t('cypher', 'Cypher pattern', I.IconCypher),
-          t('head-shoulders', 'Head and shoulders', I.IconHeadShoulders),
-          t('abcd', 'ABCD pattern', I.IconAbcd),
-          t('triangle-pattern', 'Triangle pattern', I.IconTrianglePattern),
           t('three-drives', 'Three drives pattern', I.IconThreeDrives),
         ],
       },
@@ -183,7 +190,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
     label: 'Projection & measure',
     sections: [
       {
-        title: 'Projection',
+        title: 'Trade planning',
         tools: [
           t('long-position', 'Long position', I.IconLongPosition),
           t('short-position', 'Short position', I.IconShortPosition),
@@ -194,7 +201,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
         ],
       },
       {
-        title: 'Volume-based',
+        title: 'Volume',
         tools: [
           t('anchored-vwap', 'Anchored VWAP', I.IconAnchoredVwap),
           t('range-vp', 'Range volume profile', I.IconRangeVp),
@@ -202,7 +209,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
         ],
       },
       {
-        title: 'Measure',
+        title: 'Rulers',
         tools: [
           t('price-measure', 'Price measure', I.IconPriceMeasure),
           t('time-measure', 'Time measure', I.IconTimeMeasure),
@@ -216,14 +223,14 @@ export const TOOL_GROUPS: ToolGroup[] = [
     label: 'Shapes',
     sections: [
       {
-        title: 'Freehand',
+        title: 'Pen',
         tools: [
           t('brush', 'Brush', I.IconBrush),
           t('highlighter', 'Highlighter', I.IconHighlighter),
         ],
       },
       {
-        title: 'Arrows',
+        title: 'Markers',
         tools: [
           t('arrow-pointer', 'Arrow pointer', I.IconArrowPointer),
           t('arrow-line', 'Arrow', I.IconArrowLine),

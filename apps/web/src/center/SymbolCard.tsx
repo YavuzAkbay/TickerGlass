@@ -171,7 +171,7 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
 /**
  * The bar under the crosshair (the last bar otherwise): open, high, low, close and the
  * change from the previous close. Replaces the engine's legend line under the card and
- * follows the same status line settings (Settings > Status line).
+ * follows the same status line settings (Settings > Legend).
  */
 function BarRow({ session, d }: { session: ChartSession; d: number }) {
   const { chart } = session;
