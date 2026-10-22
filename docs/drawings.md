@@ -215,7 +215,7 @@ Events (`DrawingEvents`, copies): `drawingCreated {drawing}`, `drawingChanged {c
 **Undo is app-owned.** Only user gestures emit mutation events; API calls never do (selection changes always
 emit). The app records each event as one command-bus/`useHistory` entry: created -> undo `removeDrawings([id])`,
 redo `addDrawing(drawing)`; changed -> undo `updateDrawing(before.id, before)` for each change, redo with
-`after`; removed -> undo `addDrawing` each, redo `removeDrawings`. App edits (properties dialog, toolbar,
+`after`; removed -> undo `addDrawing` each, redo `removeDrawings`. App edits (Inspector settings, toolbar,
 z-order, lock) go through commands that call the API and push their own entry. The engine has no history.
 
 ## 6. Persistence

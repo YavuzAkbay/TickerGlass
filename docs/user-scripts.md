@@ -2,7 +2,7 @@
 
 Write your own indicators in plain JavaScript. A script uses the same `defineIndicator({...})` API as the built-in
 indicators (see [indicators.md](indicators.md) §1 and §2 for the full contract), runs in a locked-down sandbox, and
-shows up in the chart, legend, settings dialog, templates and saved layouts like any other indicator.
+shows up in the chart, legend, Inspector settings, templates and saved layouts like any other indicator.
 
 Script contract version: **apiVersion 1**. Type declarations for editors: [user-scripts.d.ts](user-scripts.d.ts).
 
@@ -102,7 +102,7 @@ Metadata is the same as for built-ins: `name`, `shortName`, `category`, `keyword
 `precision` (0 to 16), `scaleRange` (`min` below `max`), `repaints`, `warmup` (accepted, currently unused).
 `name`, `shortName`, `category`, `overlay`, `inputs` and `outputs` are required.
 
-Inputs are declared as in [indicators.md](indicators.md) §1 and generate the settings dialog; key order is dialog
+Inputs are declared as in [indicators.md](indicators.md) §1 and generate the Inspector settings; key order is display
 order. Allowed kinds:
 
 | `kind`   | Value in `inputs.<key>`  | Notes                                                         |

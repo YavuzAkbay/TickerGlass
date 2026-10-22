@@ -385,11 +385,11 @@ test('image: choose a file in the settings dialog', async ({ page }) => {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64',
   );
-  await page
-    .getByRole('dialog')
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  await inspector
     .getByLabel('Image', { exact: true })
     .setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
-  await page.getByRole('dialog').getByRole('button', { name: 'Ok' }).click();
+  await inspector.getByRole('button', { name: 'Done' }).click();
 
   await expect
     .poll(async () => String((await drawings(page))[0]?.style.src ?? '').slice(0, 11))

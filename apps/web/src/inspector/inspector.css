@@ -52,3 +52,68 @@
     transparent 4px
   );
 }
+
+/* Indicator and drawing settings: tabs on top, a footer that stays in view. */
+.insp-settings {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.insp-settings .dlg-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  background: var(--panel);
+}
+.insp-settings .dlg-tab {
+  padding: 0 10px;
+}
+.insp-settings-body.ind-settings-body {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  padding: 4px 12px 12px;
+  overflow: visible;
+}
+.insp-settings .dlg-row {
+  gap: 10px;
+}
+.insp-settings .dlg-row-label {
+  width: 38%;
+  min-width: 90px;
+}
+.insp-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+/* Dialog-sized controls fit the panel width. */
+.insp-settings .dlg-row-control {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.insp-settings .dlg-row-control > *,
+.insp-settings .io-input,
+.insp-settings .dlg-select {
+  max-width: 100%;
+  min-width: 0;
+}
+/* Style rows: the output name on its own line, its controls wrapping below. */
+.insp-settings .ind-style-row {
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.insp-settings .ind-style-row .dlg-check {
+  flex: 1 1 100%;
+}
+.insp-settings .ind-vis-row {
+  flex-wrap: wrap;
+}

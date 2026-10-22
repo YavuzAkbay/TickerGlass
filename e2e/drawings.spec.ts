@@ -148,7 +148,7 @@ test('inspector edits the selected drawing, closes on Escape, and shows symbol d
   const widthBefore = await page.evaluate(() => window.chart.root.getBoundingClientRect().width);
   await page
     .getByRole('toolbar', { name: 'Drawing toolbar' })
-    .getByRole('button', { name: 'Properties', exact: true })
+    .getByRole('button', { name: 'Settings', exact: true })
     .click();
   await expect(inspector).toBeVisible();
   await expect
@@ -227,7 +227,7 @@ test('inspector moves focus in, restores it, closes on symbol change, and leaves
   await page.mouse.click(650, 360);
   await page
     .getByRole('toolbar', { name: 'Drawing toolbar' })
-    .getByRole('button', { name: 'Properties', exact: true })
+    .getByRole('button', { name: 'Settings', exact: true })
     .click();
   await expect(inspector).toBeVisible();
   await page.getByRole('button', { name: /^Symbol search/ }).click();

@@ -21,16 +21,17 @@ export type RightPanel = NavSection;
 
 /** Content of the Inspector (transient; never saved). */
 export interface InspectorState {
-  view: 'symbol' | 'drawing';
+  view: 'symbol' | 'drawing' | 'indicator';
   id?: string;
+  /** Drawing settings: the tab to start on, and whether to start naming a template. */
+  tab?: 'style' | 'text' | 'coordinates' | 'visibility';
+  saveTemplate?: boolean;
 }
 
 export type DialogId =
   | 'symbolSearch'
   | 'compare'
   | 'indicators'
-  | 'indicatorSettings'
-  | 'drawingSettings'
   | 'settings'
   | 'commandPalette'
   | 'goToDate'
@@ -81,7 +82,11 @@ interface UiState {
   setNavOpen: (open: boolean) => void;
   setNavWidth: (w: number) => void;
   setInspectorWidth: (w: number) => void;
-  openInspector: (view: InspectorState['view'], id?: string) => void;
+  openInspector: (
+    view: InspectorState['view'],
+    id?: string,
+    opts?: Pick<InspectorState, 'tab' | 'saveTemplate'>,
+  ) => void;
   closeInspector: () => void;
   toggleToolRail: () => void;
   openDialog: (id: DialogId, arg?: unknown) => void;
@@ -218,7 +223,8 @@ export const useUiStore = create<UiState>()(
       setNavWidth: (w) => set({ navWidth: clamp(w, MIN_NAV_WIDTH, MAX_NAV_WIDTH) }),
       setInspectorWidth: (w) =>
         set({ inspectorWidth: clamp(w, MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH) }),
-      openInspector: (view, id) => set({ inspector: id === undefined ? { view } : { view, id } }),
+      openInspector: (view, id, opts) =>
+        set({ inspector: { view, ...(id === undefined ? {} : { id }), ...opts } }),
       closeInspector: () => set({ inspector: null }),
       toggleToolRail: () => set((s) => ({ toolRailHidden: !s.toolRailHidden })),
       openDialog: (id, arg) => set({ dialog: id, dialogArg: arg }),

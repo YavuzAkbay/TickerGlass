@@ -1,9 +1,10 @@
 import { getDrawingTool } from '@tickerglass/engine';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { DrawingProperties } from '../drawings/DrawingProperties';
+import { getIndicator } from '@tickerglass/indicators';
 import { lookupDrawing, useDrawingStore } from '../drawings/store';
 import { useT } from '../i18n';
+import { useIndicatorStore } from '../indicators/store';
 import { Details } from '../sidebar/panels/Details';
 import { useChartView } from '../store/chartView';
 import {
@@ -11,9 +12,12 @@ import {
   MAX_INSPECTOR_WIDTH,
   MIN_INSPECTOR_WIDTH,
   useUiStore,
+  type InspectorState,
 } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import '../sidebar/sidebar.css';
+import { DrawingSettings } from './DrawingSettings';
+import { IndicatorSettings } from './IndicatorSettings';
 import './inspector.css';
 
 const KEY_STEP = 16;
@@ -45,19 +49,22 @@ export function Inspector() {
   }, [isOpen]);
 
   if (!inspector) return null;
-  return <InspectorBody view={inspector.view} id={inspector.id} />;
+  return <InspectorBody {...inspector} />;
 }
 
-function InspectorBody({ view, id }: { view: 'symbol' | 'drawing'; id: string | undefined }) {
+function InspectorBody({ view, id, tab, saveTemplate }: InspectorState) {
   const t = useT();
   const width = useUiStore((s) => s.inspectorWidth);
   const setWidth = useUiStore((s) => s.setInspectorWidth);
   const close = useUiStore((s) => s.closeInspector);
   const drawing = useDrawingStore((s) => (view === 'drawing' ? lookupDrawing(s, id) : undefined));
+  const indicatorType = useIndicatorStore((s) =>
+    view === 'indicator' ? s.instances.find((i) => i.id === id)?.type : undefined,
+  );
   const drag = useRef<{ x: number; w: number } | null>(null);
   const symbol = useChartView((s) => s.symbol);
   const [openedOn] = useState(symbol);
-  const missing = view === 'drawing' && !drawing;
+  const missing = (view === 'drawing' && !drawing) || (view === 'indicator' && !indicatorType);
   // Drawings belong to a symbol: switching symbols leaves the edited drawing off screen.
   const stale = view === 'drawing' && symbol !== openedOn;
 
@@ -70,7 +77,9 @@ function InspectorBody({ view, id }: { view: 'symbol' | 'drawing'; id: string | 
   const title =
     view === 'symbol'
       ? t('inspector.symbol')
-      : (getDrawingTool(drawing!.type)?.name ?? t('inspector.drawing'));
+      : view === 'indicator'
+        ? (getIndicator(indicatorType!)?.name ?? t('inspector.indicator'))
+        : (getDrawingTool(drawing!.type)?.name ?? t('inspector.drawing'));
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     drag.current = { x: e.clientX, w: width };
@@ -126,7 +135,18 @@ function InspectorBody({ view, id }: { view: 'symbol' | 'drawing'; id: string | 
         <IconButton icon={X} label={t('inspector.close')} className="rs-head-btn" onClick={close} />
       </header>
       <div className="inspector-body">
-        {view === 'symbol' ? <Details /> : drawing ? <DrawingProperties drawing={drawing} /> : null}
+        {view === 'symbol' ? (
+          <Details />
+        ) : view === 'indicator' && id ? (
+          <IndicatorSettings key={id} id={id} />
+        ) : drawing ? (
+          <DrawingSettings
+            key={drawing.id}
+            drawing={drawing}
+            initialTab={tab}
+            saveTemplate={!!saveTemplate}
+          />
+        ) : null}
       </div>
     </aside>
   );

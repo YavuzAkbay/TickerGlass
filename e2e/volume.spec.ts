@@ -68,9 +68,10 @@ test('new charts show Volume as an indicator: click, menus, hide, remove, undo, 
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await page.mouse.dblclick(p!.x, p!.y);
-  await expect(page.getByRole('dialog').filter({ hasText: 'MA Length' })).toBeVisible();
-  await page.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const inspector = page.getByRole('complementary', { name: 'Inspector' });
+  await expect(inspector.filter({ hasText: 'MA Length' })).toBeVisible();
+  await inspector.getByRole('button', { name: 'Close inspector' }).click();
+  await expect(inspector).toHaveCount(0);
 
   // Move to a new pane and back via the legend "More" menu.
   await row.hover();
