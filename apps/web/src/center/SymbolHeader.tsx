@@ -16,6 +16,7 @@ import { useApi, useNow } from '../sidebar/hooks';
 import { earningsStat } from '../sidebar/panels/Details';
 import { useChartView } from '../store/chartView';
 import { useUiStore } from '../store/ui';
+import { SessionClock } from './SessionClock';
 import './symbolHeader.css';
 
 const TEN_MIN = 10 * 60 * 1000;
@@ -86,6 +87,7 @@ function Header({ symbol, expr }: { symbol: string; expr: boolean }) {
         <Stat label={t('symbolHeader.volume')} value={fmtCompact(q.volume)} />
       ) : null}
       {nextEarn ? <Stat label={t('symbolHeader.earnings')} value={nextEarn} /> : null}
+      <SessionClock />
     </div>
   );
 }
