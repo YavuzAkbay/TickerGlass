@@ -108,6 +108,28 @@ describe('InteractionController view change causes', () => {
     expect(chart.viewChanged.mock.calls).toEqual([['price']]);
   });
 
+  it('a mouse-wheel notch zooms part now and eases the rest in; the total is unchanged', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => frames.push(fn));
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const { chart, fire } = gestureSetup({ kind: 'pane', y: 100 });
+    const wheel = { clientX: 200, clientY: 100, deltaX: 0, deltaY: -100, deltaMode: 0 };
+    fire('wheel', { ...wheel, preventDefault: vi.fn() });
+    const zoom = chart.timeScale.zoom;
+    expect(zoom).toHaveBeenCalledTimes(1);
+    const log = (i: number) => Math.log(zoom.mock.calls[i]![1] as number);
+    expect(log(0)).toBeCloseTo(0.15 * 0.45);
+    while (frames.length) frames.shift()!(0);
+    const total = zoom.mock.calls.reduce((sum, _c, i) => sum + log(i), 0);
+    expect(total).toBeCloseTo(0.15);
+    expect(zoom.mock.calls.every((c) => c[0] === 200)).toBe(true);
+    // Trackpad-sized deltas still zoom in one go.
+    zoom.mockClear();
+    fire('wheel', { ...wheel, deltaY: -8, preventDefault: vi.fn() });
+    expect(zoom).toHaveBeenCalledTimes(1);
+    expect(frames).toHaveLength(0);
+  });
+
   it('a price-axis wheel emits "price"; a time-axis drag emits "user"', () => {
     const a = gestureSetup({ kind: 'priceAxis' });
     a.fire('wheel', {
