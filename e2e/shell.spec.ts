@@ -82,6 +82,39 @@ test('? opens the shortcut help with chart navigation keys', async ({ page }) =>
   await expect(dialog.getByText('Keyboard shortcuts').first()).toBeVisible();
 });
 
+test('typed commands: an interval, an indicator with inputs, and an alert', async ({ page }) => {
+  const palette = () => page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+  const chart = () =>
+    page.evaluate(() => {
+      const c = (
+        window as unknown as {
+          chart: { getInterval(): string; getStudies(): { id: string; name?: string }[] };
+        }
+      ).chart;
+      return { interval: c.getInterval(), studies: c.getStudies().length };
+    });
+  const before = await chart();
+
+  await palette();
+  await page.keyboard.type('4h');
+  await expect(page.getByRole('option').first()).toContainText('Switch to 4 hours');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await chart()).interval).toBe('4h');
+
+  await palette();
+  await page.keyboard.type('rsi 21');
+  await expect(page.getByRole('option').first()).toContainText('Add RSI (21)');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await chart()).studies).toBe(before.studies + 1);
+  await expect(page.locator('.ind-legend-row', { hasText: 'RSI' })).toContainText('21');
+
+  await palette();
+  await page.keyboard.type('alert below 50');
+  await expect(page.getByRole('option').first()).toContainText('Alert when price crosses below 50');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog').filter({ hasText: /alert/i }).last()).toBeVisible();
+});
+
 test('? typed into an input does not open the help', async ({ page }) => {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
   await page.keyboard.type('?');

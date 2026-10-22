@@ -314,6 +314,39 @@
   height: auto;
   max-height: min(440px, calc(100vh - 200px));
 }
+/* Example commands and key hints under the palette list. */
+.dlg-palette-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.dlg-palette-try {
+  margin-right: 2px;
+}
+.dlg-palette-example {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.dlg-palette-example:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.dlg-palette-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
 .dlg-cmdrow {
   display: flex;
   align-items: center;

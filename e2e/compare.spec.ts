@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, openOverflowItem, test } from './fixtures';
 import { firstChart, freshBoot } from './persistence';
 
 declare global {
@@ -37,7 +37,7 @@ const comparePanes = (page: Page) =>
   );
 
 async function openCompare(page: Page) {
-  await page.getByRole('button', { name: 'Compare or add symbol' }).click();
+  await openOverflowItem(page, 'Compare or add symbol');
   const input = page.getByLabel('Search symbols to compare');
   await expect(input).toBeVisible();
   return input;

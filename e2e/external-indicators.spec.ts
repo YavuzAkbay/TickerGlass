@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, openOverflowItem, test } from './fixtures';
 import { firstChart, freshBoot } from './persistence';
 
 declare global {
@@ -61,7 +61,7 @@ test('correlation: another symbol, computed against the chart', async ({ page })
 
 test('an SMA sourced from an overlay symbol survives a reload', async ({ page, server }) => {
   // MSFT overlay through Compare.
-  await page.getByRole('button', { name: 'Compare or add symbol' }).click();
+  await openOverflowItem(page, 'Compare or add symbol');
   const input = page.getByLabel('Search symbols to compare');
   await input.fill('MSFT');
   const option = page.getByRole('option').first();
