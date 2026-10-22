@@ -118,6 +118,9 @@ function LegendRow({
       ? chart.getStudyValues(inst.id, index)
       : [];
 
+  // The chip's dot takes the first plot's colour, so chips match their lines.
+  const swatch = values[0]?.color ?? 'var(--muted)';
+
   let tail;
   if (!def || status?.state === 'error') {
     // No definition: the controller's reason ("Script deleted", ...) when it gave one.
@@ -149,9 +152,19 @@ function LegendRow({
       className={`ind-legend-row${inst.visible ? '' : ' off'}${menu ? ' menu-open' : ''}`}
       data-indicator-id={inst.id}
     >
-      {statusLine.indicatorTitles ? <span className="ind-legend-name">{name}</span> : null}
-      {inputs && statusLine.indicatorInputs ? (
-        <span className="ind-legend-inputs">{inputs}</span>
+      <span className="ind-legend-swatch" style={{ background: swatch }} aria-hidden="true" />
+      {statusLine.indicatorTitles || (inputs && statusLine.indicatorInputs) ? (
+        <button
+          type="button"
+          className="ind-legend-open"
+          title={`${name} settings`}
+          onClick={() => openIndicatorSettings(inst.id)}
+        >
+          {statusLine.indicatorTitles ? <span className="ind-legend-name">{name}</span> : null}
+          {inputs && statusLine.indicatorInputs ? (
+            <span className="ind-legend-inputs">{inputs}</span>
+          ) : null}
+        </button>
       ) : null}
       <span className="ind-legend-actions">
         <button

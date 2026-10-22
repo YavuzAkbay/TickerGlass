@@ -13,7 +13,7 @@ import math
 import time
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
-from typing import Any
+from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -142,6 +142,16 @@ def _empty() -> pd.DataFrame:
     return pd.DataFrame(columns=BAR_COLUMNS)
 
 
+class _Last(NamedTuple):
+    last: float
+    prev: float | None
+    time: int
+    volume: float
+    live: bool
+    high: float
+    low: float
+
+
 class DemoProvider:
     """`MarketDataProvider` serving generated data (see the module docstring)."""
 
@@ -261,22 +271,22 @@ class DemoProvider:
             for s in hits[:limit]
         ]
 
-    def _last(self, symbol: str) -> tuple[float, float | None, int, float, bool]:
-        """(last, previous close, time, day volume, session open) of `symbol`."""
+    def _last(self, symbol: str) -> _Last:
+        """Latest state of `symbol`'s current (or last) session."""
         days = self._days(symbol)
         day, o, c, count = days[-1]
         prev = days[-2][2] if len(days) > 1 else None
-        _, _, _, last, volume = _day_bar(symbol, day, o, c, count)
+        _, high, low, last, volume = _day_bar(symbol, day, o, c, count)
         today, elapsed = _today_minutes(self._clock())
         live = day == today and 0 < elapsed < SESSION_MINUTES
         when = int(_open_utc(day).timestamp()) + 60 * count
-        return last, prev, when, volume, live
+        return _Last(last, prev, when, volume, live, high, low)
 
     def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
         rows = []
         for raw in symbols:
             s = raw.upper()
-            last, prev, when, volume, live = self._last(s)
+            last, prev, when, volume, live, _, _ = self._last(s)
             change = last - prev if prev is not None else None
             rows.append(
                 {
@@ -297,7 +307,7 @@ class DemoProvider:
         out = []
         for raw in symbols:
             s = raw.upper()
-            last, _, when, _, live = self._last(s)
+            last, _, when, _, live, _, _ = self._last(s)
             empty = {"Price": None, "Time": None, "Change": None, "ChangePercent": None}
             out.append(
                 {
@@ -384,7 +394,7 @@ class DemoLiveSource:
     async def listen(self, handler: MessageHandler) -> None:
         while True:
             for s in list(self._symbols):
-                last, prev, _, volume, live = self._provider._last(s)
+                last, prev, _, volume, live, high, low = self._provider._last(s)
                 if not live:
                     continue
                 # A little noise within the minute; the minute close stays on the path.
@@ -400,6 +410,8 @@ class DemoLiveSource:
                             change / prev * 100 if change is not None and prev else None
                         ),
                         "day_volume": volume,
+                        "day_high": max(high, price),
+                        "day_low": min(low, price),
                         "time": int(time.time() * 1000),
                         "market_hours": 1,
                     }

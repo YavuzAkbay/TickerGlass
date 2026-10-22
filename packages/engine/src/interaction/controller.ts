@@ -449,9 +449,11 @@ export class InteractionController {
   }
 }
 
-/** Event started inside a pane's app-owned legend slot. */
+/** Event started inside a pane's app-owned legend slot or header. */
 function inLegendSlot(e: Event): boolean {
-  return e.target instanceof Element && e.target.closest('.io-legend-slot') !== null;
+  return (
+    e.target instanceof Element && e.target.closest('.io-legend-slot, .io-legend-header') !== null
+  );
 }
 
 const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };

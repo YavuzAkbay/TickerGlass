@@ -186,8 +186,8 @@ export interface StudySpec {
   visible: boolean;
 }
 
-/** Legend containers of a pane: compare rows, then study rows. */
-export type LegendSlotKind = 'studies' | 'compare';
+/** Legend containers of a pane: an app header above the legend text, compare rows, then study rows. */
+export type LegendSlotKind = 'header' | 'studies' | 'compare';
 
 /**
  * Computed values. Arrays may be longer than `length`; read [0, length).
