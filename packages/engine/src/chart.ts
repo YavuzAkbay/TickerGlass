@@ -684,6 +684,7 @@ export class Chart implements StudyApi, DrawingApi {
   getLegendSlot(paneId: string, kind: LegendSlotKind = 'studies'): HTMLElement | null {
     const pane = this.panes.find((p) => p.id === paneId);
     if (!pane) return null;
+    if (kind === 'header') return pane.legendHeader;
     return kind === 'compare' ? pane.legendCompare : pane.legendSlot;
   }
 

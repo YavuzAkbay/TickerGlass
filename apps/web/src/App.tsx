@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { SymbolHeader } from './center/SymbolHeader';
 import { ChartGrid } from './layout/ChartGrid';
 import { registerGridCommands } from './layout/commands';
 import { registerCoreCommands } from './commands/core';
@@ -68,7 +67,6 @@ export function App() {
       </header>
       <Navigator />
       <main className="center">
-        <SymbolHeader />
         <div className="chart-pane">
           <div className="chart-area">
             <ChartGrid />

@@ -14,6 +14,9 @@ export class Pane {
   /** Written by the engine (symbol/OHLC line, non-study series). */
   readonly legendInfo: HTMLDivElement;
   /** Owned by the app (compare overlay rows); the engine never writes it. */
+  /** App-owned block above the legend text (the symbol card on the main pane). Like the legend
+   * text it lets pointer events through to the chart; the app enables them on its controls. */
+  readonly legendHeader: HTMLDivElement;
   readonly legendCompare: HTMLDivElement;
   /** Owned by the app (study legend rows); the engine never writes it. */
   readonly legendSlot: HTMLDivElement;
@@ -44,6 +47,7 @@ export class Pane {
     this.axisMain = new CanvasLayer(this.axisEl, 1);
     this.axisOverlay = new CanvasLayer(this.axisEl, 2);
     this.legendEl = div(this.el, 'io-legend');
+    this.legendHeader = div(this.legendEl, 'io-legend-header');
     this.legendInfo = div(this.legendEl, 'io-legend-info');
     this.legendCompare = div(this.legendEl, 'io-legend-compare');
     this.legendSlot = div(this.legendEl, 'io-legend-slot');

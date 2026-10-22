@@ -184,3 +184,23 @@ test('axis controls: range chips over the time axis, scale toggles in the axes c
   await expect(page.getByRole('button', { name: 'ETH' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.range-strip')).toHaveCount(0);
 });
+
+test('symbol card on the chart; a legend chip click opens its settings in the Inspector', async ({
+  page,
+}) => {
+  await page.goto('/?feed=synthetic');
+  await page.waitForFunction(
+    () => (window as unknown as { chart?: { store: { length: number } } }).chart?.store.length,
+  );
+  const card = page.locator('.chart-cell').getByRole('group', { name: 'Symbol summary' });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('button', { name: /^Symbol search/ })).toBeVisible();
+  // The card sits in the main pane's legend, above the engine's OHLC line.
+  const legend = page.locator('.io-legend').first();
+  await expect(legend.locator('.io-legend-header .sc-card')).toHaveCount(1);
+
+  const chip = page.locator('.ind-legend-row').first();
+  await chip.locator('.ind-legend-open').click();
+  await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Inputs' })).toBeVisible();
+});

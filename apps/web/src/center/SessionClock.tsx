@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { commands } from '../commands/registry';
+import { useStore } from 'zustand';
 import { resolveTimezone, TIMEZONES, utcOffsetLabel } from '../bottombar/timezones';
-import { useChartStore } from '../store/chart';
-import { useChartView } from '../store/chartView';
+import type { ChartSession } from '../chart/session';
+import { commands } from '../commands/registry';
+import { setActiveChart } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 
 function useNow(): Date {
@@ -15,10 +16,10 @@ function useNow(): Date {
 }
 
 /** Chart clock; a click picks the chart's time zone. */
-function Clock() {
+function Clock({ session }: { session: ChartSession }) {
   const now = useNow();
-  const timezone = useChartView((s) => s.timezone);
-  const exchangeTz = useChartStore((s) => s.symbolInfo?.timezone);
+  const timezone = useStore(session.view, (s) => s.timezone);
+  const exchangeTz = useStore(session.info, (s) => s.symbolInfo?.timezone);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const tz = resolveTimezone(timezone, exchangeTz);
   const time = new Intl.DateTimeFormat('en-GB', {
@@ -33,7 +34,7 @@ function Clock() {
     return {
       label: `${z.label}${suffix}  ·  ${utcOffsetLabel(zoneTz, now)}`,
       checked: timezone === z.id,
-      onSelect: () => useChartView.getState().set({ timezone: z.id }),
+      onSelect: () => session.view.getState().set({ timezone: z.id }),
     };
   });
   return (
@@ -59,9 +60,9 @@ function Clock() {
   );
 }
 
-/** Regular / extended hours toggle and the chart clock, at the right end of the symbol header. */
-export function SessionClock() {
-  const prepost = useChartView((s) => s.prepost);
+/** Regular / extended hours toggle and the chart clock of one chart. */
+export function SessionClock({ session }: { session: ChartSession }) {
+  const prepost = useStore(session.view, (s) => s.prepost);
   return (
     <div className="sh-session">
       <button
@@ -74,11 +75,14 @@ export function SessionClock() {
             : 'Regular trading hours (click for extended)'
         }
         data-tip-side="bottom"
-        onClick={() => commands.execute('session.toggle')}
+        onClick={() => {
+          setActiveChart(session.id);
+          commands.execute('session.toggle');
+        }}
       >
         {prepost ? 'ETH' : 'RTH'}
       </button>
-      <Clock />
+      <Clock session={session} />
     </div>
   );
 }

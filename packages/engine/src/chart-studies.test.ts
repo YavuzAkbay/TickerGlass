@@ -515,10 +515,20 @@ describe('Chart studies', () => {
     expect(chart.getLegendSlot('main', 'studies')).toBe(chart.getLegendSlot('main'));
     expect(chart.getLegendSlot('missing', 'compare')).toBeNull();
     const kids = (pane.legendEl as unknown as FakeEl).children;
-    expect(kids).toEqual([pane.legendInfo, cmp, pane.legendSlot]);
+    expect(kids).toEqual([pane.legendHeader, pane.legendInfo, cmp, pane.legendSlot]);
     cmp.innerHTML = '<div>cmp</div>';
     chart['updateLegends']();
     expect(cmp.innerHTML).toBe('<div>cmp</div>');
+  });
+
+  it('has an app header slot above the info line that legend updates leave alone', async () => {
+    const { chart } = await load(5);
+    const header = chart.getLegendSlot('main', 'header') as unknown as FakeEl;
+    expect(header).toBe(chart.panes[0]!.legendHeader);
+    expect(chart.getLegendSlot('missing', 'header')).toBeNull();
+    header.innerHTML = '<div>card</div>';
+    chart['updateLegends']();
+    expect(header.innerHTML).toBe('<div>card</div>');
   });
 
   it('rescales same-% overlays to the main series and labels them by pane mode', async () => {

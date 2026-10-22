@@ -37,7 +37,7 @@ export const en = {
   'topbar.more': 'More',
   'topbar.snapshotMenu': 'Snapshot',
 
-  // Symbol header
+  // Symbol card (on each chart)
   'symbolHeader.label': 'Symbol summary',
   'symbolHeader.search': 'Symbol search, current symbol {symbol}',
   'symbolHeader.openDetails': 'Open details for {symbol}',

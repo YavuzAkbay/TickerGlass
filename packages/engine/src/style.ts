@@ -17,6 +17,8 @@ const CSS = `
   line-height: 18px; white-space: nowrap; font-size: 13px; }
 .io-legend-info:empty { display: none; }
 .io-legend-compare, .io-legend-slot { pointer-events: auto; width: fit-content; }
+.io-legend-header { width: fit-content; }
+.io-legend-header:empty { display: none; }
 .io-legend-title { color: var(--io-text); font-weight: 500; margin-right: 10px; }
 .io-legend-item { margin-right: 8px; }
 .io-legend-label { color: var(--io-text-muted); margin-right: 2px; }

@@ -1,0 +1,180 @@
+/* Glass card in the main pane's legend header slot (engine ‘header’), above the OHLC line.
+   The only translucent surface in the app besides popovers: the chart stays readable behind it. */
+.sc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: min(460px, calc(100vw - 32px));
+  margin-bottom: 6px;
+  padding: 8px 12px 8px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+  border-radius: var(--radius-float);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  line-height: 1.3;
+  white-space: nowrap;
+  /* Drags and clicks on the card body reach the chart; only its controls take them. */
+  pointer-events: none;
+}
+.sc-card button {
+  pointer-events: auto;
+}
+.sc-top,
+.sc-price {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sc-top {
+  gap: 8px;
+}
+.sc-price {
+  align-items: baseline;
+}
+.sc-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.sc-dot.open {
+  background: var(--up);
+  box-shadow: 0 0 0 3px var(--up-soft);
+}
+.sc-dot.extended {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.sc-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.sc-range-num {
+  color: var(--muted);
+}
+.sc-range-track {
+  position: relative;
+  width: 72px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--down), var(--border-strong), var(--up));
+  opacity: 0.85;
+}
+.sc-range-tick {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 9px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-strong);
+}
+.sc-source {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+.sh-symbol {
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sh-symbol:hover {
+  background: var(--hover);
+}
+.sh-symbol:focus-visible {
+  outline: var(--focus-ring);
+}
+.sh-name {
+  min-width: 0;
+  padding: 2px 4px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.sh-last {
+  font-size: var(--price-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+.sh-change,
+.sh-stat-value {
+  font-variant-numeric: tabular-nums;
+}
+.sh-change.up {
+  color: var(--up);
+}
+.sh-change.down {
+  color: var(--down);
+}
+.sh-stat {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+.sh-stat-label {
+  color: var(--muted);
+}
+
+.sh-name:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.sh-name:focus-visible {
+  outline: var(--focus-ring);
+}
+/* Session and clock at the right of the card's first row. */
+.sh-session {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 12px;
+}
+.sh-pill {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.sh-pill:hover {
+  background: var(--hover);
+}
+.sh-pill.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.sh-pill-muted {
+  color: var(--text-muted);
+}
