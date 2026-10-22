@@ -1,6 +1,7 @@
 import type { Chart } from '@tickerglass/engine';
 import {
   Camera,
+  Database,
   Expand,
   Keyboard,
   Moon,
@@ -260,6 +261,13 @@ export function registerCoreCommands(): () => void {
       shortcut: 'Mod+k',
       allowInInput: true,
       run: () => open('commandPalette'),
+    },
+    {
+      id: 'app.dataSource',
+      title: 'Data source…',
+      category: 'App',
+      icon: Database,
+      run: () => open('dataSource'),
     },
     {
       id: 'view.shortcuts',

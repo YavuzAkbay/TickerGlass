@@ -24,8 +24,8 @@ from .providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
-from .providers.demo import DemoLiveSource, DemoProvider
 from .providers.guard import GuardedProvider, UpstreamGuard
+from .providers.registry import PROVIDERS
 from .routes import (
     alerts,
     bars,
@@ -35,6 +35,7 @@ from .routes import (
     live,
     market,
     notes,
+    providers,
     symbols,
     templates,
     transfer,
@@ -76,21 +77,13 @@ def create_app(
         run_migrations(db_url)
         engine = make_engine(db_url)
         app.state.sessionmaker = sessionmaker(engine, expire_on_commit=False)
-        demo: DemoProvider | None = None
+        spec = PROVIDERS[settings.market_provider] if provider is None else None
         inner: MarketDataProvider
-        if provider is None and settings.market_provider == "demo":
-            demo = DemoProvider()
-            inner = demo
-        elif provider is None:
-            from .providers.yahoo import YahooProvider
-
-            inner = YahooProvider(
-                retries=settings.upstream_retries,
-                rate_limit_retries=settings.upstream_rate_limit_retries,
-                quote_v7_retry_s=settings.quote_v7_retry_s,
-            )
-        else:
+        if provider is not None:
             inner = provider
+        else:
+            assert spec is not None
+            inner = spec.make(settings)
         # Every upstream call (services and the live poller) goes through one guard.
         stats = CacheStats()
         guard = UpstreamGuard(
@@ -131,12 +124,10 @@ def create_app(
             background=guard.background,
         )
         source = live_source
-        if source is None and demo is not None:
-            source = DemoLiveSource(demo)
-        elif source is None:
-            from .providers.yahoo_live import YahooLiveSource
-
-            source = YahooLiveSource()
+        if source is None:
+            # A custom provider (tests) has no spec: Yahoo's relay, as before.
+            source = (spec or PROVIDERS["yahoo"]).make_live(inner)
+        app.state.provider_spec = spec
         app.state.live_hub = LiveHub(
             source,
             live_poller
@@ -207,6 +198,7 @@ def create_app(
     api.include_router(cache.router)
     api.include_router(symbols.router)
     api.include_router(market.router)
+    api.include_router(providers.router)
     api.include_router(layouts.router)
     api.include_router(drawings.router)
     api.include_router(templates.router)

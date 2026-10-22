@@ -8,6 +8,7 @@ import { registerReplayCommands } from './replay/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
+import { startFirstRun } from './setup/firstRun';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
 import { Inspector } from './inspector/Inspector';
@@ -59,6 +60,8 @@ export function App() {
 
   // After the chart mounted (child effects run first): restore the last layout.
   useEffect(() => startPersistence(), []);
+  // First visit: which data source this instance runs on, and whether it answers.
+  useEffect(() => startFirstRun(), []);
 
   return (
     <div className={`app${inspectorOpen ? '' : ' no-inspector'}`}>
