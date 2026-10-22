@@ -4,6 +4,8 @@ TickerGlass is a self-hosted stock charting and technical analysis app. Run it o
 
 Features include multiple chart types, drawing tools, indicators, symbol comparisons, alerts, watchlists, templates, and market replay. Watchlists can be imported and exported as plain text ([guide](docs/watchlists.md)). See [known limitations](docs/LIMITATIONS.md), [market data providers](docs/providers.md), and [caching](docs/caching.md).
 
+![alt text](https://github.com/user-attachments/assets/1dbc8e17-66e8-4bc8-bc0a-9a4fa009fef0)
+
 ## Run with Docker Compose
 
 Requirements: Docker Engine and the Docker Compose plugin.
