@@ -9,10 +9,11 @@ const SLOP = 10;
  * Mouse/pen are ignored (they have right-click). The click that follows a
  * long press is swallowed (capture phase) so it does not also activate the row.
  */
-export function useLongPress(onLongPress: (x: number, y: number) => void) {
+export function useLongPress(onLongPress: (x: number, y: number, target: HTMLElement) => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const start = useRef({ x: 0, y: 0 });
   const fired = useRef(false);
+  const target = useRef<HTMLElement | null>(null);
   const cbRef = useRef(onLongPress);
   useEffect(() => {
     cbRef.current = onLongPress;
@@ -28,11 +29,12 @@ export function useLongPress(onLongPress: (x: number, y: number) => void) {
       if (e.pointerType !== 'touch') return;
       fired.current = false;
       start.current = { x: e.clientX, y: e.clientY };
+      target.current = e.currentTarget as HTMLElement;
       cancel();
       timer.current = setTimeout(() => {
         timer.current = null;
         fired.current = true;
-        cbRef.current(start.current.x, start.current.y);
+        if (target.current) cbRef.current(start.current.x, start.current.y, target.current);
       }, DELAY);
     },
     onPointerMove: (e: ReactPointerEvent) => {

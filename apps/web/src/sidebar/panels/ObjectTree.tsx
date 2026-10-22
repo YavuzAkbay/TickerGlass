@@ -14,6 +14,8 @@ import { drawingsFor, useDrawingRuntime, useDrawingStore } from '../../drawings/
 import { useChartView } from '../../store/chartView';
 import { useChartStore } from '../../store/chart';
 import { openContextMenu } from '../../ui/ContextMenu';
+import { useIsCoarsePointer } from '../../ui/useMediaQuery';
+import { useLongPress } from '../../ui/useLongPress';
 import { useChartTick } from '../hooks';
 
 /** Drawings of one pane, top of the z-order first; drag a row to reorder. */
@@ -22,6 +24,15 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
   const chart = useChartStore((s) => s.chart);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const coarse = useIsCoarsePointer();
+  // Touch: long-press opens the same menu as right-click (iOS has no contextmenu on long press).
+  const press = useLongPress((x, y, el) => {
+    const id = el.dataset.drawingId;
+    if (!id) return;
+    const ids = selection.includes(id) ? selection : [id];
+    if (!selection.includes(id)) chart?.selectDrawings([id]);
+    openContextMenu(x, y, drawingMenuItems(ids));
+  });
   if (!list.length) return null;
   const topFirst = [...list].reverse();
 
@@ -44,7 +55,9 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
             role="treeitem"
             aria-selected={selected}
             aria-label={label}
-            draggable
+            draggable={!coarse}
+            data-drawing-id={d.id}
+            {...press}
             className={`rs-tree-row rs-tree-series rs-tree-drawing${selected ? ' selected' : ''}${d.hidden ? ' muted' : ''}${overId === d.id && dragId !== d.id ? ' drop-target' : ''}`}
             onClick={(e) =>
               chart?.selectDrawings([d.id], { add: e.shiftKey || e.metaKey || e.ctrlKey })
