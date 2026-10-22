@@ -5,7 +5,7 @@
   flex-direction: column;
   gap: 4px;
   width: max-content;
-  max-width: min(460px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 32px));
   margin-bottom: 6px;
   padding: 8px 12px 8px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
@@ -25,11 +25,58 @@
   pointer-events: auto;
 }
 .sc-top,
-.sc-price {
+.sc-price,
+.sc-stats,
+.sc-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 2px 10px;
   min-width: 0;
+}
+.sc-stats {
+  color: var(--muted);
+  font-size: 11px;
+}
+.sc-stats:empty {
+  display: none;
+}
+/* The bar under the crosshair, set off by a hairline. */
+.sc-bar {
+  gap: 2px 8px;
+  margin-top: 2px;
+  padding-top: 5px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  font-size: 11px;
+}
+.sc-bar-interval {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--text);
+  font-weight: 500;
+}
+.sc-bar-item {
+  display: inline-flex;
+  gap: 3px;
+}
+.sc-bar-label {
+  color: var(--muted);
+}
+.sc-bar-value {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+.sc-bar.up .sc-bar-value {
+  color: var(--up);
+}
+.sc-bar.down .sc-bar-value {
+  color: var(--down);
+}
+/* The engine's own legend line (title, OHLC) repeats what the card shows. */
+.io-legend-header:has(.sc-card) + .io-legend-info {
+  display: none;
 }
 .sc-top {
   gap: 8px;
@@ -197,4 +244,7 @@
     color: var(--down);
     text-shadow: 0 0 12px var(--down-soft);
   }
+}
+.sc-stats .sh-stat-value {
+  color: var(--text);
 }
