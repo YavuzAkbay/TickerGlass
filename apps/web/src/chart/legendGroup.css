@@ -1,0 +1,22 @@
+/* Count chip that folds a pane's study or compare rows on phones. */
+.lg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lg-chip:hover {
+  border-color: var(--border-strong);
+}
+.lg-chip:focus-visible {
+  outline: var(--focus-ring);
+}
