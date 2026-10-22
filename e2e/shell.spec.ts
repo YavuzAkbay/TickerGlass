@@ -82,6 +82,39 @@ test('? opens the shortcut help with chart navigation keys', async ({ page }) =>
   await expect(dialog.getByText('Keyboard shortcuts').first()).toBeVisible();
 });
 
+test('typed commands: an interval, an indicator with inputs, and an alert', async ({ page }) => {
+  const palette = () => page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+  const chart = () =>
+    page.evaluate(() => {
+      const c = (
+        window as unknown as {
+          chart: { getInterval(): string; getStudies(): { id: string; name?: string }[] };
+        }
+      ).chart;
+      return { interval: c.getInterval(), studies: c.getStudies().length };
+    });
+  const before = await chart();
+
+  await palette();
+  await page.keyboard.type('4h');
+  await expect(page.getByRole('option').first()).toContainText('Switch to 4 hours');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await chart()).interval).toBe('4h');
+
+  await palette();
+  await page.keyboard.type('rsi 21');
+  await expect(page.getByRole('option').first()).toContainText('Add RSI (21)');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await chart()).studies).toBe(before.studies + 1);
+  await expect(page.locator('.ind-legend-row', { hasText: 'RSI' })).toContainText('21');
+
+  await palette();
+  await page.keyboard.type('alert below 50');
+  await expect(page.getByRole('option').first()).toContainText('Alert when price crosses below 50');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog').filter({ hasText: /alert/i }).last()).toBeVisible();
+});
+
 test('? typed into an input does not open the help', async ({ page }) => {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
   await page.keyboard.type('?');
@@ -149,4 +182,26 @@ test('Alt+Enter maximizes the focused chart and Escape restores', async ({ page 
   expect(max).toBeGreaterThan(before! * 1.5);
   await page.keyboard.press('Escape');
   await expect(page.locator('.grid-cell[data-maximized]')).toHaveCount(0);
+});
+
+test('desks save the workspace; the Timeline replaces News and Events', async ({ page }) => {
+  const panels = page.getByRole('tablist', { name: 'Panels' });
+  await expect(panels.getByRole('tab', { name: 'News' })).toHaveCount(0);
+  await expect(panels.getByRole('tab', { name: 'Events' })).toHaveCount(0);
+  await panels.getByRole('tab', { name: 'Timeline' }).click();
+  await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Timeline');
+  await expect(page.getByRole('group', { name: 'Timeline scope' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Desks' }).click();
+  await page.getByRole('menuitem', { name: 'Save current as desk…' }).click();
+  await page.getByRole('dialog').getByRole('textbox').fill('Morning scan');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  const desk = page.getByRole('button', { name: 'Desk: Morning scan' });
+  await expect(desk).toBeVisible();
+
+  // Another panel, then back to the desk: its panel returns.
+  await panels.getByRole('tab', { name: 'Notes' }).click();
+  await desk.click();
+  await page.getByRole('menuitem', { name: 'Morning scan', exact: true }).click();
+  await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Timeline');
 });

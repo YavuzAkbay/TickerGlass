@@ -1,6 +1,4 @@
 import { useEffect } from 'react';
-import { SymbolHeader } from './center/SymbolHeader';
-import { RangeStrip } from './bottombar/RangeStrip';
 import { ChartGrid } from './layout/ChartGrid';
 import { registerGridCommands } from './layout/commands';
 import { registerCoreCommands } from './commands/core';
@@ -10,13 +8,14 @@ import { registerReplayCommands } from './replay/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
+import { startFirstRun } from './setup/firstRun';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
 import { Inspector } from './inspector/Inspector';
 import { Navigator } from './navigator/Navigator';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
-import { ToolRail } from './toolbar/ToolRail';
+import { QuickTools, ToolRail } from './toolbar/ToolRail';
 import { TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
 import { PromptHost } from './ui/Prompt';
@@ -61,6 +60,8 @@ export function App() {
 
   // After the chart mounted (child effects run first): restore the last layout.
   useEffect(() => startPersistence(), []);
+  // First visit: which data source this instance runs on, and whether it answers.
+  useEffect(() => startFirstRun(), []);
 
   return (
     <div className={`app${inspectorOpen ? '' : ' no-inspector'}`}>
@@ -69,18 +70,17 @@ export function App() {
       </header>
       <Navigator />
       <main className="center">
-        <SymbolHeader />
         <div className="chart-pane">
           <div className="chart-area">
             <ChartGrid />
           </div>
-          <RangeStrip />
         </div>
       </main>
       <Inspector />
       <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
         <ToolRail />
       </aside>
+      <QuickTools />
       <DialogHost />
       <ContextMenuHost />
       <PromptHost />

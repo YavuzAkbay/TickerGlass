@@ -1,8 +1,9 @@
-import { memo, useRef, type HTMLAttributes } from 'react';
+import { memo, useRef, type CSSProperties, type HTMLAttributes } from 'react';
 import type { LiveQuote } from '../../quotes/types';
 import type { ColumnId, FlagColor } from '../../watchlist/types';
 import { COLUMNS, useFlash } from './columns';
 import { rowMenu } from './rowMenu';
+import { Sparkline } from './Sparkline';
 import type { ListRef } from '../../watchlist/types';
 
 interface Props {
@@ -21,7 +22,15 @@ interface Props {
   hint?: string;
 }
 
-/** One symbol row: flag strip, symbol and the visible columns. */
+function heatStyle(pct: number | null | undefined): CSSProperties | undefined {
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct === 0) return undefined;
+  const k = Math.round(Math.min(1, Math.abs(pct) / 3) * 85) + 15;
+  return {
+    ['--wl-heat' as string]: `color-mix(in srgb, var(${pct > 0 ? '--up' : '--down'}) ${k}%, transparent)`,
+  };
+}
+
+/** One symbol row: flag strip, symbol, the visible columns and the heat strip. */
 export const SymbolRow = memo(function SymbolRow({
   symbol,
   listRef,
@@ -63,6 +72,12 @@ export const SymbolRow = memo(function SymbolRow({
         {symbol}
       </span>
       {columns.map((id) => {
+        if (id === 'trend')
+          return (
+            <span key={id} role="gridcell" className="wl-cell wl-trend">
+              <Sparkline symbol={symbol} />
+            </span>
+          );
         const cell = COLUMNS[id].render(q);
         const isLast = id === 'last';
         const isExt = id === 'extPrice';
@@ -78,7 +93,13 @@ export const SymbolRow = memo(function SymbolRow({
           </span>
         );
       })}
-      <span role="gridcell" className="wl-gutter" aria-hidden="true" />
+      {/* Heat strip: the day's move, deeper for bigger moves (full at ±3%). */}
+      <span
+        role="gridcell"
+        className="wl-gutter wl-heat"
+        aria-hidden="true"
+        style={heatStyle(q?.changePercent)}
+      />
       {dropPos ? <i className="wl-drop-line" aria-hidden="true" /> : null}
     </div>
   );

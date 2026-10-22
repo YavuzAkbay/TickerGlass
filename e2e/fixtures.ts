@@ -43,3 +43,13 @@ export async function openOverflowItem(page: Page, name: string) {
 export async function openChartSettings(page: Page) {
   await openOverflowItem(page, 'Settings');
 }
+
+/** Arm a drawing tool from its dock category ("Lines", "Shapes", "Text", "Measure", "Patterns"). */
+export async function pickTool(page: Page, category: string, name: string) {
+  await page.getByRole('button', { name: category, exact: true }).click();
+  await page
+    .getByRole('menu', { name: category })
+    .getByRole('menuitem')
+    .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
+    .click();
+}

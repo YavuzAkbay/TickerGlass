@@ -1,4 +1,4 @@
-import { AlarmClock, Moon, Plus, Redo2, Rewind, SquareFunction, Sun, Undo2 } from 'lucide-react';
+import { Moon, Redo2, Rewind, SquareFunction, Sun, Undo2 } from 'lucide-react';
 import { useState, type ComponentType } from 'react';
 import { useHistory } from '../commands/history';
 import { useT } from '../i18n';
@@ -21,52 +21,38 @@ import './topbar.css';
 
 const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
-/** Single-row command bar: compare | interval | chart type | studies | alerts and replay | layout | settings. */
+/**
+ * Command-first bar: chart controls on the left, the command box in the middle (it
+ * runs everything: "rsi 14", "4h", "compare MSFT", "alert above 200"), and view
+ * toggles on the right. Compare, alerts and snapshots live in the box and "More".
+ */
 export function TopBar() {
   const t = useT();
   const replayOn = useReplayStore((s) => s.status !== 'off');
   return (
     <div className="top-bar" role="toolbar" aria-label={t('topbar.toolbar')}>
+      <div className="tb-side tb-left">
+        <IntervalControl />
+        <div className="tb-sep" />
+        <ChartTypeButton />
+        <CommandButton id="chart.indicators" icon={SquareFunction} label={t('topbar.indicators')} />
+        <IndicatorTemplatesButton />
+      </div>
       <PaletteButton />
-      <IconButton
-        icon={Plus}
-        label={t('topbar.compare')}
-        className="tb-compare"
-        onClick={() => run('chart.compare')}
-      />
-      <div className="tb-sep" />
-      <IntervalControl />
-      <div className="tb-sep" />
-      <ChartTypeButton />
-      <div className="tb-sep" />
-      <CommandButton
-        id="chart.indicators"
-        icon={SquareFunction}
-        label={t('topbar.indicators')}
-        showLabel
-      />
-      <IndicatorTemplatesButton />
-      <div className="tb-sep" />
-      <CommandButton
-        id="alert.create"
-        icon={AlarmClock}
-        label={t('topbar.alert')}
-        text={t('topbar.alertShort')}
-      />
-      <CommandButton
-        id="replay.toggle"
-        icon={Rewind}
-        label={t('topbar.replay')}
-        text={t('topbar.replayShort')}
-        active={replayOn}
-      />
-      <div className="tb-spacer" />
-      <LayoutPicker />
-      <LayoutMenu />
-      <div className="tb-sep" />
-      <UndoRedo />
-      <ThemeButton />
-      <OverflowMenu />
+      <div className="tb-side tb-right">
+        <CommandButton
+          id="replay.toggle"
+          icon={Rewind}
+          label={t('topbar.replay')}
+          active={replayOn}
+        />
+        <LayoutPicker />
+        <LayoutMenu />
+        <div className="tb-sep" />
+        <UndoRedo />
+        <ThemeButton />
+        <OverflowMenu />
+      </div>
     </div>
   );
 }

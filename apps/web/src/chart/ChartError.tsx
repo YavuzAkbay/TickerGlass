@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RefreshCw, Search, TriangleAlert } from 'lucide-react';
+import { Database, RefreshCw, Search, TriangleAlert } from 'lucide-react';
 import { useStore } from 'zustand';
 import { setActiveChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
@@ -104,11 +104,27 @@ export function ChartError({ session }: { session: ChartSession }) {
             {kind === 'unavailable' ? 'Data unavailable' : 'Could not load chart'}
           </p>
           <p className="chart-error-text">
-            {kind === 'unavailable' ? 'The data service could not be reached.' : error.message}
+            {kind === 'unavailable'
+              ? 'The market data source could not be reached. The symbol may be fine.'
+              : error.message}
           </p>
-          <button type="button" className="chart-error-btn" onClick={retry}>
-            <RefreshCw size={14} aria-hidden /> Retry
-          </button>
+          {kind === 'unavailable' && error.message ? (
+            <p className="chart-error-detail">{error.message}</p>
+          ) : null}
+          <div className="chart-error-actions">
+            <button type="button" className="chart-error-btn" onClick={retry}>
+              <RefreshCw size={14} aria-hidden /> Retry
+            </button>
+            {kind === 'unavailable' ? (
+              <button
+                type="button"
+                className="chart-error-btn secondary"
+                onClick={() => useUiStore.getState().openDialog('dataSource')}
+              >
+                <Database size={14} aria-hidden /> Data source…
+              </button>
+            ) : null}
+          </div>
         </>
       )}
     </div>

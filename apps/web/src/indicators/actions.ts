@@ -165,7 +165,7 @@ function validatePatch(id: string, patch: Patch, list: readonly IndicatorState[]
 }
 
 /**
- * Settings dialog live preview: a transient patch over the persisted instance
+ * Inspector settings live preview: a transient patch over the persisted instance
  * (not persisted, no undo entry). Invalid input changes are rejected with a
  * toast; returns whether it applied.
  */
@@ -187,7 +187,7 @@ export function discardPreview(id: string): void {
   });
 }
 
-/** Apply the preview of `id` to the store as one undo step (dialog Ok). */
+/** Apply the preview of `id` to the store as one undo step (leaving the Inspector settings). */
 export function commitPreview(id: string, label: string): boolean {
   const patch = preview().overrides[id];
   discardPreview(id);

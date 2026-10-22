@@ -1,5 +1,4 @@
 import {
-  getDrawingTool,
   isEmbeddedImage,
   type AnyDrawingToolDefinition,
   type Drawing,
@@ -12,9 +11,8 @@ import { Plus, X } from 'lucide-react';
 import { useRef } from 'react';
 import { ColorSwatch } from '../dialogs/ColorPicker';
 import { Check, Row, Section } from '../dialogs/controls';
-import { NumberInput } from '../dialogs/IndicatorSettingsDialog';
+import { NumberInput } from '../inspector/IndicatorSettings';
 import { toast } from '../ui/Toast';
-import { updateDrawings } from './actions';
 import { imageToDataUrl } from './image';
 import { fitsImageBudget } from './per-drawing';
 import { allDrawings, useDrawingStore } from './store';
@@ -387,32 +385,5 @@ export function TextTab({
         </div>
       ) : null}
     </>
-  );
-}
-
-/**
- * Live property editor for one stored drawing (Inspector). Every edit is committed to the
- * drawing store straight away (colour and number edits coalesce into one undo step per property).
- */
-export function DrawingProperties({ drawing }: { drawing: Drawing }) {
-  const def = getDrawingTool(drawing.type);
-  if (!def) return <div className="dlg-note">Nothing to style.</div>;
-  const hasText = !!def.text || def.properties.some((p) => p.tab === 'text');
-  const setStyle = (patch: DrawingStyle) => {
-    const key = Object.keys(patch).join(',');
-    updateDrawings([drawing.id], { style: patch }, `Change ${def.name} settings`, `prop:${key}`);
-  };
-  const set = (patch: Partial<Drawing>) =>
-    updateDrawings([drawing.id], patch, `Change ${def.name} settings`, 'prop:text');
-  return (
-    <div className="ind-settings-body drw-settings-body">
-      <PropertyList
-        props={def.properties.filter((p) => (p.tab ?? 'style') === 'style')}
-        style={drawing.style}
-        set={setStyle}
-        drawingId={drawing.id}
-      />
-      {hasText ? <TextTab def={def} draft={drawing} set={set} setStyle={setStyle} /> : null}
-    </div>
   );
 }

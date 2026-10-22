@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import '@fontsource-variable/inter';
+import '@fontsource-variable/jetbrains-mono';
 import './theme/tokens.css';
 
 createRoot(document.getElementById('root')!).render(

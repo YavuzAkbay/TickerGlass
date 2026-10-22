@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, openOverflowItem, test } from './fixtures';
 import { firstChart, freshBoot } from './persistence';
 
 declare global {
@@ -54,14 +54,14 @@ test('correlation: another symbol, computed against the chart', async ({ page })
   const symbol = page.locator('#ind-in-symbol');
   await symbol.fill('MSFT');
   await symbol.press('Enter');
-  await page.getByRole('button', { name: 'Ok' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
   await expect(row.locator('.ind-legend-inputs')).toContainText('MSFT');
   await expect(row.locator('.ind-legend-value').first()).toHaveText(/^[−-]?\d/);
 });
 
 test('an SMA sourced from an overlay symbol survives a reload', async ({ page, server }) => {
   // MSFT overlay through Compare.
-  await page.getByRole('button', { name: 'Compare or add symbol' }).click();
+  await openOverflowItem(page, 'Compare or add symbol');
   const input = page.getByLabel('Search symbols to compare');
   await input.fill('MSFT');
   const option = page.getByRole('option').first();
@@ -75,7 +75,7 @@ test('an SMA sourced from an overlay symbol survives a reload', async ({ page, s
   await expect(row).toHaveCount(1);
   await openSettings(page, 'SMA');
   await page.locator('#ind-in-source').selectOption({ label: 'MSFT: Close' });
-  await page.getByRole('button', { name: 'Ok' }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
   await expect(row.locator('.ind-legend-inputs')).toContainText('MSFT: Close');
   await expect(row.locator('.ind-legend-value').first()).toHaveText(/\d/);
 

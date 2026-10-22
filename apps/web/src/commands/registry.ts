@@ -11,6 +11,8 @@ export interface Command {
   icon?: ComponentType<{ size?: number }>;
   /** Hidden from the command palette (still runnable by id / shortcut). */
   hidden?: boolean;
+  /** Listed in the palette only once the user types (keeps the empty list short). */
+  searchOnly?: boolean;
   enabled?: () => boolean;
   run: (arg?: unknown) => void | Promise<void>;
 }

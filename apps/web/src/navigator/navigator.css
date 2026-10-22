@@ -6,15 +6,41 @@
   min-height: 0;
   background: var(--panel);
 }
-.nav-rail {
+.nav-rail-col {
   display: flex;
   flex: 0 0 var(--rail-w);
   flex-direction: column;
+  width: var(--rail-w);
+  border-right: 1px solid var(--border);
+}
+/* The desk switcher sits above the section tabs, split off by a hairline. */
+.nav-desk-slot {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.nav-desk.set {
+  color: var(--accent-text);
+}
+.nav-desk-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.nav-rail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   align-items: center;
   gap: 2px;
-  width: var(--rail-w);
   padding: 6px 0;
-  border-right: 1px solid var(--border);
   user-select: none;
 }
 .nav-tab {
@@ -157,4 +183,115 @@
 }
 .nav-events-row[data-kind='earnings'] .nav-events-kind {
   color: var(--accent-text);
+}
+
+/* ---- timeline ---- */
+.tl-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+}
+.tl-panel > .wl-seg {
+  margin: 8px 10px 4px;
+}
+.tl-head {
+  margin: 8px 12px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tl-list {
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+}
+.tl-link {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tl-link:hover {
+  background: var(--hover);
+}
+.tl-static {
+  cursor: default;
+}
+.tl-static:hover {
+  background: transparent;
+}
+.tl-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--muted);
+}
+.tl-row[data-kind='alert'] .tl-icon {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.tl-row[data-kind='earnings'] .tl-icon {
+  background: var(--up-soft);
+  color: var(--up);
+}
+.tl-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tl-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.35;
+}
+.tl-meta {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tl-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-sym {
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+}
+.tl-when {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tl-note {
+  margin: 4px 12px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.tl-error {
+  margin: 0 10px;
 }

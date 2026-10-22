@@ -42,7 +42,7 @@ import {
 import { useIndicatorStore } from './store';
 
 export function openIndicatorSettings(id: string): void {
-  useUiStore.getState().openDialog('indicatorSettings', { id });
+  useUiStore.getState().openInspector('indicator', id);
 }
 
 /** Script editor on script `scriptId` (no id: a new script). */

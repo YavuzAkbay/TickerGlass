@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/tickerglass.db}
+      MARKET_PROVIDER: ${MARKET_PROVIDER:-yahoo}
       # Alert notifications (docs/alerts.md section 4.1); all optional, empty = unset.
       ALERTS_WEBHOOK_URL: ${ALERTS_WEBHOOK_URL:-}
       ALERTS_WEBHOOK_SECRET: ${ALERTS_WEBHOOK_SECRET:-}

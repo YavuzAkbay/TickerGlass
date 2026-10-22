@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, pickTool, test } from './fixtures';
 import { mockMarket, quote } from './market';
 import type { MockServer } from './persistence';
 
@@ -265,8 +265,12 @@ async function setSync(page: Page, label: SyncLabel, on: boolean) {
   await expect(page.getByRole('dialog', { name: 'Chart layout' })).toHaveCount(0);
 }
 
+/** Symbol search from the focused chart's symbol card (each chart has its own). */
 async function searchSymbol(page: Page, symbol: string) {
-  await page.getByRole('button', { name: /^Symbol search/ }).click();
+  await page
+    .locator('.chart-cell.active')
+    .getByRole('button', { name: /^Symbol search/ })
+    .click();
   const input = page.getByLabel('Search symbols');
   await input.fill(symbol);
   await input.press('Enter');
@@ -384,10 +388,13 @@ test('panning follows on the other chart only with time sync', async ({ page }) 
 
 test('a range preset applies to every chart only with date-range sync', async ({ page }) => {
   await twoCharts(page);
+  // Each chart has its own presets on its time axis; these are the first chart's.
   const preset = (label: string) =>
     page
+      .locator('.chart-cell')
+      .nth(0)
       .getByRole('group', { name: 'Range presets' })
-      .locator('.strip-seg-btn', { hasText: new RegExp(`^${label}$`) });
+      .getByRole('button', { name: label, exact: true });
   const DAY = 86_400;
 
   await focusCell(page, 0);
@@ -429,9 +436,10 @@ test('drawing sync off: a drawing stays on its chart; selection is per chart', a
   const drawn = (id: string) => page.evaluate((i) => window.charts[i]!.getDrawings().length, id);
   const hostB = cells(page).nth(1).locator('.chart-host');
   const box = (await hostB.boundingBox())!;
-  await page.getByRole('button', { name: 'Trend line', exact: true }).click();
-  await page.mouse.click(box.x + 80, box.y + 120);
-  await page.mouse.click(box.x + 260, box.y + 200);
+  await pickTool(page, 'Lines', 'Trend line');
+  // Below the symbol card and legend chips at the top-left.
+  await page.mouse.click(box.x + 80, box.y + 260);
+  await page.mouse.click(box.x + 260, box.y + 340);
   await expect.poll(() => drawn(idB!)).toBe(1);
   await page.waitForTimeout(300);
   expect(await drawn(idA!)).toBe(0);
@@ -440,7 +448,7 @@ test('drawing sync off: a drawing stays on its chart; selection is per chart', a
 
   // Selecting it on B leaves A without a selection.
   await page.keyboard.press('Escape');
-  await page.mouse.click(box.x + 170, box.y + 160);
+  await page.mouse.click(box.x + 170, box.y + 300);
   await expect
     .poll(() => page.evaluate((i) => window.charts[i]!.getSelection().length, idB!))
     .toBe(1);

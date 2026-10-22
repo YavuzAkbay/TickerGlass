@@ -44,7 +44,7 @@ export function openDrawingSettings(
   id: string,
   opts: { tab?: DrawingSettingsTab; saveTemplate?: boolean } = {},
 ): void {
-  useUiStore.getState().openDialog('drawingSettings', { id, ...opts });
+  useUiStore.getState().openInspector('drawing', id, opts);
 }
 
 /** Inline text editor over the chart at viewport (x, y). */

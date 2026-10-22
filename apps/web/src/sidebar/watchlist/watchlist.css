@@ -333,3 +333,38 @@
 .wl-news-badge:hover {
   background: var(--hover);
 }
+
+/* ---- trend sparkline and heat strip ---- */
+.wl-trend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.wl-spark polyline {
+  stroke: var(--muted);
+}
+.wl-spark.up polyline {
+  stroke: var(--up);
+}
+.wl-spark.down polyline {
+  stroke: var(--down);
+}
+.wl-spark-empty {
+  display: block;
+  width: 44px;
+  height: 1px;
+  background: var(--border);
+}
+.wl-heat {
+  position: relative;
+}
+.wl-heat::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--wl-heat, transparent);
+}

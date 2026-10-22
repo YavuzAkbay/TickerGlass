@@ -1,0 +1,84 @@
+/* Range chips above the time axis: out of the way until the pointer is over the chart. */
+.ax-ranges {
+  position: absolute;
+  left: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+  user-select: none;
+}
+.chart-cell:hover .ax-ranges,
+.ax-ranges:focus-within {
+  opacity: 1;
+  transform: none;
+}
+.ax-chip {
+  height: 22px;
+  min-width: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ax-chip:hover {
+  background: var(--hover);
+}
+.ax-chip.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.ax-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+/* Scale toggles in the axes corner (right of the time axis, under the price axis). */
+.ax-scale {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  user-select: none;
+}
+.ax-scale-btn {
+  height: 18px;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.ax-scale-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+  opacity: 1;
+}
+.ax-scale-btn.active {
+  color: var(--accent-text);
+  opacity: 1;
+}

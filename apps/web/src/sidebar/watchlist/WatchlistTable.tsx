@@ -277,6 +277,18 @@ export function WatchlistTable({ listRef }: Props) {
 
   const headCell = (key: SortKey, label: string, title: string, align: 'left' | 'right') => {
     const active = sort?.key === key;
+    if (key === 'trend')
+      return (
+        <span
+          key={key}
+          role="columnheader"
+          data-testid="wl-col-trend"
+          className="wl-th right"
+          title={title}
+        >
+          {label}
+        </span>
+      );
     return (
       <span
         key={key}

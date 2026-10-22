@@ -144,3 +144,63 @@ test('Settings > Status line: turning OHLC off removes the values from the legen
   await page.getByRole('button', { name: 'Ok' }).click();
   await expect(labels).toHaveCount(0);
 });
+
+test('axis controls: range chips over the time axis, scale toggles in the axes corner, session in the header', async ({
+  page,
+}) => {
+  await page.goto('/?feed=synthetic');
+  await page.waitForFunction(
+    () => (window as unknown as { chart?: { store: { length: number } } }).chart?.store.length,
+  );
+  const chart = () =>
+    page.evaluate(() => {
+      const c = (
+        window as unknown as {
+          chart: {
+            getInterval(): string;
+            getState(): { panes: { priceScale: { mode: string } }[] };
+          };
+        }
+      ).chart;
+      return { interval: c.getInterval(), mode: c.getState().panes[0]!.priceScale.mode };
+    });
+
+  await page
+    .getByRole('group', { name: 'Range presets' })
+    .getByRole('button', { name: '1Y' })
+    .click();
+  await expect.poll(async () => (await chart()).interval).toBe('1D');
+
+  const scale = page.getByRole('group', { name: 'Price scale' });
+  await scale.getByRole('button', { name: 'Log scale' }).click();
+  await expect.poll(async () => (await chart()).mode).toBe('log');
+  await expect(scale.getByRole('button', { name: 'Log scale' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+
+  const session = page.getByRole('group', { name: /symbol/i }).getByRole('button', { name: 'RTH' });
+  await session.click();
+  await expect(page.getByRole('button', { name: 'ETH' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.range-strip')).toHaveCount(0);
+});
+
+test('symbol card on the chart; a legend chip click opens its settings in the Inspector', async ({
+  page,
+}) => {
+  await page.goto('/?feed=synthetic');
+  await page.waitForFunction(
+    () => (window as unknown as { chart?: { store: { length: number } } }).chart?.store.length,
+  );
+  const card = page.locator('.chart-cell').getByRole('group', { name: 'Symbol summary' });
+  await expect(card).toBeVisible();
+  await expect(card.getByRole('button', { name: /^Symbol search/ })).toBeVisible();
+  // The card sits in the main pane's legend, above the engine's OHLC line.
+  const legend = page.locator('.io-legend').first();
+  await expect(legend.locator('.io-legend-header .sc-card')).toHaveCount(1);
+
+  const chip = page.locator('.ind-legend-row').first();
+  await chip.locator('.ind-legend-open').click();
+  await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Inputs' })).toBeVisible();
+});

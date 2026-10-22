@@ -148,6 +148,12 @@
   pointer-events: none;
 }
 
+/* The engine's own status line ("symbol not found: AAPL") sits above the chart (z-index 6);
+   the app's overlay says it better, so the two never overlap. */
+.chart-cell:has(> .chart-error) .io-status {
+  display: none !important;
+}
+
 .chart-error {
   position: absolute;
   inset: 0;
@@ -192,6 +198,27 @@
 
 .chart-error-btn:hover {
   background: var(--accent-hover);
+}
+.chart-error-btn.secondary {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+}
+.chart-error-btn.secondary:hover {
+  background: var(--hover);
+}
+.chart-error-actions {
+  display: flex;
+  gap: 8px;
+}
+.chart-error-detail {
+  margin: 0;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 11px;
+  opacity: 0.8;
 }
 
 .chart-host {

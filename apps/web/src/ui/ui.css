@@ -78,6 +78,7 @@
 .io-popover {
   position: fixed;
   z-index: 900;
+  animation: io-pop-in 120ms ease-out;
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
@@ -298,4 +299,12 @@
   margin: 15vh auto;
   padding: 24px;
   line-height: 1.5;
+}
+
+/* Menus and popovers settle in instead of appearing at once. */
+@keyframes io-pop-in {
+  from {
+    opacity: 0;
+    translate: 0 -3px;
+  }
 }

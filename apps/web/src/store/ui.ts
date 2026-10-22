@@ -7,8 +7,8 @@ import type { Locale } from '../i18n';
 export const NAV_SECTIONS = [
   'watchlist',
   'alerts',
-  'events',
-  'news',
+  /** Alert fires, news and corporate events in one feed (replaced 'events' and 'news'). */
+  'timeline',
   'notes',
   'objectTree',
   'dataWindow',
@@ -21,16 +21,17 @@ export type RightPanel = NavSection;
 
 /** Content of the Inspector (transient; never saved). */
 export interface InspectorState {
-  view: 'symbol' | 'drawing';
+  view: 'symbol' | 'drawing' | 'indicator';
   id?: string;
+  /** Drawing settings: the tab to start on, and whether to start naming a template. */
+  tab?: 'style' | 'text' | 'coordinates' | 'visibility';
+  saveTemplate?: boolean;
 }
 
 export type DialogId =
   | 'symbolSearch'
   | 'compare'
   | 'indicators'
-  | 'indicatorSettings'
-  | 'drawingSettings'
   | 'settings'
   | 'commandPalette'
   | 'goToDate'
@@ -39,7 +40,8 @@ export type DialogId =
   | 'loadLayout'
   | 'dataTransfer'
   | 'alert'
-  | 'scriptEditor';
+  | 'scriptEditor'
+  | 'dataSource';
 
 /** Drawing tool ids are defined by the left toolbar (Phase 6 implements them). */
 export type DrawingToolId = string;
@@ -81,7 +83,11 @@ interface UiState {
   setNavOpen: (open: boolean) => void;
   setNavWidth: (w: number) => void;
   setInspectorWidth: (w: number) => void;
-  openInspector: (view: InspectorState['view'], id?: string) => void;
+  openInspector: (
+    view: InspectorState['view'],
+    id?: string,
+    opts?: Pick<InspectorState, 'tab' | 'saveTemplate'>,
+  ) => void;
   closeInspector: () => void;
   toggleToolRail: () => void;
   openDialog: (id: DialogId, arg?: unknown) => void;
@@ -89,8 +95,8 @@ interface UiState {
   set: (patch: Partial<UiState>) => void;
 }
 
-/** Persisted `tickerglass-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator. */
-export const UI_STORE_VERSION = 3;
+/** Persisted `tickerglass-ui` version: 1 = renamed drawing tool ids, 2 = bottom dock and tool rail, 3 = Navigator, 4 = Timeline (News and Events merged). */
+export const UI_STORE_VERSION = 4;
 
 export const DEFAULT_NAV_WIDTH = 260;
 export const MIN_NAV_WIDTH = 200;
@@ -113,6 +119,9 @@ export function migrateDockDefaults<T extends object>(state: T): T {
 
 const isNavSection = (v: unknown): v is NavSection =>
   typeof v === 'string' && (NAV_SECTIONS as readonly string[]).includes(v);
+
+/** Sections folded into others: the Timeline took over News and Events. */
+const RENAMED_SECTIONS: Record<string, NavSection> = { news: 'timeline', events: 'timeline' };
 
 /**
  * Replace the bottom dock fields (`rightPanel`, `dockTab`, `dockHeight`, `rightWidth`)
@@ -137,8 +146,12 @@ export function migrateNavigator<T extends object>(
     rightWidth?: unknown;
     [k: string]: unknown;
   };
-  if (typeof s.navSection === 'string') return s as unknown as T;
-  const src = rightPanel ?? dockTab ?? 'watchlist';
+  if (typeof s.navSection === 'string')
+    return (RENAMED_SECTIONS[s.navSection]
+      ? { ...s, navSection: RENAMED_SECTIONS[s.navSection] }
+      : s) as unknown as T;
+  const raw = rightPanel ?? dockTab ?? 'watchlist';
+  const src = typeof raw === 'string' ? (RENAMED_SECTIONS[raw] ?? raw) : raw;
   return {
     ...s,
     navSection: isNavSection(src) && src !== 'replayTrading' ? src : 'watchlist',
@@ -218,7 +231,8 @@ export const useUiStore = create<UiState>()(
       setNavWidth: (w) => set({ navWidth: clamp(w, MIN_NAV_WIDTH, MAX_NAV_WIDTH) }),
       setInspectorWidth: (w) =>
         set({ inspectorWidth: clamp(w, MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH) }),
-      openInspector: (view, id) => set({ inspector: id === undefined ? { view } : { view, id } }),
+      openInspector: (view, id, opts) =>
+        set({ inspector: { view, ...(id === undefined ? {} : { id }), ...opts } }),
       closeInspector: () => set({ inspector: null }),
       toggleToolRail: () => set((s) => ({ toolRailHidden: !s.toolRailHidden })),
       openDialog: (id, arg) => set({ dialog: id, dialogArg: arg }),
