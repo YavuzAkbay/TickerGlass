@@ -4,6 +4,8 @@ import {
   Database,
   GitCompareArrows,
   Keyboard,
+  LayoutGrid,
+  LayoutTemplate,
   Maximize,
   Moon,
   MoreHorizontal,
@@ -15,7 +17,7 @@ import {
   Sun,
   Undo2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useHistory } from '../commands/history';
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
@@ -23,8 +25,13 @@ import { useReplayStore } from '../replay/store';
 import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
+import { applyTemplate, setSyncFlag } from '../layout/actions';
+import { useLayoutGrid } from '../layout/store';
+import { TEMPLATES } from '../layout/templates';
 import { IconButton } from '../ui/IconButton';
+import { useIsMobile } from '../ui/useMediaQuery';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
+import { useIndicatorSetItems } from './IndicatorTemplatesButton';
 import { firstShortcut, useCommand } from './useCommand';
 
 /**
@@ -53,6 +60,15 @@ export function OverflowMenu({ folded = false }: { folded?: boolean }) {
   const replay = firstShortcut(useCommand('replay.toggle'));
   const undo = firstShortcut(useCommand('edit.undo'));
   const redo = firstShortcut(useCommand('edit.redo'));
+  // Phones drop the chart layout picker and indicator sets from the bar: they live here.
+  const mobile = useIsMobile();
+  const layout = useLayoutGrid((s) => s.template);
+  const sync = useLayoutGrid((s) => s.sync);
+  const sets = useIndicatorSetItems();
+  useEffect(() => {
+    if (open && mobile) void sets.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mobile]);
 
   // Put focus back on the trigger first so a dialog opened by the item records
   // "More" (not the closing menu) as the element to restore focus to.
@@ -95,8 +111,41 @@ export function OverflowMenu({ folded = false }: { folded?: boolean }) {
     { type: 'separator' },
   ];
 
+  const mobileItems: MenuItem[] = [
+    {
+      label: 'Chart layout',
+      icon: LayoutGrid,
+      submenu: [
+        ...TEMPLATES.map((t): MenuItem => ({
+          label: `${t.count} ${t.count === 1 ? 'chart' : 'charts'}: ${t.id}`,
+          checked: t.id === layout,
+          onSelect: () => void applyTemplate(t.id),
+        })),
+        { type: 'separator' },
+        { type: 'header', label: 'Sync across charts' },
+        ...(
+          [
+            ['symbol', 'Symbol'],
+            ['interval', 'Interval'],
+            ['crosshair', 'Crosshair'],
+            ['time', 'Time'],
+            ['dateRange', 'Date range'],
+            ['drawings', 'Drawings'],
+          ] as const
+        ).map(([key, label]): MenuItem => ({
+          label,
+          checked: sync[key],
+          onSelect: () => setSyncFlag(key, !sync[key]),
+        })),
+      ],
+    },
+    { label: 'Indicator sets', icon: LayoutTemplate, submenu: sets.items },
+    { type: 'separator' },
+  ];
+
   const items: MenuItem[] = [
     ...(folded ? foldedItems : []),
+    ...(mobile ? mobileItems : []),
     {
       label: t('topbar.compare'),
       icon: GitCompareArrows,

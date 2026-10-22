@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useT } from '../i18n';
+import { useIsMobile } from './useMediaQuery';
 
 interface Props {
   title: ReactNode;
@@ -41,6 +42,7 @@ export function Modal({
   top,
 }: Props) {
   const t = useT();
+  const mobile = useIsMobile();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   // The element focused when the dialog opened (restored on close).
@@ -111,7 +113,7 @@ export function Modal({
       <div
         ref={ref}
         className={`io-modal ${className ?? ''}`}
-        style={{ width }}
+        style={mobile ? undefined : { width }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -120,7 +122,7 @@ export function Modal({
         <div
           className="io-modal-header"
           onPointerDown={(e) => {
-            if ((e.target as HTMLElement).closest('button,input')) return;
+            if (mobile || (e.target as HTMLElement).closest('button,input')) return;
             drag.current = {
               x: e.clientX,
               y: e.clientY,

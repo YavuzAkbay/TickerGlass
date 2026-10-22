@@ -100,6 +100,34 @@
   text-overflow: ellipsis;
 }
 
+/* Touch: no hover to reveal the row actions, so only "More" (it has hide, settings and remove) stays. */
+@media (hover: none) {
+  .ind-legend-actions {
+    display: inline-flex;
+  }
+  .ind-legend-actions .ind-legend-btn:not(.ind-legend-more) {
+    display: none;
+  }
+  .ind-legend-btn {
+    width: 28px;
+    height: 26px;
+  }
+}
+@media (max-width: 768px) {
+  .ind-legend-row {
+    max-width: 100%;
+    height: 28px;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .ind-legend-open {
+    min-width: 0;
+  }
+  .ind-legend-value {
+    flex: none;
+  }
+}
+
 /* ---- indicators picker ---- */
 .ind-list {
   padding: 4px 0 8px;

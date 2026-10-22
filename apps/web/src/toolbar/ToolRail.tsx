@@ -5,6 +5,7 @@ import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import { Popover } from '../ui/Popover';
+import { useIsCoarsePointer } from '../ui/useMediaQuery';
 import {
   HIDE_MODES,
   toHideMode,
@@ -202,6 +203,7 @@ function ToolSearch({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const coarse = useIsCoarsePointer();
   return (
     <input
       className="lt-fly-search"
@@ -210,7 +212,8 @@ function ToolSearch({
       aria-label={label}
       spellCheck={false}
       autoComplete="off"
-      autoFocus
+      // Touch: don't pop the on-screen keyboard over the list just for opening it.
+      autoFocus={!coarse}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
         if (e.key !== 'Enter') return;

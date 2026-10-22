@@ -308,3 +308,209 @@
     translate: 0 -3px;
   }
 }
+
+/* ======== touch + phone ======== */
+.io-toasts {
+  pointer-events: none;
+}
+.io-toast {
+  pointer-events: auto;
+}
+.io-popover {
+  max-height: calc(100vh - 16px);
+}
+@supports (height: 100dvh) {
+  .io-popover {
+    max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+@media (pointer: coarse) {
+  .io-icon-btn {
+    min-width: 40px;
+    height: 40px;
+  }
+  .io-btn {
+    height: 40px;
+  }
+  .io-input {
+    height: 40px;
+  }
+  .io-menu-item {
+    height: 44px;
+  }
+  .io-menu-shortcut {
+    display: none;
+  }
+  .io-toast-action {
+    height: 36px;
+  }
+  /* No hover on touch: CSS tooltips would stick after a tap. */
+  [data-tip]:hover::after {
+    display: none;
+  }
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  /* >=16px so iOS Safari does not zoom the page on focus. */
+  .io-input,
+  .io-modal
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  .io-modal select,
+  .io-modal textarea,
+  .io-popover input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  .io-popover select {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Bottom action sheet (menus, context menus, submenus). */
+  .io-popover-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 899;
+    background: var(--overlay);
+    animation: io-fade-in 120ms ease-out;
+  }
+  .io-popover.io-sheet {
+    left: 0 !important;
+    right: 0;
+    top: auto !important;
+    bottom: 0;
+    width: auto;
+    max-height: min(70vh, 560px);
+    padding-bottom: env(safe-area-inset-bottom);
+    border-width: 1px 0 0;
+    border-radius: 14px 14px 0 0;
+    overscroll-behavior: contain;
+    animation: io-sheet-in 160ms ease-out;
+  }
+  @supports (height: 100dvh) {
+    .io-popover.io-sheet {
+      max-height: min(70dvh, 560px);
+    }
+  }
+  .io-sheet .io-menu {
+    min-width: 0;
+    padding: 8px 0;
+  }
+  .io-sheet .io-menu-item {
+    height: 48px;
+    padding: 0 16px 0 12px;
+    font-size: 16px;
+    white-space: normal;
+  }
+  .io-sheet .io-menu-header {
+    padding-left: 12px;
+  }
+
+  /* Toasts: near full width, above the bottom safe area and bottom bar. */
+  .io-toasts {
+    left: 12px;
+    right: 12px;
+    bottom: calc(var(--tabbar-h, 0px) + 8px + env(safe-area-inset-bottom));
+  }
+  /* Over a full-screen modal, bottom toasts would hide its footer actions. */
+  body:has([data-modal-open]) .io-toasts {
+    top: calc(8px + env(safe-area-inset-top));
+    bottom: auto;
+  }
+  .io-toast {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    padding: 10px 6px 10px 14px;
+  }
+
+  /* Modals: full-screen sheets. */
+  .io-modal-overlay,
+  .io-modal-overlay.io-modal-top {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+  }
+  .io-modal {
+    width: 100%;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    transform: none !important;
+  }
+  @supports (height: 100dvh) {
+    .io-modal {
+      height: 100dvh;
+    }
+  }
+  .io-modal-header {
+    gap: 4px;
+    padding: calc(6px + env(safe-area-inset-top)) calc(6px + env(safe-area-inset-right)) 6px
+      calc(16px + env(safe-area-inset-left));
+    min-height: 52px;
+    cursor: default;
+  }
+  .io-modal-header .io-icon-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+  .io-modal-title {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .io-modal-body {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .io-modal-footer {
+    flex-wrap: wrap;
+    padding: 10px calc(16px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
+    background: var(--popover);
+  }
+  .io-modal-footer .io-btn {
+    min-width: 88px;
+    height: 44px;
+  }
+
+  /* Small confirmations stay compact, pinned to the bottom. */
+  .io-modal-overlay:has(.io-prompt),
+  .io-modal-overlay:has(.dlg-interval) {
+    align-items: flex-end;
+    background: var(--overlay);
+  }
+  .io-modal.io-prompt,
+  .io-modal.dlg-interval {
+    height: auto;
+    max-height: 90dvh;
+    border-width: 1px 0 0;
+    border-radius: 14px 14px 0 0;
+  }
+  .io-modal.dlg-interval {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .io-prompt .io-modal-body {
+    padding: 16px;
+  }
+  .io-modal.io-prompt .io-modal-header {
+    min-height: 0;
+  }
+}
+
+@keyframes io-sheet-in {
+  from {
+    translate: 0 24px;
+    opacity: 0;
+  }
+}
+@keyframes io-fade-in {
+  from {
+    opacity: 0;
+  }
+}

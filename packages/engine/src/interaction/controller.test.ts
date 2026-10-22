@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Chart } from '../chart';
-import { InteractionController, KEY_BINDINGS } from './controller';
+import { InteractionController, KEY_BINDINGS, LONG_PRESS_MS } from './controller';
 
 type KeyListener = (e: unknown) => void;
 
@@ -145,6 +145,167 @@ describe('InteractionController view change causes', () => {
     b.fire('pointerdown', { clientX: 100, clientY: 490 });
     b.fire('pointermove', { clientX: 120, clientY: 490 });
     expect(b.chart.viewChanged.mock.calls).toEqual([['user']]);
+  });
+});
+
+describe('InteractionController touch gestures', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function touchSetup(hitKind: 'pane' | 'timeAxis' | 'priceAxis' = 'pane', onDrawing = false) {
+    vi.useFakeTimers();
+    vi.stubGlobal('Element', class {});
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const listeners = new Map<string, (e: unknown) => void>();
+    const root = {
+      addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, fn),
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+      focus: vi.fn(),
+      setPointerCapture: vi.fn(),
+      hasPointerCapture: () => false,
+      releasePointerCapture: vi.fn(),
+      style: {} as Record<string, string>,
+    };
+    const pane = { id: 'main', top: 0, priceScale: { autoScale: true, panBy: vi.fn() } };
+    const chart = {
+      root,
+      timeScale: { pan: vi.fn(), zoom: vi.fn() },
+      paneWidth: 500,
+      options: { crosshair: 'cross' },
+      drawingInput: {
+        setPointerType: vi.fn(),
+        pointerDown: () => onDrawing,
+        pointerMove: vi.fn(),
+        pointerUp: vi.fn(),
+        holdPress: vi.fn(() => true),
+        contextMenu: vi.fn(() => onDrawing),
+        doubleClick: vi.fn(() => false),
+        clickEmpty: vi.fn(),
+        cursor: () => null,
+      },
+      drawingTarget: () => null,
+      hitTest: (x: number, y: number) => ({ kind: hitKind, pane, x, y }),
+      isStudy: () => false,
+      hoverStudy: vi.fn(),
+      emitOverlayClick: () => false,
+      emitStudyPointer: vi.fn(),
+      describePoint: (x: number, y: number) => ({ x, y }),
+      events: { emit: vi.fn() },
+      setAutoScale: vi.fn(),
+      resetView: vi.fn(),
+      viewChanged: vi.fn(),
+      viewSettled: vi.fn(),
+      setCrosshair: vi.fn(),
+    };
+    new InteractionController(chart as unknown as Chart);
+    let t = 0;
+    const fire = (type: string, id: number, x: number, y: number, pointerType = 'touch') =>
+      listeners.get(type)!({
+        button: 0,
+        pointerType,
+        pointerId: id,
+        clientX: x,
+        clientY: y,
+        timeStamp: (t += 16),
+        preventDefault: vi.fn(),
+      });
+    const native = (type: string) =>
+      listeners.get(type)!({ clientX: 100, clientY: 100, preventDefault: vi.fn() });
+    return { chart, fire, native };
+  }
+
+  it('pinching two fingers apart zooms in around their midpoint', () => {
+    const { chart, fire } = touchSetup();
+    fire('pointerdown', 1, 100, 100);
+    fire('pointerdown', 2, 200, 100);
+    fire('pointermove', 2, 300, 100);
+    const zoom = chart.timeScale.zoom;
+    expect(zoom).toHaveBeenCalledTimes(1);
+    const [x, factor] = zoom.mock.calls[0]! as [number, number];
+    expect(factor).toBeCloseTo(2);
+    expect(x).toBe(200);
+    // Pinching back zooms out.
+    fire('pointermove', 2, 150, 100);
+    expect((zoom.mock.calls[1]! as [number, number])[1]).toBeLessThan(1);
+    // Lifting one finger keeps panning with the other, without a crosshair.
+    fire('pointerup', 2, 150, 100);
+    chart.setCrosshair.mockClear();
+    chart.timeScale.pan.mockClear();
+    fire('pointermove', 1, 130, 100);
+    expect(chart.timeScale.pan).toHaveBeenCalledWith(30);
+    expect(chart.setCrosshair).not.toHaveBeenCalled();
+  });
+
+  it('a long-press shows the crosshair and follows the finger', () => {
+    const { chart, fire } = touchSetup();
+    fire('pointerdown', 1, 100, 100);
+    expect(chart.setCrosshair).toHaveBeenLastCalledWith(null, 0, 0);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect(chart.setCrosshair).toHaveBeenLastCalledWith(expect.anything(), 100, 100);
+    chart.timeScale.pan.mockClear();
+    fire('pointermove', 1, 160, 120);
+    expect(chart.setCrosshair).toHaveBeenLastCalledWith(expect.anything(), 160, 120);
+    expect(chart.timeScale.pan).not.toHaveBeenCalled();
+    fire('pointerup', 1, 160, 120);
+    expect(chart.events.emit).not.toHaveBeenCalled();
+  });
+
+  it('a long-press released in place opens the context menu', () => {
+    const { chart, fire } = touchSetup();
+    fire('pointerdown', 1, 100, 100);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    fire('pointerup', 1, 102, 101);
+    expect(chart.events.emit).toHaveBeenCalledWith('contextMenu', { x: 100, y: 100 });
+  });
+
+  it('a long-press on a drawing opens its menu', () => {
+    const { chart, fire } = touchSetup('pane', true);
+    fire('pointerdown', 1, 100, 100);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect(chart.drawingInput.holdPress).toHaveBeenCalled();
+    fire('pointerup', 1, 100, 100);
+    expect(chart.drawingInput.contextMenu).toHaveBeenCalledWith(null, 100, 100);
+    expect(chart.drawingInput.pointerUp).not.toHaveBeenCalled();
+  });
+
+  it('moving before the long-press delay pans instead', () => {
+    const { chart, fire } = touchSetup();
+    fire('pointerdown', 1, 100, 100);
+    fire('pointermove', 1, 140, 100);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    fire('pointerup', 1, 140, 100);
+    expect(chart.timeScale.pan).toHaveBeenCalledWith(40);
+    expect(chart.setCrosshair).not.toHaveBeenCalledWith(expect.anything(), 140, 100);
+    expect(chart.events.emit).not.toHaveBeenCalled();
+  });
+
+  it('a double-tap on the time axis resets the view; touch ignores native dblclick and contextmenu', () => {
+    const { chart, fire, native } = touchSetup('timeAxis');
+    fire('pointerdown', 1, 100, 490);
+    fire('pointerup', 1, 100, 490);
+    expect(chart.resetView).not.toHaveBeenCalled();
+    fire('pointerdown', 1, 104, 492);
+    fire('pointerup', 1, 104, 492);
+    expect(chart.resetView).toHaveBeenCalledTimes(1);
+    native('dblclick');
+    native('contextmenu');
+    expect(chart.resetView).toHaveBeenCalledTimes(1);
+    expect(chart.events.emit).not.toHaveBeenCalled();
+  });
+
+  it('mouse keeps native dblclick and contextmenu and has no long-press', () => {
+    const { chart, fire, native } = touchSetup('priceAxis');
+    fire('pointerdown', 1, 490, 100, 'mouse');
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
+    fire('pointerup', 1, 490, 100, 'mouse');
+    expect(chart.events.emit).not.toHaveBeenCalled();
+    native('dblclick');
+    expect(chart.setAutoScale).toHaveBeenCalledWith('main', true);
+    native('contextmenu');
+    expect(chart.events.emit).toHaveBeenCalledWith('contextMenu', { x: 100, y: 100 });
   });
 });
 

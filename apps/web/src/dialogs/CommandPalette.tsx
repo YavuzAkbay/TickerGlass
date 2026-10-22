@@ -8,6 +8,7 @@ import {
   GitCompareArrows,
   Search,
   SquareFunction,
+  X,
 } from 'lucide-react';
 import {
   useEffect,
@@ -308,6 +309,14 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
           onKeyDown={onKeyDown}
         />
         <kbd className="dlg-esc">Esc</kbd>
+        <button
+          type="button"
+          className="io-icon-btn dlg-palette-close"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <X size={18} />
+        </button>
       </div>
       <div ref={list} id="dlg-palette-list" className="dlg-list dlg-palette-list" role="listbox">
         {entries.length === 0 ? (

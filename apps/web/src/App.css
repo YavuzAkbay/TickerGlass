@@ -2,10 +2,17 @@
    drawing tool rail on the right edge (collapsible to zero width). */
 .app {
   display: grid;
-  grid-template-rows: 36px minmax(0, 1fr);
+  grid-template-rows: var(--bar-h, 36px) minmax(0, 1fr);
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   height: 100vh;
-  background: var(--border);
+  height: 100dvh;
+  /* Notches and the home indicator (viewport-fit=cover): the inset area shows the panel
+     colour, the hairline gaps between grid areas the border colour. All 0 on desktop. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  background:
+    linear-gradient(var(--border), var(--border)) content-box,
+    var(--panel);
   gap: 1px;
 }
 
@@ -224,4 +231,118 @@
 .chart-host {
   position: absolute;
   inset: 0;
+}
+
+/* ---- Phones (keep in sync with MOBILE_QUERY in ui/useMediaQuery.ts) ----
+   The chart takes the full width. The Navigator rail becomes a bottom tab bar (sections plus
+   the drawing tools toggle); its panel and the Inspector open as bottom sheets over the chart;
+   the drawing tool rail is a strip over the chart's right edge, shown from the tab bar. */
+@media (max-width: 768px) {
+  .app,
+  .app.no-inspector {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--bar-h) minmax(0, 1fr) var(--tabbar-h);
+  }
+
+  .center {
+    grid-area: 2 / 1 / 3 / 2;
+  }
+
+  .app-rail,
+  .app.no-inspector .app-rail {
+    grid-area: 2 / 1 / 3 / 2;
+    z-index: 30;
+    justify-self: end;
+    align-self: start;
+    max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-left: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    border-bottom-left-radius: var(--radius-float);
+    box-shadow: var(--shadow);
+  }
+
+  /* Shared by the Navigator and Inspector sheets: covers the chart, not the tab bar. */
+  .sheet-scrim {
+    position: fixed;
+    inset: 0 0 calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    z-index: 40;
+    background: var(--overlay);
+    animation: sheet-fade 160ms ease-out;
+  }
+
+  /* Multi-chart layouts: one chart at a time, switched by tabs above it. */
+  .pane-switcher {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 7;
+    display: flex;
+    gap: 4px;
+    height: 36px;
+    padding: 4px 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chart-stack.with-switcher {
+    top: 36px;
+  }
+
+  /* The tabs already say which chart is shown. */
+  .chart-stack.with-switcher .chart-cell.multi.active::after {
+    display: none;
+  }
+}
+
+.pane-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pane-tab.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.pane-tab-num {
+  font-family: var(--font-num);
+  font-size: var(--font-size-sm);
+}
+
+.pane-tab-sym {
+  max-width: 96px;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
 }

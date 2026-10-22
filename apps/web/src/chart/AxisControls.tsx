@@ -5,6 +5,7 @@ import { useStore } from 'zustand';
 import { applyRangePreset, RANGE_PRESETS } from '../bottombar/ranges';
 import { commands, formatShortcut } from '../commands/registry';
 import { setActiveChart } from '../store/chart';
+import { useIsMobile } from '../ui/useMediaQuery';
 import type { ChartSession } from './session';
 import './axisControls.css';
 
@@ -37,8 +38,11 @@ function useAxisWidth(chart: Chart): number {
   return w;
 }
 
-/** Range presets (and go to date) on the time axis; they show while the pointer is over the chart. */
-function RangeChips({ session }: { session: ChartSession }) {
+/**
+ * Range presets (and go to date) on the time axis; they show while the pointer is over
+ * the chart. On phones they are a scrollable strip under the chart, always visible.
+ */
+function RangeChips({ session, mobile }: { session: ChartSession; mobile: boolean }) {
   const { chart, id } = session;
   const interval = useStore(session.view, (s) => s.interval);
   const [active, setActive] = useState<string | null>(null);
@@ -53,7 +57,7 @@ function RangeChips({ session }: { session: ChartSession }) {
   return (
     <div
       className="ax-ranges"
-      style={{ bottom: TIME_AXIS_H + 6 }}
+      style={mobile ? undefined : { bottom: TIME_AXIS_H + 6 }}
       role="group"
       aria-label="Range presets"
     >
@@ -96,7 +100,7 @@ function RangeChips({ session }: { session: ChartSession }) {
 }
 
 /** Percent, log and auto toggles in the corner where the price and time axes meet. */
-function ScaleCorner({ session }: { session: ChartSession }) {
+function ScaleCorner({ session, mobile }: { session: ChartSession; mobile: boolean }) {
   const { chart, id } = session;
   const width = useAxisWidth(chart);
   const [scale, setScale] = useState({ mode: 'linear', autoScale: true });
@@ -128,7 +132,7 @@ function ScaleCorner({ session }: { session: ChartSession }) {
   return (
     <div
       className="ax-scale"
-      style={{ width, height: TIME_AXIS_H }}
+      style={mobile ? undefined : { width, height: TIME_AXIS_H }}
       role="group"
       aria-label="Price scale"
     >
@@ -139,12 +143,17 @@ function ScaleCorner({ session }: { session: ChartSession }) {
   );
 }
 
-/** Chart controls that sit on the axes instead of a bottom bar. */
+/**
+ * Chart controls that sit on the axes instead of a bottom bar. On phones they move
+ * into a strip below the chart (CSS shrinks the chart host), so they never cover
+ * time labels, event markers or the price axis.
+ */
 export function AxisControls({ session }: { session: ChartSession }) {
+  const mobile = useIsMobile();
   return (
-    <>
-      <RangeChips session={session} />
-      <ScaleCorner session={session} />
-    </>
+    <div className="ax-strip">
+      <RangeChips session={session} mobile={mobile} />
+      <ScaleCorner session={session} mobile={mobile} />
+    </div>
   );
 }

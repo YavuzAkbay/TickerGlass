@@ -2,6 +2,8 @@ import { ChevronRight } from 'lucide-react';
 import { memo, type HTMLAttributes } from 'react';
 import { openContextMenu } from '../../ui/ContextMenu';
 import { promptName } from '../../ui/Prompt';
+import { moveStepTarget } from './moveStep';
+import { useLongPress } from '../../ui/useLongPress';
 import { useWatchlistStore } from '../../watchlist/store';
 import type { Row } from '../../watchlist/types';
 
@@ -27,6 +29,35 @@ interface Props {
 export const SectionRow = memo(
   function SectionRow({ listId, row, dnd, dropPos }: Props) {
     const store = useWatchlistStore.getState;
+    const menu = (x: number, y: number) => {
+      const items = useWatchlistStore.getState().lists[listId]?.items ?? [];
+      const up = moveStepTarget(items, row.index, -1);
+      const down = moveStepTarget(items, row.index, 1);
+      openContextMenu(x, y, [
+        {
+          label: 'Move up',
+          disabled: up === null,
+          onSelect: () => up !== null && store().moveItem(listId, row.index, up),
+        },
+        {
+          label: 'Move down',
+          disabled: down === null,
+          onSelect: () => down !== null && store().moveItem(listId, row.index, down),
+        },
+        { type: 'separator' },
+        { label: 'Rename…', onSelect: () => void renameSection(listId, row) },
+        {
+          label: 'Remove section',
+          onSelect: () => store().removeSection(listId, row.id, true),
+        },
+        {
+          label: 'Remove section and symbols',
+          danger: true,
+          onSelect: () => store().removeSection(listId, row.id, false),
+        },
+      ]);
+    };
+    const press = useLongPress(menu);
     return (
       <div
         role="row"
@@ -39,19 +70,9 @@ export const SectionRow = memo(
         onDoubleClick={() => void renameSection(listId, row)}
         onContextMenu={(e) => {
           e.preventDefault();
-          openContextMenu(e.clientX, e.clientY, [
-            { label: 'Rename…', onSelect: () => void renameSection(listId, row) },
-            {
-              label: 'Remove section',
-              onSelect: () => store().removeSection(listId, row.id, true),
-            },
-            {
-              label: 'Remove section and symbols',
-              danger: true,
-              onSelect: () => store().removeSection(listId, row.id, false),
-            },
-          ]);
+          menu(e.clientX, e.clientY);
         }}
+        {...press}
       >
         <div role="gridcell" className="wl-section-cell">
           <button

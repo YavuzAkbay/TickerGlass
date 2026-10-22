@@ -150,6 +150,100 @@
   );
 }
 
+/* Touch: 40px tabs. */
+@media (pointer: coarse) {
+  .nav-tab {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* ---- Phones: bottom tab bar + bottom sheet ---- */
+.nav-draw-slot {
+  display: none;
+}
+@media (max-width: 768px) {
+  /* The rail column and the panel become grid items / fixed overlays of the app shell. */
+  .navigator {
+    display: contents;
+  }
+  .nav-rail-col {
+    grid-area: 3 / 1 / 4 / -1;
+    flex-direction: row;
+    align-items: stretch;
+    width: auto;
+    min-width: 0;
+    height: var(--tabbar-h);
+    border-right: 0;
+    background: var(--panel);
+  }
+  .nav-desk-slot {
+    align-items: center;
+    padding: 0 4px;
+    border-bottom: 0;
+    border-right: 1px solid var(--border);
+  }
+  .nav-rail {
+    flex-direction: row;
+    justify-content: space-around;
+    min-width: 0;
+    padding: 0 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-rail .nav-tab,
+  .nav-draw {
+    flex: 1 0 40px;
+    width: auto;
+    max-width: 56px;
+    height: 40px;
+    margin: auto 0;
+  }
+  .nav-tab.active::before {
+    left: 8px;
+    right: 8px;
+    top: -4px;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+  .nav-draw-slot {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 4px;
+    border-left: 1px solid var(--border);
+  }
+  .nav-draw {
+    width: 44px;
+  }
+  .nav-rail .nav-tab .rs-icon-badge {
+    top: 2px;
+    right: 2px;
+  }
+
+  .nav-panel.sheet {
+    position: fixed;
+    left: env(safe-area-inset-left);
+    right: env(safe-area-inset-right);
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    z-index: 41;
+    height: min(72dvh, 640px);
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: var(--radius-float) var(--radius-float) 0 0;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    animation: sheet-up 180ms ease-out;
+  }
+  .nav-panel.sheet .nav-head {
+    padding-left: 16px;
+  }
+}
+
 /* Events section */
 .nav-events-next {
   display: flex;

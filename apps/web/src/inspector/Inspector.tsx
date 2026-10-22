@@ -15,6 +15,7 @@ import {
   type InspectorState,
 } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
+import { useIsMobile } from '../ui/useMediaQuery';
 import '../sidebar/sidebar.css';
 import { DrawingSettings } from './DrawingSettings';
 import { IndicatorSettings } from './IndicatorSettings';
@@ -54,6 +55,8 @@ export function Inspector() {
 
 function InspectorBody({ view, id, tab, saveTemplate }: InspectorState) {
   const t = useT();
+  // Phones: a bottom sheet over the chart (full width, no resize handle) with a scrim.
+  const mobile = useIsMobile();
   const width = useUiStore((s) => s.inspectorWidth);
   const setWidth = useUiStore((s) => s.setInspectorWidth);
   const close = useUiStore((s) => s.closeInspector);
@@ -106,48 +109,58 @@ function InspectorBody({ view, id, tab, saveTemplate }: InspectorState) {
   };
 
   return (
-    <aside
-      className="inspector"
-      aria-label={t('inspector.label')}
-      style={{ width }}
-      onKeyDown={onKeyDown}
-    >
-      <div
-        className="inspector-resize"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('inspector.resize')}
-        aria-valuenow={width}
-        aria-valuemin={MIN_INSPECTOR_WIDTH}
-        aria-valuemax={MAX_INSPECTOR_WIDTH}
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onDoubleClick={() => setWidth(DEFAULT_INSPECTOR_WIDTH)}
-        onKeyDown={onResizeKey}
-      />
-      <header className="inspector-head">
-        <h2 className="inspector-title" tabIndex={-1}>
-          {title}
-        </h2>
-        <IconButton icon={X} label={t('inspector.close')} className="rs-head-btn" onClick={close} />
-      </header>
-      <div className="inspector-body">
-        {view === 'symbol' ? (
-          <Details />
-        ) : view === 'indicator' && id ? (
-          <IndicatorSettings key={id} id={id} />
-        ) : drawing ? (
-          <DrawingSettings
-            key={drawing.id}
-            drawing={drawing}
-            initialTab={tab}
-            saveTemplate={!!saveTemplate}
+    <>
+      {mobile ? <div className="sheet-scrim" aria-hidden="true" onClick={close} /> : null}
+      <aside
+        className={`inspector${mobile ? ' sheet' : ''}`}
+        aria-label={t('inspector.label')}
+        style={mobile ? undefined : { width }}
+        onKeyDown={onKeyDown}
+      >
+        {mobile ? null : (
+          <div
+            className="inspector-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('inspector.resize')}
+            aria-valuenow={width}
+            aria-valuemin={MIN_INSPECTOR_WIDTH}
+            aria-valuemax={MAX_INSPECTOR_WIDTH}
+            tabIndex={0}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onDoubleClick={() => setWidth(DEFAULT_INSPECTOR_WIDTH)}
+            onKeyDown={onResizeKey}
           />
-        ) : null}
-      </div>
-    </aside>
+        )}
+        <header className="inspector-head">
+          <h2 className="inspector-title" tabIndex={-1}>
+            {title}
+          </h2>
+          <IconButton
+            icon={X}
+            label={t('inspector.close')}
+            className="rs-head-btn"
+            onClick={close}
+          />
+        </header>
+        <div className="inspector-body">
+          {view === 'symbol' ? (
+            <Details />
+          ) : view === 'indicator' && id ? (
+            <IndicatorSettings key={id} id={id} />
+          ) : drawing ? (
+            <DrawingSettings
+              key={drawing.id}
+              drawing={drawing}
+              initialTab={tab}
+              saveTemplate={!!saveTemplate}
+            />
+          ) : null}
+        </div>
+      </aside>
+    </>
   );
 }

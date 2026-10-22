@@ -256,3 +256,104 @@
 .sc-stats .sh-stat-value {
   color: var(--text);
 }
+
+/* ---- phones: a compact card (ticker, price, change, bar values) that expands on tap ---- */
+.sc-toggle {
+  display: none;
+}
+@media (max-width: 768px) {
+  /* Stay inside the plot: the card never reaches the price axis. */
+  .chart-host .io-legend {
+    right: 6px;
+    left: 6px;
+    top: 4px;
+  }
+  /* A flex row lets the card shrink to the plot width instead of running under the axis. */
+  .chart-host .io-legend-header {
+    display: flex;
+    width: auto;
+  }
+  .sc-card {
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 2px;
+    max-width: 100%;
+    margin-bottom: 4px;
+    padding: 4px 6px 4px 10px;
+    font-size: 12px;
+    white-space: normal;
+  }
+  .sc-card .sc-top {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .sc-card:not(.compact) .sc-top {
+    flex-wrap: wrap;
+  }
+  .sc-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin: -4px 0 -4px auto;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .sc-toggle:hover {
+    background: var(--hover);
+  }
+  .sh-symbol {
+    flex: none;
+    min-height: 28px;
+    font-size: 13px;
+  }
+  .sh-last {
+    font-size: 15px;
+  }
+  .sc-card:not(.compact) .sh-last {
+    font-size: 18px;
+  }
+  .sh-change {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sh-session {
+    padding-left: 0;
+  }
+  .sh-pill {
+    height: 24px;
+    font-size: 11px;
+  }
+  .sc-bar {
+    flex-wrap: nowrap;
+    gap: 3px 8px;
+    margin-top: 2px;
+    padding-top: 4px;
+    overflow: hidden;
+    font-size: 11px;
+  }
+  .sc-bar-item {
+    gap: 2px;
+  }
+  .sc-card:not(.compact) .sc-bar {
+    flex-wrap: wrap;
+  }
+  .sc-card.compact .sc-bar {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .sc-card.compact .sc-bar-interval,
+  .sc-card.compact .sc-bar > .sc-bar-value {
+    display: none;
+  }
+}

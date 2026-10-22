@@ -3,6 +3,7 @@ import { Database, Ellipsis, Eye, EyeOff, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
+import { LegendGroup } from '../chart/LegendGroup';
 import type { ChartSession } from '../chart/session';
 import { openContextMenu } from '../ui/ContextMenu';
 import { DropdownMenu } from '../ui/Menu';
@@ -71,17 +72,19 @@ export function IndicatorLegends({ session }: { session: ChartSession }) {
         if (!slot) return null;
         return createPortal(
           <div className="ind-legend" ref={shieldFromChart}>
-            {list.map((inst) => (
-              <LegendRow
-                key={inst.id}
-                chart={chart}
-                inst={inst}
-                all={instances}
-                index={index}
-                status={status[inst.id]}
-                statusLine={statusLine}
-              />
-            ))}
+            <LegendGroup label="Indicators" count={list.length}>
+              {list.map((inst) => (
+                <LegendRow
+                  key={inst.id}
+                  chart={chart}
+                  inst={inst}
+                  all={instances}
+                  index={index}
+                  status={status[inst.id]}
+                  statusLine={statusLine}
+                />
+              ))}
+            </LegendGroup>
           </div>,
           slot,
           paneId,
@@ -211,7 +214,7 @@ function LegendRow({
         <button
           ref={setMoreBtn}
           type="button"
-          className="ind-legend-btn"
+          className="ind-legend-btn ind-legend-more"
           aria-label="More"
           title="More"
           aria-haspopup="menu"

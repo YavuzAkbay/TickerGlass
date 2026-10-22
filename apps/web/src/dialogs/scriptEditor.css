@@ -184,3 +184,33 @@ button.se-diag:hover {
   padding-left: 20px;
   color: var(--text-muted);
 }
+
+@media (max-width: 768px) {
+  .se-body {
+    flex-direction: column;
+    height: 100%;
+    max-height: none;
+  }
+  .se-side {
+    width: auto;
+    max-height: 30%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .se-script {
+    height: 44px;
+  }
+  .se-toolbar {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+  }
+  .se-editor {
+    min-height: 200px;
+  }
+  .se-text {
+    font-size: 16px;
+  }
+  .se-diags {
+    height: 100px;
+  }
+}

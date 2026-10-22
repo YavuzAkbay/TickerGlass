@@ -106,6 +106,8 @@ export function Menu({ items, onClose, autoFocus = true }: Props) {
             title={it.title}
             className={`io-menu-item${active === i ? ' active' : ''}${it.disabled ? ' disabled' : ''}${it.danger ? ' danger' : ''}`}
             onPointerEnter={(e) => {
+              // Touch taps open submenus through onClick; skip the synthetic hover.
+              if (e.pointerType === 'touch') return;
               setActive(i);
               setOpenSub(it.submenu ? { index: i, el: e.currentTarget } : null);
             }}
@@ -125,6 +127,7 @@ export function Menu({ items, onClose, autoFocus = true }: Props) {
                 anchor={openSub.el}
                 open
                 placement="right-start"
+                sheet
                 onClose={() => setOpenSub(null)}
               >
                 <Menu
@@ -155,7 +158,21 @@ interface DropdownProps {
 /** Menu in a popover anchored to a button. */
 export function DropdownMenu({ anchor, open, onClose, items, placement }: DropdownProps) {
   return (
-    <Popover anchor={anchor} open={open} onClose={onClose} placement={placement} ignore={[anchor]}>
+    <Popover
+      anchor={anchor}
+      open={open}
+      onClose={onClose}
+      placement={placement}
+      ignore={[anchor]}
+      sheet={
+        items.length > 5 ||
+        items.some(
+          (it) =>
+            it.type === 'custom' ||
+            (it.type !== 'separator' && it.type !== 'header' && !!it.submenu),
+        )
+      }
+    >
       <Menu items={items} onClose={onClose} />
     </Popover>
   );
