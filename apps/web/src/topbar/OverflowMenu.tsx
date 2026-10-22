@@ -5,22 +5,34 @@ import {
   GitCompareArrows,
   Keyboard,
   Maximize,
+  Moon,
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
+  Redo2,
+  Rewind,
   Settings,
+  Sun,
+  Undo2,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useHistory } from '../commands/history';
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
+import { useReplayStore } from '../replay/store';
+import { useAppStore } from '../store/app';
 import { useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
 import { firstShortcut, useCommand } from './useCommand';
 
-/** "More" menu: compare, alert, settings, snapshot, fullscreen, shortcuts and the drawing toolbar toggle. */
-export function OverflowMenu() {
+/**
+ * "More" menu: compare, alert, settings, snapshot, fullscreen, shortcuts and the
+ * drawing toolbar toggle. `folded` also takes in the bar buttons that no longer
+ * fit (replay, undo/redo, theme).
+ */
+export function OverflowMenu({ folded = false }: { folded?: boolean }) {
   const t = useT();
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -32,6 +44,15 @@ export function OverflowMenu() {
   const full = firstShortcut(useCommand('view.fullscreen'));
   const keys = firstShortcut(useCommand('view.shortcuts'));
   const rail = firstShortcut(useCommand('view.toggleToolRail'));
+  const replayOn = useReplayStore((s) => s.status !== 'off');
+  const theme = useAppStore((s) => s.theme);
+  const canUndo = useHistory((s) => s.past.length > 0);
+  const canRedo = useHistory((s) => s.future.length > 0);
+  const undoLabel = useHistory((s) => s.past.at(-1)?.label);
+  const redoLabel = useHistory((s) => s.future[0]?.label);
+  const replay = firstShortcut(useCommand('replay.toggle'));
+  const undo = firstShortcut(useCommand('edit.undo'));
+  const redo = firstShortcut(useCommand('edit.redo'));
 
   // Put focus back on the trigger first so a dialog opened by the item records
   // "More" (not the closing menu) as the element to restore focus to.
@@ -44,7 +65,38 @@ export function OverflowMenu() {
   const compare = firstShortcut(useCommand('chart.compare'));
   const alert = firstShortcut(useCommand('alert.create'));
 
+  const foldedItems: MenuItem[] = [
+    {
+      label: t('topbar.replay'),
+      icon: Rewind,
+      checked: replayOn,
+      ...(replay ? { shortcut: replay } : {}),
+      onSelect: run('replay.toggle'),
+    },
+    {
+      label: undoLabel ? t('topbar.undoItem', { label: undoLabel }) : t('topbar.undo'),
+      icon: Undo2,
+      disabled: !canUndo,
+      ...(undo ? { shortcut: undo } : {}),
+      onSelect: run('edit.undo'),
+    },
+    {
+      label: redoLabel ? t('topbar.redoItem', { label: redoLabel }) : t('topbar.redo'),
+      icon: Redo2,
+      disabled: !canRedo,
+      ...(redo ? { shortcut: redo } : {}),
+      onSelect: run('edit.redo'),
+    },
+    {
+      label: theme === 'dark' ? t('topbar.themeLight') : t('topbar.themeDark'),
+      icon: theme === 'dark' ? Sun : Moon,
+      onSelect: run('view.toggleTheme'),
+    },
+    { type: 'separator' },
+  ];
+
   const items: MenuItem[] = [
+    ...(folded ? foldedItems : []),
     {
       label: t('topbar.compare'),
       icon: GitCompareArrows,

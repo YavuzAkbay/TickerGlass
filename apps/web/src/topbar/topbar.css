@@ -84,10 +84,43 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  min-width: 0;
+  /* Set by useFitLevel to the wider group's width. */
+  min-width: var(--tb-side-min, 0);
 }
 .tb-right {
   justify-content: flex-end;
+}
+/* Content-sized: useFitLevel measures these to decide how far to fold. */
+.tb-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ---- fitting a narrow bar (levels set by useFitLevel) ---- */
+.tb-fit1 .tb-collapsible,
+.tb-fit1 .tb-palette-hint,
+.tb-fit2 .tb-label,
+.tb-fit2 .tb-layout-name,
+.tb-fit3 .tb-palette-text {
+  display: none;
+}
+.top-bar.tb-fit3 .tb-palette {
+  flex: none;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  margin: 0 4px;
+  padding: 0;
+}
+/* Even the last level is too wide: scroll rather than overlap. */
+.top-bar.tb-overflow {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.top-bar.tb-overflow .tb-side {
+  flex: 1 0 auto;
 }
 
 /* ---- intervals ---- */
@@ -281,18 +314,6 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 1180px) {
-  .tb-collapsible {
-    display: none;
-  }
-}
-@media (max-width: 980px) {
-  .tb-layout-name,
-  .tb-label {
-    display: none;
-  }
-}
-
 /* ---- chart layout picker ---- */
 .lp-panel {
   padding: 10px 12px;
@@ -369,6 +390,7 @@
   color: var(--muted);
   font-size: var(--font-size-sm);
   cursor: pointer;
+  overflow: hidden;
 }
 .tb-palette:hover {
   border-color: var(--border-strong);
@@ -380,19 +402,18 @@
 }
 .tb-palette-text {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   text-align: left;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tb-palette-hint {
+  flex: none;
   padding: 1px 5px;
   border: 1px solid var(--border);
   border-radius: 4px;
   font: inherit;
   font-size: 11px;
   color: var(--muted);
-}
-@media (max-width: 1180px) {
-  .tb-palette-hint {
-    display: none;
-  }
 }
