@@ -10,3 +10,6 @@ playwright-report/
 
 # Local agent instructions
 CLAUDE.local.md
+
+# Local e2e screenshots
+e2e/.artifacts/

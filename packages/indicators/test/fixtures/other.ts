@@ -10,6 +10,9 @@ export const OTHER_FIXTURES: GroupFixtures = {
   'swing-hl': { sparse: true },
   // Price labels only at pivots (the line itself reaches the last bar).
   zigzag: { sparse: true },
+  // Pattern boundaries and labels end at the completing pivot, at least two
+  // bars before the last (the pivot skeleton never reaches the last bar).
+  'chart-patterns': { sparse: true },
   // Daily and longer bars only; ~4 years so the multi-year average exists.
   seasonality: {
     bars: randomBars(1500, 3, 1_546_387_200, 86_400),

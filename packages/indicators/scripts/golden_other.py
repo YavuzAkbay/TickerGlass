@@ -399,12 +399,310 @@ def vp_cases(out: Cases):
     out.add("vp-session-size", size, "numpy", {"vp": starts})
 
 
+# ------------------------------------------------------------ chart patterns
+
+# Output id of each pattern kind (must mirror src/builtins/chart-patterns.ts).
+PATTERN_LABEL = {
+    "doubleTop": "dblTop",
+    "doubleBottom": "dblBot",
+    "tripleTop": "triTop",
+    "tripleBottom": "triBot",
+    "headShoulders": "hs",
+    "inverseHeadShoulders": "ihs",
+    "ascendingTriangle": "ascTri",
+    "descendingTriangle": "descTri",
+    "symmetricalTriangle": "symTri",
+    "risingWedge": "risWed",
+    "fallingWedge": "falWed",
+    "rectangle": "rect",
+}
+# 0 bearish, 1 bullish, 2 neutral.
+PATTERN_CATEGORY = {
+    "doubleTop": 0,
+    "tripleTop": 0,
+    "headShoulders": 0,
+    "risingWedge": 0,
+    "descendingTriangle": 0,
+    "doubleBottom": 1,
+    "tripleBottom": 1,
+    "inverseHeadShoulders": 1,
+    "fallingWedge": 1,
+    "ascendingTriangle": 1,
+    "symmetricalTriangle": 2,
+    "rectangle": 2,
+}
+PATTERN_MIN_SPAN = 5
+
+
+def rel_diff(a, b):
+    m = (a + b) / 2
+    return abs(a - b) / m * 100 if m != 0 else float("inf")
+
+
+def fit_line(points):
+    """Least-squares line y = intercept + slope * bar (closed form, as the TS)."""
+    n = len(points)
+    sx = sum(p[0] for p in points)
+    sy = sum(p[1] for p in points)
+    sxx = sum(p[0] * p[0] for p in points)
+    sxy = sum(p[0] * p[1] for p in points)
+    denom = n * sxx - sx * sx
+    slope = 0.0 if denom == 0 else (n * sxy - sx * sy) / denom
+    return slope, (sy - slope * sx) / n
+
+
+def line_value(line, bar):
+    return line[1] + line[0] * bar
+
+
+def interp_anchors(points, bar):
+    """Piecewise-linear through the anchors, clamped at the ends."""
+    if bar <= points[0][0]:
+        return points[0][1]
+    if bar >= points[-1][0]:
+        return points[-1][1]
+    for k in range(1, len(points)):
+        if bar <= points[k][0]:
+            a, b = points[k - 1], points[k]
+            return a[1] + (b[1] - a[1]) * (bar - a[0]) / (b[0] - a[0])
+    return points[-1][1]
+
+
+def pattern_window(piv, end, size, max_bars):
+    start = end - size + 1
+    if start < 0:
+        return None
+    w = piv[start : end + 1]
+    start_bar, end_bar = w[0][0], w[-1][0]
+    span = end_bar - start_bar
+    if span < PATTERN_MIN_SPAN or span > max_bars:
+        return None
+    mean_price = sum(p[1] for p in w) / size
+    if not mean_price > 0:
+        return None
+    return w, start_bar, end_bar, mean_price
+
+
+def point_pattern(w, tolerance):
+    wp = w[0]
+    if wp[-1][2] > 0:
+        if len(wp) == 4:
+            if rel_diff(wp[1][1], wp[3][1]) <= tolerance:
+                return "doubleTop", [wp[1], wp[3]], [wp[0], wp[2]]
+            return None
+        h1, h3, h5 = wp[1][1], wp[3][1], wp[5][1]
+        mean_h = (h1 + h3 + h5) / 3
+        if (
+            mean_h > 0
+            and rel_diff(h1, mean_h) <= tolerance
+            and rel_diff(h3, mean_h) <= tolerance
+            and rel_diff(h5, mean_h) <= tolerance
+            and rel_diff(wp[2][1], wp[4][1]) <= tolerance
+        ):
+            return "tripleTop", [wp[1], wp[3], wp[5]], [wp[0], wp[2], wp[4]]
+        if h3 > h1 and h3 > h5 and rel_diff(h1, h5) <= tolerance:
+            return "headShoulders", [wp[1], wp[3], wp[5]], [wp[0], wp[2], wp[4]]
+        return None
+    if len(wp) == 4:
+        if rel_diff(wp[1][1], wp[3][1]) <= tolerance:
+            return "doubleBottom", [wp[0], wp[2]], [wp[1], wp[3]]
+        return None
+    l1, l3, l5 = wp[1][1], wp[3][1], wp[5][1]
+    mean_l = (l1 + l3 + l5) / 3
+    if (
+        mean_l > 0
+        and rel_diff(l1, mean_l) <= tolerance
+        and rel_diff(l3, mean_l) <= tolerance
+        and rel_diff(l5, mean_l) <= tolerance
+        and rel_diff(wp[2][1], wp[4][1]) <= tolerance
+    ):
+        return "tripleBottom", [wp[0], wp[2], wp[4]], [wp[1], wp[3], wp[5]]
+    if l3 < l1 and l3 < l5 and rel_diff(l1, l5) <= tolerance:
+        return "inverseHeadShoulders", [wp[0], wp[2], wp[4]], [wp[1], wp[3], wp[5]]
+    return None
+
+
+def line_pattern(w, tolerance):
+    wp, start_bar, end_bar, mean_price = w
+    highs = [p for p in wp if p[2] > 0]
+    lows = [p for p in wp if p[2] < 0]
+    if len(highs) < 2 or len(lows) < 2:
+        return None
+    fit_high = fit_line(highs)
+    fit_low = fit_line(lows)
+    if line_value(fit_high, start_bar) <= line_value(fit_low, start_bar):
+        return None
+    if line_value(fit_high, end_bar) <= line_value(fit_low, end_bar):
+        return None
+    for p in highs:
+        if abs(p[1] - line_value(fit_high, p[0])) / mean_price * 100 > tolerance:
+            return None
+    for p in lows:
+        if abs(p[1] - line_value(fit_low, p[0])) / mean_price * 100 > tolerance:
+            return None
+    change_high = (
+        abs(line_value(fit_high, highs[-1][0]) - line_value(fit_high, highs[0][0]))
+        / mean_price
+        * 100
+    )
+    change_low = (
+        abs(line_value(fit_low, lows[-1][0]) - line_value(fit_low, lows[0][0])) / mean_price * 100
+    )
+    flat_high = change_high < tolerance
+    flat_low = change_low < tolerance
+    rising_high = not flat_high and fit_high[0] > 0
+    falling_high = not flat_high and fit_high[0] < 0
+    rising_low = not flat_low and fit_low[0] > 0
+    falling_low = not flat_low and fit_low[0] < 0
+    kind = None
+    if flat_high and flat_low:
+        kind = "rectangle"
+    elif flat_high and rising_low:
+        kind = "ascendingTriangle"
+    elif falling_high and flat_low:
+        kind = "descendingTriangle"
+    elif falling_high and rising_low:
+        kind = "symmetricalTriangle"
+    elif rising_high and rising_low and fit_low[0] > fit_high[0]:
+        kind = "risingWedge"
+    elif falling_high and falling_low and fit_high[0] < fit_low[0]:
+        kind = "fallingWedge"
+    if kind is None:
+        return None
+    return kind, highs, lows, fit_high, fit_low
+
+
+def match_chart_pattern(piv, end, tolerance, max_bars):
+    """(kind, high anchors, low anchors, fit high, fit low, start idx, end idx) or None.
+    Reversal patterns take precedence over continuation shapes, larger windows
+    first. Point patterns carry fits of None (anchor interpolation)."""
+    w6 = pattern_window(piv, end, 6, max_bars)
+    if w6 is not None:
+        p = point_pattern(w6, tolerance)
+        if p is not None:
+            return p[0], p[1], p[2], None, None, end - 5, end
+    w4 = pattern_window(piv, end, 4, max_bars)
+    if w4 is not None:
+        p = point_pattern(w4, tolerance)
+        if p is not None:
+            return p[0], p[1], p[2], None, None, end - 3, end
+    for size in (6, 5, 4):
+        w = pattern_window(piv, end, size, max_bars)
+        if w is None:
+            continue
+        p = line_pattern(w, tolerance)
+        if p is not None:
+            return p[0], p[1], p[2], p[3], p[4], end - size + 1, end
+    return None
+
+
+def detect_chart_patterns(piv, tolerance, max_bars):
+    """Full-history detection: one pattern per completing pivot, then windows
+    contained in a longer one are dropped (the final state the indicator draws)."""
+    found = []
+    for end in range(3, len(piv)):
+        m = match_chart_pattern(piv, end, tolerance, max_bars)
+        if m is not None:
+            found.append(m)
+    return [m for m in found if not any(o[6] > m[6] and o[5] <= m[5] for o in found)]
+
+
+def chart_patterns_outputs(bars, deviation, depth, tolerance, max_bars):
+    n = bars.n
+    piv = zigzag_np(bars.high, bars.low, depth, np.full(n, float(deviation)))
+    zz, upper, lower = nans(n), nans(n), nans(n)
+    zz_color = np.zeros(n)
+    upper_color = np.zeros(n)
+    lower_color = np.zeros(n)
+    labels = {pid: nans(n) for pid in PATTERN_LABEL.values()}
+    for j, price, _ in piv:
+        zz[j] = price
+    for kind, highs, lows, fit_high, fit_low, start_idx, end_idx in detect_chart_patterns(
+        piv, tolerance, max_bars
+    ):
+        category = PATTERN_CATEGORY[kind]
+        start_bar, end_bar = piv[start_idx][0], piv[end_idx][0]
+        for j in range(start_bar, end_bar + 1):
+            upper[j] = line_value(fit_high, j) if fit_high is not None else interp_anchors(highs, j)
+            lower[j] = line_value(fit_low, j) if fit_low is not None else interp_anchors(lows, j)
+            upper_color[j] = category
+            lower_color[j] = category
+        for p in piv[start_idx : end_idx + 1]:
+            zz_color[p[0]] = category + 1
+        labels[PATTERN_LABEL[kind]][end_bar] = 1
+    out = {"zz": zz, "zz.color": zz_color, "upper": upper, "upper.color": upper_color,
+           "lower": lower, "lower.color": lower_color}
+    out.update(labels)
+    return out
+
+
+# A deterministic series whose turning points form known patterns: double top,
+# inverse head & shoulders, rising wedges, a double top/bottom pair and a
+# double bottom (piecewise-linear closes, so the ZigZag pivots are exactly the
+# waypoints; every leg reverses by more than the 5% default deviation).
+PATTERN_WAYPOINTS = [
+    (0, 104),
+    (10, 99),
+    (25, 110),
+    (40, 103),
+    (55, 111),
+    (72, 100),
+    (88, 108),
+    (104, 94),
+    (120, 107),
+    (136, 99),
+    (152, 112),
+    (166, 106),
+    (180, 113),
+    (194, 107),
+    (208, 118),
+    (213, 116),
+]
+
+
+def piecewise_bars(file: str, waypoints, step: float) -> Bars:
+    """Wick-less OHLCV following the piecewise-linear close through `waypoints`
+    ([bar, price]); the ZigZag pivots of such a series are exactly its turning
+    points (each confirming `d` bars late)."""
+    n = waypoints[-1][0] + 1
+    close = np.empty(n)
+    for (b0, p0), (b1, p1) in zip(waypoints, waypoints[1:]):
+        close[b0:b1] = p0 + (p1 - p0) * (np.arange(b0, b1) - b0) / (b1 - b0)
+    close[-1] = waypoints[-1][1]
+    open_ = np.empty(n)
+    open_[0] = close[0]
+    open_[1:] = close[:-1]
+    return Bars(
+        file,
+        1_700_000_000 + step * np.arange(n, dtype=np.float64),
+        open_,
+        np.maximum(open_, close),
+        np.minimum(open_, close),
+        close,
+        np.full(n, 1000.0),
+    )
+
+
+PATTERNS = piecewise_bars("bars-patterns.csv", PATTERN_WAYPOINTS, 3600)
+
+
+def chart_patterns_cases(out: Cases):
+    out.add("chart-patterns", {}, "numpy", chart_patterns_outputs(PATTERNS, 5, 10, 3, 150), bars=PATTERNS)
+    out.add(
+        "chart-patterns-hourly",
+        {"deviation": 2, "depth": 8, "tolerance": 2, "maxBars": 100},
+        "numpy",
+        chart_patterns_outputs(HOURLY, 2, 8, 2, 100),
+    )
+
+
 def cases() -> list[Case]:
     out = Cases()
     pivot_cases(out)
     swing_hl_cases(out)
     zigzag_cases(out)
     swing_fib_cases(out)
+    chart_patterns_cases(out)
     linreg_cases(out)
     high_low_cases(out)
     seasonality_cases(out)

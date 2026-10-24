@@ -3,7 +3,12 @@
  * visibility) stored in `/indicator-templates`. Applying one creates fresh
  * instance ids and rewires indicator-on-indicator sources to them.
  */
-import { isOutputRef } from '@tickerglass/indicators';
+import {
+  getIndicator,
+  isOutputRef,
+  isUserScriptType,
+  resolveIndicatorId,
+} from '@tickerglass/indicators';
 import { useHistory } from '../commands/history';
 import { newInstanceId, validateInstances, type IndicatorState } from '../indicators/model';
 import { useIndicatorStore } from '../indicators/store';
@@ -30,6 +35,23 @@ export function parseTemplateInstances(raw: unknown): IndicatorState[] {
 }
 
 /**
+ * The first built-in type of the raw instances this build does not have (a
+ * template from another build). Unlike a restored layout, a template the user
+ * picked deliberately fails loudly instead of silently dropping instances.
+ */
+function unknownType(raw: unknown): string | null {
+  if (!Array.isArray(raw)) return null;
+  for (const v of raw) {
+    if (typeof v !== 'object' || v === null) continue;
+    const t = (v as { type?: unknown }).type;
+    if (typeof t !== 'string') continue;
+    const type = resolveIndicatorId(t);
+    if (!isUserScriptType(type) && getIndicator(type) === undefined) return type;
+  }
+  return null;
+}
+
+/**
  * Put a template on the chart as one undo step: `replace` removes the
  * current indicators first, `add` appends. Returns an error message or null.
  */
@@ -38,6 +60,8 @@ export function applyIndicatorTemplate(
   mode: 'replace' | 'add',
   name: string,
 ): string | null {
+  const unknown = unknownType(instances);
+  if (unknown) return `Unknown indicator "${unknown}"`;
   const incoming = instantiateTemplate(parseTemplateInstances(instances));
   if (!incoming.length) return `Template "${name}" has no indicators`;
   const store = useIndicatorStore.getState();
