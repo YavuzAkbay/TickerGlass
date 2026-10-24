@@ -138,6 +138,12 @@ export function usesEvents(def: AnyIndicatorDefinition, inputs: InputValueMap): 
   return typeof u === 'function' ? u(inputs as InputValues<InputsSchema>) : u === true;
 }
 
+/** Whether an instance with these (resolved) inputs reads `env.fundamentals` (`def.usesFundamentals`). */
+export function usesFundamentals(def: AnyIndicatorDefinition, inputs: InputValueMap): boolean {
+  const u = def.usesFundamentals;
+  return typeof u === 'function' ? u(inputs as InputValues<InputsSchema>) : u === true;
+}
+
 /**
  * Whether a timeframe instance aligns to confirmed (closed) timeframe bars:
  * the timeframe input's `waitForCloseInput` bool is true.

@@ -134,7 +134,8 @@ function LegendRow({
       </span>
     );
   } else if (status?.state === 'waiting') {
-    tail = <span className="ind-legend-muted">Loading {status.symbol ?? status.timeframe}…</span>;
+    const what = 'data' in status ? 'financials' : `${status.symbol ?? status.timeframe ?? ''}`;
+    tail = <span className="ind-legend-muted">Loading {what}…</span>;
   } else if (!statusLine.indicatorValues) {
     tail = null;
   } else {

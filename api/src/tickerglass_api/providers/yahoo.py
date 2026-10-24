@@ -409,15 +409,32 @@ class YahooProvider:
         def fetch() -> tuple[dict[str, Any], list[pd.DataFrame]]:
             t = yf.Ticker(symbol)
             info: dict[str, Any] = t.info or {}
-            return info, [t.income_stmt, t.balance_sheet, t.cashflow]
+            return info, [
+                t.income_stmt,
+                t.balance_sheet,
+                t.cashflow,
+                t.quarterly_income_stmt,
+                t.quarterly_balance_sheet,
+                t.quarterly_cashflow,
+            ]
 
-        info, (income, balance, cashflow) = self._call(fetch, cost=4)
+        info, (income, balance, cashflow, q_income, q_balance, q_cashflow) = self._call(
+            fetch, cost=7
+        )
         statements = {
             "income": _statement(income),
             "balance": _statement(balance),
             "cashflow": _statement(cashflow),
+            "quarterly": {
+                "income": _statement(q_income),
+                "balance": _statement(q_balance),
+                "cashflow": _statement(q_cashflow),
+            },
         }
-        if not info.get("quoteType") and not any(s["periods"] for s in statements.values()):
+        quarterly = statements["quarterly"]
+        all_statements = [statements["income"], statements["balance"], statements["cashflow"],
+                          *quarterly.values()]
+        if not info.get("quoteType") and not any(s["periods"] for s in all_statements):
             raise SymbolNotFound(symbol)
         return {
             "info": {k: _clean(info.get(k)) for k in _INFO_KEYS if info.get(k) is not None},

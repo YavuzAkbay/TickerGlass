@@ -20,6 +20,7 @@ import {
   getIndicator,
   registerIndicator,
   type BarsEvents,
+  type FundamentalsData,
   type InputValueMap,
 } from '@tickerglass/indicators';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -311,6 +312,7 @@ function setup(
     chartType?: () => ChartType;
     dataEpoch?: () => number;
     loadEvents?: ControllerOptions['loadEvents'];
+    loadFundamentals?: ControllerOptions['loadFundamentals'];
   } = {},
 ) {
   const chart = new FakeChart();
@@ -329,6 +331,7 @@ function setup(
     ...(opts.chartType ? { chartType: opts.chartType } : {}),
     ...(opts.dataEpoch ? { dataEpoch: opts.dataEpoch } : {}),
     ...(opts.loadEvents ? { loadEvents: opts.loadEvents } : {}),
+    ...(opts.loadFundamentals ? { loadFundamentals: opts.loadFundamentals } : {}),
   });
   const frame = () => frames.splice(0).forEach((f) => f());
   return { chart, log, ctl, frame, onError };
@@ -503,6 +506,7 @@ describe('IndicatorController', () => {
         intervalSeconds: DAY,
         timeframeSeconds: { '1W': 7 * DAY },
         events: null,
+        fundamentals: null,
       },
     });
     const daily = makeBars(40);
@@ -616,6 +620,79 @@ describe('IndicatorController', () => {
     chart.load(bars);
     await settle();
     expect(loadEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads statements for financial indicators, per symbol, once they are needed', async () => {
+    const bars = makeBars(10);
+    const fund = (revenue: number[]): FundamentalsData => ({
+      quarterly: {
+        income: {
+          periods: [bars.time[0]! - 86_400, bars.time[5]!],
+          rows: { 'Total Revenue': revenue },
+        },
+      },
+    });
+    const responses: Record<string, FundamentalsData | null> = {
+      AAPL: fund([100, 200]),
+      MSFT: null,
+    };
+    const loadFundamentals = vi.fn((symbol: string) => Promise.resolve(responses[symbol] ?? null));
+    const { chart, log, ctl } = setup({ loadFundamentals });
+    const sma = inst('sma', { length: 5 });
+    ctl.sync([sma]);
+    chart.load(bars);
+    await settle();
+    // Only financial indicators need statements.
+    expect(loadFundamentals).not.toHaveBeenCalled();
+
+    const revenue = inst('fin-revenue');
+    ctl.sync([sma, revenue]);
+    await settle();
+    expect(loadFundamentals.mock.calls).toEqual([['AAPL']]);
+    const sent = log.filter((m) => m.type === 'context').at(-1)!;
+    expect(sent).toMatchObject({
+      context: {
+        fundamentals: {
+          quarterly: { income: { periods: [bars.time[0]! - 86_400, bars.time[5]!] } },
+        },
+      },
+    });
+    const study = chart.studies.get(revenue.id)!;
+    expect(useIndicatorRuntime.getState().status[revenue.id]).toEqual({ state: 'ok' });
+    // Forward-filled: bars 5..9 show the second period, the rest the first.
+    expect(study.values.revenue!.slice(0, 5)).toEqual(new Array(5).fill(100));
+    expect(study.values.revenue!.slice(5)).toEqual(new Array(5).fill(200));
+
+    // A symbol without statements computes once and reports the error.
+    chart.symbol = 'MSFT';
+    chart.load(bars);
+    await settle();
+    expect(loadFundamentals.mock.calls).toEqual([['AAPL'], ['MSFT']]);
+    expect(useIndicatorRuntime.getState().status[revenue.id]).toMatchObject({
+      state: 'error',
+      message: /No quarterly revenue/,
+    });
+
+    // Back to statements, then a fetch failure shows on the instance (not
+    // endless "loading"), and the next reset retries it.
+    chart.symbol = 'AAPL';
+    chart.load(bars);
+    await settle();
+    expect(useIndicatorRuntime.getState().status[revenue.id]).toEqual({ state: 'ok' });
+    loadFundamentals.mockRejectedValueOnce(new Error('provider down'));
+    chart.symbol = 'MSFT';
+    chart.load(bars);
+    await settle();
+    expect(useIndicatorRuntime.getState().status[revenue.id]).toMatchObject({
+      state: 'error',
+      message: /Could not load financial statements: provider down/,
+    });
+    chart.load(bars);
+    await settle();
+    expect(useIndicatorRuntime.getState().status[revenue.id]).toMatchObject({
+      state: 'error',
+      message: /No quarterly revenue/,
+    });
   });
 
   it('WorkerCore applies a context sent with bars in one computation', () => {

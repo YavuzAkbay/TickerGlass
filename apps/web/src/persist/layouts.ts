@@ -122,14 +122,21 @@ export function readLayoutCache(storage: SafeStorage): LayoutCache | null {
   };
 }
 
-/** Download `data` as a JSON file. */
-export function downloadJson(data: unknown, filename: string): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+/**
+ * Download `blob` to the machine this browser runs on. Entirely client-side:
+ * nothing is sent to (or stored on) the server.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/** Download `data` as a JSON file. */
+export function downloadJson(data: unknown, filename: string): void {
+  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), filename);
 }
 
 export const safeFileName = (name: string) => name.replace(/[^\w\- .]+/g, '_').trim() || 'layout';

@@ -6,3 +6,6 @@ api
 LICENSE
 CODE_OF_CONDUCT.md
 .claude
+
+# Golden fixtures are generated (scripts/golden*.py); do not reformat.
+packages/indicators/test/golden

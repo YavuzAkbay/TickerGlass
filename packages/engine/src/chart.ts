@@ -60,6 +60,7 @@ import { commonPrefix, diffTail, snapshotSeries, type SeriesSnapshot } from './s
 import { Study } from './studies/study';
 import { StudySeries, type StudyLastValue } from './studies/study-series';
 import type {
+  ChartStudyData,
   LegendSlotKind,
   SeriesChange,
   StudyApi,
@@ -444,6 +445,12 @@ export class Chart implements StudyApi, DrawingApi {
     return formatInterval(this.interval);
   }
 
+  /** Resolved display timezone: an IANA name, 'UTC' or 'local'. */
+  get timezone(): string {
+    const opt = this.options.timezone;
+    return opt === 'exchange' ? (this.symbolInfo?.timezone ?? 'UTC') : opt;
+  }
+
   setSymbol(symbol: string): Promise<void> {
     this.symbol = symbol.trim().toUpperCase();
     return this.load();
@@ -645,6 +652,21 @@ export class Chart implements StudyApi, DrawingApi {
       title: s.study.spec.title,
       visible: s.study.spec.visible,
     }));
+  }
+
+  /** Snapshot of a study's computed data (e.g. for data export): `values` are
+   * live references — read-only. Aligned to the displayed series when
+   * `current` is true (otherwise indices would not line up). */
+  getStudyData(id: string): ChartStudyData | null {
+    const s = this.studies.get(id);
+    if (!s) return null;
+    const st = s.study;
+    return {
+      spec: st.spec,
+      length: st.length,
+      current: st.isCurrent(this._seriesRevision),
+      values: st.values,
+    };
   }
 
   /** Replaces all values. Data computed on an older series revision is ignored. */

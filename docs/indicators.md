@@ -9,8 +9,9 @@ Contract for the indicator framework. Source of truth for types:
 An indicator is a declarative object built with `defineIndicator` (it infers literal input keys and output
 ids, so `step` is fully typed) and registered with `registerIndicator` / looked up with `getIndicator`,
 `listIndicators`. Built-ins register themselves in `src/builtins/index.ts`: the pre-Phase-12 list plus one
-array per Phase 12 group in `src/builtins/groups/{trend-ma,momentum,volume,volatility,other,external}.ts`
-(each indicator in its own `src/builtins/<id>.ts`, imported, listed and exported by its group file).
+array per Phase 12 group in `src/builtins/groups/{trend-ma,momentum,volume,volatility,other,external,financials}.ts`
+(each indicator in its own `src/builtins/<id>.ts`, imported, listed and exported by its group file; the
+financials group's files live in `src/builtins/financials/`, see §1a).
 
 ```ts
 export const SMA = defineIndicator({
@@ -77,6 +78,37 @@ export const SMA = defineIndicator({
   overrides + input-derived hline values and offsets). It is structurally the engine's `StudyOutputMeta`;
   `apps/web/src/indicators/contract.ts` fails typecheck if they drift.
 
+## 1a. Financial statement indicators (`category: 'financials'`)
+
+The Financials built-ins (`src/builtins/financials/`, grouped in `src/builtins/groups/financials.ts`)
+plot per-period line items of the chart symbol's income statement, balance sheet and cash flow:
+revenue, net income, EPS, margins, growth, cash flows, leverage/liquidity ratios and price-mixed
+valuation (P/E, P/S, P/B). They read a second host data channel, `env.fundamentals`, gated by the
+definition flag `usesFundamentals` (a bool or a function of the inputs) — exactly like `usesEvents`:
+
+- Only instances of such definitions receive the statements (env is per-instance), and only they
+  recompute when the statements change; `resolve.ts` exposes `usesFundamentals(def, inputs)`.
+- Until the host provides them the instance reports `{ state: 'waiting', data: 'fundamentals' }`
+  (also inherited by instances sourcing it); statements present but lacking a needed row make the
+  definition throw in `setup`, which surfaces as the instance's error ("No quarterly revenue data
+  for this symbol").
+- `FundamentalsData` carries quarterly and annual `StatementsByPeriod` (`income|balance|cashflow`),
+  each a `StatementData` of fiscal period end dates (unix seconds, ascending) and one value series
+  per provider row label (NaN where missing). Shared helpers live in
+  `src/builtins/financials/common.ts`: row-alias lookup ("Total Revenue" vs "Revenues"), period
+  arithmetic (TTM, year-over-year), cross-statement division, and `valueAt`/alignment.
+- **Alignment**: a bar shows the value of the last fiscal period that ended at or before it
+  (forward-filled step plots; a period's value is assumed known from its period end, though real
+  filings follow weeks later).
+- Hosts without the channel (the alerts service) reject such definitions as alert operands, like
+  `symbol`-input indicators.
+
+The web app loads the chart symbol's statements from `GET /api/fundamentals/{symbol}`
+(`apps/web/src/indicators/fundamentals.ts` converts the API's ISO period ends and nulls) and sends
+them inside the `context` worker message — no protocol changes. The API serves annual statements
+plus `financials.quarterly` from the market data provider (cached 6 h; the demo provider
+synthesises deterministic statements so demo mode works).
+
 ## 2. Compute model and incremental semantics
 
 `setup` runs once per full computation and returns `step(c)`, called for bars `0..n-1` in order with one
@@ -85,7 +117,8 @@ reused context: `c.i`, OHLCV arrays, `c.src.<sourceInput>`, `c.inputs`, `c.env`,
 `timezone` (IANA exchange zone, `'UTC'` when unknown), `session` (`"HHMM-HHMM"` or null) and
 `intervalSeconds` (0 = unknown; timeframe instances get their timeframe's seconds), plus `events`
 (`{dividends, splits, earnings}` unix-second times, sorted) only for definitions that declare `usesEvents`
-(a bool or a function of the inputs); a change of events recomputes only those. Period-anchored
+(a bool or a function of the inputs) and `fundamentals` (quarterly/annual financial statements) only for
+definitions that declare `usesFundamentals` (see §1a); a change of either recomputes only those. Period-anchored
 indicators use `calendarPeriod(time, unit, tz, session)` (`session|week|month|quarter|year|decade|century`;
 `session` = exchange calendar day, or the trading day of a session that wraps midnight, e.g. futures
 18:00-17:00; weeks, months, quarters and years of such a session also start at the session open, so a Sunday

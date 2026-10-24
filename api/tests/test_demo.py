@@ -65,6 +65,52 @@ def test_weekly_resample() -> None:
     assert (gaps >= 6 * 86400).all()
 
 
+def test_fundamentals_statements() -> None:
+    fin = provider().fundamentals("GLSS")["financials"]
+    q = fin["quarterly"]
+    assert len(q["income"]["periods"]) == 8
+    assert q["income"]["periods"] == sorted(q["income"]["periods"])
+    assert q["income"]["periods"][-1] == "2026-03-31"  # last completed quarter of NOW
+    rev = q["income"]["rows"]["Total Revenue"]
+    assert all(r > 0 for r in rev)
+    # EPS agrees with net income over shares; the balance sheet balances.
+    for ni, sh, eps in zip(
+        q["income"]["rows"]["Net Income"],
+        q["income"]["rows"]["Diluted Average Shares"],
+        q["income"]["rows"]["Diluted EPS"],
+        strict=True,
+    ):
+        assert eps == pytest.approx(ni / sh, abs=0.01)
+    for a, e, l in zip(
+        q["balance"]["rows"]["Total Assets"],
+        q["balance"]["rows"]["Stockholders Equity"],
+        q["balance"]["rows"]["Total Liabilities Net Minority Interest"],
+        strict=True,
+    ):
+        assert a == pytest.approx(e + l, abs=1e5)
+    # Free cash flow is operating cash flow plus (negative) capex.
+    for ocf, capex, fcf in zip(
+        q["cashflow"]["rows"]["Operating Cash Flow"],
+        q["cashflow"]["rows"]["Capital Expenditure"],
+        q["cashflow"]["rows"]["Free Cash Flow"],
+        strict=True,
+    ):
+        assert fcf == pytest.approx(ocf + capex, abs=1e5)
+    # Annual income is the sum of that year's quarters.
+    year = fin["income"]["periods"].index("2025-12-31")
+    quarters_2025 = [
+        r for r, p in zip(rev, q["income"]["periods"], strict=True) if p.startswith("2025")
+    ]
+    assert len(quarters_2025) == 4
+    assert fin["income"]["rows"]["Total Revenue"][year] == pytest.approx(
+        sum(quarters_2025), abs=5e5
+    )
+    # Deterministic for the same symbol and day.
+    assert provider().fundamentals("GLSS") == provider().fundamentals("GLSS")
+    # Another symbol has different numbers.
+    assert provider().fundamentals("LENS") != provider().fundamentals("GLSS")
+
+
 def test_app_serves_demo_data(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
     monkeypatch.setenv("MARKET_PROVIDER", "demo")
     get_settings.cache_clear()

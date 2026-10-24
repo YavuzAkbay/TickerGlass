@@ -7,6 +7,7 @@ import {
   sourceRefs,
   timeframeInputValue,
   usesEvents,
+  usesFundamentals,
   waitsForTimeframeClose,
 } from './resolve';
 import type {
@@ -14,6 +15,7 @@ import type {
   BarInput,
   BarsEnv,
   BarsEvents,
+  FundamentalsData,
   IndicatorResult,
   InputValueMap,
   InstanceStatus,
@@ -53,11 +55,12 @@ export interface RuntimeOptions {
  * value). `timeframeSeconds` maps a resolved timeframe ('1W') to its interval
  * for timeframe instances' `env.intervalSeconds` (0 when missing). `events`:
  * the symbol's event times (any order; non-finite times are dropped), null to
- * clear them.
+ * clear them. `fundamentals`: the symbol's financial statements, null to clear.
  */
-export interface RuntimeContext extends Partial<Omit<BarsEnv, 'events'>> {
+export interface RuntimeContext extends Partial<Omit<BarsEnv, 'events' | 'fundamentals'>> {
   timeframeSeconds?: Record<string, number>;
   events?: BarsEvents | null;
+  fundamentals?: FundamentalsData | null;
 }
 
 /** Finite times, sorted ascending, frozen. */
@@ -77,6 +80,14 @@ function sameEvents(a: BarsEvents | undefined, b: BarsEvents | undefined): boole
     sameTimes(a.splits, b.splits) &&
     sameTimes(a.earnings, b.earnings)
   );
+}
+
+/** Same statements keep the old object, so instances using them see no change. */
+function sameFundamentals(
+  a: FundamentalsData | undefined,
+  b: FundamentalsData | undefined,
+): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 interface Node {
@@ -149,33 +160,43 @@ export class IndicatorRuntime {
       // Same times keep the old object, so instances using them see no change.
       if (!sameEvents(events, next)) events = next;
     }
+    let fundamentals = this.env.fundamentals;
+    if (ctx.fundamentals === null) fundamentals = undefined;
+    else if (ctx.fundamentals) {
+      if (!sameFundamentals(fundamentals, ctx.fundamentals)) fundamentals = ctx.fundamentals;
+    }
     this.env = Object.freeze({
       timezone: ctx.timezone ?? this.env.timezone,
       session: ctx.session !== undefined ? ctx.session : this.env.session,
       intervalSeconds: ctx.intervalSeconds ?? this.env.intervalSeconds,
       ...(events ? { events } : {}),
+      ...(fundamentals ? { fundamentals } : {}),
     });
     if (ctx.timeframeSeconds) this.tfSeconds = { ...ctx.timeframeSeconds };
   }
 
   /**
    * Give the node's instance the env for its series; true when it changed.
-   * Events only reach instances that use them, so other instances do not
-   * recompute when the events change.
+   * Events and fundamentals only reach instances that use them, so other
+   * instances do not recompute when they change.
    */
   private syncEnv(node: Node): boolean {
-    const { events, ...base } = this.env;
+    const { events, fundamentals, ...base } = this.env;
     const want: BarsEnv = {
       ...base,
       ...(node.tf ? { intervalSeconds: this.tfSeconds[node.tf] ?? 0 } : {}),
       ...(events && usesEvents(node.inst.def, node.spec.inputs ?? {}) ? { events } : {}),
+      ...(fundamentals && usesFundamentals(node.inst.def, node.spec.inputs ?? {})
+        ? { fundamentals }
+        : {}),
     };
     const cur = node.inst.env;
     if (
       cur.timezone === want.timezone &&
       cur.session === want.session &&
       cur.intervalSeconds === want.intervalSeconds &&
-      cur.events === want.events
+      cur.events === want.events &&
+      cur.fundamentals === want.fundamentals
     )
       return false;
     node.inst.setEnv(Object.freeze(want));
@@ -251,7 +272,10 @@ export class IndicatorRuntime {
     const node = this.nodes.get(id);
     if (!node) return null;
     const symbol = this.waitingSymbol(node);
-    if (symbol !== null) return this.emptyResult(node, symbol);
+    if (symbol !== null)
+      return this.emptyResult(node, { state: 'waiting', timeframe: node.tf, symbol });
+    if (this.waitingFundamentals(node))
+      return this.emptyResult(node, { state: 'waiting', data: 'fundamentals' });
     return node.tf ? (node.aligned ?? this.emptyResult(node)) : node.inst.result();
   }
 
@@ -354,6 +378,22 @@ export class IndicatorRuntime {
       if (sym !== null) return sym;
     }
     return null;
+  }
+
+  /**
+   * True while the instance (or one it reads) needs the financial statements
+   * the host has not provided yet (env.fundamentals absent).
+   */
+  private waitingFundamentals(node: Node, seen = new Set<string>()): boolean {
+    if (seen.has(node.spec.id)) return false;
+    seen.add(node.spec.id);
+    if (!this.env.fundamentals && usesFundamentals(node.inst.def, node.spec.inputs ?? {}))
+      return true;
+    for (const dep of node.deps) {
+      const d = this.nodes.get(dep);
+      if (d && this.waitingFundamentals(d, seen)) return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------- timeframes
@@ -522,7 +562,7 @@ export class IndicatorRuntime {
       }
       node.inst.checkpointAt = checkpointAt;
       if (checkpointAt !== Infinity) forming.set(id, checkpointAt);
-      if (this.waitingSymbol(node) !== null) {
+      if (this.waitingSymbol(node) !== null || this.waitingFundamentals(node)) {
         node.stale = true;
         if (from !== Infinity || bars !== 'none') changed.set(id, 0);
         continue;
@@ -609,13 +649,16 @@ export class IndicatorRuntime {
     return first;
   }
 
-  private emptyResult(node: Node, symbol?: string): IndicatorResult {
+  private emptyResult(node: Node, status?: InstanceStatus): IndicatorResult {
     const values: Record<string, Float64Array> = {};
     const colors: Record<string, Uint8Array> = {};
     for (const id of Object.keys(node.inst.values)) values[id] = new Float64Array(0);
     for (const id of Object.keys(node.inst.colors)) colors[id] = new Uint8Array(0);
-    const status: InstanceStatus = { state: 'waiting', timeframe: node.tf };
-    if (symbol !== undefined) status.symbol = symbol;
-    return { length: 0, values, colors, status };
+    return {
+      length: 0,
+      values,
+      colors,
+      status: status ?? { state: 'waiting', timeframe: node.tf },
+    };
   }
 }

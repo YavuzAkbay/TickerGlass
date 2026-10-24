@@ -26,8 +26,10 @@ import {
   resolveOutputs,
   coerceInputs,
   usesEvents,
+  usesFundamentals,
   type AnyIndicatorDefinition,
   type BarsEvents,
+  type FundamentalsData,
   type InstanceStatus,
   type RuntimeContext,
 } from '@tickerglass/indicators';
@@ -106,6 +108,12 @@ export interface ControllerOptions {
    * events (VWAP anchors). Default: none (such indicators get no events).
    */
   loadEvents?: (symbol: string) => Promise<EventsResponse>;
+  /**
+   * The symbol's financial statements (runtime form, see
+   * ./fundamentals.ts), for indicators that declare `usesFundamentals`.
+   * Default: none (such indicators keep waiting).
+   */
+  loadFundamentals?: (symbol: string) => Promise<FundamentalsData | null>;
   /** Profile the worker (`?perf=1`): performance measures and compute times. Default: off. */
   profile?: boolean;
   /** While profiling: ms the worker spent computing each batch of results. */
@@ -281,6 +289,14 @@ export class IndicatorController {
   private events: BarsEvents | null = null;
   /** Bumped per events request; stale responses are dropped. */
   private eventsToken = 0;
+  /** Symbol whose statements are loaded or loading (null: none requested). */
+  private fundamentalsSymbol: string | null = null;
+  /** Its statements once loaded (sent with the context). */
+  private fundamentals: FundamentalsData | null = null;
+  /** Bumped per statements request; stale responses are dropped. */
+  private fundamentalsToken = 0;
+  /** Why the statements fetch last failed (null: no failure); shown on the reading instances. */
+  private fundamentalsProblem: string | null = null;
 
   constructor(private readonly opts: ControllerOptions) {
     this.chart = opts.chart;
@@ -416,6 +432,7 @@ export class IndicatorController {
       this.applied.set(inst.id, next);
     }
     this.ensureEvents();
+    this.ensureFundamentals();
   }
 
   // ------------------------------------------------------------- instances
@@ -604,6 +621,10 @@ export class IndicatorController {
     // The new symbol's events go out with a later context; the old ones are dropped now.
     if (this.eventsSymbol !== null && this.eventsSymbol !== symbol) this.dropEvents();
     this.ensureEvents();
+    // Same for its financial statements.
+    if (this.fundamentalsSymbol !== null && this.fundamentalsSymbol !== symbol)
+      this.dropFundamentals();
+    this.ensureFundamentals();
     const epoch = this.opts.dataEpoch?.() ?? 0;
     if (epoch !== this.dataEpoch) {
       // Replay started, seeked or stopped: timeframe series hold stale (or future) data.
@@ -674,6 +695,7 @@ export class IndicatorController {
       intervalSeconds: secondsOf(this.chart.getInterval()),
       timeframeSeconds,
       events: this.events,
+      fundamentals: this.fundamentals,
     };
     const key = JSON.stringify(context);
     if (key === this.contextKey) return null;
@@ -722,6 +744,54 @@ export class IndicatorController {
     this.eventsToken++;
     this.eventsSymbol = null;
     this.events = null;
+  }
+
+  /** Some instance reads the symbol's financial statements. */
+  private needsFundamentals(): boolean {
+    return this.list.some((inst) => {
+      const def = getIndicator(inst.type);
+      return def !== undefined && usesFundamentals(def, coerceInputs(def, inst.inputs));
+    });
+  }
+
+  /** Load the chart symbol's statements once an instance needs them; they reach the worker with the context. */
+  private ensureFundamentals(): void {
+    const load = this.opts.loadFundamentals;
+    if (!load || !this.needsFundamentals()) return;
+    const symbol = this.chart.getSymbol();
+    if (symbol === this.fundamentalsSymbol) return;
+    this.dropFundamentals();
+    this.fundamentalsSymbol = symbol;
+    // No statements exist for an expression or spread.
+    if (isExpressionSymbol(symbol)) return;
+    const mine = this.fundamentalsToken;
+    load(symbol).then(
+      (fund) => {
+        if (mine !== this.fundamentalsToken || this.destroyed) return;
+        // A symbol without statements (crypto, FX): an empty object (not null)
+        // so the instances compute once and show their "no data" error
+        // instead of waiting forever.
+        this.fundamentals = fund ?? {};
+        this.fundamentalsProblem = null;
+        this.sendContext();
+      },
+      (err: unknown) => {
+        if (mine !== this.fundamentalsToken || this.destroyed) return;
+        // Provider down or unknown symbol: show why on the instances that read
+        // statements, and forget the symbol so the next chart reset or
+        // indicator change retries (no timer, so no retry loop).
+        this.fundamentalsProblem = `Could not load financial statements: ${errText(err)}`;
+        if (this.fundamentalsSymbol === symbol) this.fundamentalsSymbol = null;
+        this.applyProblems();
+      },
+    );
+  }
+
+  private dropFundamentals(): void {
+    this.fundamentalsToken++;
+    this.fundamentalsSymbol = null;
+    this.fundamentals = null;
+    this.fundamentalsProblem = null;
   }
 
   private dropTimeframes(): void {
@@ -917,11 +987,20 @@ export class IndicatorController {
     if (this.destroyed) return;
     const status: Record<string, InstanceStatus> = {};
     for (const inst of this.list) {
-      const err = this.externalError(inst);
+      const err = this.fundamentalsError(inst) ?? this.externalError(inst);
       if (err) status[inst.id] = err;
     }
     if (Object.keys(status).length)
       this.opts.runtime.setState((s) => ({ status: { ...s.status, ...status } }));
+  }
+
+  /** Error status of an instance whose statements failed to load, else null. */
+  private fundamentalsError(inst: IndicatorState): InstanceStatus | null {
+    if (!this.fundamentalsProblem) return null;
+    const def = getIndicator(inst.type);
+    return def && usesFundamentals(def, coerceInputs(def, inst.inputs))
+      ? { state: 'error', message: this.fundamentalsProblem }
+      : null;
   }
 
   // --------------------------------------------------------------- results
@@ -995,7 +1074,8 @@ export class IndicatorController {
     for (const ch of msg.changes) {
       if (!this.applied.has(ch.id)) continue;
       const inst = this.lookup(ch.id);
-      status[ch.id] = (inst && this.externalError(inst)) || ch.status;
+      status[ch.id] =
+        (inst && (this.fundamentalsError(inst) ?? this.externalError(inst))) || ch.status;
       const { revision, length } = msg;
       this.engine(() => {
         if (ch.from === 0)

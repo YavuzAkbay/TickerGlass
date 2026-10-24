@@ -45,9 +45,23 @@ export interface FundamentalsInfo {
   currency?: string | null;
 }
 
+/** One financial statement: fiscal period end dates (ISO) and a value per line item. */
+export interface FundamentalsStatement {
+  periods: string[];
+  rows: Record<string, (number | null)[]>;
+}
+
+/** Income / balance sheet / cash flow statements of one period basis. */
+export interface FundamentalsStatements {
+  income?: FundamentalsStatement;
+  balance?: FundamentalsStatement;
+  cashflow?: FundamentalsStatement;
+}
+
 export interface Fundamentals {
   info: FundamentalsInfo;
-  financials: unknown;
+  /** Annual statements at the top level, quarterly nested under `quarterly`. */
+  financials: FundamentalsStatements & { quarterly?: FundamentalsStatements };
 }
 
 export interface NewsItem {

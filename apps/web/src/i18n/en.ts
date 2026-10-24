@@ -31,6 +31,8 @@ export const en = {
   'topbar.snapshotOptions': 'Snapshot options',
   'topbar.downloadImage': 'Download image',
   'topbar.copyImage': 'Copy image',
+  'topbar.downloadDataCsv': 'Download data (CSV)',
+  'topbar.downloadDataXlsx': 'Download data (XLSX)',
   'topbar.themeLight': 'Switch to light theme',
   'topbar.themeDark': 'Switch to dark theme',
   'topbar.palette': 'Type a command, ticker or indicator…',

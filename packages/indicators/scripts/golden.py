@@ -36,6 +36,7 @@ import numpy as np
 import talib
 
 import golden_external
+import golden_financials
 import golden_momentum
 import golden_other
 import golden_trend_ma
@@ -547,6 +548,7 @@ GROUPS = (
     golden_volatility,
     golden_other,
     golden_external,
+    golden_financials,
 )
 
 
@@ -556,6 +558,8 @@ def header(c: Case) -> str:
         h += f" bars: {c.bars.file}"
     if c.extra is not None:
         h += f" extra: {c.extra.file}"
+    if c.fund is not None:
+        h += f" fund: {c.fund}"
     return h
 
 
@@ -577,6 +581,8 @@ def main():
         old.unlink()
     for s in series.values():
         write_csv(OUT / s.file, None, s.time, s.columns())
+    for name, data in golden_financials.FUNDAMENTALS.items():
+        (OUT / name).write_text(json.dumps(data, indent=1) + "\n")
     for c in cases:
         write_csv(OUT / f"{c.name}.csv", header(c), c.bars.time, c.outputs)
     print(f"wrote {len(cases)} cases + {len(series)} bar series to {OUT}")

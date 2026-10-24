@@ -618,3 +618,92 @@ describe('external symbols', () => {
     ).toThrow();
   });
 });
+
+describe('financial statements', () => {
+  /** Plots the last quarterly revenue known at each bar (periods are unix seconds). */
+  const FUND = defineIndicator({
+    id: 'test-fund',
+    name: 'Revenue (test)',
+    shortName: 'Rev',
+    category: 'financials',
+    overlay: false,
+    usesFundamentals: true,
+    inputs: {},
+    outputs: [{ type: 'plot', id: 'v', title: 'Revenue', kind: 'step', color: '#36c' }],
+    setup({ env }) {
+      const stmt = env.fundamentals?.quarterly?.income;
+      if (!stmt || !stmt.periods.length) throw new Error('No quarterly income statement data');
+      const rows = stmt.rows['Total Revenue']!;
+      const periods = stmt.periods;
+      return (c) => {
+        let v = NaN;
+        for (let k = periods.length - 1; k >= 0; k--)
+          if (periods[k]! <= c.time[c.i]!) {
+            v = rows[k]!;
+            break;
+          }
+        c.set('v', v);
+      };
+    },
+  });
+
+  const reg = () => {
+    const r = registry();
+    r.register(FUND);
+    return r;
+  };
+  const fund = (revenue: number[]) => ({
+    quarterly: {
+      income: {
+        periods: [1_699_000_000, 1_700_500_000],
+        rows: { 'Total Revenue': revenue },
+      },
+    },
+  });
+  const make = (): IndicatorRuntime => {
+    const rt = new IndicatorRuntime({ registry: reg() });
+    rt.add({ id: 'rev', type: 'test-fund' });
+    rt.add({
+      id: 'rev-ma',
+      type: 'sma',
+      inputs: { length: 3, source: { instanceId: 'rev', outputId: 'v' } },
+    });
+    rt.add({ id: 'plain', type: 'sma', inputs: { length: 4 } });
+    rt.setBars(randomBars(50, 7));
+    return rt;
+  };
+
+  it('waits for statements, together with instances that read it, while others run', () => {
+    const rt = make();
+    expect(rt.status('rev')).toEqual({ state: 'waiting', data: 'fundamentals' });
+    expect(rt.status('rev-ma')).toEqual({ state: 'waiting', data: 'fundamentals' });
+    expect(rt.status('plain')).toEqual({ state: 'ok' });
+  });
+
+  it('computes once the statements arrive and recomputes only users when they change', () => {
+    const rt = make();
+    const ch = rt.setContext({ fundamentals: fund([10, 20]) });
+    // Bars sit between the two periods: every bar shows the older value.
+    expect(ch.map((c) => c.id).sort()).toEqual(['rev', 'rev-ma']);
+    expect(rt.status('rev')).toEqual({ state: 'ok' });
+    const res = rt.result('rev')!;
+    expect(res.values['v']!.subarray(0, res.length).every((v) => v === 10)).toBe(true);
+    // Same content in a new object: no recompute at all.
+    expect(rt.setContext({ fundamentals: fund([10, 20]) })).toEqual([]);
+    // New values: users recompute, the plain SMA does not.
+    const upd = rt.setContext({ fundamentals: fund([15, 20]) });
+    expect(upd.map((c) => c.id).sort()).toEqual(['rev', 'rev-ma']);
+    const upd2 = rt.result('rev')!;
+    expect(upd2.values['v']!.subarray(0, upd2.length).every((v) => v === 15)).toBe(true);
+  });
+
+  it('clears with null and reports statements without the needed data as an error', () => {
+    const rt = make();
+    rt.setContext({ fundamentals: fund([10, 20]) });
+    expect(rt.status('rev')).toEqual({ state: 'ok' });
+    rt.setContext({ fundamentals: null });
+    expect(rt.status('rev')).toEqual({ state: 'waiting', data: 'fundamentals' });
+    rt.setContext({ fundamentals: { quarterly: {} } });
+    expect(rt.status('rev')).toMatchObject({ state: 'error', message: /No quarterly income/ });
+  });
+});

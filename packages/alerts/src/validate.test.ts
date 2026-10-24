@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { IndicatorRegistry, SMA } from '@tickerglass/indicators';
+import { IndicatorRegistry, REVENUE, SMA } from '@tickerglass/indicators';
 import { describe, expect, it } from 'vitest';
 import { validateAlert, type DrawingInfo, type ValidationCode } from './validate';
 
@@ -287,6 +287,7 @@ describe('indicators that alerts cannot evaluate', () => {
     shortName: 'CC',
     inputs: { symbol: { kind: 'symbol', label: 'Symbol', default: 'GOOG' } },
   });
+  registry.register(REVENUE);
 
   const withLeft = (instances: unknown[], instanceId: string, outputId: string) => {
     const b = base();
@@ -348,6 +349,18 @@ describe('indicators that alerts cannot evaluate', () => {
         'spec.left.ref.instances.0.inputs.source',
         'reference',
         "sources on another symbol ('sym:GOOG') are not supported in alerts",
+      ],
+    ]);
+  });
+
+  it('rejects financial statement indicators', () => {
+    expect(
+      errors(withLeft([{ id: 'r', type: 'fin-revenue', inputs: {} }], 'r', 'revenue')),
+    ).toEqual([
+      [
+        'spec.left.ref.instances.0.inputs',
+        'unsupported_indicator',
+        'Revenue needs financial statements, which alerts do not have',
       ],
     ]);
   });

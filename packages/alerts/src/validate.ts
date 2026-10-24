@@ -12,6 +12,7 @@ import {
   isOutputRef,
   resolveInputs,
   usesEvents,
+  usesFundamentals,
   type IndicatorRegistry,
   type InputValueMap,
 } from '@tickerglass/indicators';
@@ -576,6 +577,14 @@ function checkRegistry(
           `${inst.path}.inputs`,
           'unsupported_indicator',
           `${def.name} with these inputs needs dividend, split or earnings events, which alerts do not have`,
+        );
+        defsOk = false;
+      }
+      if (usesFundamentals(def, resolved)) {
+        c.err(
+          `${inst.path}.inputs`,
+          'unsupported_indicator',
+          `${def.name} needs financial statements, which alerts do not have`,
         );
         defsOk = false;
       }
