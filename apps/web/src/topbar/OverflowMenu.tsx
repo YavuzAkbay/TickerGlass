@@ -48,6 +48,8 @@ export function OverflowMenu({ folded = false }: { folded?: boolean }) {
   const settings = firstShortcut(useCommand('chart.settings'));
   const snap = firstShortcut(useCommand('chart.screenshot'));
   const snapCopy = firstShortcut(useCommand('chart.screenshot.copy'));
+  const dataCsv = firstShortcut(useCommand('chart.exportCSV'));
+  const dataXlsx = firstShortcut(useCommand('chart.exportXLSX'));
   const full = firstShortcut(useCommand('view.fullscreen'));
   const keys = firstShortcut(useCommand('view.shortcuts'));
   const rail = firstShortcut(useCommand('view.toggleToolRail'));
@@ -180,6 +182,17 @@ export function OverflowMenu({ folded = false }: { folded?: boolean }) {
           label: t('topbar.copyImage'),
           ...(snapCopy ? { shortcut: snapCopy } : {}),
           onSelect: run('chart.screenshot.copy'),
+        },
+        { type: 'separator' },
+        {
+          label: t('topbar.downloadDataCsv'),
+          ...(dataCsv ? { shortcut: dataCsv } : {}),
+          onSelect: run('chart.exportCSV'),
+        },
+        {
+          label: t('topbar.downloadDataXlsx'),
+          ...(dataXlsx ? { shortcut: dataXlsx } : {}),
+          onSelect: run('chart.exportXLSX'),
         },
       ],
     },

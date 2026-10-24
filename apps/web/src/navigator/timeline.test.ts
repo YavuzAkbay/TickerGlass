@@ -1,6 +1,6 @@
 import type { AlertLogEntry } from '@tickerglass/alerts';
 import { describe, expect, it } from 'vitest';
-import { alertRows, buildTimeline, eventRows, newsRows, TIMELINE_DAYS } from './timeline';
+import { alertRows, buildTimeline, eventRows, newsRows, TIMELINE_DAYS } from './timeline-rows';
 
 const NOW = 1_800_000_000;
 const DAY = 86_400;

@@ -1,4 +1,5 @@
 import { EXTERNAL_FIXTURES } from './external';
+import { FINANCIALS_FIXTURES } from './financials';
 import { MOMENTUM_FIXTURES } from './momentum';
 import { OTHER_FIXTURES } from './other';
 import { TREND_MA_FIXTURES } from './trend-ma';
@@ -15,6 +16,7 @@ const GROUPS: readonly GroupFixtures[] = [
   VOLUME_GROUP_FIXTURES,
   OTHER_FIXTURES,
   EXTERNAL_FIXTURES,
+  FINANCIALS_FIXTURES,
 ];
 
 /** Every group's fixtures by indicator id (an id may appear in one group only). */

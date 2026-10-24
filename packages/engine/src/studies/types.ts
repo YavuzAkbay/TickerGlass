@@ -218,6 +218,15 @@ export interface StudyDataPatch {
   colors: Record<string, Uint8Array>;
 }
 
+/** Snapshot of a study's computed data (e.g. for data export). */
+export interface ChartStudyData {
+  spec: StudySpec;
+  length: number;
+  /** The data is aligned to the current displayed series (`chart.seriesRevision`). */
+  current: boolean;
+  values: Record<string, Float64Array>;
+}
+
 /** Style tweaks for one output (Style tab); unknown fields for the type are ignored. */
 export interface StudyOutputStylePatch {
   visible?: boolean;

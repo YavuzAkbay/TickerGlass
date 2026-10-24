@@ -25,6 +25,7 @@ import { VWMA } from './vwma';
 import { WILLIAMS_R } from './williams-r';
 import { WMA } from './wma';
 import { EXTERNAL } from './groups/external';
+import { FINANCIALS } from './groups/financials';
 import { MOMENTUM } from './groups/momentum';
 import { OTHER } from './groups/other';
 import { TREND_MA } from './groups/trend-ma';
@@ -63,6 +64,7 @@ export type { MaType } from './common';
 export { anchorPeriod, VWAP_ANCHORS, VWAP_EVENT_ANCHORS } from './vwap';
 export type { VwapAnchor, VwapEventAnchor } from './vwap';
 export * from './groups/external';
+export * from './groups/financials';
 export * from './groups/momentum';
 export * from './groups/other';
 export * from './groups/trend-ma';
@@ -117,6 +119,7 @@ export const BUILTIN_INDICATORS: readonly AnyIndicatorDefinition[] = [
   ...VOLATILITY,
   ...OTHER,
   ...EXTERNAL,
+  ...FINANCIALS,
 ];
 
 for (const def of BUILTIN_INDICATORS) defaultRegistry.register(def);

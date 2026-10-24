@@ -3,6 +3,8 @@ import {
   Camera,
   Database,
   Expand,
+  FileSpreadsheet,
+  FileText,
   Keyboard,
   Moon,
   Redo2,
@@ -13,12 +15,22 @@ import {
 } from 'lucide-react';
 import { useAlerts } from '../alerts/store';
 import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
+import { errorMessage } from '../api/client';
 import { changeScale, toggleScaleMode } from './scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
 import { activeChartId, syncBus } from '../layout/sync';
+import {
+  buildTable,
+  dataFilename,
+  exportInputFromChart,
+  isIntradayInterval,
+  makeTimeFormatter,
+  toCsv,
+} from '../chart/exportData';
 import { composeScreenshot, screenshotFilename } from '../chart/screenshot';
 import { leaves } from '../layout/grid';
 import { useLayoutGrid } from '../layout/store';
+import { downloadBlob } from '../persist/layouts';
 import { getChart, useChartStore } from '../store/chart';
 import { normalizeSymbol, useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
@@ -30,6 +42,8 @@ import { commands, type Command } from './registry';
 /** Longest main-chart symbol: drawings and notes store it in a String(32) column. */
 export const MAX_CHART_SYMBOL = 32;
 export const TOO_LONG_FOR_CHART = `Too long for a chart symbol (max ${MAX_CHART_SYMBOL}), add it with Compare instead`;
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const hasChart = () => !!getChart();
 /** Undo/redo would fight an ongoing drawing drag or the open text editor. */
@@ -72,6 +86,39 @@ export async function saveScreenshot(copy: boolean, layout = false): Promise<voi
   a.download = screenshotFilename(first.getSymbol(), first.getInterval(), now);
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/**
+ * Export the active chart's data (displayed series plus every attached
+ * study's plot columns) as CSV or XLSX. Generated and downloaded entirely in
+ * this browser: a self-hosted server is never contacted, so the file always
+ * lands on the machine the chart is open on.
+ */
+export async function exportChartData(format: 'csv' | 'xlsx'): Promise<void> {
+  const chart = getChart();
+  if (!chart) return;
+  try {
+    const input = exportInputFromChart(chart);
+    if (!input) {
+      toast('No data to export');
+      return;
+    }
+    const table = buildTable(input);
+    const fmtTime = makeTimeFormatter(chart.timezone, isIntradayInterval(chart.getInterval()));
+    const filename = dataFilename(chart.getSymbol(), chart.getInterval(), format, new Date());
+    if (format === 'csv') {
+      // BOM: Excel reads UTF-8 CSV correctly only with it.
+      const csv = '\uFEFF' + toCsv(table, fmtTime);
+      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), filename);
+    } else {
+      const { buildXlsx } = await import('../chart/xlsx');
+      const bytes = buildXlsx(table, fmtTime, chart.getSymbol());
+      downloadBlob(new Blob([bytes], { type: XLSX_MIME }), filename);
+    }
+    toast(`Exported ${table.n.toLocaleString()} bars to ${filename}`, 'success');
+  } catch (err) {
+    toast(`Chart data export failed: ${errorMessage(err)}`, 'error');
+  }
 }
 
 const PANELS: [NavSection | 'details', string][] = [
@@ -235,6 +282,22 @@ export function registerCoreCommands(): () => void {
       icon: Camera,
       enabled: hasChart,
       run: () => saveScreenshot(true, true),
+    },
+    {
+      id: 'chart.exportCSV',
+      title: 'Download chart data (CSV)',
+      category: 'Chart',
+      icon: FileText,
+      enabled: hasChart,
+      run: () => exportChartData('csv'),
+    },
+    {
+      id: 'chart.exportXLSX',
+      title: 'Download chart data (XLSX)',
+      category: 'Chart',
+      icon: FileSpreadsheet,
+      enabled: hasChart,
+      run: () => exportChartData('xlsx'),
     },
     {
       id: 'view.fullscreen',

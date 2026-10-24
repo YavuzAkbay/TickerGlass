@@ -26,7 +26,7 @@ import {
   newsRows,
   type TimelineKind,
   type TimelineRow,
-} from './timeline';
+} from './timeline-rows';
 
 const TWO_MIN = 2 * 60 * 1000;
 const MAX_WATCHLIST_SYMBOLS = 10;

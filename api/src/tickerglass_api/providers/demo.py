@@ -352,10 +352,9 @@ class DemoProvider:
 
     def fundamentals(self, symbol: str) -> dict[str, Any]:
         info = self.symbol_info(symbol)
-        empty: dict[str, Any] = {"periods": [], "rows": {}}
         return {
             "info": {"longName": info["name"], "quoteType": "EQUITY", "currency": "USD"},
-            "financials": {"income": empty, "balance": empty, "cashflow": empty},
+            "financials": _demo_statements(symbol, self._clock().date()),
         }
 
 
@@ -376,6 +375,185 @@ def _resample(frame: pd.DataFrame, interval: str) -> pd.DataFrame:
     agg = agg.dropna(subset=["open"])
     agg["ts"] = [int(t.timestamp()) for t in agg.index]
     return agg.reset_index(drop=True)[BAR_COLUMNS]
+
+
+def _quarter_end(y: int, q: int) -> date:
+    """Calendar end date of year `y` quarter `q` (1..4)."""
+    return (date(y, 3 * q + 1, 1) if q < 4 else date(y + 1, 1, 1)) - timedelta(days=1)
+
+
+def _last_completed_quarter(today: date) -> tuple[int, int]:
+    """Year and quarter (1..4) of the latest quarter that ended on or before `today`."""
+    q = (today.month - 1) // 3  # 0-based quarter today is in
+    if today == _quarter_end(today.year, q + 1):
+        return today.year, q + 1
+    if q == 0:
+        return today.year - 1, 4
+    return today.year, q
+
+
+# How many statements to report.
+DEMO_QUARTERS = 8
+DEMO_YEARS = 4
+# The model starts in 2005 Q4 so annual aggregation always has full years.
+_MODEL_START = (2005, 4)
+
+
+def _demo_statements(symbol: str, today: date) -> dict[str, Any]:
+    """Deterministic, internally consistent demo statements (see the module docstring).
+
+    One seeded model per symbol generates every quarter from a fixed start, so a
+    calendar quarter always gets the same numbers; annual periods aggregate the
+    year's quarters (balance sheet: the Q4 snapshot). Rows use the same labels
+    the real provider reports so consumers treat both alike.
+    """
+    sym = symbol.upper()
+    rng = np.random.default_rng(_seed(sym, "fundamentals"))
+    base_rev = float(rng.uniform(1.5e9, 7e9))
+    growth = float(rng.uniform(0.005, 0.02))
+    gross_m = float(rng.uniform(0.35, 0.50))
+    op_m = gross_m * float(rng.uniform(0.55, 0.80))
+    net_m = op_m * float(rng.uniform(0.60, 0.85))
+    ocf_factor = float(rng.uniform(1.05, 1.30))
+    capex_m = float(rng.uniform(0.02, 0.06))
+    shares0 = float(rng.uniform(0.8e9, 2.5e9))
+    debt_ratio = float(rng.uniform(0.3, 0.9))  # of annualised revenue
+    cash_qs = float(rng.uniform(1.0, 2.5))  # quarters of revenue held in cash
+    cur_ratio = float(rng.uniform(1.2, 2.4))
+    equity0 = base_rev * 4 * float(rng.uniform(0.8, 1.6))
+
+    def wobble(ordinal: int, key: str, spread: float) -> float:
+        r = np.random.default_rng(_seed(sym, key, ordinal))
+        return float(r.normal(1.0, spread))
+
+    end_y, end_q = _last_completed_quarter(today)
+    start_ordinal = _MODEL_START[0] * 4 + _MODEL_START[1] - 1
+    end_ordinal = end_y * 4 + end_q - 1
+
+    income: list[dict[str, float]] = []
+    cashflow: list[dict[str, float]] = []
+    balance: list[dict[str, float]] = []
+    equity = equity0
+    for ordinal in range(start_ordinal, end_ordinal + 1):
+        y, q = divmod(ordinal, 4)
+        q += 1
+        revenue = base_rev * (1 + growth) ** (ordinal - start_ordinal) * wobble(
+            ordinal, "rev", 0.04
+        )
+        gross = revenue * gross_m * wobble(ordinal, "gross", 0.02)
+        operating = revenue * op_m * wobble(ordinal, "op", 0.05)
+        net = revenue * net_m * wobble(ordinal, "net", 0.07)
+        shares = shares0 * 0.998 ** (ordinal - start_ordinal) * wobble(ordinal, "sh", 0.002)
+        ocf = net * ocf_factor * wobble(ordinal, "ocf", 0.06)
+        capex = -revenue * capex_m * wobble(ordinal, "capex", 0.1)
+        equity += net  # no dividends modelled
+        annual_rev = revenue * 4
+        cash = cash_qs * revenue * wobble(ordinal, "cash", 0.03)
+        debt = debt_ratio * annual_rev * wobble(ordinal, "debt", 0.02)
+        assets = equity + debt + annual_rev * 0.35
+        current_assets = cash + assets * 0.22
+        current_liab = current_assets / cur_ratio
+        income.append(
+            {
+                "Total Revenue": revenue,
+                "Cost Of Revenue": -(revenue - gross),
+                "Gross Profit": gross,
+                "Operating Expense": -(gross - operating),
+                "Operating Income": operating,
+                "Net Income": net,
+                "Diluted Average Shares": shares,
+                "Basic Average Shares": shares,
+                "Diluted EPS": net / shares,
+                "Basic EPS": net / shares,
+            }
+        )
+        balance.append(
+            {
+                "Total Assets": assets,
+                "Current Assets": current_assets,
+                "Cash And Cash Equivalents": cash,
+                "Current Liabilities": current_liab,
+                "Total Liabilities Net Minority Interest": assets - equity,
+                "Total Debt": debt,
+                "Net Debt": debt - cash,
+                "Stockholders Equity": equity,
+                "Ordinary Shares Number": shares,
+            }
+        )
+        cashflow.append(
+            {
+                "Operating Cash Flow": ocf,
+                "Capital Expenditure": capex,
+                "Free Cash Flow": ocf + capex,
+            }
+        )
+
+    def period(d: date) -> str:
+        return d.isoformat()
+
+    def statement(
+        periods: list[date], rows: list[dict[str, float]], keys: list[str]
+    ) -> dict[str, Any]:
+        # Money to the nearest 100k, shares to the nearest thousand, EPS exact.
+        def value(key: str, v: float) -> float:
+            if "Shares" in key or key == "Ordinary Shares Number":
+                return round(v / 1e3) * 1e3
+            if "EPS" in key:
+                return round(v, 3)
+            return round(v / 1e5) * 1e5
+
+        return {
+            "periods": [period(d) for d in periods],
+            "rows": {k: [value(k, r[k]) for r in rows] for k in keys},
+        }
+
+    income_keys = list(income[0])
+    balance_keys = list(balance[0])
+    cashflow_keys = list(cashflow[0])
+
+    def to_period(ordinal: int) -> date:
+        y, q0 = divmod(ordinal, 4)
+        return _quarter_end(y, q0 + 1)
+
+    quarterly_periods = [
+        to_period(ordinal)
+        for ordinal in range(end_ordinal - DEMO_QUARTERS + 1, end_ordinal + 1)
+    ]
+    annual_periods: list[date] = []
+    annual_income: list[dict[str, float]] = []
+    annual_balance: list[dict[str, float]] = []
+    annual_cashflow: list[dict[str, float]] = []
+    for year in range(end_y - DEMO_YEARS + 1, end_y + 1):
+        idxs = range(year * 4 - start_ordinal, year * 4 + 4 - start_ordinal)
+        rows = list(idxs)
+        if rows[0] < 0 or rows[-1] >= len(income):
+            continue  # outside the model (cannot happen with the fixed start)
+        annual_periods.append(_quarter_end(year, 4))
+        annual_income.append(
+            {
+                k: (sum(income[i][k] for i in rows) if "EPS" not in k and "Shares" not in k
+                    else float(np.mean([income[i][k] for i in rows])))
+                for k in income_keys
+            }
+        )
+        # EPS of the year is its net income over its average shares, not the
+        # mean of quarterly EPS (quarters have different share counts).
+        for row in annual_income:
+            row["Diluted EPS"] = row["Net Income"] / row["Diluted Average Shares"]
+            row["Basic EPS"] = row["Diluted EPS"]
+        annual_balance.append({k: balance[rows[-1]][k] for k in balance_keys})
+        annual_cashflow.append({k: sum(cashflow[i][k] for i in rows) for k in cashflow_keys})
+
+    return {
+        "income": statement(annual_periods, annual_income, income_keys),
+        "balance": statement(annual_periods, annual_balance, balance_keys),
+        "cashflow": statement(annual_periods, annual_cashflow, cashflow_keys),
+        "quarterly": {
+            "income": statement(quarterly_periods, income[-DEMO_QUARTERS:], income_keys),
+            "balance": statement(quarterly_periods, balance[-DEMO_QUARTERS:], balance_keys),
+            "cashflow": statement(quarterly_periods, cashflow[-DEMO_QUARTERS:], cashflow_keys),
+        },
+    }
 
 
 class DemoLiveSource:

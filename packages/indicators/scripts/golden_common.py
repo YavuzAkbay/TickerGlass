@@ -258,7 +258,8 @@ class Case:
     """One golden CSV `<name>.csv`: inputs, reference kind and expected outputs.
 
     `outputs` keys are output ids (`<id>.color` = palette index) with one value
-    per bar of `bars`. `extra` is a second series aligned to `bars`.
+    per bar of `bars`. `extra` is a second series aligned to `bars`. `fund` is
+    the statements fixture JSON the case needs (see golden_financials.py).
     """
 
     name: str
@@ -267,6 +268,7 @@ class Case:
     outputs: dict[str, np.ndarray]
     bars: Bars = HOURLY
     extra: Bars | None = None
+    fund: str | None = None
 
 
 class Cases:
@@ -275,12 +277,21 @@ class Cases:
     def __init__(self) -> None:
         self.items: list[Case] = []
 
-    def add(self, name, inputs, ref, outputs, bars: Bars = HOURLY, extra: Bars | None = None):
+    def add(
+        self,
+        name,
+        inputs,
+        ref,
+        outputs,
+        bars: Bars = HOURLY,
+        extra: Bars | None = None,
+        fund: str | None = None,
+    ):
         for k, v in outputs.items():
             assert len(v) == bars.n, f"{name}.{k}: {len(v)} values for {bars.n} bars"
         if extra is not None:
             assert extra.n == bars.n and (extra.time == bars.time).all(), f"{name}: extra not aligned"
-        self.items.append(Case(name, inputs, ref, outputs, bars, extra))
+        self.items.append(Case(name, inputs, ref, outputs, bars, extra, fund))
 
 
 # --------------------------------------------------------------- output

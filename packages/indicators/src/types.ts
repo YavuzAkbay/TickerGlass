@@ -470,7 +470,14 @@ export type OutputStyleOverrides = Record<string, OutputStyleOverride>;
 // ------------------------------------------------------------- definition
 
 export type IndicatorCategory =
-  'movingAverage' | 'trend' | 'momentum' | 'volatility' | 'volume' | 'bands' | 'other';
+  | 'movingAverage'
+  | 'trend'
+  | 'momentum'
+  | 'volatility'
+  | 'volume'
+  | 'bands'
+  | 'other'
+  | 'financials';
 
 /** How values are formatted on the axis and legend. 'inherit' = symbol price format. */
 export type ValueFormat = 'inherit' | 'price' | 'volume' | 'percent';
@@ -518,6 +525,13 @@ export interface IndicatorDefinition<
    */
   usesEvents?: FromInputs<S, boolean>;
   /**
+   * The values read `env.fundamentals` (financial statement indicators).
+   * Only such instances receive the chart symbol's statements, and only they
+   * recompute when they change; until the host provides them the instance is
+   * 'waiting'. Omit for false.
+   */
+  usesFundamentals?: FromInputs<S, boolean>;
+  /**
    * Called once per full computation. Create every stateful primitive here
    * through `ctx.ta`; never keep mutable state in closure variables (it would
    * not be rewound when the last bar is re-run). Returns the per-bar step.
@@ -550,6 +564,12 @@ export interface BarsEnv {
    * Absent = unknown (no events loaded, or a host without them).
    */
   events?: BarsEvents;
+  /**
+   * Financial statements of the symbol (quarterly and annual), only for
+   * definitions that declare `usesFundamentals`. Absent = not loaded yet (the
+   * instance waits) or a host without them.
+   */
+  fundamentals?: FundamentalsData;
 }
 
 /** Event times by kind (unix seconds, sorted ascending). */
@@ -557,6 +577,30 @@ export interface BarsEvents {
   readonly dividends: readonly number[];
   readonly splits: readonly number[];
   readonly earnings: readonly number[];
+}
+
+/**
+ * One financial statement of the chart symbol: fiscal period end dates (unix
+ * seconds, ascending) and one value series per line item, aligned with
+ * `periods` (NaN where the provider reports nothing). Row names are the
+ * provider's English labels ("Total Revenue", "Diluted EPS", ...).
+ */
+export interface StatementData {
+  readonly periods: readonly number[];
+  readonly rows: Readonly<Record<string, readonly number[]>>;
+}
+
+/** Income / balance sheet / cash flow statements of one period basis. */
+export interface StatementsByPeriod {
+  readonly income?: StatementData;
+  readonly balance?: StatementData;
+  readonly cashflow?: StatementData;
+}
+
+/** Financial statements of the chart symbol by period basis (see `usesFundamentals`). */
+export interface FundamentalsData {
+  readonly quarterly?: StatementsByPeriod;
+  readonly annual?: StatementsByPeriod;
 }
 
 export interface SetupContext<S extends InputsSchema> {
@@ -724,6 +768,8 @@ export type InstanceStatus =
   | { state: 'ok' }
   /** Waiting for timeframe bars (MTF) or an external symbol's aligned bars (`symbol`) from the host. */
   | { state: 'waiting'; timeframe: string; symbol?: string }
+  /** Waiting for the chart symbol's financial statements from the host. */
+  | { state: 'waiting'; data: 'fundamentals' }
   | { state: 'error'; message: string };
 
 /**

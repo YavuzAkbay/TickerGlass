@@ -225,6 +225,14 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       onSelect: () => commands.execute('drawings.removeAll'),
     },
     { type: 'separator' },
+    {
+      label: 'Export data',
+      submenu: [
+        { label: 'CSV', onSelect: () => void commands.execute('chart.exportCSV') },
+        { label: 'Excel (XLSX)', onSelect: () => void commands.execute('chart.exportXLSX') },
+      ],
+    },
+    { type: 'separator' },
     { label: 'Settings…', icon: Settings, onSelect: () => commands.execute('chart.settings') },
   ]);
 }

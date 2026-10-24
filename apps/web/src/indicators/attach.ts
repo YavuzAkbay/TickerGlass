@@ -11,6 +11,7 @@ import { toHideMode } from '../toolbar/commands';
 import { toast } from '../ui/Toast';
 import { findIndicator, removeIndicators } from './actions';
 import { IndicatorController, createIndicatorWorker } from './controller';
+import { fetchFundamentals, fundamentalsOf } from './fundamentals';
 import { openIndicatorSettings } from './menu';
 import { ScriptRouterPort } from './sandbox/port';
 import { effectiveInstancesOf } from './store';
@@ -40,6 +41,7 @@ export function attachIndicators(session: ChartSession, feed: DataFeed): () => v
     chartType: () => session.view.getState().chartType,
     dataEpoch: () => replayFeed.epoch,
     loadEvents: fetchEvents,
+    loadFundamentals: (symbol) => fetchFundamentals(symbol).then(fundamentalsOf),
     profile: perfEnabled(),
     onComputeTime: (ms) => computeTimesOf(session.id).record(ms),
   });

@@ -117,9 +117,18 @@ class FakeProvider:
         if symbol not in KNOWN:
             raise SymbolNotFound(symbol)
         stmt = {"periods": ["2025-09-30"], "rows": {"Revenue": [1.0], "Other": [None]}}
+        quarterly_income = {
+            "periods": ["2025-06-30", "2025-09-30"],
+            "rows": {"Revenue": [1.0, 2.0]},
+        }
         return {
             "info": {"marketCap": 10, "sector": "Tech"},
-            "financials": {"income": stmt, "balance": stmt, "cashflow": stmt},
+            "financials": {
+                "income": stmt,
+                "balance": stmt,
+                "cashflow": stmt,
+                "quarterly": {"income": quarterly_income, "balance": stmt, "cashflow": stmt},
+            },
         }
 
 
@@ -189,6 +198,10 @@ def test_fundamentals(client: TestClient) -> None:
     assert body["info"]["marketCap"] == 10
     assert body["financials"]["income"]["rows"]["Other"] == [None]
     assert body["financials"]["balance"]["periods"] == ["2025-09-30"]
+    quarterly = body["financials"]["quarterly"]
+    assert quarterly["income"]["periods"] == ["2025-06-30", "2025-09-30"]
+    assert quarterly["income"]["rows"]["Revenue"] == [1.0, 2.0]
+    assert res.headers["cache-control"].endswith("max-age=600")
 
 
 def test_fundamentals_404(client: TestClient) -> None:

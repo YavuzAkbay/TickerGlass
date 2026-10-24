@@ -10,7 +10,13 @@ import { expect } from 'vitest';
 import type { AnyIndicatorDefinition, IndicatorRegistry } from '../src/registry';
 import { isValueOutput, resolveInputs, timeframeInputValue } from '../src/resolve';
 import { IndicatorRuntime } from '../src/runtime';
-import { NO_COLOR, type BarArrays, type IndicatorResult, type InputValueMap } from '../src/types';
+import {
+  NO_COLOR,
+  type BarArrays,
+  type FundamentalsData,
+  type IndicatorResult,
+  type InputValueMap,
+} from '../src/types';
 import { dailyBars, feedLive, snapshot, toColumns } from './helpers';
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), 'golden');
@@ -22,6 +28,8 @@ export interface GoldenCsv {
   bars: string;
   /** Second aligned series (header ` extra: <file>`), e.g. Correlation's symbol. */
   extra: string | null;
+  /** Statements fixture JSON (header ` fund: <file>`), financial built-ins only. */
+  fund: string | null;
   cols: Record<string, Float64Array>;
 }
 
@@ -31,15 +39,18 @@ export function parseCsv(file: string): GoldenCsv {
   let ref = '';
   let barsFile = 'bars.csv';
   let extra: string | null = null;
+  let fund: string | null = null;
   if (lines[0]!.startsWith('#')) {
-    const m = /^# inputs: (\{.*\}) ref: (\w+)(?: bars: ([\w.-]+))?(?: extra: ([\w.-]+))?$/.exec(
-      lines.shift()!,
-    );
+    const m =
+      /^# inputs: (\{.*\}) ref: (\w+)(?: bars: ([\w.-]+))?(?: extra: ([\w.-]+))?(?: fund: ([\w.-]+))?$/.exec(
+        lines.shift()!,
+      );
     if (!m) throw new Error(`${file}: bad header`);
     inputs = JSON.parse(m[1]!) as InputValueMap;
     ref = m[2]!;
     barsFile = m[3] ?? barsFile;
     extra = m[4] ?? null;
+    fund = m[5] ?? null;
   }
   const names = lines.shift()!.split(',');
   const cols: Record<string, Float64Array> = {};
@@ -49,7 +60,7 @@ export function parseCsv(file: string): GoldenCsv {
       cols[names[k]!]![i] = cell === '' ? NaN : Number(cell);
     });
   });
-  return { inputs, ref, bars: barsFile, extra, cols };
+  return { inputs, ref, bars: barsFile, extra, fund, cols };
 }
 
 /** Bar series files (`bars*.csv`, no header), loaded once. */
@@ -61,6 +72,47 @@ function barsOf(file: string): BarArrays {
     series.set(file, b);
   }
   return b;
+}
+
+/** Statements fixture (ISO period ends, null = missing) in runtime form, loaded once. */
+const funds = new Map<string, FundamentalsData>();
+function fundOf(file: string): FundamentalsData {
+  let f = funds.get(file);
+  if (!f) {
+    const raw = JSON.parse(readFileSync(join(DIR, file), 'utf8')) as {
+      quarterly?: RawBasis;
+      annual?: RawBasis;
+    };
+    f = {
+      quarterly: raw.quarterly && basis(raw.quarterly),
+      annual: raw.annual && basis(raw.annual),
+    } as FundamentalsData;
+    funds.set(file, f);
+  }
+  return f;
+}
+
+interface RawStatement {
+  periods: string[];
+  rows: Record<string, (number | null)[]>;
+}
+type RawBasis = Partial<Record<'income' | 'balance' | 'cashflow', RawStatement>>;
+
+function basis(raw: RawBasis): Partial<Record<'income' | 'balance' | 'cashflow', unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const [kind, stmt] of Object.entries(raw)) {
+    if (!stmt || !stmt.periods?.length) continue;
+    out[kind] = {
+      periods: stmt.periods.map((p) => Date.parse(p) / 1000),
+      rows: Object.fromEntries(
+        Object.entries(stmt.rows).map(([name, values]) => [
+          name,
+          values.map((v) => (v === null || v === undefined ? NaN : v)),
+        ]),
+      ),
+    };
+  }
+  return out;
 }
 
 /** Bar interval of a series: its smallest time step. */
@@ -99,7 +151,11 @@ export function runGolden(
   if (tf && tf !== '1D') throw new Error(`golden tests only aggregate 1D bars, got ${tf}`);
   const rt = new IndicatorRuntime({
     ...(registry ? { registry } : {}),
-    context: { intervalSeconds: intervalOf(bars), timeframeSeconds: { '1D': 86_400 } },
+    context: {
+      intervalSeconds: intervalOf(bars),
+      timeframeSeconds: { '1D': 86_400 },
+      ...(csv.fund ? { fundamentals: fundOf(csv.fund) } : {}),
+    },
   });
   rt.add({ id: 'x', type: def.id, inputs });
   // The case's second series is the external symbol its `symbol` input names.
