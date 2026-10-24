@@ -6,7 +6,7 @@
  * step when it changes.
  */
 import type { Chart, ChartState, ChartStyle, ChartType, DeepPartial } from '@tickerglass/engine';
-import { resolveIndicatorId } from '@tickerglass/indicators';
+import { getIndicator, isUserScriptType, resolveIndicatorId } from '@tickerglass/indicators';
 import type { StoreApi } from 'zustand';
 import { PRIMARY_CHART_ID } from '../chart/ids';
 import { useHistory, type HistoryState } from '../commands/history';
@@ -266,12 +266,19 @@ function parseSlot(raw: unknown, base: ChartSettings): ChartSlotState | null {
     id: raw.id,
     chart: isChartState(raw.chart) ? raw.chart : null,
     indicators: Array.isArray(raw.indicators)
-      ? raw.indicators.filter(isIndicator).map((i) => ({
-          ...i,
-          visible: i.visible !== false,
-          visibility: i.visibility ?? null,
-          placement: i.placement ?? 'auto',
-        }))
+      ? raw.indicators
+          .filter(isIndicator)
+          // A built-in that no longer exists (removed or renamed since the
+          // layout was saved) can never render again, and one stale instance
+          // would fail every later add's validation. Script instances stay:
+          // their registry entry may register after this parse.
+          .filter((i) => isUserScriptType(i.type) || getIndicator(i.type) !== undefined)
+          .map((i) => ({
+            ...i,
+            visible: i.visible !== false,
+            visibility: i.visibility ?? null,
+            placement: i.placement ?? 'auto',
+          }))
       : [],
     compares: parseCompareLayout(raw.compares),
     chartSettings: {

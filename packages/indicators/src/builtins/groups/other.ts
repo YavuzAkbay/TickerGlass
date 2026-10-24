@@ -1,4 +1,5 @@
 import type { AnyIndicatorDefinition } from '../../registry';
+import { CHART_PATTERNS } from '../chart-patterns';
 import { SWING_FIB } from '../swing-fib';
 import { HIGH_LOW_52W } from '../high-low-52w';
 import { LINREG_CHANNEL } from '../linreg-channel';
@@ -9,6 +10,7 @@ import { VP_VISIBLE } from '../vp-visible';
 import { ZIGZAG } from '../zigzag';
 
 export {
+  CHART_PATTERNS,
   SWING_FIB,
   HIGH_LOW_52W,
   LINREG_CHANNEL,
@@ -30,6 +32,7 @@ export const OTHER: readonly AnyIndicatorDefinition[] = [
   SWING_HL,
   ZIGZAG,
   SWING_FIB,
+  CHART_PATTERNS,
   LINREG_CHANNEL,
   HIGH_LOW_52W,
   SEASONALITY,
