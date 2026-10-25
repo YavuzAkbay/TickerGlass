@@ -186,16 +186,52 @@ def zigzag_np(h, l, depth, threshold, pivot=zz_pivot_np):
 
 
 def zigzag_outputs(bars: Bars, deviation, depth, extend, labels):
+    """ZigZag pivots with price labels plus `zzf`, the dashed forecast of the
+    leg in progress. The last pivot stays hidden until price has moved
+    `deviation` % against it since its bar (window inclusive of the pivot bar);
+    earlier pivots were proven by the pivot that followed them. While hidden,
+    the forecast runs from the previous pivot to the furthest extreme reached
+    since (oldest bar wins ties); once confirmed, from the pivot itself.
+    `extend` continues the forecast to the last close, `labels` writes the
+    label at its end."""
     n = bars.n
     piv = zigzag_np(bars.high, bars.low, depth, np.full(n, float(deviation)))
-    zz, hi, lo = nans(n), nans(n), nans(n)
+    zz, hi, lo, zzf = nans(n), nans(n), nans(n), nans(n)
     for j, price, direction in piv:
         zz[j] = price
         if labels:
             (hi if direction > 0 else lo)[j] = price
-    if extend and piv:
-        zz[n - 1] = bars.close[n - 1]
-    return {"zz": zz, "hiLbl": hi, "loLbl": lo}
+    if piv:
+        bar, price, direction = piv[-1]
+        if direction > 0:
+            move = 100 * (bars.low[bar:].min() - price) / abs(price)
+            confirmed = move <= -deviation
+        else:
+            move = 100 * (bars.high[bar:].max() - price) / abs(price)
+            confirmed = move >= deviation
+        if confirmed or len(piv) == 1:
+            start, start_price = bar, price
+            up = direction < 0  # a pivot high starts a down-leg, a low an up-leg
+        else:
+            # Unconfirmed: the pivot stays hidden and the leg runs on to it.
+            zz[bar] = NAN
+            if labels:
+                (hi if direction > 0 else lo)[bar] = NAN
+            if piv[-2][0] == bar:  # same-bar pair: the earlier pivot shows again
+                zz[bar] = piv[-2][1]
+            start, start_price = piv[-2][0], piv[-2][1]
+            up = direction > 0
+        if start < n - 1:
+            seg = bars.high[start + 1 :] if up else bars.low[start + 1 :]
+            off = int(np.argmax(seg) if up else np.argmin(seg))  # oldest bar wins ties
+            end, end_price = start + 1 + off, seg[off]
+            zzf[start] = start_price
+            zzf[end] = end_price
+            if extend and end < n - 1:
+                zzf[n - 1] = bars.close[n - 1]
+            if labels:
+                (hi if up else lo)[end] = end_price
+    return {"zz": zz, "zzf": zzf, "hiLbl": hi, "loLbl": lo}
 
 
 def zigzag_cases(out: Cases):

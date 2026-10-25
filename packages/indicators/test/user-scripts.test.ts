@@ -181,7 +181,10 @@ describe('user ZigZag repaints like the built-in', () => {
     expect(user.changes[7]!.find((c) => c.id === 'z')?.from).toBe(3);
     const zz = user.rt.result('z')!.values.zz!;
     expect(zz[8]).toBe(115);
-    expect(zz[12]).toBe(100);
+    // The low pivot at 12 has reversed only 3 % since: still hidden, the
+    // dashed forecast ends there instead.
+    expect(zz[12]).toBeNaN();
+    expect(user.rt.result('z')!.values.zzf![12]).toBe(100);
     expect(snapshot(user.rt.result('z')!)).toEqual(snapshot(builtin.rt.result('z')!));
   });
 });
