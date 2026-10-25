@@ -61,35 +61,42 @@ describe('zigzag repaints', () => {
     rt.setBars(toColumns(flat(prices.slice(0, 5))));
     const zz = () => rt.result('z')!.values.zz!;
     const hi = () => rt.result('z')!.values.hiLbl!;
+    const zzf = () => rt.result('z')!.values.zzf!;
+    const lbl = (id: 'hiLbl' | 'loLbl', j: number) => rt.result('z')!.values[id]![j];
     expect(Array.from(zz().subarray(0, 5)).every(Number.isNaN)).toBe(true);
 
-    // Bar 5 confirms the high at bar 3 (first pivot) and extends to the close.
+    // Bar 5 confirms the high at bar 3 (first pivot). It is the only pivot and
+    // reverses just 3.6 % so far, so the leg in progress is a forecast: dashed
+    // from the pivot down to the lowest low since (bar 5), labeled there.
     let cs = rt.updateBar(5, at(300, 106));
     expect(fromOf(cs, 'z')).toBe(3);
     expect(fromOf(cs, 'ma')).toBe(0); // dependents recompute fully from a past change
     expect(zz()[3]).toBe(110);
     expect(hi()[3]).toBe(110);
-    expect(zz()[5]).toBe(106);
+    expect(zzf()[3]).toBe(110);
+    expect(zzf()[5]).toBe(106);
+    expect(lbl('loLbl', 5)).toBe(106);
 
-    // A tick above 110 cancels it (no pivot, so no extension either).
+    // A tick above 110 cancels it (no pivot, so no forecast either).
     cs = rt.updateBar(5, at(300, 111));
     expect(fromOf(cs, 'z')).toBe(3);
     expect(zz()[3]).toBeNaN();
     expect(hi()[3]).toBeNaN();
-    expect(zz()[5]).toBeNaN();
+    expect(zzf()[5]).toBeNaN();
 
     // And back: the pivot returns.
     cs = rt.updateBar(5, at(300, 106));
     expect(fromOf(cs, 'z')).toBe(3);
     expect(zz()[3]).toBe(110);
 
-    // Appends: the low at 5 (106, 3.6 % below 110) is below the deviation, the
-    // extension point moves to the new last bar.
+    // Appends: no new pivot, so the forecast end stays at the 106 low and the
+    // dashed continuation to the last close moves to the new last bar. Bar 6
+    // only adds that tail; later appends also clear the previous one.
     for (let i = 6; i < prices.length; i++) {
       cs = rt.updateBar(i, at(i * 60, prices[i]!));
-      expect(fromOf(cs, 'z')).toBe(i - 1);
-      expect(zz()[i - 1]).toBeNaN();
-      expect(zz()[i]).toBe(prices[i]);
+      expect(fromOf(cs, 'z')).toBe(i === 6 ? 6 : i - 1);
+      expect(zz()[i]).toBeNaN();
+      expect(zzf()[i]).toBe(prices[i]);
     }
 
     // Bar 10 confirms the higher high at 8: the pivot moves from 3 to 8.
@@ -100,35 +107,50 @@ describe('zigzag repaints', () => {
     expect(hi()[3]).toBeNaN();
     expect(zz()[8]).toBe(115);
     expect(hi()[8]).toBe(115);
-    expect(zz()[9]).toBeNaN();
-    expect(zz()[10]).toBe(111);
+    expect(zzf()[3]).toBeNaN();
+    expect(zzf()[8]).toBe(115);
+    expect(zzf()[10]).toBe(111);
+    expect(lbl('loLbl', 10)).toBe(111);
 
     // A tick above 115 cancels the move (undo): back at 3.
     cs = rt.updateBar(10, at(600, 116));
     expect(fromOf(cs, 'z')).toBe(3);
     expect(zz()[3]).toBe(110);
+    expect(zzf()[3]).toBe(110);
     expect(zz()[8]).toBeNaN();
-    expect(zz()[10]).toBe(116);
+    expect(zzf()[10]).toBe(116);
 
     // A tick that moves nothing in the past: only the last bar changed.
     cs = rt.updateBar(10, at(600, 117));
     expect(fromOf(cs, 'z')).toBe(10);
     expect(fromOf(cs, 'ma')).toBe(10);
 
-    // Move again, then a reversal 13 % down adds a low pivot at bar 12.
+    // Move again (the pivot is back at 8). Bar 11 (104) is 9.6 % below the
+    // pivot high: it confirms the pivot, and the forecast leg extends down to
+    // that new low. Bar 12 (100) moves the forecast end again; bar 13 only
+    // adds the tail.
     rt.updateBar(10, at(600, 111));
-    for (const [i, p] of [
-      [11, 104],
-      [12, 100],
-      [13, 101],
-    ] as const)
-      expect(fromOf(rt.updateBar(i, at(i * 60, p)), 'z')).toBe(i - 1);
+    expect(fromOf(rt.updateBar(11, at(660, 104)), 'z')).toBe(10);
+    expect(zzf()[10]).toBeNaN();
+    expect(zzf()[11]).toBe(104);
+    expect(lbl('loLbl', 11)).toBe(104);
+    expect(fromOf(rt.updateBar(12, at(720, 100)), 'z')).toBe(11);
+    expect(zzf()[12]).toBe(100);
+    expect(lbl('loLbl', 12)).toBe(100);
+    expect(fromOf(rt.updateBar(13, at(780, 101)), 'z')).toBe(13);
+    expect(zzf()[13]).toBe(101);
+
+    // Bar 14 adds a low pivot at 12 (13 % below the high at 8). It has
+    // reversed only 3 % since, so it stays hidden: the leg is still the dashed
+    // forecast from the confirmed high down to the 100 low, labeled at bar 12.
     cs = rt.updateBar(14, at(840, 103));
-    expect(fromOf(cs, 'z')).toBe(12);
-    expect(zz()[12]).toBe(100);
-    expect(rt.result('z')!.values.loLbl![12]).toBe(100);
-    expect(zz()[13]).toBeNaN();
-    expect(zz()[14]).toBe(103);
+    expect(fromOf(cs, 'z')).toBe(13);
+    expect(zz()[12]).toBeNaN();
+    expect(lbl('loLbl', 12)).toBe(100);
+    expect(zzf()[8]).toBe(115);
+    expect(zzf()[12]).toBe(100);
+    expect(zzf()[13]).toBeNaN();
+    expect(zzf()[14]).toBe(103);
 
     // Same arrays as computing everything at once.
     const all = flat([...prices, 111, 104, 100, 101, 103]);

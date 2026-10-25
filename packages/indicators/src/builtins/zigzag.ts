@@ -109,10 +109,17 @@ type ZigZagCtx = Pick<
  * ZigZag: lines between confirmed swing pivots (see `zigZagPivots`), drawn as
  * a gap-connecting line through values at the pivot bars only, with optional
  * price labels. Pivots are found `floor(depth / 2)` bars late and the last one
- * moves while price extends it, so past values repaint. "Extend to last bar"
- * adds a provisional point at the last bar's close (cleared once a newer bar
- * exists). A bar holding both a high and a low pivot shows the newer (low) one
- * on the line (one value per bar) and both labels.
+ * moves while price extends it, so past values repaint.
+ *
+ * A pivot only counts as confirmed once price has moved `deviation` % against
+ * it (fallen that far below a pivot high, or risen that far above a pivot
+ * low). Until then the last pivot stays hidden: the leg in progress is drawn
+ * as a dashed forecast line from the previous pivot to the furthest extreme
+ * reached since, extending bar by bar until the reversal confirms the pivot
+ * (or a further extreme takes over the leg). "Extend to last bar" continues
+ * the dashed line to the last bar's close. A bar holding both a high and a
+ * low pivot shows the newer (low) one on the line (one value per bar) and
+ * both labels.
  */
 export const ZIGZAG = defineIndicator({
   id: 'zigzag',
@@ -152,6 +159,17 @@ export const ZIGZAG = defineIndicator({
       showLastValue: false,
     },
     {
+      type: 'plot',
+      id: 'zzf',
+      title: 'Forecast',
+      kind: 'line',
+      color: COLOR.blue,
+      lineWidth: 2,
+      lineStyle: 'dashed',
+      connectGaps: true,
+      showLastValue: false,
+    },
+    {
       type: 'shape',
       id: 'hiLbl',
       title: 'High Label',
@@ -174,28 +192,129 @@ export const ZIGZAG = defineIndicator({
   ],
   setup({ inputs, ta }) {
     const labels = inputs.showPrice;
+    const dev = inputs.deviation;
+    // Running low/high of the current pivot's reversal window [idx..i]: the
+    // pivot is confirmed once the opposite extreme is `deviation` % away.
+    const rev = ta.vars({ lo: Infinity, hi: -Infinity });
+    // The last pivot whose vertex and label are hidden (not confirmed yet).
+    // `high` is 1 for a pivot high, 0 for a low.
+    const hid = ta.vars({ bar: -1, price: NaN, high: 0 });
+    // Bars the previous last bar's forecast leg wrote, for cleanup.
+    const fz = ta.vars({ start: -1, end: -1, tail: -1, lblBar: -1, lblHigh: 0 });
+
     const zz = zigZagPivots<ZigZagCtx>(ta, inputs.depth, {
       set(c, j, price, high) {
         c.setAt('zz', j, price);
         if (labels) c.setAt(high ? 'hiLbl' : 'loLbl', j, price);
+        rev.lo = Infinity;
+        rev.hi = -Infinity;
+        for (let k = j; k <= c.i; k++) {
+          if (c.low[k]! < rev.lo) rev.lo = c.low[k]!;
+          if (c.high[k]! > rev.hi) rev.hi = c.high[k]!;
+        }
       },
       clear(c, j, high) {
         c.setAt('zz', j, NaN);
         if (labels) c.setAt(high ? 'hiLbl' : 'loLbl', j, NaN);
       },
     });
-    // Bar holding the provisional "extend to last bar" point (-1: none).
-    const ext = ta.vars({ bar: -1 });
+
     return (c) => {
-      // Pivots are confirmed >= 2 bars late, so this slot never holds one yet.
-      if (ext.bar >= 0 && ext.bar < c.i) {
-        c.setAt('zz', ext.bar, NaN);
-        ext.bar = -1;
+      // Drop what the previous last bar drew (its writes are committed now).
+      if (fz.start >= 0 && fz.start < c.i) {
+        c.setAt('zzf', fz.start, NaN);
+        fz.start = -1;
       }
-      zz.update(c, inputs.deviation);
-      if (inputs.extendToLastBar && c.isLast && zz.state.idx >= 0) {
-        c.set('zz', c.close[c.i]!);
-        ext.bar = c.i;
+      if (fz.end >= 0 && fz.end < c.i) {
+        c.setAt('zzf', fz.end, NaN);
+        fz.end = -1;
+      }
+      if (fz.tail >= 0 && fz.tail < c.i) {
+        c.setAt('zzf', fz.tail, NaN);
+        fz.tail = -1;
+      }
+      if (fz.lblBar >= 0 && fz.lblBar < c.i) {
+        c.setAt(fz.lblHigh ? 'hiLbl' : 'loLbl', fz.lblBar, NaN);
+        fz.lblBar = -1;
+      }
+
+      zz.update(c, dev);
+
+      const st = zz.state;
+      if (st.idx >= 0) {
+        if (c.low[c.i]! < rev.lo) rev.lo = c.low[c.i]!;
+        if (c.high[c.i]! > rev.hi) rev.hi = c.high[c.i]!;
+        const move = (100 * ((st.dir > 0 ? rev.lo : rev.hi) - st.price)) / Math.abs(st.price);
+        const confirmed = st.dir > 0 ? move <= -dev : move >= dev;
+
+        if (hid.bar >= 0) {
+          // The hidden pivot is proven by its own reversal arriving, or by
+          // the pivot added after it (that one moved `deviation` % beyond it).
+          const proven =
+            (hid.bar === st.idx &&
+              hid.price === st.price &&
+              hid.high === (st.dir > 0 ? 1 : 0) &&
+              confirmed) ||
+            (hid.bar === st.prevIdx &&
+              hid.price === st.prevPrice &&
+              hid.high === (st.dir < 0 ? 1 : 0));
+          if (proven) {
+            c.setAt('zz', hid.bar, hid.price);
+            if (labels) c.setAt(hid.high ? 'hiLbl' : 'loLbl', hid.bar, hid.price);
+            hid.bar = -1;
+          } else if (hid.bar !== st.idx) {
+            // It moved away or was replaced: its bar stays as the core left it.
+            hid.bar = -1;
+          }
+        }
+        if (!confirmed && st.prevIdx >= 0) {
+          // Unconfirmed: hide the pivot; the forecast leg starts at the
+          // previous one instead.
+          if (hid.bar !== st.idx) {
+            c.setAt('zz', st.idx, NaN);
+            if (labels) c.setAt(st.dir > 0 ? 'hiLbl' : 'loLbl', st.idx, NaN);
+          }
+          hid.bar = st.idx;
+          hid.price = st.price;
+          hid.high = st.dir > 0 ? 1 : 0;
+        }
+
+        if (c.isLast) {
+          // Dashed forecast leg: from the last confirmed pivot to the furthest
+          // extreme reached since (oldest bar wins ties), whatever price does
+          // in between. Once that extreme is behind the last bar, "Extend to
+          // last bar" continues the line to the last close.
+          const usePrev = !confirmed && st.prevIdx >= 0;
+          const startBar = usePrev ? st.prevIdx : st.idx;
+          const startPrice = usePrev ? st.prevPrice : st.price;
+          const up = usePrev ? st.dir > 0 : st.dir < 0;
+          let endBar = -1;
+          let endPrice = up ? -Infinity : Infinity;
+          for (let k = startBar + 1; k <= c.i; k++) {
+            const v = up ? c.high[k]! : c.low[k]!;
+            if (up ? v > endPrice : v < endPrice) {
+              endPrice = v;
+              endBar = k;
+            }
+          }
+          if (endBar >= 0) {
+            c.setAt('zzf', startBar, startPrice);
+            c.setAt('zzf', endBar, endPrice);
+            fz.start = startBar;
+            fz.end = endBar;
+            fz.tail = -1;
+            fz.lblBar = -1;
+            if (inputs.extendToLastBar && endBar < c.i) {
+              c.set('zzf', c.close[c.i]!);
+              fz.tail = c.i;
+            }
+            if (labels) {
+              c.setAt(up ? 'hiLbl' : 'loLbl', endBar, endPrice);
+              fz.lblBar = endBar;
+              fz.lblHigh = up ? 1 : 0;
+            }
+          }
+        }
       }
     };
   },
