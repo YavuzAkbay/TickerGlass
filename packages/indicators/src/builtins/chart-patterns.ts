@@ -415,11 +415,29 @@ const K = LOOKBACK + MAX_WINDOW - 1;
 const BAR_KEYS = Array.from({ length: K }, (_, k) => `b${k}`);
 const PRICE_KEYS = Array.from({ length: K }, (_, k) => `p${k}`);
 const DIR_KEYS = Array.from({ length: K }, (_, k) => `d${k}`);
-const WIN_INIT: Record<string, number> = { n: 0 };
+/**
+ * What the last run drew, per pattern: start/end bar, label bar and label
+ * kind index (a run detects at most one pattern per re-checked pivot).
+ */
+const DRAWN_START = Array.from({ length: LOOKBACK }, (_, k) => `s${k}`);
+const DRAWN_END = Array.from({ length: LOOKBACK }, (_, k) => `e${k}`);
+const DRAWN_LABEL_BAR = Array.from({ length: LOOKBACK }, (_, k) => `l${k}`);
+const DRAWN_LABEL_KIND = Array.from({ length: LOOKBACK }, (_, k) => `k${k}`);
+const LABEL_INDEX = Object.fromEntries(PATTERN_LABELS.map((l, k) => [l.kind, k])) as Record<
+  PatternKind,
+  number
+>;
+const WIN_INIT: Record<string, number> = { n: 0, dirty: 0, drawn: 0 };
 for (let k = 0; k < K; k++) {
   WIN_INIT[BAR_KEYS[k]!] = -1;
   WIN_INIT[PRICE_KEYS[k]!] = 0;
   WIN_INIT[DIR_KEYS[k]!] = 0;
+}
+for (let k = 0; k < LOOKBACK; k++) {
+  WIN_INIT[DRAWN_START[k]!] = 0;
+  WIN_INIT[DRAWN_END[k]!] = -1;
+  WIN_INIT[DRAWN_LABEL_BAR[k]!] = -1;
+  WIN_INIT[DRAWN_LABEL_KIND[k]!] = 0;
 }
 
 type PatternCtx = Pick<
@@ -431,6 +449,10 @@ type PatternCtx = Pick<
 interface PatternVars extends Record<string, number> {
   /** Retained pivots (0..K). */
   n: number;
+  /** 1: the pivots changed since the last run. */
+  dirty: number;
+  /** Patterns drawn by the last run (0..LOOKBACK). */
+  drawn: number;
 }
 
 /**
@@ -568,6 +590,7 @@ export const CHART_PATTERNS = defineIndicator({
     };
     const zz = zigZagPivots<PatternCtx>(ta, inputs.depth, {
       set(c, j, price, high) {
+        win.dirty = 1;
         const dir = high ? 1 : -1;
         const last = win.n - 1;
         if (last >= 0 && at(DIR_KEYS, last) === dir && at(BAR_KEYS, last) === j) {
@@ -579,6 +602,7 @@ export const CHART_PATTERNS = defineIndicator({
         c.setAt('zz', j, price);
       },
       clear(c, j, high) {
+        win.dirty = 1;
         // The moving pivot is removed here and re-added by the following set.
         const last = win.n - 1;
         if (last >= 0 && at(BAR_KEYS, last) === j && at(DIR_KEYS, last) === (high ? 1 : -1))
@@ -589,9 +613,12 @@ export const CHART_PATTERNS = defineIndicator({
     return (c) => {
       zz.update(c, inputs.deviation);
       const n = win.n;
-      if (n < MIN_WINDOW) return;
-      // Every bar re-draws the pivot lookback, so a full computation
-      // accumulates the same finished patterns a live feed does (each bar
+      // Detection and drawing depend on the pivots only: without a change
+      // since the last run, a re-run would rewrite the same values.
+      if (n < MIN_WINDOW || !win.dirty) return;
+      win.dirty = 0;
+      // Every change re-draws the pivot lookback, so a full computation
+      // accumulates the same finished patterns a live feed does (each run
       // re-checks the windows that can still change; finished ones keep their
       // writes until they leave the lookback, which the clear below covers).
       const pivots: PatternPivot[] = [];
@@ -600,17 +627,27 @@ export const CHART_PATTERNS = defineIndicator({
       const patterns = detectChartPatterns(pivots, inputs.tolerance, inputs.maxBars);
       // Clear everything previous runs wrote for pivots still in the lookback
       // (bars behind the oldest re-checked pivot belong to finished patterns).
+      // Within the lookback only the last run's patterns left anything, so
+      // only their bars are visited.
       const from = pivots[Math.max(0, n - LOOKBACK)]!.bar;
       const to = pivots[n - 1]!.bar;
-      for (let j = from; j <= to; j++) {
-        if (!patterns.some((p) => j >= p.startBar && j <= p.endBar)) {
-          if (!Number.isNaN(c.get('upper', j))) c.setAt('upper', j, NaN);
-          if (!Number.isNaN(c.get('lower', j))) c.setAt('lower', j, NaN);
+      for (let k = 0; k < win.drawn; k++) {
+        for (let j = Math.max(from, at(DRAWN_START, k)); j <= at(DRAWN_END, k); j++) {
+          if (!patterns.some((p) => j >= p.startBar && j <= p.endBar)) {
+            if (!Number.isNaN(c.get('upper', j))) c.setAt('upper', j, NaN);
+            if (!Number.isNaN(c.get('lower', j))) c.setAt('lower', j, NaN);
+          }
         }
-        for (const id of LABEL_IDS) if (!Number.isNaN(c.get(id, j))) c.setAt(id, j, NaN);
-        // Palette colours only render where the pivot line has a value.
+        const labelBar = at(DRAWN_LABEL_BAR, k);
+        const id = LABEL_IDS[at(DRAWN_LABEL_KIND, k)]!;
+        if (labelBar >= from && !Number.isNaN(c.get(id, labelBar))) c.setAt(id, labelBar, NaN);
+      }
+      // Palette colours only render where the pivot line has a value (which
+      // only the retained pivots' bars have).
+      for (let k = 0; k < n; k++) {
+        const j = at(BAR_KEYS, k);
         const zzj = c.get('zz', j);
-        if (!Number.isNaN(zzj)) c.setAt('zz', j, zzj, 0);
+        if (j >= from && j <= to && !Number.isNaN(zzj)) c.setAt('zz', j, zzj, 0);
       }
       for (const p of patterns) {
         for (let j = p.startBar; j <= p.endBar; j++) {
@@ -622,6 +659,14 @@ export const CHART_PATTERNS = defineIndicator({
         for (const pv of p.pivots) c.setAt('zz', pv.bar, c.get('zz', pv.bar), p.category + 1);
         if (!Object.is(c.get(LABEL_ID[p.kind], p.labelBar), 1))
           c.setAt(LABEL_ID[p.kind], p.labelBar, 1);
+      }
+      win.drawn = patterns.length;
+      for (let k = 0; k < patterns.length; k++) {
+        const p = patterns[k]!;
+        win[DRAWN_START[k]!] = p.startBar;
+        win[DRAWN_END[k]!] = p.endBar;
+        win[DRAWN_LABEL_BAR[k]!] = p.labelBar;
+        win[DRAWN_LABEL_KIND[k]!] = LABEL_INDEX[p.kind];
       }
     };
   },
