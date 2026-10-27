@@ -196,6 +196,45 @@ describe('Chart Patterns', () => {
   });
 });
 
+describe('Chart Patterns performance', () => {
+  /** Seeded random walk (LCG), wide enough bars for sparse and dense pivots. */
+  function randomWalk(n: number): BarStore {
+    let seed = 7;
+    const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const time = new Float64Array(n);
+    const open = new Float64Array(n);
+    const high = new Float64Array(n);
+    const low = new Float64Array(n);
+    const close = new Float64Array(n);
+    const volume = new Float64Array(n);
+    let p = 100;
+    for (let i = 0; i < n; i++) {
+      open[i] = p;
+      p = Math.max(1, p * (1 + (rand() - 0.5) * 0.02));
+      close[i] = p;
+      high[i] = Math.max(open[i]!, p) * 1.002;
+      low[i] = Math.min(open[i]!, p) * 0.998;
+      time[i] = i * 60;
+      volume[i] = 1;
+    }
+    const store = new BarStore();
+    store.setAll({ time, open, high, low, close, volume });
+    return store;
+  }
+
+  it('is fast for 40k bars, however far apart the pivots are', () => {
+    const bars = randomWalk(40_000);
+    for (const deviation of [5, 30]) {
+      const t0 = Date.now();
+      const inst = new IndicatorInstance(CHART_PATTERNS, { deviation });
+      inst.computeAll(bars);
+      const ms = Date.now() - t0;
+      expect(inst.result().status).toEqual({ state: 'ok' });
+      expect(ms).toBeLessThan(1500);
+    }
+  });
+});
+
 describe('pattern geometry helpers', () => {
   const anchors: PatternPivot[] = [
     { bar: 10, price: 100, dir: -1 },
