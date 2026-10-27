@@ -419,7 +419,7 @@ class YahooProvider:
             ]
 
         info, (income, balance, cashflow, q_income, q_balance, q_cashflow) = self._call(
-            fetch, cost=7
+            fetch, cost=_FUNDAMENTALS_REQUESTS
         )
         statements = {
             "income": _statement(income),
@@ -556,6 +556,8 @@ _INFO_KEYS = (
 
 
 _V7_CHUNK = 50
+# Summary info plus six statements: one upstream request each (`guard.FUNDAMENTALS_REQUESTS`).
+_FUNDAMENTALS_REQUESTS = 7
 
 
 def _extended_quote(raw: dict[str, Any]) -> dict[str, Any] | None:

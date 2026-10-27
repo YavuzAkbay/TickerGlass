@@ -20,7 +20,7 @@ from tickerglass_api.providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
-from tickerglass_api.providers.guard import GuardedProvider, UpstreamGuard
+from tickerglass_api.providers.guard import FUNDAMENTALS_REQUESTS, GuardedProvider, UpstreamGuard
 from tickerglass_api.providers.yahoo import YahooProvider
 from tickerglass_api.services.stats import CacheStats
 from tickerglass_api.settings import Settings
@@ -276,6 +276,12 @@ def test_costs_follow_upstream_requests() -> None:
     assert stats.counter("upstream.quotes.requests") == 3  # one v7 request, then two
     assert stats.counter("upstream.extended_quotes.requests") == 3
     assert stats.counter("upstream.extended_quotes.calls") == 2
+    prov.fundamentals("AAPL")
+    assert stats.counter("upstream.fundamentals.requests") == 7
+
+
+def test_guard_fundamentals_cost_matches_yahoo() -> None:
+    assert FUNDAMENTALS_REQUESTS == yahoo._FUNDAMENTALS_REQUESTS
 
 
 def test_cache_stats_snapshot_nests_names() -> None:
