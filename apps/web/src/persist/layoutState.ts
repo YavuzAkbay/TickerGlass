@@ -270,8 +270,10 @@ function parseSlot(raw: unknown, base: ChartSettings): ChartSlotState | null {
           .filter(isIndicator)
           // A built-in that no longer exists (removed or renamed since the
           // layout was saved) can never render again, and one stale instance
-          // would fail every later add's validation. Script instances stay:
-          // their registry entry may register after this parse.
+          // would fail every later add's validation. A renamed built-in is
+          // kept under its current id. Script instances stay: their registry
+          // entry may register after this parse.
+          .map((i) => ({ ...i, type: resolveIndicatorId(i.type) }))
           .filter((i) => isUserScriptType(i.type) || getIndicator(i.type) !== undefined)
           .map((i) => ({
             ...i,

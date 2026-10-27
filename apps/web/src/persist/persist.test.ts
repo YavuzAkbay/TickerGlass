@@ -572,6 +572,25 @@ describe('layout state parsing', () => {
     expect(s.activeChartId).toBe('k0');
   });
 
+  it('drops unknown built-in indicators, keeps renamed ones under the new id and user scripts', () => {
+    const typed = (id: string, type: string) => ({ ...indicator(id), type });
+    const s = first(
+      parseLayoutState({
+        indicators: [
+          typed('gone', 'tpo-removed'),
+          typed('old', 'pivots-hl'),
+          typed('cur', 'swing-hl'),
+          typed('scr', 'user:abc'),
+        ],
+      }),
+    );
+    expect(s.indicators.map((i) => [i.id, i.type])).toEqual([
+      ['old', 'swing-hl'],
+      ['cur', 'swing-hl'],
+      ['scr', 'user:abc'],
+    ]);
+  });
+
   const legacyChart = (volume: string, panes: { id: string; ratio: number }[] = []) => ({
     version: 1,
     symbol: 'AAPL',
@@ -1469,6 +1488,12 @@ describe('indicator templates', () => {
     expect(applyIndicatorTemplate([{ ...indicator('u'), type: 'nope' }], 'add', 'U')).toMatch(
       /Unknown indicator/,
     );
+    // A template saved under a renamed id still applies, retyped to the current id.
+    useIndicatorStore.setState({ instances: [] });
+    expect(
+      applyIndicatorTemplate([{ ...indicator('l'), type: 'pivots-hl' }], 'add', 'L'),
+    ).toBeNull();
+    expect(useIndicatorStore.getState().instances.map((i) => i.type)).toEqual(['swing-hl']);
   });
 });
 
