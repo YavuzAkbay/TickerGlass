@@ -762,8 +762,14 @@ export class IndicatorController {
     if (symbol === this.fundamentalsSymbol) return;
     this.dropFundamentals();
     this.fundamentalsSymbol = symbol;
-    // No statements exist for an expression or spread.
-    if (isExpressionSymbol(symbol)) return;
+    // No statements exist for an expression or spread: like any symbol without
+    // them, the instances compute once and show their "no data" error.
+    if (isExpressionSymbol(symbol)) {
+      this.fundamentals = {};
+      this.fundamentalsProblem = null;
+      this.sendContext();
+      return;
+    }
     const mine = this.fundamentalsToken;
     load(symbol).then(
       (fund) => {

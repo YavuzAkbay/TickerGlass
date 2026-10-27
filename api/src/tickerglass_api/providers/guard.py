@@ -41,6 +41,9 @@ BACKGROUND_RESERVE = 0.25
 FOREGROUND_MAX_WAIT_S = 2.0
 # Symbols per Yahoo v7 quote request (`yahoo._V7_CHUNK`; not imported to keep yfinance out).
 V7_CHUNK = 50
+# Upstream requests per `fundamentals` call (`yahoo._FUNDAMENTALS_REQUESTS`): the summary
+# info plus six statements (annual and quarterly income, balance, cash flow).
+FUNDAMENTALS_REQUESTS = 7
 
 
 class UpstreamGuard:
@@ -322,5 +325,4 @@ class GuardedProvider:
         return self._run("news", 1, lambda: self._inner.news(symbol, limit))
 
     def fundamentals(self, symbol: str) -> dict[str, Any]:
-        # Summary info plus three statements.
-        return self._run("fundamentals", 4, lambda: self._inner.fundamentals(symbol))
+        return self._run("fundamentals", FUNDAMENTALS_REQUESTS, lambda: self._inner.fundamentals(symbol))

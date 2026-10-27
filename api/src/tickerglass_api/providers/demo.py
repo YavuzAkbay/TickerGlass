@@ -538,9 +538,9 @@ def _demo_statements(symbol: str, today: date) -> dict[str, Any]:
         )
         # EPS of the year is its net income over its average shares, not the
         # mean of quarterly EPS (quarters have different share counts).
-        for row in annual_income:
-            row["Diluted EPS"] = row["Net Income"] / row["Diluted Average Shares"]
-            row["Basic EPS"] = row["Diluted EPS"]
+        row = annual_income[-1]
+        row["Diluted EPS"] = row["Net Income"] / row["Diluted Average Shares"]
+        row["Basic EPS"] = row["Diluted EPS"]
         annual_balance.append({k: balance[rows[-1]][k] for k in balance_keys})
         annual_cashflow.append({k: sum(cashflow[i][k] for i in rows) for k in cashflow_keys})
 

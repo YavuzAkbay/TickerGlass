@@ -695,6 +695,23 @@ describe('IndicatorController', () => {
     });
   });
 
+  it('shows the no-data error for financial indicators on an expression or spread', async () => {
+    const bars = makeBars(10);
+    const loadFundamentals = vi.fn(() => Promise.resolve(null));
+    const { chart, ctl } = setup({ loadFundamentals });
+    chart.symbol = 'AAPL/MSFT';
+    const revenue = inst('fin-revenue');
+    ctl.sync([revenue]);
+    chart.load(bars);
+    await settle();
+    // No statements to fetch, yet the instance resolves instead of loading forever.
+    expect(loadFundamentals).not.toHaveBeenCalled();
+    expect(useIndicatorRuntime.getState().status[revenue.id]).toMatchObject({
+      state: 'error',
+      message: /No quarterly revenue/,
+    });
+  });
+
   it('WorkerCore applies a context sent with bars in one computation', () => {
     const out: FromWorker[] = [];
     const core = new WorkerCore((m) => out.push(m));
