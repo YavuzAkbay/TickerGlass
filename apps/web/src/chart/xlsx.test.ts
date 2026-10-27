@@ -1,7 +1,7 @@
 import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { buildTable, type ExportInput } from './exportData';
-import { buildXlsx } from './xlsx';
+import { buildXlsx, sheetName, xmlText } from './xlsx';
 
 const input = (): ExportInput => ({
   time: Float64Array.from([1_705_208_400, 1_705_208_700]),
@@ -72,5 +72,49 @@ describe('buildXlsx', () => {
     // NaN cells are omitted (study column G has no value on row 2).
     expect(xml).not.toContain('<c r="G2"');
     expect(xml).toContain('<c r="G3"><v>7</v></c>');
+  });
+});
+
+describe('xmlText', () => {
+  it('escapes markup and strips XML 1.0-illegal control characters', () => {
+    expect(xmlText('a<b>&"c')).toBe('a&lt;b&gt;&amp;&quot;c');
+    expect(xmlText('a\u0000b\u0008c\u000bd\u000ce\u000ef\u001fg')).toBe('abcdefg');
+    // Tab, LF and CR are legal.
+    expect(xmlText('a\tb\nc\rd')).toBe('a\tb\nc\rd');
+  });
+
+  it('keeps a study title with control characters out of the sheet XML', () => {
+    const table = buildTable({ ...input(), studies: [{ ...input().studies[0]!, title: 'bad\u0001\u0000' }] });
+    const xml = decode(unzipSync(buildXlsx(table, () => 't', 'AAPL'))['xl/worksheets/sheet1.xml']!);
+    expect(xml).toContain('>bad</t>');
+    expect([...xml].filter((ch) => ch < ' ' && !'\t\n\r'.includes(ch))).toEqual([]);
+  });
+});
+
+describe('sheetName', () => {
+  it('removes the characters Excel forbids and keeps ordinary names', () => {
+    expect(sheetName('AAPL')).toBe('AAPL');
+    expect(sheetName('BRK/B')).toBe('BRKB');
+    expect(sheetName('a[b]c:d*e?f\\g')).toBe('abcdefg');
+  });
+
+  it('limits the name to 31 characters', () => {
+    expect(sheetName('x'.repeat(40))).toBe('x'.repeat(31));
+  });
+
+  it('never begins or ends with an apostrophe', () => {
+    expect(sheetName("'AAPL'")).toBe('AAPL');
+    expect(sheetName(`${'x'.repeat(30)}'y`)).toBe('x'.repeat(30));
+    expect(sheetName("it's")).toBe("it's");
+  });
+
+  it('falls back to Data when empty or reserved', () => {
+    expect(sheetName('')).toBe('Data');
+    expect(sheetName('  ')).toBe('Data');
+    expect(sheetName('/:*')).toBe('Data');
+    expect(sheetName("''")).toBe('Data');
+    expect(sheetName('History')).toBe('Data');
+    expect(sheetName('hIsToRy')).toBe('Data');
+    expect(sheetName('History2')).toBe('History2');
   });
 });

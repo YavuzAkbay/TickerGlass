@@ -8,8 +8,13 @@ import type { ExportTable, TimeFormatter } from './exportData';
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
-function xmlText(text: string): string {
+/** Control characters XML 1.0 forbids, even escaped: they would corrupt the file. */
+// eslint-disable-next-line no-control-regex -- matching these characters is the point
+const XML_ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+
+export function xmlText(text: string): string {
   return text
+    .replace(XML_ILLEGAL, '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -86,10 +91,15 @@ const stylesXml =
   '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
   '</styleSheet>';
 
-/** Excel sheet names: 1–31 chars, no []:*?/\ characters. */
-function sheetName(symbol: string): string {
-  const name = symbol.replace(/[\\/*?:[\]]/g, '').trim().slice(0, 31);
-  return name || 'Data';
+/**
+ * Excel sheet names: 1–31 chars, no []:*?/\ characters, no leading or trailing
+ * apostrophe, and not "History" (reserved). 'Data' when nothing usable is left.
+ */
+export function sheetName(symbol: string): string {
+  const clean = (s: string) => s.trim().replace(/^'+|'+$/g, '').trim();
+  // Cut to 31 first, then clean again: the cut can expose a trailing apostrophe.
+  const name = clean(clean(symbol.replace(/[\\/*?:[\]]/g, '')).slice(0, 31));
+  return !name || name.toLowerCase() === 'history' ? 'Data' : name;
 }
 
 /** Build the .xlsx file bytes for `table` (sheet named after the symbol). */
