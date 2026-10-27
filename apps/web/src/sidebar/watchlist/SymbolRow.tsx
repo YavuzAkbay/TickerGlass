@@ -84,13 +84,15 @@ export const SymbolRow = memo(function SymbolRow({
         const cell = COLUMNS[id].render(q);
         const isLast = id === 'last';
         const isExt = id === 'extPrice';
+        // Change % renders as a pill tinted by its up/down class (only with a direction).
+        const pill = id === 'changePercent' && !!cell.className;
         return (
           <span
             key={id}
             role="gridcell"
             ref={isLast ? lastRef : isExt ? extRef : undefined}
             data-testid={isLast ? `wl-cell-last-${symbol}` : `wl-cell-${id}-${symbol}`}
-            className={`wl-cell rs-num${cell.className ? ` ${cell.className}` : ''}`}
+            className={`wl-cell rs-num${isLast ? ' wl-last' : ''}${pill ? ' wl-pill' : ''}${cell.className ? ` ${cell.className}` : ''}`}
           >
             {cell.text}
           </span>

@@ -1,5 +1,5 @@
 import { useIsCoarsePointer } from '../../ui/useMediaQuery';
-import { ArrowDown, ArrowUp, Settings2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ListPlus, Settings2 } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -349,11 +349,6 @@ export function WatchlistTable({ listRef }: Props) {
           items={menuItems}
           placement="bottom-end"
         />
-        {rows.length === 0 ? (
-          <div className="wl-empty" role="row">
-            {isFlag ? 'No flagged symbols' : 'This list is empty. Use + to add symbols.'}
-          </div>
-        ) : null}
         {rows.map((row) =>
           row.kind === 'section' ? (
             <SectionRow
@@ -382,6 +377,28 @@ export function WatchlistTable({ listRef }: Props) {
           ),
         )}
       </div>
+      {rows.length === 0 ? (
+        <div className="wl-empty">
+          {isFlag ? (
+            'No flagged symbols'
+          ) : (
+            <>
+              <ListPlus size={30} strokeWidth={1.2} aria-hidden="true" />
+              <div className="wl-empty-title">This list is empty</div>
+              <div className="wl-empty-text">
+                Press Alt+W to add the chart symbol, or search for one to add.
+              </div>
+              <button
+                type="button"
+                className="io-btn wl-empty-btn"
+                onClick={() => commands.execute('watchlist.searchAdd')}
+              >
+                Add symbol
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       {quoteError ? <div className="rs-inline-error">Quotes unavailable: {quoteError}</div> : null}
     </div>
   );
