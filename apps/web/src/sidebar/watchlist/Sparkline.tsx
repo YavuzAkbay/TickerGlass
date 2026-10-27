@@ -37,7 +37,15 @@ export const Sparkline = memo(function Sparkline({ symbol }: { symbol: string })
       role="img"
       aria-label={`30-day trend ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
     >
-      <polyline points={pts} fill="none" strokeWidth="1.3" strokeLinejoin="round" />
+      {/* Area fill under the line; both take the up/down color from CSS `color`. */}
+      <path d={`M0,${H} L${pts} L${W},${H} Z`} fill="currentColor" stroke="none" opacity={0.13} />
+      <polyline
+        points={pts}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 });
