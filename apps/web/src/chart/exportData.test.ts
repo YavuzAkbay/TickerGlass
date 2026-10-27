@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildTable, csvField, dataFilename, makeTimeFormatter, numberCell, toCsv } from './exportData';
+import {
+  buildTable,
+  csvField,
+  csvTextField,
+  dataFilename,
+  makeTimeFormatter,
+  numberCell,
+  toCsv,
+} from './exportData';
 
 const input = () => ({
   time: Float64Array.from([1_705_208_400, 1_705_208_700, 1_705_209_000]), // 2024-01-14 05:00 UTC
@@ -135,6 +143,24 @@ describe('toCsv', () => {
     expect(lines[1]).toBe('d"');
     expect(lines[2]).toBe('t,1,2,0,1.5,10,1');
   });
+
+  it('neutralizes formula-like headers but leaves negative numbers alone', () => {
+    const titles = ['=SUM(A1)', '+1', '-2', '@cmd', '\tx', 'ok'];
+    const table = buildTable({
+      ...input(),
+      studies: titles.map((title) => ({
+        title,
+        plots: [{ id: 'p', title: 'P', offset: 0 }],
+        values: { p: Float64Array.from([-1, -2, -3]) },
+        length: 3,
+      })),
+    });
+    const lines = toCsv(table, () => 't').split('\n');
+    expect(lines[0]).toBe(
+      "time,open,high,low,close,volume,'=SUM(A1),'+1,'-2,'@cmd,'\tx,ok",
+    );
+    expect(lines[1]).toBe('t,1,2,0,1.5,10,-1,-1,-1,-1,-1,-1');
+  });
 });
 
 describe('numberCell', () => {
@@ -182,5 +208,20 @@ describe('dataFilename', () => {
     const date = new Date(Date.UTC(2026, 9, 23, 14, 5));
     expect(dataFilename('AAPL', '1D', 'csv', date)).toBe('AAPL_1D_2026-10-23_14-05.csv');
     expect(dataFilename('BRK/B', '4h', 'xlsx', date)).toBe('BRK_B_4h_2026-10-23_14-05.xlsx');
+  });
+});
+
+describe('csvTextField', () => {
+  it("prefixes ' before a leading = + - @ tab or CR, then applies CSV quoting", () => {
+    for (const c of ['=', '+', '-', '@', '\t'])
+      expect(csvTextField(`${c}x`)).toBe(`'${c}x`);
+    expect(csvTextField('\rx')).toBe(`"'\rx"`);
+    expect(csvTextField('=a,b')).toBe(`"'=a,b"`);
+  });
+
+  it('leaves other text alone, including formula characters past the start', () => {
+    expect(csvTextField('SMA 20')).toBe('SMA 20');
+    expect(csvTextField('a=b')).toBe('a=b');
+    expect(csvTextField('')).toBe('');
   });
 });

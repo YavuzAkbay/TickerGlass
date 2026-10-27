@@ -165,10 +165,20 @@ export function csvField(text: string): string {
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+/**
+ * Field for user-controlled text (study titles): a leading `=`, `+`, `-`, `@`,
+ * tab or CR would make a spreadsheet read the cell as a formula, so it gets a
+ * `'` prefix (OWASP CSV injection). Never for numeric cells: negative numbers
+ * must stay numbers.
+ */
+export function csvTextField(text: string): string {
+  return csvField(/^[=+\-@\t\r]/.test(text) ? `'${text}` : text);
+}
+
 /** Serialize the table as CSV (LF newlines, no trailing newline). */
 export function toCsv(table: ExportTable, fmtTime: TimeFormatter): string {
   const rows: string[] = [
-    ['time', ...table.columns.map((c) => c.header)].map(csvField).join(','),
+    ['time', ...table.columns.map((c) => c.header)].map(csvTextField).join(','),
   ];
   for (let i = 0; i < table.n; i++) {
     const row: string[] = [fmtTime(table.time[i]!)];
