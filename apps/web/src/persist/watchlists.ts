@@ -9,8 +9,11 @@ import { ApiError, errorMessage } from '../api/client';
 import * as persistence from '../api/persistence';
 import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
+import { useWatchlistPrefs } from '../watchlist/prefs';
 import { DEFAULT_LIST_NAME, useWatchlistStore } from '../watchlist/store';
-import type { FlagColor, WatchlistEntry } from '../watchlist/types';
+import type { PendingSeed } from '../watchlist/store';
+import { STARTER_LISTS } from '../watchlist/starters';
+import type { FlagColor, WatchlistEntry, WatchlistItem } from '../watchlist/types';
 import { isTransient } from './net';
 
 export type WatchlistsApi = Pick<
@@ -118,48 +121,71 @@ export class WatchlistSync {
   }
 
   /**
-   * First run only: one list with the current symbol and the recent ones.
+   * First run only: the default list with the current symbol and the recent
+   * ones, plus the starter watchlists for beginners.
    *
    * Seeding is final only once a load succeeded. With the server unreachable
-   * (`serverCount` null) the list is created locally for the UX and remembered
+   * (`serverCount` null) the lists are created locally for the UX and remembered
    * in `pendingSeed`, but `seeded` stays false and nothing is pushed (pushes
    * start after a successful load). On the first successful load: if the
-   * server already has lists (e.g. made by another browser), the seed is
-   * dropped unless it was edited here (then it is the user's and is pushed);
-   * if the server has none, it is pushed as the default list. Either way
-   * `seeded` is then set, so a list deleted later is never re-seeded.
+   * server already has lists (e.g. made by another browser), seeds the user
+   * did not edit are dropped; if the server has none, they are pushed. Either
+   * way `seeded` is then set, so lists deleted later are never re-seeded.
    */
   private seedIfEmpty(serverCount: number | null): void {
     const st = useWatchlistStore.getState();
     if (st.seeded) return;
     if (serverCount === null) {
       if (st.pendingSeed || Object.keys(st.lists).length) return;
-      const id = this.createSeed();
-      const seed = useWatchlistStore.getState().lists[id];
-      if (seed) useWatchlistStore.setState({ pendingSeed: { id, sig: sig(seed) } });
+      useWatchlistStore.setState({ pendingSeed: this.createSeed() });
       return;
     }
     const pending = st.pendingSeed;
     useWatchlistStore.setState({ seeded: true, pendingSeed: null });
     if (pending) {
-      const seed = st.lists[pending.id];
-      if (serverCount > 0 && seed && seed.revision === null && sig(seed) === pending.sig) {
-        const { [pending.id]: _unused, ...lists } = st.lists;
-        useWatchlistStore.setState({ lists });
-      }
+      if (serverCount > 0) this.dropUntouchedSeeds(pending);
       return;
     }
     if (!Object.keys(st.lists).length) this.createSeed();
   }
 
-  private createSeed(): string {
+  /** Untouched seeds are dropped: the server's lists come from another browser. */
+  private dropUntouchedSeeds(pending: PendingSeed): void {
+    const { lists } = useWatchlistStore.getState();
+    const drop = pending.ids.filter((id) => {
+      const seed = lists[id];
+      return seed && seed.revision === null && sig(seed) === pending.sigs[id];
+    });
+    if (!drop.length) return;
+    const keep = { ...lists };
+    for (const id of drop) delete keep[id];
+    useWatchlistStore.setState({ lists: keep });
+    // The offline seed made the default list active; don't leave (and sync) a dead id.
+    const prefs = useWatchlistPrefs.getState();
+    if (prefs.activeId && drop.includes(prefs.activeId)) prefs.setActive(null);
+  }
+
+  private createSeed(): PendingSeed {
+    const ids: string[] = [];
+    const sigs: Record<string, string> = {};
+    const seedOne = (name: string, items: WatchlistItem[]): void => {
+      const id = useWatchlistStore.getState().createList(name, items);
+      const entry = useWatchlistStore.getState().lists[id];
+      if (!entry) return;
+      ids.push(id);
+      sigs[id] = sig(entry);
+    };
     const { recentSymbols } = useAppStore.getState();
     const { symbol } = useChartView.getState();
-    const syms = [...new Set([symbol, ...recentSymbols])];
-    return useWatchlistStore.getState().createList(
+    seedOne(
       DEFAULT_LIST_NAME,
-      syms.map((s) => ({ type: 'symbol' as const, symbol: s })),
+      [...new Set([symbol, ...recentSymbols])].map((s) => ({ type: 'symbol' as const, symbol: s })),
     );
+    for (const starter of STARTER_LISTS) seedOne(starter.name, starter.items);
+    // First-run UX: open on the default list, not the alphabetically first starter.
+    const prefs = useWatchlistPrefs.getState();
+    if (!prefs.activeId && ids.length) prefs.setActive(ids[0]!);
+    return { ids, sigs };
   }
 
   /**
