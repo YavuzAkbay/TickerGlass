@@ -6,11 +6,21 @@
 import { isExpressionSymbol } from '@tickerglass/engine';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { isObj } from '../persist/net';
 import { normalizeSymbol } from '../store/app';
 import { MAX_SECTION_TITLE, MAX_WATCHLIST_ITEMS, SYMBOL_RE } from './model';
 import type { FlagColor, WatchlistEntry, WatchlistItem } from './types';
 
 export const DEFAULT_LIST_NAME = 'Watchlist';
+
+/**
+ * Lists created by first-run seeding while the server was unreachable: ids with
+ * the content signature at creation (`WatchlistSync.seedIfEmpty`).
+ */
+export interface PendingSeed {
+  ids: string[];
+  sigs: Record<string, string>;
+}
 
 interface WatchlistState {
   lists: Record<string, WatchlistEntry>;
@@ -22,13 +32,13 @@ interface WatchlistState {
   pendingDeletes: string[];
   flags: Record<string, { color: FlagColor; at: string }>;
   flagsDirty: Record<string, true>;
-  /** The default list was seeded once already (never re-seed after the user deleted it). */
+  /** The default lists were seeded once already (never re-seed after the user deleted them). */
   seeded: boolean;
   /**
-   * The default list seeded while the server was unreachable, with its content
-   * signature then; not yet confirmed (see `WatchlistSync.seedIfEmpty`).
+   * Lists seeded while the server was unreachable, with their content
+   * signatures then; not yet confirmed (see `WatchlistSync.seedIfEmpty`).
    */
-  pendingSeed: { id: string; sig: string } | null;
+  pendingSeed: PendingSeed | null;
 
   /** New list (client-generated id); items are normalized and de-duplicated. */
   createList: (name: string, items?: WatchlistItem[]) => string;
@@ -98,6 +108,18 @@ type Persisted = Pick<
   'lists' | 'pendingDeletes' | 'flags' | 'flagsDirty' | 'seeded' | 'pendingSeed'
 >;
 
+/** `PendingSeed`, also accepting the pre-starters `{id, sig}` shape an older client cached. */
+function normalizePendingSeed(v: unknown): PendingSeed | null {
+  if (!isObj(v)) return null;
+  if (typeof v.id === 'string' && typeof v.sig === 'string')
+    return { ids: [v.id], sigs: { [v.id]: v.sig } };
+  if (!Array.isArray(v.ids) || !isObj(v.sigs)) return null;
+  const ids = v.ids.filter((x): x is string => typeof x === 'string');
+  const sigs: Record<string, string> = {};
+  for (const id of ids) if (typeof v.sigs[id] === 'string') sigs[id] = v.sigs[id];
+  return ids.length ? { ids, sigs } : null;
+}
+
 /**
  * Rehydrate: clean what an older client may have cached (symbols the server
  * rejects with 422). A list that changed is marked dirty so the clean copy syncs.
@@ -125,7 +147,8 @@ export function mergePersisted(saved: unknown, current: WatchlistState): Watchli
     flagsDirty,
     pendingDeletes: p.pendingDeletes ?? current.pendingDeletes,
     seeded: p.seeded ?? current.seeded,
-    pendingSeed: p.pendingSeed ?? current.pendingSeed,
+    pendingSeed:
+      p.pendingSeed === undefined ? current.pendingSeed : normalizePendingSeed(p.pendingSeed),
   };
 }
 

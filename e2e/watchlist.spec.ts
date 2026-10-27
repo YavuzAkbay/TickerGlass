@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { formatTxt } from '../apps/web/src/watchlist/model';
+import { STARTER_LISTS } from '../apps/web/src/watchlist/starters';
 import { expect, test } from './fixtures';
 import { mockMarket, quote } from './market';
 import type { MockServer } from './persistence';
@@ -171,7 +172,8 @@ test('create a list, add by Alt+W and by search, reload, rename, duplicate', asy
   await expect
     .poll(() => serverItems(server, listByName(server, 'Tech copy')?.id ?? ''))
     .toEqual(['AAPL', 'MSFT']);
-  expect(server.watchlists.size).toBe(3);
+  // First run seeded the default list and the starter lists; plus Tech and its copy.
+  expect(server.watchlists.size).toBe(1 + STARTER_LISTS.length + 2);
 });
 
 test('add a section, drag MSFT above it, order survives a reload', async ({ page, server }) => {

@@ -3,7 +3,9 @@ import { ApiError } from '../api/client';
 import type { Flag, Watchlist } from '../api/types';
 import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
+import { useWatchlistPrefs } from '../watchlist/prefs';
 import { useWatchlistStore } from '../watchlist/store';
+import { STARTER_LISTS } from '../watchlist/starters';
 import type { FlagColor, WatchlistEntry, WatchlistItem } from '../watchlist/types';
 import { WatchlistSync, type WatchlistsApi } from './watchlists';
 
@@ -131,9 +133,14 @@ beforeEach(() => {
     seeded: false,
     pendingSeed: null,
   });
+  useWatchlistPrefs.setState({ activeId: null });
   useChartView.setState({ symbol: 'AAPL' });
   useAppStore.setState({ recentSymbols: ['MSFT', 'AAPL'] });
 });
+
+/** Id of the seeded list `name` (the default or a starter). */
+const seededId = (name: string): string =>
+  Object.values(st().lists).find((l) => l.name === name)?.id ?? '';
 
 describe('WatchlistSync.load', () => {
   it('adopts clean lists, keeps dirty ones, handles lists deleted elsewhere', async () => {
@@ -190,23 +197,29 @@ describe('WatchlistSync.load', () => {
     await sync.dispose();
   });
 
-  it('seeds a default list from the current and recent symbols on first run', async () => {
+  it('seeds the default list and the starter lists on first run, default active', async () => {
     const { sync, server } = setup();
     await sync.load();
-    const [l] = Object.values(st().lists);
-    expect(l).toMatchObject({ name: 'Watchlist', revision: null, dirty: true });
-    expect(l!.items).toEqual([S('AAPL'), S('MSFT')]);
+    const lists = st().lists;
+    expect(lists[seededId('Watchlist')]).toMatchObject({
+      name: 'Watchlist',
+      revision: null,
+      dirty: true,
+    });
+    expect(lists[seededId('Watchlist')]!.items).toEqual([S('AAPL'), S('MSFT')]);
+    expect(Object.keys(lists)).toHaveLength(1 + STARTER_LISTS.length);
+    for (const s of STARTER_LISTS) expect(seededId(s.name)).not.toBe('');
+    expect(useWatchlistPrefs.getState().activeId).toBe(seededId('Watchlist'));
     await sync.flush();
-    expect(server.lists.size).toBe(1);
+    expect(server.lists.size).toBe(1 + STARTER_LISTS.length);
     await sync.dispose();
   });
 
-  it('seeds only once: deleting the last list does not resurrect the default', async () => {
+  it('seeds only once: deleting the lists does not resurrect the defaults', async () => {
     const { sync, server } = setup();
     await sync.load();
     await sync.flush();
-    const [id] = Object.keys(st().lists);
-    st().deleteList(id!);
+    for (const id of Object.keys(st().lists)) st().deleteList(id);
     await sync.flush();
     expect(server.lists.size).toBe(0);
     await sync.load(); // e.g. tab focus
@@ -224,7 +237,7 @@ describe('WatchlistSync.load', () => {
     useWatchlistStore.setState({ lists: {}, seeded: false });
     server.lists.clear();
     await sync.load();
-    expect(Object.values(st().lists)[0]!.items).toEqual([S('MSFT'), S('AAPL')]);
+    expect(st().lists[seededId('Watchlist')]!.items).toEqual([S('MSFT'), S('AAPL')]);
     await sync.dispose();
   });
 
@@ -232,9 +245,9 @@ describe('WatchlistSync.load', () => {
     const { sync, server } = setup();
     server.down = true;
     await expect(sync.load()).rejects.toThrow();
-    expect(Object.keys(st().lists)).toHaveLength(1);
+    expect(Object.keys(st().lists)).toHaveLength(1 + STARTER_LISTS.length);
     // Edits while the API is down.
-    const id = Object.keys(st().lists)[0]!;
+    const id = seededId('Watchlist');
     st().addSymbols(id, ['NVDA']);
     server.down = false;
     await sync.load();
@@ -244,12 +257,12 @@ describe('WatchlistSync.load', () => {
     await sync.dispose();
   });
 
-  it('drops an untouched offline seed when the server already has lists', async () => {
+  it('drops untouched offline seeds when the server already has lists', async () => {
     const { sync, server } = setup();
     server.down = true;
     await expect(sync.load()).rejects.toThrow();
     await expect(sync.load()).rejects.toThrow(); // seeds once
-    expect(Object.keys(st().lists)).toHaveLength(1);
+    expect(Object.keys(st().lists)).toHaveLength(1 + STARTER_LISTS.length);
     expect(st().seeded).toBe(false);
     server.down = false;
     server.lists.set('a', wl('a', 'Watchlist', 1, [S('X')])); // made by another browser
@@ -262,39 +275,54 @@ describe('WatchlistSync.load', () => {
     await sync.dispose();
   });
 
-  it('keeps an offline seed that was edited, even when the server has lists', async () => {
+  it('resets the active list set by an offline seed once the seeds are dropped', async () => {
     const { sync, server } = setup();
     server.down = true;
     await expect(sync.load()).rejects.toThrow();
-    const id = Object.keys(st().lists)[0]!;
+    const id = seededId('Watchlist');
+    expect(useWatchlistPrefs.getState().activeId).toBe(id);
+    server.down = false;
+    server.lists.set('a', wl('a', 'Watchlist', 1, [S('X')]));
+    await sync.load();
+    expect(st().lists[id]).toBeUndefined();
+    expect(useWatchlistPrefs.getState().activeId).toBeNull();
+    await sync.dispose();
+  });
+
+  it('keeps an edited offline seed, drops untouched starters, when the server has lists', async () => {
+    const { sync, server } = setup();
+    server.down = true;
+    await expect(sync.load()).rejects.toThrow();
+    const id = seededId('Watchlist');
     st().addSymbols(id, ['NVDA']);
     server.down = false;
     server.lists.set('a', wl('a', 'A', 1));
     await sync.load();
     await sync.flush();
     expect(server.lists.get(id)!.items).toContainEqual(S('NVDA'));
+    expect(Object.keys(st().lists).sort()).toEqual(['a', id].sort());
     expect(st().seeded).toBe(true);
     await sync.dispose();
   });
 
-  it('pushes an untouched offline seed when the server has no lists', async () => {
+  it('pushes untouched offline seeds when the server has no lists', async () => {
     const { sync, server } = setup();
     server.down = true;
     await expect(sync.load()).rejects.toThrow();
-    const id = Object.keys(st().lists)[0]!;
     server.down = false;
     await sync.load();
     await sync.flush();
-    expect([...server.lists.keys()]).toEqual([id]);
+    expect([...server.lists.keys()].sort()).toEqual(Object.keys(st().lists).sort());
+    expect(server.lists.size).toBe(1 + STARTER_LISTS.length);
     expect(st().seeded).toBe(true);
     await sync.dispose();
   });
 
-  it('an offline seed the user deleted is not re-seeded once online', async () => {
+  it('offline seeds the user deleted are not re-seeded once online', async () => {
     const { sync, server } = setup();
     server.down = true;
     await expect(sync.load()).rejects.toThrow();
-    st().deleteList(Object.keys(st().lists)[0]!);
+    for (const id of Object.keys(st().lists)) st().deleteList(id);
     server.down = false;
     await sync.load();
     await sync.flush();

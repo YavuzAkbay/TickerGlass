@@ -297,6 +297,25 @@ describe('rehydrate', () => {
     expect(out.pendingDeletes).toEqual(['x']);
     expect(out.seeded).toBe(true);
   });
+
+  it('normalizes the old single-list pendingSeed shape to the multi-list one', () => {
+    const old = { pendingSeed: { id: 'a', sig: 's' } };
+    expect(mergePersisted(old, useWatchlistStore.getState()).pendingSeed).toEqual({
+      ids: ['a'],
+      sigs: { a: 's' },
+    });
+    const fresh = { pendingSeed: { ids: ['a', 'b'], sigs: { a: 's1' } } };
+    expect(mergePersisted(fresh, useWatchlistStore.getState()).pendingSeed).toEqual({
+      ids: ['a', 'b'],
+      sigs: { a: 's1' },
+    });
+    expect(
+      mergePersisted({ pendingSeed: null }, useWatchlistStore.getState()).pendingSeed,
+    ).toBeNull();
+    expect(
+      mergePersisted({ pendingSeed: { ids: [] } }, useWatchlistStore.getState()).pendingSeed,
+    ).toBeNull();
+  });
 });
 
 describe('prefs', () => {
