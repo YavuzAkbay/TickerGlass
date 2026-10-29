@@ -152,6 +152,15 @@ export default function SymbolSearchDialog({
         </div>
       </div>
     );
+  } else if (search.tooShort) {
+    body = (
+      <div className="dlg-empty">
+        Type at least {search.minChars} characters to search
+        <div className="dlg-empty-hint">
+          Press <kbd>Enter</kbd> to open <b>{q.toUpperCase()}</b>
+        </div>
+      </div>
+    );
   } else if (rows.length === 0 && search.fresh) {
     body = (
       <div className="dlg-empty">

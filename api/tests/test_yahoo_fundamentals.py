@@ -3,8 +3,8 @@
 from typing import Any
 
 import pandas as pd
-import yfinance as yf
 import pytest
+import yfinance as yf
 
 from tickerglass_api.providers.base import SymbolNotFound
 from tickerglass_api.providers.yahoo import YahooProvider

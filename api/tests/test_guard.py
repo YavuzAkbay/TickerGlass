@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,6 +19,8 @@ from tickerglass_api.providers.base import (
     RateLimited,
     SymbolNotFound,
     UpstreamUnavailable,
+    Usage,
+    report_usage,
 )
 from tickerglass_api.providers.guard import FUNDAMENTALS_REQUESTS, GuardedProvider, UpstreamGuard
 from tickerglass_api.providers.yahoo import YahooProvider
@@ -294,6 +296,318 @@ def test_cache_stats_snapshot_nests_names() -> None:
         "cache": {"entries": 7},
         "upstream": {"history": {"calls": 2}},
     }
+
+
+# ---------------------------------------------------------------- priorities
+
+
+class FakeUtc:
+    """Wall clock (UTC) for the daily allowance."""
+
+    def __init__(self, now: datetime) -> None:
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def granted(guard: UpstreamGuard, level: Any, cost: int = 1) -> int:
+    """How many calls of `level` the guard lets through before refusing one."""
+    n = 0
+    with guard.priority(level):
+        while True:
+            try:
+                guard.acquire(cost)
+            except RateLimited:
+                return n
+            n += 1
+
+
+def test_burst_reserves_by_priority() -> None:
+    results = {}
+    for level in ("interactive", "visible", "background", "prefetch"):
+        clock = FakeClock()
+        guard = make_guard(clock, burst=10)
+        if level == "interactive":
+            for _ in range(10):
+                guard.acquire()
+            results[level] = 10
+            continue
+        results[level] = granted(guard, level)
+        assert clock.sleeps == []  # below interactive nothing ever waits
+    # Reserves of 0 / 10% / 25% / 50% of the burst stay untouched.
+    assert results == {"interactive": 10, "visible": 9, "background": 7, "prefetch": 5}
+
+
+def test_lower_priorities_leave_tokens_for_higher_ones() -> None:
+    clock = FakeClock()
+    guard = make_guard(clock, burst=10)
+    assert granted(guard, "prefetch") == 5
+    assert granted(guard, "background") == 2  # tokens 5 -> 3
+    assert granted(guard, "visible") == 2  # tokens 3 -> 1
+    guard.acquire()  # interactive takes the rest
+    assert guard.snapshot()["refused"]["budget"] == 3
+
+
+def test_priority_context_nests_and_restores() -> None:
+    guard = UpstreamGuard()
+    assert guard.current_priority() == "interactive" and not guard.in_background()
+    with guard.priority("visible"):
+        assert not guard.in_background()
+        with guard.background():
+            assert guard.current_priority() == "background" and guard.in_background()
+            with guard.priority("prefetch"):
+                assert guard.in_background()
+        assert guard.current_priority() == "visible"
+    assert guard.current_priority() == "interactive"
+    with pytest.raises(ValueError), guard.priority("urgent"):  # type: ignore[arg-type]
+        pass
+
+
+def test_priority_follows_to_thread() -> None:
+    guard = UpstreamGuard()
+
+    async def run() -> str:
+        with guard.priority("visible"):
+            return await asyncio.to_thread(guard.current_priority)
+
+    assert asyncio.run(run()) == "visible"
+
+
+# ---------------------------------------------------------------- daily allowance
+
+DAY = datetime(2026, 6, 17, 12, 0, tzinfo=UTC)
+
+
+def daily_guard(limit: int = 100, now: datetime = DAY, **kw: Any) -> tuple[UpstreamGuard, FakeUtc]:
+    utc = FakeUtc(now)
+    opts: dict[str, Any] = {"burst": 1000, "rate_per_min": 1e6, **kw}
+    return make_guard(FakeClock(), daily_limit=limit, utcnow=utc, **opts), utc
+
+
+def test_daily_limit_refuses_until_utc_midnight() -> None:
+    guard, utc = daily_guard(now=datetime(2026, 6, 17, 23, 0, tzinfo=UTC))
+    guard.acquire(60)
+    guard.acquire(40)
+    tokens = guard.snapshot()["tokens"]
+    with pytest.raises(RateLimited) as info:
+        guard.acquire()
+    assert info.value.retry_after == 3600  # to 00:00 UTC
+    assert guard.snapshot()["refused"]["daily"] == 1
+    assert guard.snapshot()["tokens"] == tokens  # a refusal costs nothing
+
+    utc.now = datetime(2026, 6, 17, 23, 59, 59, tzinfo=UTC)
+    with pytest.raises(RateLimited) as info:
+        guard.acquire()
+    assert info.value.retry_after == 1
+
+    utc.now = datetime(2026, 6, 18, 0, 0, 0, tzinfo=UTC)
+    guard.acquire(30)
+    daily = guard.snapshot()["daily"]
+    assert daily["used"] == 30 and daily["left"] == 70
+    assert daily["resetAt"] == "2026-06-19T00:00:00Z"
+
+
+def test_daily_cost_larger_than_what_is_left_is_refused() -> None:
+    guard, _ = daily_guard()
+    guard.acquire(95)
+    with pytest.raises(RateLimited):
+        guard.acquire(10)
+    guard.acquire(5)  # the rest still fits
+    assert guard.snapshot()["daily"]["left"] == 0
+
+
+def test_daily_reserves_keep_credits_for_higher_priorities() -> None:
+    guard, _ = daily_guard()
+    with guard.priority("background"):
+        for _ in range(85):  # refused once fewer than 15% would be left
+            guard.acquire()
+        with pytest.raises(RateLimited):
+            guard.acquire()
+    with guard.priority("visible"):
+        for _ in range(10):  # down to 5%
+            guard.acquire()
+        with pytest.raises(RateLimited) as info:
+            guard.acquire()
+        assert "reserved" in str(info.value)
+    for _ in range(5):
+        guard.acquire()  # interactive may use it all
+    with pytest.raises(RateLimited) as info:
+        guard.acquire()
+    assert "used up" in str(info.value)
+    assert guard.snapshot()["refused"]["daily"] == 3
+
+
+def test_no_daily_limit_by_default() -> None:
+    clock = FakeClock()
+    guard = make_guard(clock, burst=1000, rate_per_min=1e6)
+    guard.acquire(500)
+    snap = guard.snapshot()
+    assert snap["daily"] is None and snap["state"] == "ok"
+    assert guard.sustainable_rate_per_min() == pytest.approx(1e6)
+
+
+def test_daily_exhaustion_from_the_upstream_closes_the_day() -> None:
+    utc = FakeUtc(datetime(2026, 6, 17, 22, 0, tzinfo=UTC))
+    guard = make_guard(FakeClock(), burst=1000, rate_per_min=1e6, daily_limit=800, utcnow=utc)
+    inner = CountingProvider()
+    prov = GuardedProvider(inner, guard)
+    inner.error = RateLimited("out of credits for the day", 60, daily=True)
+    with pytest.raises(RateLimited) as info:
+        prov.quotes(["A"])
+    assert info.value.retry_after == 2 * 3600
+    snap = guard.snapshot()
+    assert snap["daily"]["used"] == 800 and snap["state"] == "exhausted"
+    assert not snap["rateLimited"]  # no cooldown: the daily check refuses by itself
+    inner.error = None
+    with pytest.raises(RateLimited):
+        prov.quotes(["A"])
+    assert inner.calls == {"quotes": 1}
+    utc.now = datetime(2026, 6, 18, 0, 0, 1, tzinfo=UTC)
+    prov.quotes(["A"])
+    assert inner.calls == {"quotes": 2}
+
+
+def test_daily_refusal_without_a_limit_is_an_ordinary_one() -> None:
+    inner = CountingProvider()
+    inner.error = RateLimited("daily", 5, daily=True)
+    guard = make_guard(FakeClock())
+    with pytest.raises(RateLimited):
+        GuardedProvider(inner, guard).quotes(["A"])
+    assert guard.snapshot()["rateLimited"] is True
+
+
+def test_sustainable_rate_spreads_the_day() -> None:
+    guard, utc = daily_guard(800, datetime(2026, 6, 17, 0, 0, tzinfo=UTC), rate_per_min=8)
+    # 800 credits over 24h: about 0.56 a minute, far below the per-minute rate.
+    assert guard.sustainable_rate_per_min() == pytest.approx(800 / 1440)
+    utc.now = datetime(2026, 6, 17, 23, 0, tzinfo=UTC)
+    assert guard.sustainable_rate_per_min() == pytest.approx(8)  # 800/60 > rate: rate caps it
+    guard.acquire(790)
+    assert guard.sustainable_rate_per_min() == pytest.approx(10 / 60)
+    utc.now = datetime(2026, 6, 17, 23, 59, 50, tzinfo=UTC)  # under a minute left
+    assert guard.sustainable_rate_per_min() == pytest.approx(8)  # 10 left in <1 min: rate caps
+    guard.acquire(5)
+    assert guard.sustainable_rate_per_min() == pytest.approx(5.0)  # the last minute counts as 1
+    guard.mark_daily_exhausted()
+    assert guard.sustainable_rate_per_min() == 0
+
+
+def test_sustainable_rate_is_the_rate_without_a_daily_limit() -> None:
+    assert make_guard(FakeClock(), rate_per_min=55).sustainable_rate_per_min() == pytest.approx(55)
+
+
+# ---------------------------------------------------------------- calibration
+
+
+def test_calibrate_lowers_tokens_but_never_raises_them() -> None:
+    guard = make_guard(FakeClock(), rate_per_min=60, burst=20)
+    guard.calibrate(minute_used=3, minute_left=5)
+    assert guard.snapshot()["tokens"] == 5
+    guard.calibrate(minute_used=0, minute_left=50)
+    assert guard.snapshot()["tokens"] == 5
+    guard.acquire(5)
+    guard.calibrate(minute_used=1, minute_left=2)
+    assert guard.snapshot()["tokens"] == 0
+
+
+def test_calibrate_takes_the_per_minute_limit_from_used_plus_left() -> None:
+    guard = make_guard(FakeClock(), rate_per_min=60, burst=20)
+    assert guard.snapshot()["calibrated"] is False
+    guard.calibrate(minute_used=3, minute_left=5)
+    snap = guard.snapshot()
+    assert snap["ratePerMin"] == pytest.approx(8) and snap["burst"] == 8
+    assert snap["calibrated"] is True
+    guard.calibrate(minute_used=0, minute_left=55)  # a larger plan: rate follows, burst stays
+    assert guard.snapshot()["ratePerMin"] == pytest.approx(55)
+    assert guard.snapshot()["burst"] == 8
+
+
+def test_calibrate_keeps_limits_the_user_set() -> None:
+    guard = make_guard(
+        FakeClock(),
+        rate_per_min=60,
+        burst=20,
+        daily_limit=500,
+        calibrate_rate=False,
+        calibrate_daily=False,
+    )
+    guard.calibrate(minute_used=3, minute_left=5, daily_limit=800, daily_used=40)
+    snap = guard.snapshot()
+    assert snap["ratePerMin"] == pytest.approx(60) and snap["burst"] == 20
+    assert snap["tokens"] == 5  # still lowered
+    assert snap["daily"]["limit"] == 500 and snap["daily"]["used"] == 40
+    assert snap["calibrated"] is False
+
+
+def test_calibrate_daily_count_only_grows() -> None:
+    guard, _ = daily_guard(800)
+    guard.acquire(10)
+    guard.calibrate(daily_used=300, daily_limit=800)
+    assert guard.snapshot()["daily"]["used"] == 300
+    guard.calibrate(daily_used=120)  # another response, older: ignored
+    assert guard.snapshot()["daily"]["used"] == 300
+    guard.calibrate(daily_limit=1000)
+    assert guard.snapshot()["daily"]["limit"] == 1000
+
+
+def test_guarded_calls_report_usage_to_the_guard() -> None:
+    class Reporting(CountingProvider):
+        def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+            report_usage(minute_used=2, minute_left=6, daily_used=50, daily_limit=800)
+            return []
+
+    guard, _ = daily_guard(1000, rate_per_min=60)
+    GuardedProvider(Reporting(), guard).quotes(["A"])
+    snap = guard.snapshot()
+    assert snap["ratePerMin"] == pytest.approx(8) and snap["tokens"] == 6
+    assert snap["daily"]["limit"] == 800 and snap["daily"]["used"] == 50
+    report_usage(minute_left=0)  # outside a guarded call: nothing happens
+    assert guard.snapshot()["tokens"] == 6
+
+
+def test_seed_usage_calibrates_from_a_metered_provider() -> None:
+    class Metered(CountingProvider):
+        def usage(self) -> Usage:
+            self._hit("usage")
+            return Usage(minute_limit=8, minute_used=3, daily_limit=800, daily_used=420)
+
+    guard, _ = daily_guard(1000, rate_per_min=60)
+    prov = GuardedProvider(Metered(), guard)
+    assert prov.seed_usage() is True
+    snap = guard.snapshot()
+    assert snap["tokens"] == 5 and snap["ratePerMin"] == pytest.approx(8)
+    assert snap["daily"]["limit"] == 800 and snap["daily"]["used"] == 420
+    assert GuardedProvider(CountingProvider(), guard).seed_usage() is False
+
+
+def test_snapshot_state_and_retry_after() -> None:
+    clock = FakeClock()
+    guard = make_guard(clock, rate_per_min=60, burst=4)
+    assert guard.snapshot()["state"] == "ok" and guard.snapshot()["retryAfterS"] == 0
+    guard.acquire(4)
+    snap = guard.snapshot()
+    # A one-second wait is ordinary pacing: reported, but not "throttled".
+    assert snap["state"] == "ok" and snap["retryAfterS"] == 1
+    clock.now += 1
+    assert guard.snapshot()["state"] == "ok" and guard.snapshot()["retryAfterS"] == 0
+    guard.on_rate_limited(20)
+    snap = guard.snapshot()
+    assert snap["state"] == "throttled" and snap["retryAfterS"] == 30
+    assert timedelta(seconds=snap["retryAfterS"]) > timedelta(0)
+
+
+def test_snapshot_throttled_only_for_waits_over_five_seconds() -> None:
+    clock = FakeClock()
+    guard = make_guard(clock, rate_per_min=6, burst=4)  # a token every 10 s
+    guard.acquire(4)
+    snap = guard.snapshot()
+    assert snap["retryAfterS"] == 10 and snap["state"] == "throttled"
+    clock.now += 5  # half a token back: 5 s to wait
+    snap = guard.snapshot()
+    assert snap["retryAfterS"] == 5 and snap["state"] == "ok"
+    clock.now += 1
+    assert guard.snapshot()["retryAfterS"] == 4
 
 
 # ---------------------------------------------------------------- app wiring

@@ -21,8 +21,15 @@ async function main(): Promise<void> {
     throw err;
   }
   const log = createLogger(config.logLevel);
-  const http = new HttpDataFeed({ baseUrl: config.apiUrl, wsUrl: config.wsUrl });
-  const feed = new ExpressionFeed(new ResamplingFeed(http));
+  // Alert evaluation reads the same bars the charts show: ask the API to serve it like a visible
+  // chart (ahead of background refreshes) so a provider switch reloads the alerts promptly.
+  const http = new HttpDataFeed({
+    baseUrl: config.apiUrl,
+    wsUrl: config.wsUrl,
+    headers: { 'X-TickerGlass-Priority': 'visible' },
+  });
+  const resampling = new ResamplingFeed(http);
+  const feed = new ExpressionFeed(resampling);
   const api = new ApiClient({ baseUrl: config.apiUrl, token: config.token });
   const control = new ControlSocket(config.wsUrl, log);
   const service = createService({
@@ -34,6 +41,11 @@ async function main(): Promise<void> {
     log,
     live: http,
     disposeFeed: () => http.dispose(),
+    clearSymbolCache: () => {
+      http.clearSymbolCache();
+      resampling.clearSymbolCache();
+      feed.clearSymbolCache();
+    },
   });
 
   let closing = false;

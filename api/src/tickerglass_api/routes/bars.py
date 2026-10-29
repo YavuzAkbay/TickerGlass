@@ -4,9 +4,10 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from ..deps import BarServiceDep
+from ..deps import BarServiceDep, UpstreamGuardDep
 from ..intervals import resolve_interval
 from ._cache_headers import set_max_age, set_no_cache
+from ._priority import PriorityDep
 
 router = APIRouter(tags=["bars"])
 
@@ -35,6 +36,8 @@ class BarsResponse(BaseModel):
 def get_bars(
     response: Response,
     bars: BarServiceDep,
+    guard: UpstreamGuardDep,
+    priority: PriorityDep,
     symbol: Annotated[str, Query(min_length=1, max_length=32)],
     interval: str = "1d",
     start: Annotated[int | None, Query(alias="from", description="Inclusive unix seconds")] = None,
@@ -44,12 +47,16 @@ def get_bars(
     prepost: bool = False,
 ) -> BarsResponse:
     """Most recent `limit` bars in [from, to). Page backwards by passing the
-    oldest returned `t` as the next `to`, while `hasMore` is true."""
+    oldest returned `t` as the next `to`, while `hasMore` is true. Upstream calls run at
+    `interactive` priority unless the `X-TickerGlass-Priority` header asks for a lower one."""
     try:
         spec = resolve_interval(interval)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    res = bars.get_bars(symbol, spec, prepost, start=start, end=end, limit=limit, adjusted=adjusted)
+    with guard.priority(priority):
+        res = bars.get_bars(
+            symbol, spec, prepost, start=start, end=end, limit=limit, adjusted=adjusted
+        )
     df = res.bars
     if end is not None and end <= time.time() - SETTLED_BARS * spec.seconds:
         set_max_age(response, HISTORY_MAX_AGE_S)
@@ -59,7 +66,7 @@ def get_bars(
         symbol=symbol.upper(),
         interval=spec.name,
         adjusted=adjusted,
-        prepost=prepost and spec.intraday,
+        prepost=bars.effective_prepost(spec, prepost),
         t=df["ts"].astype("int64").tolist(),
         o=df["open"].tolist(),
         h=df["high"].tolist(),

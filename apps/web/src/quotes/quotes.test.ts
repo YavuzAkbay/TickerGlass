@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../api/client';
 import type { Quote } from '../api/types';
 import { emptyQuote, mergeExtended, mergeSnapshot, mergeTick } from './merge';
 import {
@@ -402,6 +403,47 @@ describe('QuoteStream', () => {
     expect(fetches.filter((f) => f.startsWith('/quotes/extended'))).toHaveLength(1);
   });
 
+  it('skips /quotes/extended when the provider has no extended quotes', async () => {
+    stream.dispose();
+    stream = new QuoteStream({
+      url: 'ws://test/ws',
+      createSocket: (u) => new FakeSocket(u),
+      fetchJson: async <T>(path: string) => {
+        fetches.push(path);
+        return [] as unknown as T;
+      },
+      isVisible: () => visible,
+      extendedQuotes: () => false,
+    });
+    stream.subscribe(['MSFT'], { ext: true });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(fetches).toContain('/quotes?symbols=MSFT');
+    expect(fetches.filter((f) => f.startsWith('/quotes/extended'))).toEqual([]);
+  });
+
+  it('stops asking for extended quotes after a 501, without raising an error', async () => {
+    stream.dispose();
+    let calls = 0;
+    stream = new QuoteStream({
+      url: 'ws://test/ws',
+      createSocket: (u) => new FakeSocket(u),
+      fetchJson: async <T>(path: string) => {
+        if (path.startsWith('/quotes/extended')) {
+          calls++;
+          throw new ApiError('not supported', 501, { code: 'unsupported', feature: 'extended' });
+        }
+        return [] as unknown as T;
+      },
+      isVisible: () => visible,
+    });
+    stream.subscribe(['MSFT'], { ext: true });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(calls).toBe(1);
+    expect(useQuoteStore.getState().error).toBeNull();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(calls).toBe(1);
+  });
+
   it('caps the socket at 200 symbols (newest first) and polls the rest', async () => {
     const many = Array.from({ length: 205 }, (_, i) => `S${i}`);
     stream.subscribe(many.slice(0, 100));
@@ -443,6 +485,45 @@ describe('QuoteStream', () => {
     last().open();
     await vi.advanceTimersByTimeAsync(25_000);
     expect(last().sent.filter((m) => m.op === 'ping')).toHaveLength(1);
+  });
+
+  describe('onProviderChanged', () => {
+    it('calls listeners for the provider.changed frame, without an event subscription', () => {
+      const seen: unknown[] = [];
+      const other: unknown[] = [];
+      const off = stream.onProviderChanged((f) => seen.push(f));
+      stream.onProviderChanged((f) => other.push(f));
+      stream.subscribe(['AAPL']);
+      last().open();
+      last().push({ type: 'provider.changed', id: 'demo', previous: 'yahoo' });
+      expect(seen).toEqual([{ type: 'provider.changed', id: 'demo', previous: 'yahoo' }]);
+      expect(other).toHaveLength(1);
+      // Ticks and other frames do not reach it; the socket and its subscriptions stay.
+      last().push(tick());
+      last().push({ type: 'alerts.changed', topic: 'alerts', ids: [], deleted: [] });
+      expect(seen).toHaveLength(1);
+      expect(last().closed).toBe(false);
+      off();
+      last().push({ type: 'provider.changed', id: 'x' });
+      expect(seen).toHaveLength(1);
+      expect(other).toHaveLength(2);
+    });
+
+    it('a throwing listener does not stop the others or the stream', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const seen: unknown[] = [];
+      stream.onProviderChanged(() => {
+        throw new Error('boom');
+      });
+      stream.onProviderChanged((f) => seen.push(f));
+      stream.subscribe(['AAPL']);
+      last().open();
+      last().push({ type: 'provider.changed', id: 'demo' });
+      expect(seen).toHaveLength(1);
+      last().push(tick({ price: 123 }));
+      expect(useQuoteStore.getState().quotes.AAPL?.last).toBe(123);
+      warn.mockRestore();
+    });
   });
 
   describe('subscribeEvents', () => {

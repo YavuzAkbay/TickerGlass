@@ -8,7 +8,10 @@ import { registerReplayCommands } from './replay/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { registerWatchlistCommands } from './watchlist/commands';
 import { startPersistence } from './persist/bootstrap';
+import { loadProvider, refreshUsage, resetProviderStore, useProviderStore } from './api/provider';
+import { getQuoteStream } from './quotes/stream';
 import { startFirstRun } from './setup/firstRun';
+import { flushAndReload, isSwitchingHere } from './setup/switchProvider';
 import { registerLayoutCommands } from './persist/commands';
 import { DialogHost } from './dialogs/DialogHost';
 import { Inspector } from './inspector/Inspector';
@@ -19,7 +22,7 @@ import { QuickTools, ToolRail } from './toolbar/ToolRail';
 import { TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
 import { PromptHost } from './ui/Prompt';
-import { ToastHost } from './ui/Toast';
+import { ToastHost, actionToast } from './ui/Toast';
 import { MOBILE_QUERY, useIsMobile } from './ui/useMediaQuery';
 import './ui/ui.css';
 import './App.css';
@@ -77,6 +80,29 @@ export function App() {
 
   // After the chart mounted (child effects run first): restore the last layout.
   useEffect(() => startPersistence(), []);
+  // What the data provider supports (until known, everything counts as supported).
+  useEffect(() => {
+    void loadProvider();
+  }, []);
+  // Another tab switched the data provider: reload what this tab knows about it, and offer a
+  // reload (the chart and every cached series still hold the old provider's data).
+  useEffect(
+    () =>
+      getQuoteStream().onProviderChanged((frame) => {
+        const mine = isSwitchingHere(); // this tab reloads by itself
+        resetProviderStore();
+        void refreshUsage();
+        void loadProvider().then(() => {
+          if (mine) return;
+          const known = useProviderStore.getState();
+          const name = known.loaded ? known.name : (frame.id ?? 'another provider');
+          actionToast(`Data source changed to ${name}`, [
+            { label: 'Reload', run: () => void flushAndReload() },
+          ]);
+        });
+      }),
+    [],
+  );
   // First visit: which data source this instance runs on, and whether it answers.
   useEffect(() => startFirstRun(), []);
 

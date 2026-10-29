@@ -1,0 +1,46 @@
+{
+  "request": {
+    "path": "/time_series",
+    "params": {
+      "symbol": "BRK.B",
+      "interval": "1day",
+      "outputsize": "2"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "7",
+    "api-credits-left": "1",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "meta": {
+      "symbol": "BRK.B",
+      "interval": "1day",
+      "currency": "USD",
+      "exchange_timezone": "America/New_York",
+      "exchange": "NYSE",
+      "mic_code": "XNYS",
+      "type": "Common Stock"
+    },
+    "values": [
+      {
+        "datetime": "2026-10-27",
+        "open": "548.26",
+        "high": "548.26",
+        "low": "543.4",
+        "close": "544.38",
+        "volume": "26394"
+      },
+      {
+        "datetime": "2026-10-26",
+        "open": "542.25",
+        "high": "549",
+        "low": "542",
+        "close": "548.56000",
+        "volume": "4698600"
+      }
+    ],
+    "status": "ok"
+  }
+}

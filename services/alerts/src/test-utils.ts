@@ -87,6 +87,7 @@ export class FakeControl implements ControlLike {
   private a: ((ids: string[], deleted: string[]) => void)[] = [];
   private d: ((ids: string[], deleted: string[]) => void)[] = [];
   private c: ((up: boolean) => void)[] = [];
+  private p: (() => void)[] = [];
   start(): void {
     this.started = true;
   }
@@ -101,6 +102,12 @@ export class FakeControl implements ControlLike {
   }
   onConnection(fn: (up: boolean) => void): void {
     this.c.push(fn);
+  }
+  onProviderChanged(fn: () => void): void {
+    this.p.push(fn);
+  }
+  providerChanged(): void {
+    for (const f of this.p) f();
   }
   connection(up: boolean): void {
     this.connected = up;
@@ -135,6 +142,8 @@ export class StubFeed implements DataFeed {
   getBarsCalls: GetBarsRequest[] = [];
   failBars: FeedError | null = null;
   failResolve: FeedError | null = null;
+  /** When set, getBars waits for it (after recording the call). */
+  barsGate: Promise<void> | null = null;
   private subs = new Map<string, Set<BarListener>>();
   private liveListeners = new Set<(s: LiveStatus) => void>();
 
@@ -151,6 +160,7 @@ export class StubFeed implements DataFeed {
   }
   async getBars(req: GetBarsRequest): Promise<GetBarsResult> {
     this.getBarsCalls.push(req);
+    if (this.barsGate) await this.barsGate;
     if (this.failBars) throw this.failBars;
     const key = `${req.symbol}|${req.interval.count}${{ minute: 'm', hour: 'h', day: 'D', week: 'W', month: 'M' }[req.interval.unit]}`;
     const all = (this.bars.get(key) ?? []).filter((b) => req.to === undefined || b.time < req.to);
@@ -228,6 +238,8 @@ export class FakeApi {
   /** Responses consumed (in order) by the next fire requests; default 200. */
   fireScript: FireResponse[] = [];
   healthFails = 0;
+  /** `active` of GET /api/providers; undefined = the route is missing (404). */
+  activeProvider: string | null | undefined = 'yahoo';
   server!: Server;
   url = '';
 
@@ -266,6 +278,10 @@ export class FakeApi {
         return send(503, { detail: 'starting' });
       }
       return send(200, { status: 'ok' });
+    }
+    if (path === '/api/providers' && m === 'GET') {
+      if (this.activeProvider === undefined) return send(404, { detail: 'not found' });
+      return send(200, { active: this.activeProvider, providers: [] });
     }
     if (path === '/api/drawings') return send(200, { drawings: this.drawings });
     if (path === '/api/alerts/states' && m === 'GET') return send(200, this.states);
@@ -362,6 +378,8 @@ export interface Harness {
   control: FakeControl;
   cfg: Config;
   service: Service;
+  /** Times the service asked the feeds to forget resolved symbols. */
+  symbolCacheClears: number;
   start(): Promise<void>;
   stop(): Promise<void>;
   /** A second service over the same fake API (restart). */
@@ -399,6 +417,7 @@ export async function harness(
       config: cfg,
       log,
       live: feed,
+      clearSymbolCache: () => void h.symbolCacheClears++,
     });
   const h: Harness = {
     api,
@@ -407,6 +426,7 @@ export async function harness(
     control,
     cfg,
     service: make(),
+    symbolCacheClears: 0,
     async start() {
       await h.service.start();
       await h.service.whenIdle();

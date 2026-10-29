@@ -7,6 +7,7 @@ import {
   MAX_RETRY_SECONDS,
   classifyChartError,
   retryDelaySeconds,
+  unsupportedText,
 } from './errorState';
 
 describe('classifyChartError', () => {
@@ -16,6 +17,7 @@ describe('classifyChartError', () => {
     [0, 'unavailable'],
     [502, 'unavailable'],
     [503, 'unavailable'],
+    [501, 'unsupported'],
     [500, 'other'],
     [400, 'other'],
   ] as const)('status %i is %s', (status, kind) => {
@@ -55,5 +57,19 @@ describe('autoRetryDelaySeconds', () => {
   it('gives up after the maximum number of automatic attempts', () => {
     expect(autoRetryDelaySeconds(5, MAX_AUTO_RETRIES, () => 0)).not.toBeNull();
     expect(autoRetryDelaySeconds(5, MAX_AUTO_RETRIES + 1, () => 0)).toBeNull();
+  });
+});
+
+describe('unsupportedText', () => {
+  it('names the feature and the provider', () => {
+    expect(unsupportedText('international symbols', 'Twelve Data')).toBe(
+      'International symbols: not available from Twelve Data.',
+    );
+  });
+
+  it('falls back to a generic subject without a feature', () => {
+    expect(unsupportedText(undefined, 'this data provider')).toBe(
+      'This chart: not available from this data provider.',
+    );
   });
 });

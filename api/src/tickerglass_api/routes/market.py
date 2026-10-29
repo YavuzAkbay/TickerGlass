@@ -1,11 +1,11 @@
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from ..deps import BarServiceDep, MarketServiceDep, SymbolServiceDep
+from ..deps import BarServiceDep, MarketServiceDep, SymbolServiceDep, UpstreamGuardDep
 from ..intervals import resolve_interval
-from ..providers.base import ProviderError
+from ..providers.base import Capabilities, ProviderError, ProviderUnsupported
 from ..services.performance import compute_performance
 from ._cache_headers import set_max_age, set_no_cache
 
@@ -21,6 +21,7 @@ NEWS_MAX_AGE_S = 120
 def quotes(
     response: Response,
     market: MarketServiceDep,
+    guard: UpstreamGuardDep,
     symbols: Annotated[str, Query(min_length=1, max_length=2000)],
 ) -> list[dict[str, Any]]:
     parsed = [s.strip() for s in symbols.split(",") if s.strip()]
@@ -28,7 +29,8 @@ def quotes(
         raise HTTPException(status_code=422, detail="symbols must not be empty")
     if len(parsed) > MAX_QUOTE_SYMBOLS:
         raise HTTPException(status_code=422, detail=f"at most {MAX_QUOTE_SYMBOLS} symbols")
-    out = market.quotes(parsed)
+    with guard.priority("visible"):
+        out = market.quotes(parsed)
     set_no_cache(response)
     return out
 
@@ -47,28 +49,39 @@ def _parse_symbols(symbols: str, limit: int) -> list[str]:
 def extended_quotes(
     response: Response,
     market: MarketServiceDep,
+    guard: UpstreamGuardDep,
     symbols: Annotated[str, Query(min_length=1, max_length=2000)],
 ) -> list[dict[str, Any]]:
-    out = market.extended_quotes(_parse_symbols(symbols, MAX_QUOTE_SYMBOLS))
+    wanted = _parse_symbols(symbols, MAX_QUOTE_SYMBOLS)
+    with guard.priority("visible"):
+        out = market.extended_quotes(wanted)
     set_no_cache(response)
     return out
 
 
 @router.get("/events/{symbol}")
-def events(response: Response, market: MarketServiceDep, symbol: str) -> dict[str, Any]:
-    out = market.events(symbol)
+def events(
+    response: Response, market: MarketServiceDep, guard: UpstreamGuardDep, symbol: str
+) -> dict[str, Any]:
+    with guard.priority("visible"):
+        out = market.events(symbol)
     set_max_age(response, SLOW_MAX_AGE_S)
     return out
 
 
 @router.get("/news")
 def news_multi(
+    request: Request,
     response: Response,
     market: MarketServiceDep,
     symbols: Annotated[str, Query(min_length=1, max_length=500)],
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
 ) -> list[dict[str, Any]]:
     """Merged news of up to 10 symbols, newest first, tagged with the source symbol."""
+    capabilities: Capabilities = request.app.state.capabilities
+    if not capabilities.news:
+        # Not per symbol: an unsupported feature must not read as "no news".
+        raise ProviderUnsupported("news")
     wanted = list(dict.fromkeys(s.upper() for s in _parse_symbols(symbols, MAX_NEWS_SYMBOLS)))
     merged: dict[str, dict[str, Any]] = {}
     failure: ProviderError | None = None
@@ -104,8 +117,11 @@ def news(
 
 
 @router.get("/fundamentals/{symbol}")
-def fundamentals(response: Response, market: MarketServiceDep, symbol: str) -> dict[str, Any]:
-    out = market.fundamentals(symbol)
+def fundamentals(
+    response: Response, market: MarketServiceDep, guard: UpstreamGuardDep, symbol: str
+) -> dict[str, Any]:
+    with guard.priority("visible"):
+        out = market.fundamentals(symbol)
     set_max_age(response, SLOW_MAX_AGE_S)
     return out
 

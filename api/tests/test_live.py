@@ -2,6 +2,7 @@ import asyncio
 import threading
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -334,6 +335,185 @@ def test_closed_market_and_unchanged_symbols_slow_down() -> None:
     asyncio.run(scenario())
 
 
+NYSE = {"type": "equity", "timezone": "America/New_York", "session": "0930-1600"}
+# Wednesday 11:00 in New York (open) and Saturday noon (closed).
+OPEN_TIME = datetime(2026, 6, 17, 15, 0, tzinfo=UTC)
+CLOSED_TIME = datetime(2026, 6, 20, 16, 0, tzinfo=UTC)
+
+
+async def run_hub(poller: FakePoller, seconds: float = 0.3, **kw: Any) -> LiveHub:
+    hub = LiveHub(FakeSource(), poller, poll_after_s=0.01, poll_interval_s=0.02, **kw)
+    client = hub.register()
+    await hub.subscribe(client, ["AAPL", "MSFT", "NVDA"])
+    await asyncio.sleep(seconds)
+    await hub.close()
+    return hub
+
+
+def test_poll_pacer_stretches_the_interval_and_counts_live_symbols() -> None:
+    async def scenario() -> None:
+        seen: list[int] = []
+
+        def pacer(n: int) -> float:
+            seen.append(n)
+            return 10.0
+
+        poller = FakePoller()
+        await run_hub(poller, poll_pacer=pacer)
+        assert poller.count("AAPL") == 1  # one poll, then 10s
+        assert set(seen) == {3}
+
+        free = FakePoller()
+        await run_hub(free, poll_pacer=lambda n: 0.0)
+        assert free.count("AAPL") >= 6  # a pacer below the configured interval changes nothing
+
+    asyncio.run(scenario())
+
+
+def test_poll_pacer_ignores_symbols_on_the_closed_cadence() -> None:
+    async def scenario() -> None:
+        seen: list[int] = []
+
+        def pacer(n: int) -> float:
+            seen.append(n)
+            return 0.0
+
+        lookup = {"AAPL": NYSE}.get  # MSFT, NVDA: no stored metadata, always polled live
+        await run_hub(
+            FakePoller(),
+            poll_pacer=pacer,
+            poll_closed_interval_s=10,
+            session_lookup=lookup,
+            utcnow=lambda: CLOSED_TIME,
+        )
+        assert set(seen) == {2}
+
+    asyncio.run(scenario())
+
+
+def test_closed_exchange_is_polled_at_the_closed_cadence() -> None:
+    async def scenario() -> None:
+        looked_up: list[str] = []
+
+        def lookup(symbol: str) -> dict[str, Any] | None:
+            looked_up.append(symbol)
+            return NYSE if symbol != "NVDA" else None  # NVDA: hours unknown -> never closed
+
+        closed = FakePoller()
+        await run_hub(
+            closed, poll_closed_interval_s=10, session_lookup=lookup, utcnow=lambda: CLOSED_TIME
+        )
+        assert closed.count("AAPL") == 1 and closed.count("MSFT") == 1  # first poll only
+        assert closed.count("NVDA") >= 6
+        # Metadata is read once per symbol, not on every round.
+        assert sorted(looked_up) == ["AAPL", "MSFT", "NVDA"]
+
+        open_ = FakePoller()
+        await run_hub(
+            open_, poll_closed_interval_s=10, session_lookup=lookup, utcnow=lambda: OPEN_TIME
+        )
+        assert open_.count("AAPL") >= 6
+
+    asyncio.run(scenario())
+
+
+def test_metered_closed_exchange_is_not_polled_again_before_it_opens() -> None:
+    async def scenario() -> None:
+        # The closed cadence alone (50 ms here) polls a closed exchange over and over ...
+        plain = FakePoller()
+        await run_hub(
+            plain,
+            poll_closed_interval_s=0.05,
+            session_lookup={"AAPL": NYSE}.get,
+            utcnow=lambda: CLOSED_TIME,
+        )
+        assert plain.count("AAPL") >= 3
+
+        # ... with a cap (a metered upstream) it waits until Monday's open, at most a day.
+        held = FakePoller()
+        await run_hub(
+            held,
+            poll_closed_interval_s=0.05,
+            closed_cap_s=86_400,
+            session_lookup={"AAPL": NYSE}.get,
+            utcnow=lambda: CLOSED_TIME,
+        )
+        assert held.count("AAPL") == 1  # the first poll fetched the price
+        assert held.count("NVDA") >= 6  # no stored hours: never closed
+
+        # An open exchange keeps the live cadence.
+        live = FakePoller()
+        await run_hub(
+            live,
+            poll_closed_interval_s=0.05,
+            closed_cap_s=86_400,
+            session_lookup={"AAPL": NYSE}.get,
+            utcnow=lambda: OPEN_TIME,
+        )
+        assert live.count("AAPL") >= 6
+
+    asyncio.run(scenario())
+
+
+def test_failing_session_lookup_does_not_stop_polling() -> None:
+    async def scenario() -> None:
+        def lookup(symbol: str) -> dict[str, Any] | None:
+            raise RuntimeError("db down")
+
+        poller = FakePoller()
+        await run_hub(poller, poll_closed_interval_s=10, session_lookup=lookup)
+        assert poller.count("AAPL") >= 6
+
+    asyncio.run(scenario())
+
+
+def test_hub_without_a_source_polls_immediately_and_reports_polling() -> None:
+    async def scenario() -> None:
+        poller = FakePoller()
+        # A stream-less provider: no upstream task, poll_after_s is irrelevant.
+        hub = LiveHub(None, poller, poll_after_s=20, poll_interval_s=10)
+        assert hub.status == "polling"
+        client = hub.register()
+        assert client.queue.get_nowait() == {"type": "status", "upstream": "polling"}
+        await hub.subscribe(client, ["AAPL", "MSFT"])
+        for _ in range(200):
+            if poller.calls:
+                break
+            await asyncio.sleep(0.005)
+        assert poller.batches == [["AAPL", "MSFT"]]
+        frames = []
+        while not client.queue.empty():
+            frames.append(client.queue.get_nowait())
+        assert [f["symbol"] for f in frames if f["type"] == "tick"] == ["AAPL", "MSFT"]
+        assert all(f["source"] == "poll" for f in frames if f["type"] == "tick")
+        assert [f for f in frames if f["type"] == "status"] == []  # already "polling"
+        assert hub.status == "polling"
+        assert [t.get_name() for t in hub._tasks] == ["live-poller"]
+        await hub.unsubscribe(client, ["AAPL"])
+        await hub.close()  # no source to close
+
+    asyncio.run(scenario())
+
+
+def test_session_lookup_runs_off_the_event_loop() -> None:
+    async def scenario() -> None:
+        loop_thread = threading.get_ident()
+        lookup_threads: set[int] = set()
+
+        def lookup(symbol: str) -> dict[str, Any] | None:
+            lookup_threads.add(threading.get_ident())
+            return NYSE
+
+        poller = FakePoller()
+        await run_hub(
+            poller, poll_closed_interval_s=10, session_lookup=lookup, utcnow=lambda: CLOSED_TIME
+        )
+        assert lookup_threads and loop_thread not in lookup_threads
+        assert poller.count("AAPL") == 1  # still slowed down by the (threaded) lookup
+
+    asyncio.run(scenario())
+
+
 def test_reconnect_resubscribes_active_symbols() -> None:
     class FlakySource(FakeSource):
         def __init__(self) -> None:
@@ -379,5 +559,251 @@ def test_slow_client_queue_drops_oldest() -> None:
             client.send({"type": "tick", "n": i})
         assert [client.queue.get_nowait()["n"] for _ in range(2)] == [3, 4]
         assert client.dropped == 3
+
+    asyncio.run(scenario())
+
+
+RECONFIGURE: dict[str, Any] = {
+    "poll_after_s": 60,
+    "poll_interval_s": 60,
+    "poll_closed_interval_s": 60,
+    "poll_pacer": None,
+    "closed_cap_s": None,
+    "session_lookup": None,
+    "metadata_max_age": timedelta(hours=1),
+}
+
+
+class ClosingSource(FakeSource):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closes = 0
+
+    async def close(self) -> None:
+        self.closes += 1
+        await super().close()
+
+
+def drain(client: Any) -> list[dict[str, Any]]:
+    frames = []
+    while not client.queue.empty():
+        frames.append(client.queue.get_nowait())
+    return frames
+
+
+async def next_tick(client: Any) -> dict[str, Any]:
+    while True:
+        frame: dict[str, Any] = await asyncio.wait_for(client.queue.get(), 2)
+        if frame["type"] == "tick":
+            return frame
+
+
+async def until(cond: Callable[[], bool]) -> None:
+    for _ in range(400):
+        if cond():
+            return
+        await asyncio.sleep(0.005)
+    raise AssertionError("condition not met in time")
+
+
+def test_reconfigure_moves_clients_to_the_new_upstream() -> None:
+    async def scenario() -> None:
+        old_source, old_poller = ClosingSource(), FakePoller()
+        hub = LiveHub(old_source, old_poller, poll_after_s=60, poll_interval_s=60)
+        subscribed, idle = hub.register(), hub.register()  # `idle` has no symbols
+        await hub.subscribe(subscribed, ["AAPL", "MSFT"])
+        await until(lambda: hub.status == "connected")
+        assert old_source.subscribed == ["AAPL", "MSFT"]
+        drain(subscribed)
+        drain(idle)
+
+        new_source, new_poller = ClosingSource(), FakePoller()
+        notice = {"type": "provider.changed", "id": "demo", "previous": "yahoo"}
+        await hub.reconfigure(new_source, new_poller, notice=notice, **RECONFIGURE)
+
+        assert old_source.closes == 1
+        assert hub.symbol_count() == 2
+        assert subscribed.symbols == {"AAPL", "MSFT"}  # subscriptions survive
+        # Every client hears of the switch, whatever it subscribed to.
+        assert notice in drain(idle)
+        assert notice in drain(subscribed)
+        await until(lambda: hub.status == "connected")
+        assert sorted(new_source.subscribed) == ["AAPL", "MSFT"]  # all refs, resubscribed
+        assert hub._poller is new_poller
+        # Ticks of the new stream reach the unchanged subscriber; the old one is gone.
+        new_source.emit(quote("AAPL", 123.0))
+        tick = await next_tick(subscribed)
+        assert tick["symbol"] == "AAPL" and tick["price"] == 123.0
+        assert old_poller.calls == 0
+        # New interest goes upstream on the new source.
+        await hub.subscribe(idle, ["NVDA"])
+        assert "NVDA" in new_source.subscribed and "NVDA" not in old_source.subscribed
+        await hub.close()
+        assert new_source.closes == 1 and old_source.closes == 1
+
+    asyncio.run(scenario())
+
+
+def test_reconfigure_to_a_stream_less_provider_polls_and_reports_polling() -> None:
+    async def scenario() -> None:
+        old_source = ClosingSource()
+        hub = LiveHub(old_source, FakePoller(), poll_after_s=60, poll_interval_s=60)
+        client = hub.register()
+        await hub.subscribe(client, ["AAPL"])
+        await until(lambda: hub.status == "connected")
+        drain(client)
+
+        poller = FakePoller()
+        await hub.reconfigure(None, poller, **RECONFIGURE)
+        assert old_source.closes == 1
+        assert hub.status == "polling"
+        assert {"type": "status", "upstream": "polling"} in drain(client)
+        await until(lambda: poller.count("AAPL") >= 1)  # no stream: polled right away
+        assert [t.get_name() for t in hub._tasks] == ["live-poller"]
+        await hub.close()
+
+    asyncio.run(scenario())
+
+
+def test_reconfigure_forgets_poll_state_and_survives_a_failing_old_close() -> None:
+    class BrokenClose(FakeSource):
+        async def close(self) -> None:
+            raise ConnectionError("already gone")
+
+    async def scenario() -> None:
+        hub = LiveHub(BrokenClose(), FakePoller(), poll_after_s=0.01, poll_interval_s=0.01)
+        client = hub.register()
+        await hub.subscribe(client, ["AAPL"])
+        await until(lambda: "AAPL" in hub._polling)  # silent stream: polled
+        new_source = ClosingSource()
+        await hub.reconfigure(new_source, FakePoller(), **{**RECONFIGURE, "poll_after_s": 60})
+        assert not hub._polling and not hub._last_poll and not hub._poll_price
+        await until(lambda: hub.status == "connected")
+        assert new_source.subscribed == ["AAPL"]
+        await hub.close()
+
+    asyncio.run(scenario())
+
+
+def test_reconfigure_without_clients_starts_nothing_and_a_closed_hub_ignores_it() -> None:
+    async def scenario() -> None:
+        hub = LiveHub(ClosingSource(), FakePoller())
+        await hub.reconfigure(ClosingSource(), FakePoller(), **RECONFIGURE)
+        assert hub._tasks == []
+        await hub.close()
+        source = ClosingSource()
+        await hub.reconfigure(source, FakePoller(), **RECONFIGURE)
+        assert hub._source is not source and hub._tasks == []
+        assert source.closes == 1  # handed over, so closed rather than leaked
+
+    asyncio.run(scenario())
+
+
+class GatedCloseSource(ClosingSource):
+    """The first `close` waits for `release`, as a hung connection would."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.closing = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def close(self) -> None:
+        first = self.closes == 0
+        await super().close()
+        if first:
+            self.closing.set()
+            await self.release.wait()
+
+
+def test_reconfigure_gives_up_on_a_hanging_close_of_the_old_upstream(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def scenario() -> None:
+        old = GatedCloseSource()  # never released
+        hub = LiveHub(old, FakePoller(), poll_after_s=60, poll_interval_s=60, close_timeout_s=0.05)
+        client = hub.register()
+        await hub.subscribe(client, ["AAPL"])
+        await until(lambda: hub.status == "connected")
+        new_source = ClosingSource()
+        started = time.monotonic()
+        await hub.reconfigure(new_source, FakePoller(), **RECONFIGURE)
+        assert time.monotonic() - started < 2
+        assert old.closing.is_set() and hub._source is new_source
+        await until(lambda: hub.status == "connected")
+        assert new_source.subscribed == ["AAPL"]
+        await hub.close()
+
+    with caplog.at_level("WARNING", logger="tickerglass_api.live"):
+        asyncio.run(scenario())
+    assert any("timed out" in r.message for r in caplog.records)
+
+
+def test_a_hub_closed_during_a_reconfigure_closes_the_new_upstream() -> None:
+    async def scenario() -> None:
+        old = GatedCloseSource()
+        hub = LiveHub(old, FakePoller(), poll_after_s=60, poll_interval_s=60, close_timeout_s=30)
+        client = hub.register()
+        await hub.subscribe(client, ["AAPL"])
+        await until(lambda: hub.status == "connected")
+        new_source = ClosingSource()
+        moving = asyncio.create_task(hub.reconfigure(new_source, FakePoller(), **RECONFIGURE))
+        await asyncio.wait_for(old.closing.wait(), 2)  # reconfigure is inside the old close
+        await hub.close()  # the shutdown does not wait for it
+        old.release.set()
+        await asyncio.wait_for(moving, 2)
+        assert new_source.closes == 1
+        assert hub._tasks == []
+
+    asyncio.run(scenario())
+
+
+def test_subscribing_and_unsubscribing_during_a_reconfigure_reach_the_new_upstream() -> None:
+    async def scenario() -> None:
+        old = GatedCloseSource()
+        hub = LiveHub(old, FakePoller(), poll_after_s=60, poll_interval_s=60, close_timeout_s=30)
+        first, second = hub.register(), hub.register()
+        await hub.subscribe(first, ["AAPL", "MSFT"])
+        await until(lambda: hub.status == "connected")
+        new_source, new_poller = ClosingSource(), FakePoller()
+        moving = asyncio.create_task(hub.reconfigure(new_source, new_poller, **RECONFIGURE))
+        await asyncio.wait_for(old.closing.wait(), 2)
+        assert hub._reconfiguring
+        # Both wait for the upstream lock the reconfigure holds.
+        joining = asyncio.create_task(hub.subscribe(second, ["NVDA"]))
+        leaving = asyncio.create_task(hub.unsubscribe(first, ["AAPL"]))
+        await asyncio.sleep(0.05)
+        assert hub._tasks == []  # nothing started on the old upstream meanwhile
+        old.release.set()
+        await asyncio.wait_for(asyncio.gather(moving, joining, leaving), 2)
+        await until(lambda: hub.status == "connected")
+        assert first.symbols == {"MSFT"} and second.symbols == {"NVDA"}
+        assert sorted(new_source.subscribed) == ["MSFT", "NVDA"]
+        assert "AAPL" not in new_source.subscribed
+        assert old.subscribed == ["AAPL", "MSFT"]  # the old upstream heard nothing new
+        await hub.close()
+
+    asyncio.run(scenario())
+
+
+def test_set_poller_swaps_the_poller_and_keeps_the_poll_state() -> None:
+    async def scenario() -> None:
+        old_poller = FakePoller()
+        hub = LiveHub(None, old_poller, poll_after_s=60, poll_interval_s=60)
+        client = hub.register()
+        await hub.subscribe(client, ["AAPL"])
+        await until(lambda: old_poller.count("AAPL") == 1)  # no stream: polled right away
+        last_poll, tasks = dict(hub._last_poll), list(hub._tasks)
+        lookup: Any = object()
+
+        new_poller = FakePoller()
+        hub.set_poller(new_poller, lookup)
+
+        assert hub._poller is new_poller and hub._session_lookup is lookup
+        # Nothing was reset: no early re-poll, same tasks, same state.
+        await asyncio.sleep(0.7)
+        assert new_poller.calls == 0 and old_poller.calls == 1
+        assert hub._last_poll == last_poll and hub._tasks == tasks
+        assert not any(task.done() for task in tasks)
+        await hub.close()
 
     asyncio.run(scenario())

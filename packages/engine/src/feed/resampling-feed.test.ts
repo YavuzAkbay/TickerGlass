@@ -136,6 +136,19 @@ function concatTimes(pages: BarColumns[]): number[] {
   return pages.flatMap((p) => [...p.time]);
 }
 
+describe('ResamplingFeed clearSymbolCache', () => {
+  it('resolves through the inner feed again after clearing', async () => {
+    const inner = new FakeFeed({}, info('UTC', null));
+    const feed = new ResamplingFeed(inner);
+    await feed.resolveSymbol('TEST');
+    await feed.resolveSymbol('TEST');
+    expect(inner.resolveSymbol).toHaveBeenCalledTimes(1);
+    feed.clearSymbolCache();
+    await feed.resolveSymbol('TEST');
+    expect(inner.resolveSymbol).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('ResamplingFeed getBars', () => {
   it('passes native intervals straight through', async () => {
     const inner = new FakeFeed({ '5m': cols([0, 300]) }, info('UTC', null));

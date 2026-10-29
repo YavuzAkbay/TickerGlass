@@ -437,8 +437,8 @@ def _demo_statements(symbol: str, today: date) -> dict[str, Any]:
     for ordinal in range(start_ordinal, end_ordinal + 1):
         y, q = divmod(ordinal, 4)
         q += 1
-        revenue = base_rev * (1 + growth) ** (ordinal - start_ordinal) * wobble(
-            ordinal, "rev", 0.04
+        revenue = (
+            base_rev * (1 + growth) ** (ordinal - start_ordinal) * wobble(ordinal, "rev", 0.04)
         )
         gross = revenue * gross_m * wobble(ordinal, "gross", 0.02)
         operating = revenue * op_m * wobble(ordinal, "op", 0.05)
@@ -516,8 +516,7 @@ def _demo_statements(symbol: str, today: date) -> dict[str, Any]:
         return _quarter_end(y, q0 + 1)
 
     quarterly_periods = [
-        to_period(ordinal)
-        for ordinal in range(end_ordinal - DEMO_QUARTERS + 1, end_ordinal + 1)
+        to_period(ordinal) for ordinal in range(end_ordinal - DEMO_QUARTERS + 1, end_ordinal + 1)
     ]
     annual_periods: list[date] = []
     annual_income: list[dict[str, float]] = []
@@ -531,8 +530,11 @@ def _demo_statements(symbol: str, today: date) -> dict[str, Any]:
         annual_periods.append(_quarter_end(year, 4))
         annual_income.append(
             {
-                k: (sum(income[i][k] for i in rows) if "EPS" not in k and "Shares" not in k
-                    else float(np.mean([income[i][k] for i in rows])))
+                k: (
+                    sum(income[i][k] for i in rows)
+                    if "EPS" not in k and "Shares" not in k
+                    else float(np.mean([income[i][k] for i in rows]))
+                )
                 for k in income_keys
             }
         )

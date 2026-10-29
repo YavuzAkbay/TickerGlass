@@ -225,6 +225,13 @@
 .sh-pill:hover {
   background: var(--hover);
 }
+.sh-pill:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.sh-pill:disabled:hover {
+  background: transparent;
+}
 .sh-pill.active {
   border-color: transparent;
   background: var(--accent-soft);

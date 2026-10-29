@@ -10,7 +10,8 @@ treated as always open, so a fetch is never skipped wrongly.
 
 The stored session is the one current when the metadata was fetched, which may have
 been an early-close day. A session shorter than `SHORT_SESSION`, or metadata older than
-`METADATA_MAX_AGE`, keeps its open but is taken to run until midnight.
+the metadata max age (`METADATA_MAX_AGE`, or `Settings.symbol_info_ttl_s`), keeps its
+open but is taken to run until midnight.
 """
 
 import re
@@ -35,7 +36,8 @@ _SESSION_RE = re.compile(r"^(\d{2})(\d{2})-(\d{2})(\d{2})$")
 _SEARCH_DAYS = 8
 #: Stored sessions shorter than this may be an early close (a US half day is 3.5 hours).
 SHORT_SESSION = timedelta(hours=4)
-#: Metadata older than this may hold another day's (early-close) session.
+#: Metadata older than this may hold another day's (early-close) session. Kept equal to
+#: `Settings.symbol_info_ttl_s`, whose value callers pass as `max_age`.
 METADATA_MAX_AGE = timedelta(hours=24)
 
 MON_FRI = frozenset({0, 1, 2, 3, 4})
@@ -108,11 +110,16 @@ class TradingHours:
 
     @classmethod
     def from_symbol_info(
-        cls, info: Mapping[str, Any], *, prepost: bool = False, now: datetime | None = None
+        cls,
+        info: Mapping[str, Any],
+        *,
+        prepost: bool = False,
+        now: datetime | None = None,
+        max_age: timedelta = METADATA_MAX_AGE,
     ) -> "TradingHours | None":
         """Hours from stored symbol metadata (`type`, `timezone`, `session` "HHMM-HHMM"),
         or None when the symbol is always open or its hours are unknown. With `now` and
-        a `StoredInfo`, metadata older than `METADATA_MAX_AGE` has an unknown close."""
+        a `StoredInfo`, metadata older than `max_age` has an unknown close."""
         kind = str(info.get("type") or "").lower()
         if kind not in SESSION_TYPES:
             return None
@@ -136,7 +143,7 @@ class TradingHours:
         stale = (
             now is not None
             and isinstance(info, StoredInfo)
-            and now - _utc(info.fetched_at) > METADATA_MAX_AGE
+            and now - _utc(info.fetched_at) > max_age
         )
         close_known = length >= SHORT_SESSION and not stale
         return cls(tz, start, end, extended=prepost, days=days, close_known=close_known)

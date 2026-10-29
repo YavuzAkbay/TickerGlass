@@ -17,6 +17,7 @@ from yfinance.exceptions import YFRateLimitError
 
 from .base import (
     BAR_COLUMNS,
+    FUNDAMENTALS_INFO_KEYS,
     PartialQuotes,
     ProviderError,
     QuoteList,
@@ -432,12 +433,18 @@ class YahooProvider:
             },
         }
         quarterly = statements["quarterly"]
-        all_statements = [statements["income"], statements["balance"], statements["cashflow"],
-                          *quarterly.values()]
+        all_statements = [
+            statements["income"],
+            statements["balance"],
+            statements["cashflow"],
+            *quarterly.values(),
+        ]
         if not info.get("quoteType") and not any(s["periods"] for s in all_statements):
             raise SymbolNotFound(symbol)
         return {
-            "info": {k: _clean(info.get(k)) for k in _INFO_KEYS if info.get(k) is not None},
+            "info": {
+                k: _clean(info.get(k)) for k in FUNDAMENTALS_INFO_KEYS if info.get(k) is not None
+            },
             "financials": statements,
         }
 
@@ -514,45 +521,6 @@ def _session_string(regular: dict[str, Any]) -> str | None:
         if tz:
             s, e = s.tz_convert(tz), e.tz_convert(tz)
     return f"{s:%H%M}-{e:%H%M}"
-
-
-_INFO_KEYS = (
-    "longName",
-    "quoteType",
-    "currency",
-    "exchange",
-    "marketCap",
-    "enterpriseValue",
-    "trailingPE",
-    "forwardPE",
-    "priceToBook",
-    "trailingEps",
-    "forwardEps",
-    "dividendRate",
-    "dividendYield",
-    "payoutRatio",
-    "beta",
-    "fiftyTwoWeekHigh",
-    "fiftyTwoWeekLow",
-    "fiftyDayAverage",
-    "twoHundredDayAverage",
-    "averageVolume",
-    "sharesOutstanding",
-    "profitMargins",
-    "returnOnEquity",
-    "sector",
-    "industry",
-    "country",
-    "website",
-    "fullTimeEmployees",
-    "longBusinessSummary",
-    "earningsTimestamp",
-    "earningsTimestampStart",
-    "earningsTimestampEnd",
-    "isEarningsDateEstimate",
-    "exDividendDate",
-    "floatShares",
-)
 
 
 _V7_CHUNK = 50

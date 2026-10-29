@@ -3,7 +3,8 @@ import { Database, RefreshCw, Search, TriangleAlert } from 'lucide-react';
 import { useStore } from 'zustand';
 import { setActiveChart } from '../store/chart';
 import { useUiStore } from '../store/ui';
-import { autoRetryDelaySeconds, classifyChartError } from './errorState';
+import { useProviderName } from '../api/provider';
+import { autoRetryDelaySeconds, classifyChartError, unsupportedText } from './errorState';
 import type { ChartSession } from './session';
 
 /** Automatic 429 retries made per session; cleared when data loads or the symbol changes. */
@@ -67,6 +68,7 @@ function RateLimited({
 export function ChartError({ session }: { session: ChartSession }) {
   const error = useStore(session.info, (s) => s.error);
   const symbol = useStore(session.view, (s) => s.symbol);
+  const providerName = useProviderName();
   useEffect(() => session.chart.on('dataLoaded', () => autoRetries.delete(session)), [session]);
   if (!error) return null;
 
@@ -87,6 +89,14 @@ export function ChartError({ session }: { session: ChartSession }) {
         <>
           <p className="chart-error-title">Symbol not found</p>
           <p className="chart-error-text">No data for {symbol}. Check the ticker and try again.</p>
+          <button type="button" className="chart-error-btn" onClick={search}>
+            <Search size={14} aria-hidden /> Search symbols
+          </button>
+        </>
+      ) : kind === 'unsupported' ? (
+        <>
+          <p className="chart-error-title">Not available for {symbol}</p>
+          <p className="chart-error-text">{unsupportedText(error.feature, providerName)}</p>
           <button type="button" className="chart-error-btn" onClick={search}>
             <Search size={14} aria-hidden /> Search symbols
           </button>

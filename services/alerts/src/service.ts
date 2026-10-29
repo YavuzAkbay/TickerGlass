@@ -27,6 +27,8 @@ const BULK_IDS = 20;
 const STOP_FIRE_WAIT_MS = 4000;
 const MAX_PENDING_PERSISTED = 20;
 const MAX_STATE_BYTES = 12 * 1024;
+/** Series loading their history at once after a provider change (each load costs provider credits). */
+const REATTACH_CONCURRENCY = 2;
 
 export interface ServiceDeps {
   api: ApiClient;
@@ -39,6 +41,8 @@ export interface ServiceDeps {
   live?: { onStatus(fn: (s: LiveStatus) => void): Unsubscribe } | undefined;
   /** Release the feed's sockets on stop. */
   disposeFeed?: (() => void) | undefined;
+  /** Forget resolved symbols in every feed layer (the data provider changed). */
+  clearSymbolCache?: (() => void) | undefined;
 }
 
 export interface Service {
@@ -67,6 +71,8 @@ export function createService(deps: ServiceDeps): Service {
   let lastError: string | null = null;
   let notOpenSince: number | null = null;
   let chain: Promise<void> = Promise.resolve();
+  /** The API's data provider as last seen; undefined = not known yet. */
+  let activeProvider: string | null | undefined;
 
   const states = new StateStore(api, log);
   const fires: FireQueue = new FireQueue({
@@ -277,6 +283,98 @@ export function createService(deps: ServiceDeps): Service {
     return chain;
   }
 
+  /**
+   * The API switched its data provider: every series holds bars of the old one. Persist the
+   * states, then rebuild every runner (its series reloads history from the new provider).
+   *
+   * Each runner's state is carried over instead of dropped: a fresh runner with no state would
+   * sample the new history as a first look and re-fire level conditions that already fired on
+   * the current bar (or, in close mode, a "missed" catch-up), and lose its pending fires.
+   */
+  async function doReattachAll(): Promise<void> {
+    if (stopped) return;
+    await states.flush();
+    deps.clearSymbolCache?.();
+    const carried: StateRow[] = [];
+    for (const r of [...runners.values()]) {
+      // A runner that never got seeded (its series was still loading) holds no state of its
+      // own: keep the saved row it would have been seeded from (mirrors host.savedState).
+      const saved = savedRows.get(r.id);
+      const row =
+        !r.seeded && saved?.revision === r.revision
+          ? saved
+          : { alertId: r.id, revision: r.revision, state: stateWithPending(r) };
+      savedRows.set(r.id, row);
+      carried.push(row);
+    }
+    for (const id of [...runners.keys()]) detach(id);
+    // Stagger the history reloads: each series attaches (and loads) a few at a time instead of
+    // every series hitting the new provider at once.
+    const groups = new Map<string, Alert[]>();
+    for (const a of registry.all()) {
+      if (a.status !== 'active') continue;
+      const key = seriesKey(a.symbol, a.interval, a.prepost);
+      const g = groups.get(key);
+      if (g) g.push(a);
+      else groups.set(key, [a]);
+    }
+    const queue = [...groups.values()];
+    const worker = async (): Promise<void> => {
+      for (let g = queue.shift(); g && !stopped; g = queue.shift()) {
+        for (const a of g) attach(a);
+        const key = seriesKey(g[0]!.symbol, g[0]!.interval, g[0]!.prepost);
+        await seriesMap.get(key)?.whenIdle();
+      }
+    };
+    await Promise.all(Array.from({ length: REATTACH_CONCURRENCY }, worker));
+    resendPending(carried);
+    log.info('data provider changed, alerts re-attached', { alerts: runners.size });
+  }
+
+  function reattachAll(): Promise<void> {
+    chain = chain.then(() =>
+      doReattachAll().catch((err: unknown) => {
+        lastError = errText(err);
+        log.warn('re-attach after a provider change failed', { error: lastError });
+      }),
+    );
+    return chain;
+  }
+
+  /**
+   * Compare the API's active provider with the one remembered. A switch announced while the
+   * control socket was down (or lost in transit) shows up here. Failures are not errors: the
+   * next resync asks again.
+   */
+  async function fetchProvider(): Promise<string | null | undefined> {
+    try {
+      return await api.activeProvider();
+    } catch (err) {
+      log.debug('could not read the active data provider', { error: errText(err) });
+      return undefined;
+    }
+  }
+
+  async function checkProvider(): Promise<void> {
+    if (stopped) return;
+    const id = await fetchProvider();
+    if (id === undefined) return;
+    const before = activeProvider;
+    activeProvider = id;
+    if (before !== undefined && before !== id) {
+      log.info('data provider changed while not listening', { from: before, to: id });
+      await reattachAll();
+    }
+  }
+
+  async function onProviderEvent(): Promise<void> {
+    const done = reattachAll();
+    // Remember the new provider so the next resync does not reattach a second time; unknown
+    // after a failed read (the next successful read just records it).
+    activeProvider = await fetchProvider();
+    await done;
+  }
+
   // -------------------------------------------------------------- clock
 
   function recomputeCap(): void {
@@ -330,13 +428,15 @@ export function createService(deps: ServiceDeps): Service {
 
   /** Alerts plus the drawings of every series that uses any (events may have been missed). */
   async function resync(): Promise<void> {
+    const provider = checkProvider(); // alongside the sync: one round trip, not two
     await sync();
     for (const s of seriesMap.values()) s.resyncDrawings();
+    await provider;
   }
 
   /** Re-send fires a previous run accepted but never saw acknowledged (idempotent by fireId). */
-  function resendPending(): void {
-    for (const row of savedRows.values()) {
+  function resendPending(rows: Iterable<StateRow> = savedRows.values()): void {
+    for (const row of rows) {
       const alert = registry.get(row.alertId);
       if (!alert || alert.revision !== row.revision) continue;
       for (const p of row.state.pendingFires ?? []) {
@@ -372,6 +472,8 @@ export function createService(deps: ServiceDeps): Service {
     control.onConnection((up) => {
       if (up) void resync();
     });
+    control.onProviderChanged(() => void onProviderEvent());
+    activeProvider = await fetchProvider();
     control.start();
     await sync();
     resendPending();

@@ -21,6 +21,7 @@ from tickerglass_api.models import Bar, SeriesMeta, SymbolMeta
 from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     ProviderError,
+    ProviderUnsupported,
     RateLimited,
     SymbolNotFound,
     UpstreamUnavailable,
@@ -1390,3 +1391,72 @@ def test_sync_waiting_on_a_dropped_lock_takes_the_registered_one(engine: Engine)
     request.join(10)
     assert not request.is_alive()
     assert len(provider.calls) == 1
+
+
+def test_self_paging_provider_backfills_a_range_in_one_call(engine: Engine) -> None:
+    minute = bar_frame([NOW - timedelta(hours=1)])
+    provider = FullProvider({("AAPL", "1m"): minute})
+    svc = BarService(engine, provider, self_paging=True)
+    res = svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW)
+    # The whole 29-day window at once (the provider pages), not Yahoo's 7-day requests.
+    assert len(provider.calls) == 1
+    _, _, start, end = provider.calls[0]
+    assert start is not None and end is not None and end - start >= timedelta(days=29)
+    assert res.bars["ts"].tolist() == minute["ts"].tolist()
+
+
+class FailingLater(FullProvider):
+    """Answers `ok` history calls, then fails every one with a rate limit."""
+
+    def __init__(self, frames: dict[tuple[str, str], pd.DataFrame], ok: int) -> None:
+        super().__init__(frames)
+        self.ok = ok
+
+    def history(
+        self, symbol: str, interval: str, start: datetime | None, end: datetime | None, p: bool
+    ) -> pd.DataFrame:
+        if len(self.calls) >= self.ok:
+            self.calls.append((symbol, interval, start, end))
+            raise RateLimited("no credits", 30)
+        return super().history(symbol, interval, start, end, p)
+
+
+def test_backfill_keeps_the_chunks_fetched_before_a_later_one_fails(engine: Engine) -> None:
+    minute = bar_frame([NOW - timedelta(hours=1)])
+    provider = FailingLater({("AAPL", "1m"): minute}, ok=2)
+    stats = CacheStats()
+    svc = BarService(engine, provider, stats=stats)
+    res = svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW)
+    assert res.bars["ts"].tolist() == minute["ts"].tolist()  # served, not an error
+    assert len(provider.calls) == 3  # stopped at the failing chunk
+    assert stats.counter("bars.partial_backfill") == 1
+    # The series exists now: no new backfill within the tail TTL.
+    svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW + timedelta(seconds=1))
+    assert len(provider.calls) == 3
+
+
+def test_backfill_fails_when_the_newest_chunk_fails(engine: Engine) -> None:
+    svc = BarService(engine, FailingLater({}, ok=0))
+    with pytest.raises(RateLimited):
+        svc.get_bars("AAPL", resolve_interval("1m"), False, now=NOW)
+
+
+class Unsupported(FullProvider):
+    def history(
+        self, symbol: str, interval: str, start: datetime | None, end: datetime | None, p: bool
+    ) -> pd.DataFrame:
+        self.calls.append((symbol, interval, start, end))
+        raise ProviderUnsupported("international symbols", "Twelve Data")
+
+
+def test_unsupported_symbol_is_remembered_like_an_unknown_one(engine: Engine) -> None:
+    provider = Unsupported({})
+    svc = BarService(engine, provider, policy=TailPolicy(unknown_symbol_ttl_s=3600))
+    daily = resolve_interval("1d")
+    for _ in range(3):
+        with pytest.raises(ProviderUnsupported):  # still a 501, not a 404
+            svc.get_bars("VOD.L", daily, False, now=NOW)
+    assert len(provider.calls) == 1
+    with pytest.raises(ProviderUnsupported):
+        svc.get_bars("VOD.L", daily, False, now=NOW + timedelta(seconds=3601))
+    assert len(provider.calls) == 2

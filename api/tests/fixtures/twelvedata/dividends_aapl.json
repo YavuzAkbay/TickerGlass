@@ -1,0 +1,30 @@
+{
+  "request": {
+    "path": "/dividends",
+    "params": {
+      "symbol": "AAPL"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "1",
+    "api-credits-left": "7",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "meta": {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "currency": "USD",
+      "exchange": "NASDAQ",
+      "mic_code": "XNGS",
+      "exchange_timezone": "America/New_York"
+    },
+    "dividends": [
+      {
+        "ex_date": "2026-08-10",
+        "amount": 0.27
+      }
+    ]
+  }
+}

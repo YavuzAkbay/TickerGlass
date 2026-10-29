@@ -134,6 +134,11 @@ export class ApiClient {
   health(): Promise<unknown> {
     return this.request('GET', '/api/health');
   }
+  /** Id of the data provider the API currently serves (null for a custom one). */
+  async activeProvider(): Promise<string | null> {
+    const res = await this.request<{ active?: unknown } | null>('GET', '/api/providers');
+    return typeof res?.active === 'string' ? res.active : null;
+  }
   listAlerts(): Promise<Alert[]> {
     return this.request('GET', '/api/alerts');
   }

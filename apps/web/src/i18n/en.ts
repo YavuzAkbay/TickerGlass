@@ -77,7 +77,12 @@ export const en = {
   'timeline.empty': 'Nothing in the last year: no alerts fired, no news or events.',
   'timeline.emptyList': 'Add symbols to your watchlist to follow them here.',
   'timeline.newsError': 'News unavailable: {error}',
+  'timeline.newsUnsupported': 'News: not available from {provider}',
   'timeline.watchlistNote': 'Earnings, dividends and splits show for the chart symbol.',
+
+  // Data provider budget (top bar chip)
+  'budget.exhausted': '{provider} credits exhausted: showing cached data until {time}',
+  'budget.throttled': '{provider} request limit reached: data refreshes slowly until {time}',
 
   // Tool rail
   // Desks
@@ -111,6 +116,10 @@ export const en = {
   'settings.tab.trading': 'Practice',
   'settings.tab.alerts': 'Alerts',
   'settings.tab.events': 'Markers',
+  'settings.tab.dataSource': 'Data source',
+  'settings.dataSource.title': 'Market data provider',
+  'settings.dataSource.note':
+    'Applies immediately, not with Ok or Cancel: the page reloads on the new provider and cached market data is cleared. Other changes in this dialog that are not applied with Ok are discarded.',
 } satisfies Record<string, string>;
 
 export type MessageKey = keyof typeof en;

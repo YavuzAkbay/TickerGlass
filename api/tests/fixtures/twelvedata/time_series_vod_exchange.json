@@ -1,0 +1,22 @@
+{
+  "request": {
+    "path": "/time_series",
+    "params": {
+      "symbol": "VOD",
+      "exchange": "LSE",
+      "interval": "1day",
+      "outputsize": "3"
+    }
+  },
+  "status": 404,
+  "headers": {
+    "api-credits-used": "6",
+    "api-credits-left": "2",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "code": 404,
+    "message": "This symbol is available starting with the Grow or Venture plan. Consider upgrading now at https://twelvedata.com/pricing",
+    "status": "error"
+  }
+}

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { openAlertLog, useAlerts } from '../alerts/store';
+import { useCapabilities, useProviderName } from '../api/provider';
 import type { NewsItem } from '../api/types';
 import { eventsPath, EVENTS_TTL_MS, type EventsResponse } from '../events/api';
 import { useT } from '../i18n';
@@ -126,13 +127,16 @@ function Row({ row, now, showSymbol }: { row: TimelineRow; now: number; showSymb
  */
 export function Timeline() {
   const t = useT();
+  const caps = useCapabilities();
+  const provider = useProviderName();
   const symbol = useChartView((s) => s.symbol);
   const [mode, setMode] = useState<Mode>('symbol');
   const listSymbols = useListSymbols();
   const expression = isExpressionSymbol(symbol);
   const symbols = mode === 'symbol' ? (expression ? [] : [symbol]) : listSymbols;
-  const newsPath =
-    mode === 'symbol'
+  const newsPath = !caps.news
+    ? null
+    : mode === 'symbol'
       ? expression
         ? null
         : `/news/${encodeURIComponent(symbol)}?limit=20`
@@ -142,7 +146,7 @@ export function Timeline() {
   const news = useApi<NewsItem[]>(newsPath, TWO_MIN);
   // Events need one request per symbol: the chart symbol only.
   const events = useApi<EventsResponse>(
-    mode === 'symbol' && !expression ? eventsPath(symbol) : null,
+    mode === 'symbol' && !expression && caps.events.length > 0 ? eventsPath(symbol) : null,
     EVENTS_TTL_MS,
   );
   const log = useAlerts((s) => s.log);
@@ -170,6 +174,11 @@ export function Timeline() {
           </button>
         ))}
       </div>
+      {caps.news ? null : (
+        <div className="rs-pad rs-muted tl-unsupported" role="status">
+          {t('timeline.newsUnsupported', { provider })}
+        </div>
+      )}
       {news.error ? (
         <div className="rs-error tl-error" role="alert">
           <span>{t('timeline.newsError', { error: news.error })}</span>

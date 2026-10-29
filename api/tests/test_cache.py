@@ -7,7 +7,12 @@ from typing import Any, ParamSpec, TypeVar
 
 import pytest
 
-from tickerglass_api.providers.base import ProviderError, RateLimited, SymbolNotFound
+from tickerglass_api.providers.base import (
+    ProviderError,
+    ProviderUnsupported,
+    RateLimited,
+    SymbolNotFound,
+)
 from tickerglass_api.services.cache import BatchResult, SmartCache
 from tickerglass_api.services.stats import CacheStats
 
@@ -288,6 +293,33 @@ def test_negative_ttl() -> None:
     assert load.calls == 1
     clock.now += 2
     assert cache.get("NOPE", load) == "v2"
+
+
+def test_unsupported_is_remembered_and_raised_as_such() -> None:
+    clock = FakeClock()
+    cache = make(clock, negative_ttl=50)
+    load = Loader()
+    load.error = ProviderUnsupported("international symbols", "Twelve Data")
+    for _ in range(3):
+        with pytest.raises(ProviderUnsupported):  # not SymbolNotFound: the answer is a 501
+            cache.get("VOD.L", load)
+    assert load.calls == 1
+    clock.now += 51
+    load.error = None
+    assert cache.get("VOD.L", load) == "v2"
+
+
+def test_unsupported_refresh_is_remembered_too() -> None:
+    clock = FakeClock()
+    cache = make(clock, ttl=10, refresher=InlineExecutor())
+    load = Loader()
+    assert cache.get("X", load) == "v1"
+    clock.now += 20  # stale: refreshed in the background
+    load.error = ProviderUnsupported("events", "Twelve Data")
+    assert cache.get("X", load) == "v1"
+    with pytest.raises(ProviderUnsupported):
+        cache.get("X", load)
+    assert load.calls == 2
 
 
 def test_accept_rejects_entry() -> None:

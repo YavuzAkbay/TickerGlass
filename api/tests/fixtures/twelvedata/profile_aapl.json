@@ -1,0 +1,34 @@
+{
+  "request": {
+    "path": "/profile",
+    "params": {
+      "symbol": "AAPL"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "1",
+    "api-credits-left": "7",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "exchange": "NASDAQ",
+    "mic_code": "XNGS",
+    "sector": "Technology",
+    "industry": "Consumer Electronics",
+    "employees": 150000,
+    "website": "https://www.apple.com",
+    "description": "Apple Inc. is a technology company that designs, manufactures, and markets consumer electronics, personal computers, tablets, wearables, accessories, and related software and services. Its product ecosystem includes the iPhone, Mac, iPad, Apple Watch, AirPods, and a range of digital services such as app distribution, cloud storage, media streaming, and subscription offerings. Apple also serves enterprise, education, and public-sector customers through hardware, software, and device management solutions. The company is known for integrating hardware, software, and services into a connected ecosystem that supports device sales, recurring service revenue, and customer retention. Headquartered in Cupertino, California, Apple operates across major global markets and remains one of the most influential companies in consumer technology and digital services.",
+    "type": "Common Stock",
+    "CEO": "Mr. John  Ternus",
+    "address": "One Apple Park Way",
+    "address2": "11 Bermudiana Road",
+    "city": "Cupertino",
+    "zip": "95014",
+    "state": "CA",
+    "country": "United States",
+    "phone": "(408) 996-1010"
+  }
+}

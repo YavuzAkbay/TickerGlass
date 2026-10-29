@@ -1,0 +1,70 @@
+{
+  "request": {
+    "path": "/time_series",
+    "params": {
+      "symbol": "AAPL",
+      "interval": "1week",
+      "outputsize": "5"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "3",
+    "api-credits-left": "5",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "meta": {
+      "symbol": "AAPL",
+      "interval": "1week",
+      "currency": "USD",
+      "exchange_timezone": "America/New_York",
+      "exchange": "NASDAQ",
+      "mic_code": "XNGS",
+      "type": "Common Stock"
+    },
+    "values": [
+      {
+        "datetime": "2026-10-26",
+        "open": "343.92001",
+        "high": "347.77",
+        "low": "341.029999",
+        "close": "347.605",
+        "volume": "43046927"
+      },
+      {
+        "datetime": "2026-10-19",
+        "open": "340.78000",
+        "high": "351.73001",
+        "low": "338.70001",
+        "close": "347.73001",
+        "volume": "192477300"
+      },
+      {
+        "datetime": "2026-10-12",
+        "open": "338.22000",
+        "high": "348.14999",
+        "low": "337.60001",
+        "close": "343.45999",
+        "volume": "214659200"
+      },
+      {
+        "datetime": "2026-10-05",
+        "open": "332.82001",
+        "high": "341.57001",
+        "low": "330.62000",
+        "close": "336.64001",
+        "volume": "172211400"
+      },
+      {
+        "datetime": "2026-09-28",
+        "open": "340.37000",
+        "high": "342.98999",
+        "low": "325.81000",
+        "close": "333.69000",
+        "volume": "190872300"
+      }
+    ],
+    "status": "ok"
+  }
+}

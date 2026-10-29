@@ -2,8 +2,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Response
 
-from ..deps import SymbolServiceDep
+from ..deps import SymbolServiceDep, UpstreamGuardDep
 from ._cache_headers import set_max_age
+from ._priority import PriorityDep
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 
@@ -23,7 +24,14 @@ def search(
 
 
 @router.get("/{symbol}")
-def info(response: Response, symbols: SymbolServiceDep, symbol: str) -> dict[str, Any]:
-    found = symbols.info(symbol)
+def info(
+    response: Response,
+    symbols: SymbolServiceDep,
+    guard: UpstreamGuardDep,
+    priority: PriorityDep,
+    symbol: str,
+) -> dict[str, Any]:
+    with guard.priority(priority):
+        found = symbols.info(symbol)
     set_max_age(response, SYMBOL_MAX_AGE_S)
     return found

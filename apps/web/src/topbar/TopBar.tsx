@@ -10,6 +10,7 @@ import { IconButton } from '../ui/IconButton';
 import { useIsMobile } from '../ui/useMediaQuery';
 import { Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
+import { BudgetStatus } from './BudgetStatus';
 import { CHART_TYPE_MENU, chartTypeDef } from './chartTypes';
 import { IndicatorTemplatesButton } from './IndicatorTemplatesButton';
 import { IntervalControl } from './IntervalControl';
@@ -63,6 +64,7 @@ export function TopBar() {
       <PaletteButton ref={palette} />
       <div className="tb-side tb-right">
         <div ref={right} className="tb-group">
+          <BudgetStatus />
           {folded ? null : (
             <CommandButton
               id="replay.toggle"

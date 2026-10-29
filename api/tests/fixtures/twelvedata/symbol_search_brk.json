@@ -1,0 +1,118 @@
+{
+  "request": {
+    "path": "/symbol_search",
+    "params": {
+      "symbol": "BRK",
+      "outputsize": "10"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "data": [
+      {
+        "symbol": "BRK",
+        "instrument_name": "Brooks Macdonald Group plc",
+        "exchange": "LSE",
+        "mic_code": "AIMX",
+        "exchange_timezone": "Europe/London",
+        "instrument_type": "Common Stock",
+        "country": "United Kingdom",
+        "currency": "GBp"
+      },
+      {
+        "symbol": "BRK",
+        "instrument_name": "Berkshire Hathaway Inc.",
+        "exchange": "TSX",
+        "mic_code": "XTSE",
+        "exchange_timezone": "America/Toronto",
+        "instrument_type": "Depositary Receipt",
+        "country": "Canada",
+        "currency": "CAD"
+      },
+      {
+        "symbol": "BRK",
+        "instrument_name": "Berkshire Hathaway Inc.",
+        "exchange": "NEO",
+        "mic_code": "NEOE",
+        "exchange_timezone": "America/Toronto",
+        "instrument_type": "Depositary Receipt",
+        "country": "Canada",
+        "currency": "CAD"
+      },
+      {
+        "symbol": "BRK",
+        "instrument_name": "Brookside Energy Limited",
+        "exchange": "ASX",
+        "mic_code": "XASX",
+        "exchange_timezone": "Australia/Sydney",
+        "instrument_type": "Common Stock",
+        "country": "Australia",
+        "currency": "AUD"
+      },
+      {
+        "symbol": "BRK",
+        "instrument_name": "BRK",
+        "exchange": "SIX",
+        "mic_code": "XSWX",
+        "exchange_timezone": "Europe/Zurich",
+        "instrument_type": "Common Stock",
+        "country": "Switzerland",
+        "currency": "CHF"
+      },
+      {
+        "symbol": "BRK",
+        "instrument_name": "Brookside Energy Limited",
+        "exchange": "CXA",
+        "mic_code": "CXAC",
+        "exchange_timezone": "Australia/Sydney",
+        "instrument_type": "Common Stock",
+        "country": "Australia",
+        "currency": "AUD"
+      },
+      {
+        "symbol": "BRK.B",
+        "instrument_name": "Berkshire Hathaway Inc. Class B",
+        "exchange": "NYSE",
+        "mic_code": "XNYS",
+        "exchange_timezone": "America/New_York",
+        "instrument_type": "Common Stock",
+        "country": "United States",
+        "currency": "USD"
+      },
+      {
+        "symbol": "BRKB",
+        "instrument_name": "Berkshire Hathaway Inc Class B",
+        "exchange": "BCBA",
+        "mic_code": "XBUE",
+        "exchange_timezone": "America/Argentina/Buenos_Aires",
+        "instrument_type": "Depositary Receipt",
+        "country": "Argentina",
+        "currency": "ARS"
+      },
+      {
+        "symbol": "KLBN11",
+        "instrument_name": "Klabin S.A.",
+        "exchange": "Bovespa",
+        "mic_code": "BVMF",
+        "exchange_timezone": "America/Paramaribo",
+        "instrument_type": "Unit",
+        "country": "Brazil",
+        "currency": "BRL"
+      },
+      {
+        "symbol": "BRK.A",
+        "instrument_name": "Berkshire Hathaway Inc. Class A",
+        "exchange": "NYSE",
+        "mic_code": "XNYS",
+        "exchange_timezone": "America/New_York",
+        "instrument_type": "Common Stock",
+        "country": "United States",
+        "currency": "USD"
+      }
+    ],
+    "status": "ok"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "request": {
+    "path": "/time_series",
+    "params": {
+      "symbol": "AAPL",
+      "interval": "1day",
+      "outputsize": "1"
+    }
+  },
+  "status": 401,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "code": 401,
+    "message": "**apikey** parameter is incorrect or not specified. You can get your free API key instantly following this link: https://twelvedata.com/pricing. If you believe that everything is correct, you can contact us at https://twelvedata.com/contact/customer",
+    "status": "error"
+  }
+}

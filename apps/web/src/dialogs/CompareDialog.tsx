@@ -184,6 +184,8 @@ export default function CompareDialog({ onClose }: { onClose: () => void; arg?: 
         Search failed: {search.error}
       </div>
     );
+  } else if (kind.kind === 'plain' && search.tooShort) {
+    body = <div className="dlg-empty">Type at least {search.minChars} characters to search</div>;
   } else if (rows.length === 0) {
     body = (
       <div className="dlg-empty">

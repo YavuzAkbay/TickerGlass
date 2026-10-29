@@ -506,6 +506,13 @@
   padding: 7px 0;
   cursor: pointer;
 }
+.dlg-setting.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.dlg-setting.disabled input {
+  cursor: not-allowed;
+}
 .dlg-setting input {
   flex: none;
   width: 16px;

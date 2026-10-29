@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { SymbolSearchResult } from '@tickerglass/engine';
+import { useMetered } from '../api/provider';
 import { feed } from '../chart/feed';
 
 export type SymbolTab = 'all' | 'stocks' | 'funds' | 'crypto' | 'forex' | 'indices' | 'futures';
@@ -56,15 +57,35 @@ export interface SymbolSearch {
   error: string | null;
   /** True when `items` belong to the current query (not stale). */
   fresh: boolean;
+  /** The query is shorter than the provider's minimum: nothing was searched. */
+  tooShort: boolean;
+  /** Fewest characters that are searched. */
+  minChars: number;
 }
 
-/** Debounced (200ms) symbol search against the data feed. */
+export interface SearchPolicy {
+  debounceMs: number;
+  minChars: number;
+}
+
+/**
+ * Twelve Data's symbol search costs no credits, but a metered provider rates requests per
+ * minute: wait longer for the typist to pause and do not search for a single character, so
+ * typing stays fair to the rest of the app's requests.
+ */
+export function searchPolicy(metered: boolean): SearchPolicy {
+  return metered ? { debounceMs: 400, minChars: 2 } : { debounceMs: 200, minChars: 1 };
+}
+
+/** Debounced symbol search against the data feed (200 ms; 400 ms and 2+ characters when metered). */
 export function useSymbolSearch(query: string, limit = 30): SymbolSearch {
   const q = query.trim();
+  const { debounceMs, minChars } = searchPolicy(useMetered());
+  const tooShort = q !== '' && q.length < minChars;
   const [state, setState] = useState<SearchState>({ query: '', items: [], error: null });
 
   useEffect(() => {
-    if (q === '') return;
+    if (q === '' || tooShort) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       feed.searchSymbols(q, limit).then(
@@ -78,16 +99,24 @@ export function useSymbolSearch(query: string, limit = 30): SymbolSearch {
           }
         },
       );
-    }, 200);
+    }, debounceMs);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [q, limit]);
+  }, [q, limit, debounceMs, tooShort]);
 
-  if (q === '') return { items: [], loading: false, error: null, fresh: true };
+  if (q === '' || tooShort)
+    return { items: [], loading: false, error: null, fresh: true, tooShort, minChars };
   const fresh = state.query === q;
-  return { items: state.items, loading: !fresh, error: fresh ? state.error : null, fresh };
+  return {
+    items: state.items,
+    loading: !fresh,
+    error: fresh ? state.error : null,
+    fresh,
+    tooShort: false,
+    minChars,
+  };
 }
 
 /** Bold the leading part of the ticker that matches the query. */

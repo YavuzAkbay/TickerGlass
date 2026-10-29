@@ -16,6 +16,7 @@ import {
 import { useAlerts } from '../alerts/store';
 import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
 import { errorMessage } from '../api/client';
+import { getCapabilities } from '../api/provider';
 import { changeScale, toggleScaleMode } from './scaleActions';
 import { useDrawingRuntime } from '../drawings/store';
 import { activeChartId, syncBus } from '../layout/sync';
@@ -363,6 +364,7 @@ export function registerCoreCommands(): () => void {
       title: 'Toggle extended trading hours',
       category: 'Chart',
       shortcut: 'Alt+E',
+      enabled: () => getCapabilities().extendedHistory,
       run: () => useChartView.setState((s) => ({ prepost: !s.prepost })),
     },
     {

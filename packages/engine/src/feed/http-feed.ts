@@ -26,16 +26,19 @@ export class FeedError extends Error {
   readonly status: number;
   /** Seconds to wait before retrying, from a `Retry-After` header (429/503), if sent. */
   readonly retryAfter?: number;
+  /** What the data provider does not offer, from a 501 body's `feature` (e.g. "international symbols"). */
+  readonly feature?: string;
 
   constructor(
     message: string,
     status: number,
-    options?: { cause?: unknown; retryAfter?: number | undefined },
+    options?: { cause?: unknown; retryAfter?: number | undefined; feature?: string | undefined },
   ) {
     super(message, options);
     this.name = 'FeedError';
     this.status = status;
     if (options?.retryAfter !== undefined) this.retryAfter = options.retryAfter;
+    if (options?.feature !== undefined) this.feature = options.feature;
   }
 }
 
@@ -71,6 +74,8 @@ export interface HttpDataFeedOptions {
   wsUrl?: string;
   fetchImpl?: typeof fetch;
   WebSocketImpl?: typeof WebSocket;
+  /** Extra headers sent with every HTTP request (default none). `Accept` is always JSON. */
+  headers?: Record<string, string>;
 }
 
 /** Wire shape of a server tick frame (optional fields may be null). */
@@ -137,6 +142,7 @@ export class HttpDataFeed implements DataFeed {
   private readonly wsUrlOpt: string | undefined;
   private readonly fetchOpt: typeof fetch | undefined;
   private readonly wsImplOpt: typeof WebSocket | undefined;
+  private readonly extraHeaders: Record<string, string>;
   /** Insertion order = recency (re-inserted on use). */
   private readonly symbolCache = new Map<string, Promise<SymbolInfo>>();
 
@@ -154,6 +160,12 @@ export class HttpDataFeed implements DataFeed {
     this.wsUrlOpt = opts.wsUrl;
     this.fetchOpt = opts.fetchImpl;
     this.wsImplOpt = opts.WebSocketImpl;
+    this.extraHeaders = { ...opts.headers };
+  }
+
+  /** Forget every resolved symbol (the data provider changed: sessions, names, tick sizes differ). */
+  clearSymbolCache(): void {
+    this.symbolCache.clear();
   }
 
   // -- HTTP -----------------------------------------------------------------
@@ -163,7 +175,9 @@ export class HttpDataFeed implements DataFeed {
     if (typeof f !== 'function') throw new FeedError('fetch is not available', 0);
     let res: Response;
     try {
-      res = await f(`${this.baseUrl}${path}`, { headers: { Accept: 'application/json' } });
+      res = await f(`${this.baseUrl}${path}`, {
+        headers: { ...this.extraHeaders, Accept: 'application/json' },
+      });
     } catch (err) {
       throw new FeedError(err instanceof Error ? err.message : 'network error', 0, { cause: err });
     }
@@ -177,6 +191,7 @@ export class HttpDataFeed implements DataFeed {
     if (!res.ok) {
       throw new FeedError(errorDetail(body) ?? `HTTP ${res.status} ${res.statusText}`, res.status, {
         retryAfter: parseRetryAfter(res.headers.get('Retry-After')),
+        feature: res.status === 501 ? unsupportedFeature(body) : undefined,
       });
     }
     if (parseError !== null) {
@@ -611,6 +626,10 @@ function tickBucket(sub: LiveSub, t: number, state: 'in' | 'out' | 'unknown'): n
     return cur.time;
   }
   return b;
+}
+
+function unsupportedFeature(body: unknown): string | undefined {
+  return isRecord(body) && typeof body.feature === 'string' ? body.feature : undefined;
 }
 
 function errorDetail(body: unknown): string | null {

@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -638,6 +638,125 @@ def test_quote_ttl_follows_market_state() -> None:
     assert refetched() == {"REG", "UNK", "PRE", "POST"}
     clock.now += 540
     assert refetched() == {"REG", "UNK", "PRE", "POST", "CLS"}
+
+
+NYSE = {"type": "equity", "timezone": "America/New_York", "session": "0930-1600"}
+
+
+class StatefulClosed(FakeProvider):
+    def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        self.quote_calls.append(list(symbols))
+        return [{"symbol": s, "last": 1.0, "marketState": "CLOSED"} for s in symbols]
+
+
+def _closed_market(
+    now: datetime, lookup: Any, closed_ttl: float = 600
+) -> tuple[MarketService, StatefulClosed, Clock]:
+    prov = StatefulClosed()
+    clock = Clock()
+    market = MarketService(
+        prov,
+        settings=Settings(quote_ttl_s=15, quote_closed_ttl_s=closed_ttl),
+        clock=clock,
+        session_lookup=lookup,
+        utcnow=lambda: now,
+    )
+    return market, prov, clock
+
+
+def _fresh_for(market: MarketService, prov: StatefulClosed, clock: Clock, upto: float) -> float:
+    """Seconds (in steps of 10) until a closed quote is fetched again."""
+    market.quotes(["AAPL"])
+    start, fetched = clock.now, len(prov.quote_calls)
+    while clock.now - start < upto:
+        clock.now += 10
+        market.quotes(["AAPL"])
+        if len(prov.quote_calls) > fetched:
+            return clock.now - start
+    return upto
+
+
+def test_closed_quote_is_fresh_until_the_next_open_capped_by_the_closed_ttl() -> None:
+    # Wed 17:00 New York: the next open (Thu 09:30) is 16.5 hours away.
+    evening = datetime(2026, 6, 17, 21, 0, tzinfo=UTC)
+    market, prov, clock = _closed_market(evening, lambda s: NYSE, closed_ttl=100_000)
+    assert _fresh_for(market, prov, clock, 70_000) == 59_400
+    market, prov, clock = _closed_market(evening, lambda s: NYSE, closed_ttl=600)
+    assert _fresh_for(market, prov, clock, 70_000) == 600
+    # 09:29:30: the open is 30 seconds away.
+    morning = datetime(2026, 6, 18, 13, 29, 30, tzinfo=UTC)
+    market, prov, clock = _closed_market(morning, lambda s: NYSE)
+    assert _fresh_for(market, prov, clock, 600) == 30
+
+
+def test_closed_quote_uses_the_closed_ttl_without_known_hours() -> None:
+    evening = datetime(2026, 6, 17, 21, 0, tzinfo=UTC)
+
+    def broken(symbol: str) -> dict[str, Any] | None:
+        raise RuntimeError("db down")
+
+    crypto = {"type": "cryptocurrency", "timezone": "UTC", "session": "0000-2359"}
+    for lookup in (None, lambda s: None, lambda s: crypto, broken):
+        market, prov, clock = _closed_market(evening, lookup, closed_ttl=100)
+        assert _fresh_for(market, prov, clock, 1_000) == 100
+
+
+def test_metered_closed_ttl_of_a_day_lasts_until_the_next_open() -> None:
+    # Twelve Data's default `quote_closed_ttl_s` is 24 hours: a quote of a closed market is
+    # kept until the exchange opens (here 16.5 hours), never longer than a day.
+    evening = datetime(2026, 6, 17, 21, 0, tzinfo=UTC)
+    market, prov, clock = _closed_market(evening, lambda s: NYSE, closed_ttl=86_400)
+    assert _fresh_for(market, prov, clock, 70_000) == 59_400
+    friday = datetime(2026, 6, 19, 21, 0, tzinfo=UTC)  # the weekend: 64.5 hours to Monday
+    market, prov, clock = _closed_market(friday, lambda s: NYSE, closed_ttl=86_400)
+    assert _fresh_for(market, prov, clock, 100_000) == 86_400
+
+
+def test_a_long_closed_ttl_needs_known_hours() -> None:
+    evening = datetime(2026, 6, 17, 21, 0, tzinfo=UTC)
+    market, prov, clock = _closed_market(evening, lambda s: None, closed_ttl=86_400)
+    assert _fresh_for(market, prov, clock, 10_000) == 3_600
+
+
+def test_closed_quote_during_the_regular_session_uses_the_normal_ttl() -> None:
+    # Wed 10:00 New York: the exchange is open, yet the upstream says CLOSED (a halt, or
+    # a lagging feed). Not worth a day of staleness.
+    morning = datetime(2026, 6, 17, 14, 0, tzinfo=UTC)
+    market, prov, clock = _closed_market(morning, lambda s: NYSE, closed_ttl=86_400)
+    assert _fresh_for(market, prov, clock, 1_000) == 20  # quote_ttl_s is 15
+
+
+def test_quote_ttl_is_at_least_the_pacers_interval() -> None:
+    prov = FakeProvider()
+    clock = Clock()
+    pace = [120.0]
+    market = MarketService(
+        prov,
+        settings=Settings(quote_ttl_s=15, extended_ttl_s=60),
+        clock=clock,
+        quote_pacer=lambda: pace[0],
+    )
+    market.quotes(["AAPL"])
+    clock.now += 100  # past quote_ttl_s, within what the credits allow
+    market.quotes(["AAPL"])
+    assert len(prov.quote_calls) == 1
+    clock.now += 21
+    market.quotes(["AAPL"])
+    assert len(prov.quote_calls) == 2
+    pace[0] = 1.0  # a lighter load: the plain TTL again
+    clock.now += 120
+    market.quotes(["AAPL"])
+    assert len(prov.quote_calls) == 3
+    clock.now += 16
+    market.quotes(["AAPL"])
+    assert len(prov.quote_calls) == 4
+
+
+def test_app_closed_quote_ttl_uses_stored_symbol_hours(tmp_path: Path) -> None:
+    app = create_app(provider=StatefulClosed(), database_url=f"sqlite:///{tmp_path}/s.db")
+    with TestClient(app):
+        # The market service reads stored metadata through the symbol service.
+        assert app.state.market_service._session_lookup == app.state.symbol_service.cached_info
 
 
 def poll_once(poll: Poller, symbols: list[str]) -> dict[str, dict[str, Any]]:

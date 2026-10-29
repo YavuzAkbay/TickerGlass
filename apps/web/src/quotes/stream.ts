@@ -4,7 +4,8 @@
  * `/quotes/extended`) for new symbols, periodic refresh, symbols over the
  * socket cap, and while the socket is down.
  */
-import { errorMessage, getJson } from '../api/client';
+import { errorMessage, getJson, isUnsupported } from '../api/client';
+import { getCapabilities } from '../api/provider';
 import type { Quote } from '../api/types';
 import { FRESH_EXT_TICK_MS, FRESH_TICK_MS, mergeExtended, mergeSnapshot, mergeTick } from './merge';
 import { useQuoteStore } from './store';
@@ -46,6 +47,8 @@ export interface QuoteStreamOptions {
   createSocket?: (url: string) => SocketLike;
   fetchJson?: <T>(path: string) => Promise<T>;
   isVisible?: () => boolean;
+  /** Whether the provider has `/quotes/extended` (default: its capabilities). */
+  extendedQuotes?: () => boolean;
   now?: () => number;
   random?: () => number;
 }
@@ -71,6 +74,15 @@ export interface EventSubscription {
   onFrame: (frame: EventFrame) => void;
   /** The socket opened; `reconnected` when it had been down since the last open. */
   onOpen?: (reconnected: boolean) => void;
+}
+
+/** `/ws` frame sent to every client when the API switched its data provider. */
+export interface ProviderChangedFrame {
+  type: 'provider.changed';
+  /** Id of the new provider. */
+  id?: string;
+  /** Id of the provider before the switch (null for a custom one). */
+  previous?: string | null;
 }
 
 export class QuoteStream {
@@ -103,8 +115,11 @@ export class QuoteStream {
   /** When a symbol lost its last subscriber; drives retention. */
   private releasedAt = new Map<string, number>();
   private running = false;
+  /** `/quotes/extended` answered 501: the provider has no pre/post-market quotes. */
+  private extUnsupported = false;
   private onVisibility: (() => void) | null = null;
   private eventSubs = new Set<{ topics: string[]; sub: EventSubscription }>();
+  private providerFns = new Set<(frame: ProviderChangedFrame) => void>();
   /** Topic set the server has on the current socket (sorted, joined); null = none sent yet. */
   private sentTopics: string | null = null;
 
@@ -161,9 +176,19 @@ export class QuoteStream {
     };
   }
 
+  /**
+   * Call `fn` when the API switched its data provider (quotes and bars then come from another
+   * source). Needs no subscription of its own: the frame goes to every open socket.
+   */
+  onProviderChanged(fn: (frame: ProviderChangedFrame) => void): () => void {
+    this.providerFns.add(fn);
+    return () => void this.providerFns.delete(fn);
+  }
+
   /** Stop everything (tests / teardown). */
   dispose(): void {
     this.stop();
+    this.providerFns.clear();
     this.refs.clear();
     this.extRefs.clear();
     this.eventSubs.clear();
@@ -352,6 +377,14 @@ export class QuoteStream {
       if (frame.upstream === 'connected') this.setStatus('live');
       else if (frame.upstream === 'polling') this.setStatus('upstream-polling');
       // 'reconnecting' keeps the previous status.
+    } else if (frame.type === 'provider.changed') {
+      for (const fn of [...this.providerFns]) {
+        try {
+          fn(frame as unknown as ProviderChangedFrame);
+        } catch (err) {
+          console.warn('quote stream: provider change handler failed', err);
+        }
+      }
     } else if (typeof frame.topic === 'string') {
       const f = frame as EventFrame;
       for (const { topics, sub } of [...this.eventSubs])
@@ -533,7 +566,14 @@ export class QuoteStream {
     );
   }
 
+  /** Pre/post-market snapshots exist unless the provider says (or answers 501) otherwise. */
+  private get extendedSupported(): boolean {
+    if (this.extUnsupported) return false;
+    return this.opts.extendedQuotes ? this.opts.extendedQuotes() : getCapabilities().extendedQuotes;
+  }
+
   private async fetchExtended(symbols: string[]): Promise<void> {
+    if (!symbols.length || !this.extendedSupported) return;
     await Promise.all(
       chunks(symbols, HTTP_CHUNK).map(async (c) => {
         try {
@@ -551,7 +591,9 @@ export class QuoteStream {
             return { quotes, error: null };
           });
         } catch (err) {
-          useQuoteStore.setState({ error: errorMessage(err) });
+          // 501: no pre/post-market data from this provider. Not an error; stop asking.
+          if (isUnsupported(err)) this.extUnsupported = true;
+          else useQuoteStore.setState({ error: errorMessage(err) });
         }
       }),
     );
