@@ -1,20 +1,29 @@
+import logging
 import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Executor
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..providers.base import MarketDataProvider, PartialQuotes, QuoteList
 from ..settings import Settings
+from .bars import SessionLookup
 from .cache import BatchResult, SmartCache
+from .sessions import METADATA_MAX_AGE, TradingHours
 from .stats import CacheStats
+
+log = logging.getLogger(__name__)
 
 Row = dict[str, Any]
 
 # `marketState` values of an extended session (before or after the regular one).
 _SESSION_STATES = frozenset({"PRE", "PREPRE", "POST", "POSTPOST"})
+# Longest a closed market's quote stays fresh when its exchange hours are unknown (a
+# configured closed TTL of a day or more assumes known hours).
+UNKNOWN_HOURS_CLOSED_TTL_S = 3600.0
 
 
 class TTLCache:
@@ -66,6 +75,11 @@ class MarketService:
     Quotes are served fresh or fetched, and stale only when the upstream fails. Events
     and fundamentals are served stale while one background refresh runs on `refresher`
     (under `background()`), so slow data never blocks a request once cached.
+
+    With a `session_lookup` (stored symbol metadata, never an upstream call) a quote of a
+    closed market stays fresh until the exchange opens next, at most `quote_closed_ttl_s`.
+    With a `quote_pacer` (seconds between refreshes the upstream's credits allow, the one
+    the live poller uses) a quote is never fresh for less than that.
     """
 
     def __init__(
@@ -77,8 +91,16 @@ class MarketService:
         refresher: Executor | None = None,
         background: Callable[[], AbstractContextManager[object]] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        session_lookup: SessionLookup | None = None,
+        metadata_max_age: timedelta = METADATA_MAX_AGE,
+        utcnow: Callable[[], datetime] = lambda: datetime.now(UTC),
+        quote_pacer: Callable[[], float] | None = None,
     ) -> None:
         self._provider = provider
+        self._quote_pacer = quote_pacer
+        self._session_lookup = session_lookup
+        self._metadata_max_age = metadata_max_age
+        self._utcnow = utcnow
         s = settings if settings is not None else Settings()
         self._news_fetch_limit = s.news_fetch_limit
         stats = stats if stats is not None else CacheStats()
@@ -132,10 +154,44 @@ class MarketService:
         """Freshness of a quote by its session: closed markets barely change."""
         state = row.get("marketState")
         if state == "CLOSED":
-            return self._closed_ttl
+            return self._closed_ttl_for(row)
         if state in _SESSION_STATES:
-            return self._session_ttl
-        return self._quote_ttl
+            return self._paced(self._session_ttl)
+        return self._paced(self._quote_ttl)
+
+    def _paced(self, ttl: float) -> float:
+        """`ttl`, or the pacer's interval when that is longer."""
+        if self._quote_pacer is None:
+            return ttl
+        return max(ttl, self._quote_pacer())
+
+    def _closed_ttl_for(self, row: Row) -> float:
+        """A closed market's quote is fresh until the next session opens, at most the
+        closed TTL; without known hours (or when always open) just the closed TTL."""
+        symbol = row.get("symbol")
+        unknown = min(self._closed_ttl, UNKNOWN_HOURS_CLOSED_TTL_S)
+        if self._session_lookup is None or not isinstance(symbol, str):
+            return unknown
+        now = self._utcnow()
+        try:
+            info = self._session_lookup(symbol.upper())
+            hours = (
+                TradingHours.from_symbol_info(info, now=now, max_age=self._metadata_max_age)
+                if info is not None
+                else None
+            )
+        except Exception:
+            # Stored metadata is an optimisation here: never fail a quote over it.
+            log.warning("session lookup failed for %s", symbol, exc_info=True)
+            return unknown
+        if hours is None:
+            return unknown
+        if hours.is_open(now):
+            # CLOSED during the regular session (a halt, or a lagging upstream): the
+            # market may reopen any moment.
+            return self._paced(self._quote_ttl)
+        until_open = (hours.next_open(now) - now).total_seconds()
+        return min(self._closed_ttl, until_open)
 
     def _load_quotes(self, symbols: list[str]) -> BatchResult[str, Row]:
         rows = self._provider.quotes(symbols)

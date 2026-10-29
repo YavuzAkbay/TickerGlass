@@ -69,6 +69,17 @@ class SymbolMeta(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AppMeta(Base):
+    """Internal bookkeeping (e.g. which provider filled the market data cache). Not user
+    data: it is never exported."""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 # ---------------------------------------------------------------- user data
 #
 # Phase 7 persistence (docs/persistence.md). JSON payloads are opaque to the

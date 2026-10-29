@@ -54,11 +54,19 @@ from ..providers.base import (
     BAR_COLUMNS,
     MarketDataProvider,
     ProviderError,
+    ProviderUnsupported,
     RateLimited,
     SymbolNotFound,
 )
 from ..settings import Settings
-from .sessions import QUIET_STREAK_MAX, TradingHours, newer_bar_due, next_check_at
+from .cache_gate import CacheGate, CacheRetired
+from .sessions import (
+    METADATA_MAX_AGE,
+    QUIET_STREAK_MAX,
+    TradingHours,
+    newer_bar_due,
+    next_check_at,
+)
 from .stats import CacheStats
 
 log = logging.getLogger(__name__)
@@ -176,9 +184,25 @@ class BarService:
         stats: CacheStats | None = None,
         session_lookup: SessionLookup | None = None,
         policy: TailPolicy | None = None,
+        extended_history: bool = True,
+        self_paging: bool = False,
+        metadata_max_age: timedelta = METADATA_MAX_AGE,
+        gate: CacheGate | None = None,
+        generation: int = 0,
     ) -> None:
         self._engine = engine
         self._provider = provider
+        # With a gate, commits of this service stop once its `generation` is retired.
+        self._gate = gate
+        self._generation = generation
+        # False: the provider has no pre/post-market bars; `prepost` requests are served
+        # (and stored) as regular-session series.
+        self._extended_history = extended_history
+        # True: `history` pages through a long range itself, so a range is one provider
+        # call whatever `IntervalSpec.chunk` (Yahoo's request size) says.
+        self._self_paging = self_paging
+        # How long stored symbol metadata is trusted to hold today's session.
+        self._metadata_max_age = metadata_max_age
         self._stats = stats if stats is not None else CacheStats()
         # None: plain TTL since the last fetch, market hours ignored.
         self._session_lookup = session_lookup
@@ -187,6 +211,9 @@ class BarService:
         self._retry_at: dict[tuple[str, str, bool], datetime] = {}
         # Series the provider had no bars for -> when that answer expires.
         self._unknown: dict[tuple[str, str, bool], datetime] = {}
+        # The refusal to answer with while a series is in `_unknown` for being unsupported
+        # (the provider cannot serve the symbol), rather than missing.
+        self._unsupported: dict[tuple[str, str, bool], ProviderUnsupported] = {}
         # Guards `_retry_at` and `_unknown` (prune sweeps them from another thread).
         self._maps_guard = threading.Lock()
         # One lock per series (see `_series_lock`); `_evict` drops those of deleted series.
@@ -220,6 +247,33 @@ class BarService:
         finally:
             lock.release()
 
+    def _commit(self, s: Session) -> None:
+        """Commit the session's cache writes, unless this service's generation is retired:
+        then roll back and raise `CacheRetired`. Gates writes that add or change rows only:
+        delete-only paths (`_evict`, the maintenance purge) are intentionally ungated, see
+        `cache_gate`."""
+        if self._gate is None:
+            s.commit()
+            return
+        with self._gate.writing(self._generation) as current:
+            if current:
+                s.commit()
+                return
+            s.rollback()
+        self._stats.incr("bars.retired_write")
+        raise CacheRetired("bars")
+
+    def _ensure_current(self) -> None:
+        """Raise `CacheRetired` when this service's generation is retired."""
+        if self._gate is not None and self._gate.generation != self._generation:
+            self._stats.incr("bars.retired_read")
+            raise CacheRetired("bars")
+
+    def effective_prepost(self, spec: IntervalSpec, prepost: bool) -> bool:
+        """Whether a `prepost` request is served as pre/post-market bars: only intraday
+        series, and only when the provider has them."""
+        return prepost and spec.intraday and self._extended_history
+
     def get_bars(
         self,
         symbol: str,
@@ -234,7 +288,7 @@ class BarService:
     ) -> BarsResult:
         """Return up to `limit` most recent bars with start <= ts < end."""
         symbol = symbol.upper()
-        prepost = prepost and spec.intraday
+        prepost = self.effective_prepost(spec, prepost)
         self.sync(symbol, spec, prepost, now=now, end=end)
         with Session(self._engine) as s:
             q = select(Bar).where(
@@ -245,6 +299,9 @@ class BarService:
             if end is not None:
                 q = q.where(Bar.ts < end)
             rows = s.scalars(q.order_by(Bar.ts.desc()).limit(limit + 1)).all()
+        # `sync` may have finished before a switch wiped the cache: rows read after the
+        # wipe are not this service's provider's.
+        self._ensure_current()
         has_more = len(rows) > limit
         rows = list(reversed(rows[:limit]))
         df = pd.DataFrame(
@@ -274,7 +331,9 @@ class BarService:
         key = (symbol, spec.name, prepost)
         info = self._session_lookup(symbol) if self._session_lookup is not None else None
         hours = (
-            TradingHours.from_symbol_info(info, prepost=prepost, now=now)
+            TradingHours.from_symbol_info(
+                info, prepost=prepost, now=now, max_age=self._metadata_max_age
+            )
             if info is not None
             else None
         )
@@ -283,16 +342,22 @@ class BarService:
             if meta is None:
                 if self._known_unknown(key, now):
                     self._stats.incr("bars.unknown_cached")
-                    raise SymbolNotFound(symbol)
+                    with self._maps_guard:
+                        refusal = self._unsupported.get(key)
+                    raise refusal if refusal is not None else SymbolNotFound(symbol)
                 self._stats.incr("bars.backfill")
                 try:
                     self._backfill(s, symbol, spec, prepost, now, known=info is not None)
                 except SymbolNotFound:
                     self._remember_unknown(key, now)
                     raise
+                except ProviderUnsupported as exc:
+                    # Like an unknown symbol: asking again cannot change the answer.
+                    self._remember_unknown(key, now, exc)
+                    raise
                 if self._session_lookup is not None:
                     self._schedule(s, key, spec, info, hours, now, newest_before=None)
-                s.commit()
+                self._commit(s)
                 return
             if now < self._due_at(meta, spec, info, hours):
                 if self._session_lookup is None:
@@ -337,14 +402,14 @@ class BarService:
                     meta = s.get(SeriesMeta, key)
                     if meta is not None:
                         self._touch(s, meta, now)
-                    s.commit()
+                    self._commit(s)
                     return
                 with self._maps_guard:
                     self._retry_at.pop(key, None)
                 if self._session_lookup is not None:
                     self._schedule(s, key, spec, info, hours, now, newest_before=newest_before)
             self._touch(s, meta, now)
-            s.commit()
+            self._commit(s)
 
     def _retry_pending(self, key: tuple[str, str, bool], now: datetime) -> bool:
         """True while a failed tail refresh waits for its retry; drops expired pauses."""
@@ -368,14 +433,21 @@ class BarService:
             del self._unknown[key]
             return False
 
-    def _remember_unknown(self, key: tuple[str, str, bool], now: datetime) -> None:
+    def _remember_unknown(
+        self, key: tuple[str, str, bool], now: datetime, refusal: ProviderUnsupported | None = None
+    ) -> None:
         p = self._policy if self._policy is not None else TailPolicy()
         with self._maps_guard:
             self._unknown[key] = now + timedelta(seconds=p.unknown_symbol_ttl_s)
+            if refusal is not None:
+                self._unsupported[key] = refusal
+            else:
+                self._unsupported.pop(key, None)
             if len(self._unknown) > UNKNOWN_MAX_ENTRIES:
                 _drop_expired(self._unknown, now)
             while len(self._unknown) > UNKNOWN_MAX_ENTRIES:
                 del self._unknown[next(iter(self._unknown))]
+            self._unsupported = {k: v for k, v in self._unsupported.items() if k in self._unknown}
 
     def _ttl(self, spec: IntervalSpec) -> timedelta:
         if self._policy is None:
@@ -505,11 +577,21 @@ class BarService:
         if spec.max_lookback is None:
             return _concat([self._provider.history(symbol, spec.name, None, None, prepost)])
         start = now - spec.max_lookback
-        if spec.chunk is None:
+        if self._chunk(spec) is None:
             return _concat([self._provider.history(symbol, spec.name, start, now, prepost)])
         return self._fetch_range(
-            symbol, spec, prepost, start, now + timedelta(days=1), stop_if_newest_empty=not known
+            symbol,
+            spec,
+            prepost,
+            start,
+            now + timedelta(days=1),
+            stop_if_newest_empty=not known,
+            keep_partial=True,
         )
+
+    def _chunk(self, spec: IntervalSpec) -> timedelta | None:
+        """Longest span of one provider call (None: the whole range at once)."""
+        return None if self._self_paging else spec.chunk
 
     def _fetch_range(
         self,
@@ -520,15 +602,33 @@ class BarService:
         end: datetime,
         *,
         stop_if_newest_empty: bool = False,
+        keep_partial: bool = False,
     ) -> pd.DataFrame:
-        """Bars in [start, end), in requests of at most `spec.chunk`, newest first."""
-        if spec.chunk is None:
+        """Bars in [start, end), in requests of at most the chunk, newest first.
+
+        With `keep_partial` (a backfill), a chunk failing after others came ends the fetch:
+        the newer bars are kept and the older history is simply shorter."""
+        chunk = self._chunk(spec)
+        if chunk is None:
             return _concat([self._provider.history(symbol, spec.name, start, end, prepost)])
         frames: list[pd.DataFrame] = []
         stop = end
         while stop > start:
-            begin = max(stop - spec.chunk, start)
-            frame = self._provider.history(symbol, spec.name, begin, stop, prepost)
+            begin = max(stop - chunk, start)
+            try:
+                frame = self._provider.history(symbol, spec.name, begin, stop, prepost)
+            except ProviderError as exc:
+                if not keep_partial or not any(len(f) for f in frames):
+                    raise
+                self._stats.incr("bars.partial_backfill")
+                log.warning(
+                    "backfill of %s %s stopped at %s, keeping the newer bars: %s",
+                    symbol,
+                    spec.name,
+                    begin,
+                    exc,
+                )
+                break
             if not frames and frame.empty and stop_if_newest_empty:
                 break
             frames.append(frame)
@@ -580,7 +680,7 @@ class BarService:
             # serves; the older cached bars stay (with a gap before the fresh ones).
             start = now - spec.max_lookback
             self._stats.incr("bars.tail_catch_up")
-        elif spec.chunk is not None and end - start > spec.chunk:
+        elif (chunk := self._chunk(spec)) is not None and end - start > chunk:
             self._stats.incr("bars.tail_catch_up")
         fresh = self._fetch_range(symbol, spec, prepost, start, end)
         overlap = _classify_overlap(tail, fresh)
@@ -656,6 +756,7 @@ class BarService:
         with self._maps_guard:
             _drop_expired(self._retry_at, now)
             _drop_expired(self._unknown, now)
+            self._unsupported = {k: v for k, v in self._unsupported.items() if k in self._unknown}
 
         uses = self._series_uses()
         for intraday, days in ((True, intraday_retention_days), (False, daily_retention_days)):

@@ -119,6 +119,12 @@ export class ResamplingFeed implements DataFeed {
     return p;
   }
 
+  /** Forget every resolved symbol (the data provider changed). */
+  clearSymbolCache(): void {
+    this.infoCache.clear();
+    this.infoResolved.clear();
+  }
+
   searchSymbols(query: string, limit?: number): Promise<SymbolSearchResult[]> {
     return this.inner.searchSymbols(query, limit);
   }

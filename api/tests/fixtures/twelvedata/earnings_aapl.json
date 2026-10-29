@@ -1,0 +1,44 @@
+{
+  "request": {
+    "path": "/earnings",
+    "params": {
+      "symbol": "AAPL",
+      "outputsize": "2"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "2",
+    "api-credits-left": "6",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "meta": {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "currency": "USD",
+      "exchange": "NASDAQ",
+      "mic_code": "XNGS",
+      "exchange_timezone": "America/New_York"
+    },
+    "earnings": [
+      {
+        "date": "2026-07-30",
+        "time": "After Hours",
+        "eps_estimate": 1.89,
+        "eps_actual": 2.02,
+        "difference": 0.13,
+        "surprise_prc": 6.88
+      },
+      {
+        "date": "2026-04-30",
+        "time": "After Hours",
+        "eps_estimate": 1.94,
+        "eps_actual": 2.01,
+        "difference": 0.07,
+        "surprise_prc": 3.61
+      }
+    ],
+    "status": "ok"
+  }
+}

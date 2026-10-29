@@ -1,0 +1,94 @@
+{
+  "request": {
+    "path": "/quote",
+    "params": {
+      "symbol": "AAPL,MSFT,VOD:LSE,ZZZZNOTREAL"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "4",
+    "api-credits-left": "4",
+    "content-type": "application/json"
+  },
+  "body": {
+    "AAPL": {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "exchange": "NASDAQ",
+      "mic_code": "XNGS",
+      "currency": "USD",
+      "datetime": "2026-10-27",
+      "timestamp": 1793107800,
+      "last_quote_at": 1793113980,
+      "open": "343.165",
+      "high": "347.77",
+      "low": "342.4",
+      "close": "347.25",
+      "volume": "391880",
+      "previous_close": "343.91000",
+      "change": "3.34000",
+      "percent_change": "0.97118325",
+      "average_volume": "38531128",
+      "is_market_open": true,
+      "fifty_two_week": {
+        "low": "243.42000",
+        "high": "351.73001",
+        "low_change": "103.83000",
+        "high_change": "-4.48001",
+        "low_change_percent": "42.65467",
+        "high_change_percent": "-1.27371",
+        "range": "243.419998 - 351.730011"
+      }
+    },
+    "MSFT": {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation Common Stock",
+      "exchange": "NASDAQ",
+      "mic_code": "XNGS",
+      "currency": "USD",
+      "datetime": "2026-10-27",
+      "timestamp": 1793107800,
+      "last_quote_at": 1793113980,
+      "open": "532.35",
+      "high": "533.945",
+      "low": "528.385",
+      "close": "533.08",
+      "volume": "167734",
+      "previous_close": "532.59998",
+      "change": "0.48002441",
+      "percent_change": "0.090128508",
+      "average_volume": "17175213",
+      "is_market_open": true,
+      "fifty_two_week": {
+        "low": "349.20001",
+        "high": "553.71997",
+        "low_change": "183.87999",
+        "high_change": "-20.63997",
+        "low_change_percent": "52.65750",
+        "high_change_percent": "-3.72751",
+        "range": "349.200012 - 553.719971"
+      }
+    },
+    "VOD:LSE": {
+      "code": 403,
+      "message": "**symbol** VOD is not available with your plan. You may select the appropriate plan at https://twelvedata.com/pricing",
+      "status": "error",
+      "meta": {
+        "symbol": "AAPL,MSFT,VOD:LSE,ZZZZNOTREAL",
+        "interval": "",
+        "exchange": ""
+      }
+    },
+    "ZZZZNOTREAL": {
+      "code": 404,
+      "message": "**symbol** not found: ZZZZNOTREAL. Please specify it correctly according to API Documentation.",
+      "status": "error",
+      "meta": {
+        "symbol": "AAPL,MSFT,VOD:LSE,ZZZZNOTREAL",
+        "interval": "",
+        "exchange": ""
+      }
+    }
+  }
+}

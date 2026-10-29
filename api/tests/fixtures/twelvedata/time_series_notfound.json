@@ -1,0 +1,21 @@
+{
+  "request": {
+    "path": "/time_series",
+    "params": {
+      "symbol": "ZZZZNOTREAL",
+      "interval": "1day",
+      "outputsize": "5"
+    }
+  },
+  "status": 404,
+  "headers": {
+    "api-credits-used": "5",
+    "api-credits-left": "3",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "code": 404,
+    "message": "**symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data",
+    "status": "error"
+  }
+}

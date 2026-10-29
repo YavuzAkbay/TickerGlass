@@ -8,7 +8,9 @@
   served only when that reload fails with a `ProviderError` (stale-if-error);
 - missing: loaded. Concurrent readers of one key share a single load (single-flight).
 
-`SymbolNotFound` is remembered as a negative entry for `negative_ttl`.
+`SymbolNotFound` is remembered as a negative entry for `negative_ttl`, and so is
+`ProviderUnsupported` (a symbol the provider cannot serve: asking again changes nothing);
+the negative entry then raises that refusal instead of `SymbolNotFound`.
 
 Loads run without the lock held. Every load registers a `Future` in `_inflight` first
 and resolves it on every exit path (errors included), so no waiter is left behind.
@@ -24,7 +26,12 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
-from ..providers.base import ProviderError, SymbolNotFound, UpstreamUnavailable
+from ..providers.base import (
+    ProviderError,
+    ProviderUnsupported,
+    SymbolNotFound,
+    UpstreamUnavailable,
+)
 from .stats import CacheStats
 
 log = logging.getLogger(__name__)
@@ -58,6 +65,8 @@ class _Entry(Generic[V]):
     fetched_at: float
     fresh_until: float
     negative: bool
+    #: Of a negative entry: the refusal to raise (None: `SymbolNotFound`).
+    refusal: ProviderUnsupported | None = None
 
 
 @dataclass(frozen=True)
@@ -165,6 +174,9 @@ class SmartCache(Generic[K, V]):
             value = load()
         except SymbolNotFound as exc:
             self._finish(key, leader, _Outcome(error=exc), self._negative())
+            raise
+        except ProviderUnsupported as exc:
+            self._finish(key, leader, _Outcome(error=exc), self._negative(exc))
             raise
         except ProviderError as exc:
             self._finish(key, leader, _Outcome(error=exc), None)
@@ -299,9 +311,9 @@ class SmartCache(Generic[K, V]):
         ttl = self._ttl_for(value) if self._ttl_for is not None else self._ttl
         return _Entry(value, now, now + ttl, False)
 
-    def _negative(self) -> _Entry[V]:
+    def _negative(self, refusal: ProviderUnsupported | None = None) -> _Entry[V]:
         now = self._clock()
-        return _Entry(None, now, now + self._negative_ttl, True)
+        return _Entry(None, now, now + self._negative_ttl, True, refusal)
 
     def _finish(
         self,
@@ -426,6 +438,8 @@ class SmartCache(Generic[K, V]):
             value = load()
         except SymbolNotFound as exc:
             outcome, entry = _Outcome(error=exc), self._negative()
+        except ProviderUnsupported as exc:
+            outcome, entry = _Outcome(error=exc), self._negative(exc)
         except ProviderError as exc:
             self._incr("refresh_error")
             log.warning("cache %s: refresh of %r failed: %s", self._name, key, exc)
@@ -441,7 +455,8 @@ class SmartCache(Generic[K, V]):
 
 
 def _value(key: object, entry: _Entry[V]) -> V:
-    """The value of a positive entry; a negative one raises `SymbolNotFound`."""
+    """The value of a positive entry; a negative one raises its refusal (`SymbolNotFound`
+    unless it was remembered for `ProviderUnsupported`)."""
     if entry.negative:
-        raise SymbolNotFound(str(key))
+        raise entry.refusal if entry.refusal is not None else SymbolNotFound(str(key))
     return cast(V, entry.value)

@@ -81,13 +81,13 @@ def test_fundamentals_statements() -> None:
         strict=True,
     ):
         assert eps == pytest.approx(ni / sh, abs=0.01)
-    for a, e, l in zip(
+    for a, e, liab in zip(
         q["balance"]["rows"]["Total Assets"],
         q["balance"]["rows"]["Stockholders Equity"],
         q["balance"]["rows"]["Total Liabilities Net Minority Interest"],
         strict=True,
     ):
-        assert a == pytest.approx(e + l, abs=1e5)
+        assert a == pytest.approx(e + liab, abs=1e5)
     # Free cash flow is operating cash flow plus (negative) capex.
     for ocf, capex, fcf in zip(
         q["cashflow"]["rows"]["Operating Cash Flow"],

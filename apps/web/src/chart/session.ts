@@ -1,6 +1,7 @@
 import { DARK_THEME, LIGHT_THEME, createChart, type Chart } from '@tickerglass/engine';
 import type { ChartErrorInfo, CrosshairInfo, SymbolInfo } from '@tickerglass/engine';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { getCapabilities } from '../api/provider';
 import { createHistoryStore, type HistoryState } from '../commands/history';
 import {
   createCompareRuntimeStore,
@@ -69,7 +70,7 @@ export function createChartSession(
   const chart = createChart(host, feed, {
     theme: app.theme === 'dark' ? DARK_THEME : LIGHT_THEME,
     timezone: v.timezone,
-    prepost: v.prepost,
+    prepost: v.prepost && getCapabilities().extendedHistory,
     crosshair: app.crosshair,
     magnet: app.magnet,
     showPrevClose: v.showPrevClose,

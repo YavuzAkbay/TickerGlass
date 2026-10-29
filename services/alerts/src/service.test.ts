@@ -199,6 +199,197 @@ describe('service', () => {
     await until(() => h!.api.fires.length === 2, 'next bar fire');
   });
 
+  describe('provider change', () => {
+    it('re-attaches the active alerts on a fresh series and reloads history', async () => {
+      await setup(makeAlert());
+      h!.api.alerts.push(makeAlert({ id: 'a2', status: 'paused' }));
+      await h!.service.sync();
+      const before = h!.service.series()[0]!;
+      expect(h!.feed.subscriptions).toBe(1);
+      h!.control.providerChanged();
+      await h!.service.whenIdle();
+      await settle(30);
+      await h!.service.whenIdle();
+      const [after] = h!.service.series();
+      expect(h!.service.series()).toHaveLength(1);
+      expect(after).not.toBe(before);
+      expect(after?.state).toBe('ready');
+      expect([...after!.runners.keys()]).toEqual(['a1']); // the paused alert stays detached
+      expect(h!.feed.subscriptions).toBe(1);
+      await tick(101);
+      await settle(30);
+    });
+
+    it('does not re-fire a level alert that already fired on the current bar', async () => {
+      await setup(makeAlert({ spec: price('greater', 100, 'oncePerBar') }), [98, 99, 110]);
+      await until(() => h!.api.fires.length === 1, 'initial fire');
+      h!.control.providerChanged();
+      await h!.service.whenIdle();
+      await settle(30);
+      await h!.service.whenIdle();
+      expect(h!.service.series()[0]?.runners.has('a1')).toBe(true);
+      await tick(111);
+      await settle(30);
+      expect(h!.api.fires).toHaveLength(1);
+      // A new bar fires again, as after a restart.
+      await tick(112, BAR_T + 60);
+      await until(() => h!.api.fires.length === 2, 'next bar fire');
+    });
+
+    it('a re-attached close-mode alert does not fire a catch-up for the closed bars it saw', async () => {
+      h = await harness({ now: (BAR_T + 300) * 1000 });
+      h.api.alerts = [
+        makeAlert({
+          spec: price('greater', 100, 'oncePerBarClose'),
+          updatedAt: '2026-10-15T14:00:00Z',
+        }),
+      ];
+      h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [90, 95, 110, 120]));
+      await h.start();
+      await until(() => h!.api.fires.length === 1, 'catch-up fire on a fresh start');
+      h.control.providerChanged();
+      await h.service.whenIdle();
+      await settle(30);
+      await h.service.whenIdle();
+      expect(h.service.series()[0]?.runners.has('a1')).toBe(true);
+      expect(h.api.fires).toHaveLength(1);
+    });
+
+    it('keeps the saved state of a runner whose series had not loaded yet', async () => {
+      h = await harness({ now: (BAR_T + 300) * 1000 });
+      h.api.alerts = [
+        makeAlert({
+          spec: price('greater', 100, 'oncePerBarClose'),
+          updatedAt: '2026-10-15T14:00:00Z',
+        }),
+      ];
+      // The saved state already covers the latest closed bar: nothing to catch up.
+      h.api.states = [
+        {
+          alertId: 'a1',
+          revision: 1,
+          state: {
+            v: 1,
+            seriesKey: 'TEST|1m|rth',
+            prev: null,
+            lastFiredBarTime: null,
+            lastFiredAt: null,
+            lastClosedBarTime: BAR_T,
+          },
+        },
+      ];
+      h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [90, 95, 110, 120]));
+      h.feed.failBars = new FeedError('bad gateway', 502);
+      await h.start();
+      const stuck = h.service.series()[0]!;
+      expect(stuck.state).toBe('retrying'); // never seeded
+      h.control.providerChanged();
+      await h.service.whenIdle();
+      h.feed.failBars = null;
+      await h.clock.advance(6000);
+      await h.service.whenIdle();
+      await until(() => h!.service.series()[0]?.state === 'ready', 'recovery');
+      await settle(30);
+      expect(h.service.series()[0]).not.toBe(stuck);
+      expect(h.api.fires).toHaveLength(0);
+    });
+
+    it('asks the feeds to forget resolved symbols', async () => {
+      await setup();
+      expect(h!.symbolCacheClears).toBe(0);
+      h!.control.providerChanged();
+      await h!.service.whenIdle();
+      expect(h!.symbolCacheClears).toBe(1);
+    });
+
+    it('loads the history of at most two series at a time', async () => {
+      h = await harness();
+      h.api.alerts = ['A', 'B', 'C', 'D'].map((sym, i) =>
+        makeAlert({ id: `a${i}`, symbol: sym, spec: price('crossingUp', 100) }),
+      );
+      for (const sym of ['A', 'B', 'C', 'D'])
+        h.feed.setBars(sym, '1m', minuteBars(BAR_T, [98, 99, 99]));
+      await h.start();
+      expect(h.service.series()).toHaveLength(4);
+      let release!: () => void;
+      h.feed.barsGate = new Promise<void>((r) => (release = r));
+      h.feed.getBarsCalls.length = 0;
+      h.control.providerChanged();
+      await settle(40);
+      expect(h.feed.getBarsCalls).toHaveLength(2);
+      release();
+      await h.service.whenIdle();
+      await settle(30);
+      await h.service.whenIdle();
+      expect(h.feed.getBarsCalls).toHaveLength(4);
+      expect(h.service.series().map((s) => s.state)).toEqual(['ready', 'ready', 'ready', 'ready']);
+    });
+
+    describe('missed while the control socket was down', () => {
+      it('reattaches when the provider differs after the socket reconnects', async () => {
+        await setup();
+        const before = h!.service.series()[0]!;
+        h!.control.connection(false);
+        h!.api.activeProvider = 'twelvedata';
+        h!.control.connection(true);
+        await h!.service.whenIdle();
+        await settle(30);
+        await h!.service.whenIdle();
+        expect(h!.service.series()[0]).not.toBe(before);
+        expect(h!.service.series()[0]?.state).toBe('ready');
+      });
+
+      it('reattaches from the periodic resync', async () => {
+        await setup();
+        const before = h!.service.series()[0]!;
+        h!.api.activeProvider = 'twelvedata';
+        await h!.clock.advance(60_000);
+        await h!.service.whenIdle();
+        expect(h!.service.series()[0]).not.toBe(before);
+      });
+
+      it('leaves the series alone while the provider is unchanged or unreadable', async () => {
+        await setup();
+        const before = h!.service.series()[0]!;
+        await h!.clock.advance(60_000);
+        h!.api.activeProvider = undefined; // route fails
+        await h!.clock.advance(60_000);
+        h!.api.activeProvider = 'yahoo';
+        await h!.clock.advance(60_000);
+        await h!.service.whenIdle();
+        expect(h!.service.series()[0]).toBe(before);
+      });
+
+      it('does not reattach twice for a switch it was told about', async () => {
+        await setup();
+        h!.api.activeProvider = 'twelvedata';
+        h!.control.providerChanged();
+        await h!.service.whenIdle();
+        await settle(30);
+        const after = h!.service.series()[0]!;
+        await h!.clock.advance(60_000);
+        await h!.service.whenIdle();
+        expect(h!.service.series()[0]).toBe(after);
+      });
+    });
+
+    it('keeps an unacknowledged fire and persists states before rebuilding', async () => {
+      await setup(makeAlert({ spec: price('crossingUp', 100, 'oncePerBar') }));
+      h!.api.fireScript = [{ status: 0, drop: true }];
+      await tick(101);
+      await settle(30);
+      expect(h!.api.fires).toHaveLength(0);
+      h!.control.providerChanged();
+      await h!.service.whenIdle();
+      await settle(30);
+      expect(h!.api.states.some((r) => r.alertId === 'a1')).toBe(true);
+      await h!.clock.advance(2000);
+      await until(() => h!.api.fires.length === 1, 'resent fire');
+      await settle(30);
+      expect(h!.api.fires).toHaveLength(1);
+    });
+  });
+
   it('close-mode catch-up after a restart fires once with delayed', async () => {
     h = await harness({ now: (BAR_T + 300) * 1000 });
     const key = 'TEST|1m|rth';

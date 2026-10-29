@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChartCandlestick,
   ChevronDown,
+  Database,
   Paintbrush,
   PanelTop,
   Ruler,
@@ -25,6 +26,7 @@ import {
 import { AlertsSettingsTab } from '../alerts/SettingsTab';
 import { EventsTab } from '../events/EventsTab';
 import { errorMessage } from '../api/client';
+import { useCapabilities, useProviderName } from '../api/provider';
 import { changeScale } from '../commands/scaleActions';
 import {
   CHART_TEMPLATE_SCHEMA_VERSION,
@@ -38,6 +40,7 @@ import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
 import { DEFAULT_STATUS_LINE, useChartView, type StatusLineSettings } from '../store/chartView';
 import { TradingTab } from '../replay/TradingTab';
+import { DataSourcePicker } from '../setup/ProviderPicker';
 import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
 import { DropdownMenu, type MenuItem } from '../ui/Menu';
@@ -46,7 +49,8 @@ import { ChartStyleEditor } from './ChartStyleEditor';
 import { Row, Section, Segmented, Setting } from './controls';
 import './dialogs.css';
 
-type TabId = 'symbol' | 'status' | 'scales' | 'canvas' | 'trading' | 'alerts' | 'events';
+type TabId =
+  'symbol' | 'status' | 'scales' | 'canvas' | 'trading' | 'alerts' | 'events' | 'dataSource';
 
 const TABS: {
   id: TabId;
@@ -61,6 +65,7 @@ const TABS: {
   { id: 'events', label: 'settings.tab.events', icon: CalendarDays },
   { id: 'trading', label: 'settings.tab.trading', icon: Briefcase },
   { id: 'alerts', label: 'settings.tab.alerts', icon: AlarmClock },
+  { id: 'dataSource', label: 'settings.tab.dataSource', icon: Database },
 ];
 
 const TIMEZONES = [
@@ -157,6 +162,8 @@ const sameScale = (a: Draft['scale'], b: Draft['scale']) =>
 /** Chart settings: tabs on the left, live preview, Ok applies, Cancel reverts. */
 export default function SettingsDialog({ onClose }: { onClose: () => void; arg?: unknown }) {
   const t = useT();
+  const caps = useCapabilities();
+  const provider = useProviderName();
   const [initial] = useState(readDraft);
   const [draft, setDraft] = useState(initial);
   const [tab, setTab] = useState<TabId>('symbol');
@@ -351,9 +358,14 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         />
         <Section title="Session">
           <Setting
-            checked={draft.prepost}
+            checked={draft.prepost && caps.extendedHistory}
             label="Extended trading hours"
-            hint="Show pre-market and post-market bars"
+            hint={
+              caps.extendedHistory
+                ? 'Show pre-market and post-market bars'
+                : `Not available from ${provider}`
+            }
+            disabled={!caps.extendedHistory}
             onChange={(prepost) => update({ prepost })}
           />
         </Section>
@@ -550,6 +562,13 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     content = <AlertsSettingsTab />;
   } else if (tab === 'events') {
     content = <EventsTab />;
+  } else if (tab === 'dataSource') {
+    content = (
+      <Section title={t('settings.dataSource.title')}>
+        <p className="dlg-note">{t('settings.dataSource.note')}</p>
+        <DataSourcePicker beforeSwitch={cancel} />
+      </Section>
+    );
   } else {
     content = <TradingTab />;
   }

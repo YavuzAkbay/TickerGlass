@@ -1,17 +1,27 @@
-export type ChartErrorKind = 'notFound' | 'rateLimited' | 'unavailable' | 'other';
+export type ChartErrorKind = 'notFound' | 'rateLimited' | 'unavailable' | 'unsupported' | 'other';
+
+/**
+ * "{Feature}: not available from {provider}." for a 501 (`feature` is the API's name for what
+ * the provider lacks, e.g. "international symbols"); without a feature a generic sentence.
+ */
+export function unsupportedText(feature: string | undefined, provider: string): string {
+  const what = feature ? feature.charAt(0).toUpperCase() + feature.slice(1) : 'This chart';
+  return `${what}: not available from ${provider}.`;
+}
 
 /** Seconds to wait when a 429 carries no `Retry-After`. */
 export const DEFAULT_RETRY_SECONDS = 5;
 /** Upper bound for the automatic retry wait. */
 export const MAX_RETRY_SECONDS = 60;
 
-/** What went wrong with a chart load: 404 symbol, 429 rate limit, network/502/503, or anything else. */
+/** What went wrong with a chart load: 404 symbol, 429 rate limit, 501 not offered, network/502/503, or anything else. */
 export function classifyChartError(
   err: { status?: number | undefined } | null | undefined,
 ): ChartErrorKind {
   const status = err?.status;
   if (status === 404) return 'notFound';
   if (status === 429) return 'rateLimited';
+  if (status === 501) return 'unsupported';
   if (status === 0 || status === 502 || status === 503) return 'unavailable';
   return 'other';
 }

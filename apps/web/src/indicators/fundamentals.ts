@@ -1,6 +1,7 @@
 /** `/fundamentals/{symbol}` for indicator definitions that read financial statements. */
 import type { FundamentalsData } from '@tickerglass/indicators';
-import { cachedJson } from '../api/client';
+import { cachedJson, isUnsupported } from '../api/client';
+import { useProviderStore } from '../api/provider';
 import type { Fundamentals, FundamentalsStatement } from '../api/types';
 
 export const FUNDAMENTALS_TTL_MS = 10 * 60 * 1000;
@@ -8,9 +9,23 @@ export const FUNDAMENTALS_TTL_MS = 10 * 60 * 1000;
 export const fundamentalsPath = (symbol: string): string =>
   `/fundamentals/${encodeURIComponent(symbol)}`;
 
-/** Cached for 10 minutes; concurrent callers share one request, failures are not cached. */
-export function fetchFundamentals(symbol: string): Promise<Fundamentals> {
-  return cachedJson<Fundamentals>(fundamentalsPath(symbol), FUNDAMENTALS_TTL_MS);
+/** Reason shown on an indicator reading financial statements when the provider has none
+ * (the controller prefixes it: "Could not load financial statements: ..."). */
+export const statementsUnavailable = (provider: string): string => `not available from ${provider}`;
+
+/**
+ * Cached for 10 minutes; concurrent callers share one request, failures are not cached.
+ * Rejects with a plain message when the provider has no financial statements.
+ */
+export async function fetchFundamentals(symbol: string): Promise<Fundamentals> {
+  const { capabilities, name } = useProviderStore.getState();
+  if (!capabilities.fundamentalsStatements) throw new Error(statementsUnavailable(name));
+  try {
+    return await cachedJson<Fundamentals>(fundamentalsPath(symbol), FUNDAMENTALS_TTL_MS);
+  } catch (err) {
+    if (isUnsupported(err)) throw new Error(statementsUnavailable(name), { cause: err });
+    throw err;
+  }
 }
 
 /** One statement in runtime form: ISO period ends -> unix seconds, nulls -> NaN. */

@@ -8,8 +8,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite:///./data/tickerglass.db"
-    #: Market data source: "yahoo" (yfinance) or "demo" (generated offline data).
-    market_provider: Literal["yahoo", "demo"] = "yahoo"
+    #: Market data source: an id from `providers.registry.PROVIDERS` ("yahoo" yfinance,
+    #: "twelvedata" Twelve Data API, "demo" generated offline data); `create_app` rejects
+    #: unknown ids.
+    market_provider: str = "yahoo"
+    #: Whether the app may switch the market data provider at runtime (`POST
+    #: /api/providers/active`); false locks it to `MARKET_PROVIDER` and ignores a stored choice.
+    provider_switching: bool = True
+    #: Seconds after a provider switch during which a switch to another provider is refused
+    #: (429 `switch_cooldown`): each switch wipes the cache and costs upstream credits.
+    provider_switch_cooldown_s: float = 10
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     cors_origins: list[str] = ["http://localhost:5173"]
@@ -20,6 +28,10 @@ class Settings(BaseSettings):
     # Upstream guard (providers/guard.py): request budget and cooldowns, per process.
     upstream_rate_per_min: float = 60
     upstream_burst: int = 20
+    #: Credits per UTC day the upstream allows (resets 00:00 UTC); None or 0: no daily cap.
+    #: At the limit calls fail with 429 and cached data is served; background calls stop
+    #: earlier, keeping a share of the day for the user's own requests.
+    upstream_daily_limit: int | None = None
     upstream_cooldown_initial_s: float = 30
     #: Also caps an upstream `retry_after`; 0 disables the rate-limit cooldown.
     upstream_cooldown_max_s: float = 900
@@ -41,6 +53,9 @@ class Settings(BaseSettings):
     news_ttl_s: float = 300
     #: Symbol search results.
     search_ttl_s: float = 86400
+    #: Stored symbol metadata (`services/symbols.py`); also how long a stored session is
+    #: trusted to be today's (`services/sessions.py`).
+    symbol_info_ttl_s: float = 86400
     #: News items fetched per symbol; smaller requests are sliced from that one fetch.
     news_fetch_limit: int = 50
     #: Oldest value served stale (in the background-refresh window or after an upstream error).

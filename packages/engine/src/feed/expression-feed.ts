@@ -117,6 +117,11 @@ export class ExpressionFeed implements DataFeed {
     this.maxLegs = opts?.maxLegs ?? 8;
   }
 
+  /** Forget the resolved legs of expression symbols (the data provider changed). */
+  clearSymbolCache(): void {
+    this.legInfo.clear();
+  }
+
   async resolveSymbol(symbol: string): Promise<SymbolInfo> {
     const p = this.parse(symbol);
     if (p.plain) return this.inner.resolveSymbol(p.symbols[0] as string);

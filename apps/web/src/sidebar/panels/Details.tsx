@@ -1,6 +1,7 @@
 import { isExpressionSymbol } from '@tickerglass/engine';
 import { ChevronDown } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
+import { useCapabilities, useProviderName } from '../../api/provider';
 import type { Fundamentals, FundamentalsInfo, Performance, SymbolMeta } from '../../api/types';
 import { useLiveQuote, useQuoteMissing } from '../../quotes/hooks';
 import { useQuoteStore } from '../../quotes/store';
@@ -93,6 +94,10 @@ export function periodChange(
   if (isNum(live) && isNum(baseClose) && baseClose > 0) return (live / baseClose - 1) * 100;
   return isNum(serverPercent) ? serverPercent : null;
 }
+
+/** Shown in place of data the provider does not offer. */
+export const unsupportedText = (what: string, provider: string): string =>
+  `${what}: not available from ${provider}`;
 
 function PerformanceGrid({ symbol, last }: { symbol: string; last: number | null }) {
   const perf = useApi<Performance>(`/performance/${encodeURIComponent(symbol)}`, ONE_MIN);
@@ -209,8 +214,14 @@ export function Details() {
 function SymbolDetails({ symbol }: { symbol: string }) {
   const enc = encodeURIComponent(symbol);
   const meta = useApi<SymbolMeta>(`/symbols/${enc}`, TEN_MIN);
-  const fund = useApi<Fundamentals>(`/fundamentals/${enc}`, TEN_MIN);
-  const events = useApi<EventsResponse>(eventsPath(symbol), EVENTS_TTL_MS);
+  const caps = useCapabilities();
+  const provider = useProviderName();
+  // What the provider does not offer is not asked for (the API would answer 501).
+  const fund = useApi<Fundamentals>(caps.fundamentalsInfo ? `/fundamentals/${enc}` : null, TEN_MIN);
+  const events = useApi<EventsResponse>(
+    caps.events.length > 0 ? eventsPath(symbol) : null,
+    EVENTS_TTL_MS,
+  );
   const q = useLiveQuote(symbol);
   const now = useNow();
   const quoteError = useQuoteStore((s) => s.error);
@@ -279,7 +290,18 @@ function SymbolDetails({ symbol }: { symbol: string }) {
       <PerformanceGrid symbol={symbol} last={last} />
 
       <div className="rs-section-title">Key stats</div>
-      {fund.loading ? (
+      {!caps.fundamentalsInfo ? (
+        <>
+          <div className="rs-pad rs-muted" data-testid="details-fundamentals-unsupported">
+            {unsupportedText('Fundamentals', provider)}
+          </div>
+          {caps.events.includes('earnings') ? (
+            <Stat label={earnings.label}>
+              <span className="rs-num">{events.loading ? '…' : earnings.value}</span>
+            </Stat>
+          ) : null}
+        </>
+      ) : fund.loading ? (
         <div className="rs-pad">
           <Skeleton lines={8} />
         </div>

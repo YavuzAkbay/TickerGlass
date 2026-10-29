@@ -105,7 +105,143 @@
   color: var(--text);
   font-family: var(--font-num);
 }
+.ds-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ds-hint {
+  color: var(--muted);
+}
+.ds-selected {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .ds-copy {
   width: 24px;
   height: 22px;
+}
+.ds-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--down) 40%, transparent);
+  border-radius: var(--radius-control);
+  background: var(--down-soft);
+  color: var(--down);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+.ds-warn svg {
+  flex: none;
+  margin-top: 2px;
+}
+.ds-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ds-chip.on {
+  border-color: color-mix(in srgb, var(--up) 40%, transparent);
+  color: var(--up);
+}
+.ds-chip.off {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.ds-chip.market {
+  border-style: dashed;
+}
+.ds-config {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ds-config-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+}
+.ds-config-line code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: var(--font-num);
+}
+.ds-config-label {
+  color: var(--muted);
+}
+.ds-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--input-bg);
+  color: var(--muted);
+}
+.ds-badge.set {
+  background: var(--up-soft);
+  color: var(--up);
+}
+.ds-badge.missing {
+  background: var(--down-soft);
+  color: var(--down);
+}
+.ds-limits {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+.ds-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ds-meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+}
+.ds-meter-detail {
+  color: var(--muted);
+}
+.ds-meter-track {
+  height: 6px;
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--input-bg);
+}
+.ds-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.ds-meter-fill.high {
+  background: var(--down);
 }

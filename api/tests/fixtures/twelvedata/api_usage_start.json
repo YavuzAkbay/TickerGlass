@@ -1,0 +1,20 @@
+{
+  "request": {
+    "path": "/api_usage",
+    "params": {}
+  },
+  "status": 200,
+  "headers": {
+    "api-credits-used": "1",
+    "api-credits-left": "7",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "timestamp": "2026-10-27 15:12:41",
+    "current_usage": 1,
+    "plan_limit": 8,
+    "daily_usage": 1,
+    "plan_daily_limit": 800,
+    "plan_category": "basic"
+  }
+}

@@ -22,12 +22,35 @@ export const KEEPALIVE_MAX_BYTES = 60_000;
 
 /**
  * Worth retrying later: unreachable (status 0), server errors (5xx), request
- * timeout (408) and rate limiting (429). Other errors fail the same way again.
+ * timeout (408) and rate limiting (429). Other errors fail the same way again,
+ * and so does 501: the provider does not offer that feature at all.
  */
 export function isRetryable(err: unknown): boolean {
   if (err instanceof ApiError)
-    return err.status === 0 || err.status >= 500 || err.status === 408 || err.status === 429;
+    return (
+      err.status === 0 ||
+      (err.status >= 500 && err.status !== 501) ||
+      err.status === 408 ||
+      err.status === 429
+    );
   return err instanceof TypeError;
+}
+
+/** The `code` the API sent with the error (`unsupported`, `not_configured`), if any. */
+function errorCode(err: unknown): string | undefined {
+  if (!(err instanceof ApiError)) return undefined;
+  const code = (err.body as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+/** 501: the active provider does not offer this feature (`body.feature` names it). */
+export function isUnsupported(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 501;
+}
+
+/** 503 "not_configured": the active provider lacks required settings (e.g. an API key). */
+export function isNotConfigured(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 503 && errorCode(err) === 'not_configured';
 }
 
 export interface RequestOptions {

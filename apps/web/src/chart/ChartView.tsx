@@ -8,6 +8,7 @@ import { feed } from './feed';
 import { PerfOverlay } from './PerfOverlay';
 import { dropComputeTimes, perfEnabled } from './perf';
 import { PRIMARY_CHART_ID, createChartSession, type ChartSession } from './session';
+import { getCapabilities, useCapabilities } from '../api/provider';
 import { attachAlerts } from '../alerts/attach';
 import { attachEvents } from '../events/attach';
 import { attachCompares } from '../compare/attach';
@@ -173,7 +174,7 @@ export function ChartView({ id }: { id: string }) {
       )
         chart.applyOptions({
           timezone: v.timezone,
-          prepost: v.prepost,
+          prepost: v.prepost && getCapabilities().extendedHistory,
           showPrevClose: v.showPrevClose,
         });
       if (v.statusLine !== prev.statusLine) chart.setLegendOptions(legendOf(v.statusLine));
@@ -181,6 +182,14 @@ export function ChartView({ id }: { id: string }) {
     });
     return off;
   }, [session]);
+
+  // Capabilities arrive after the chart was created: a provider without extended-hours
+  // bars turns a saved "extended" setting off (the API ignores it anyway).
+  const { extendedHistory } = useCapabilities();
+  useEffect(() => {
+    if (session)
+      session.chart.applyOptions({ prepost: session.view.getState().prepost && extendedHistory });
+  }, [session, extendedHistory]);
 
   useEffect(() => {
     session?.chart.applyOptions({

@@ -131,6 +131,15 @@ describe('HttpDataFeed HTTP', () => {
     await expect(p).rejects.toMatchObject({ status: 404, message: 'symbol not found: NOPE' });
   });
 
+  it('carries the `feature` of a 501 into FeedError.feature', async () => {
+    const body = { detail: 'x', code: 'unsupported', feature: 'international symbols' };
+    const fetchImpl = vi.fn(async () => jsonResponse(body, 501));
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    await expect(
+      feed.getBars({ symbol: 'VOD.L', interval: parseInterval('1D'), limit: 1 }),
+    ).rejects.toMatchObject({ status: 501, feature: 'international symbols' });
+  });
+
   it('parses Retry-After seconds into FeedError.retryAfter', async () => {
     const fetchImpl = vi.fn(
       async () =>
@@ -234,6 +243,36 @@ describe('HttpDataFeed HTTP', () => {
     const feed = makeFeed(fetchImpl as unknown as typeof fetch);
     await expect(feed.resolveSymbol('X')).rejects.toMatchObject({ status: 502 });
     await expect(feed.resolveSymbol('X')).resolves.toMatchObject({ symbol: 'X' });
+  });
+
+  it('clearSymbolCache makes the next resolveSymbol refetch', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ symbol: 'AAPL', priceHint: 2 }));
+    const feed = makeFeed(fetchImpl as unknown as typeof fetch);
+    await feed.resolveSymbol('AAPL');
+    await feed.resolveSymbol('AAPL');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    feed.clearSymbolCache();
+    await feed.resolveSymbol('AAPL');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends only Accept by default and the configured extra headers when set', async () => {
+    const fetchImpl = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
+      jsonResponse({ symbol: 'AAPL', priceHint: 2 }),
+    );
+    await makeFeed(fetchImpl as unknown as typeof fetch).resolveSymbol('AAPL');
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toEqual({ Accept: 'application/json' });
+
+    const feed = new HttpDataFeed({
+      baseUrl: '',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      headers: { 'X-TickerGlass-Priority': 'visible', Accept: 'text/plain' },
+    });
+    await feed.resolveSymbol('MSFT');
+    expect(fetchImpl.mock.calls[1]?.[1]?.headers).toEqual({
+      'X-TickerGlass-Priority': 'visible',
+      Accept: 'application/json',
+    });
   });
 
   it('keeps at most 500 resolved symbols, least recently used dropped first', async () => {

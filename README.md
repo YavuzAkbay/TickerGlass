@@ -45,6 +45,8 @@ For generated demo prices without market-data network requests, set this in `.en
 MARKET_PROVIDER=demo
 ```
 
+To use a [Twelve Data](https://twelvedata.com) account instead, set `MARKET_PROVIDER=twelvedata`, `TWELVEDATA_API_KEY` and your `TWELVEDATA_PLAN` (`basic`, `grow`, `pro`, ...) and restart; the app paces its requests to the plan's credits. Switching provider clears the cached market data, not your own data.
+
 Demo prices are synthetic and are not real quotes. The app itself can still use optional integrations you configure, such as Telegram, email, or webhooks for alert delivery. See [provider configuration](docs/providers.md).
 
 ## Alert notifications
@@ -59,7 +61,7 @@ Copy `.env.example` to `.env`. Common settings include:
 | --- | --- |
 | `WEB_PORT` | Local web UI port (default `8080`) |
 | `API_PORT` | Local API port (default `8000`) |
-| `MARKET_PROVIDER` | `yahoo` (default) or generated `demo` data |
+| `MARKET_PROVIDER` | `yahoo` (default), `twelvedata` (needs `TWELVEDATA_API_KEY`) or generated `demo` data |
 | `DATABASE_URL` | Optional database connection; SQLite is the default |
 
 The example file documents database and alert settings. Avoid sharing `.env` because it may contain passwords, tokens, and webhook secrets.

@@ -69,3 +69,24 @@ describe('control socket liveness', () => {
     c.stop();
   });
 });
+
+describe('control socket provider.changed', () => {
+  it('calls every provider-changed listener once per frame and ignores other frames', () => {
+    const c = new ControlSocket('ws://x', silentLogger, FakeWS as unknown as typeof WebSocket);
+    const a: number[] = [];
+    const b: number[] = [];
+    c.onProviderChanged(() => a.push(1));
+    c.onProviderChanged(() => b.push(1));
+    c.start();
+    const ws = FakeWS.all[0]!;
+    ws.onopen?.();
+    ws.frame({ type: 'events' });
+    ws.frame({ type: 'provider.changed', id: 'twelvedata', previous: 'yahoo' });
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    ws.frame({ type: 'alerts.changed', ids: ['a'], deleted: [] });
+    ws.frame({ type: 'provider.changed' }); // no payload is needed
+    expect(a).toHaveLength(2);
+    c.stop();
+  });
+});

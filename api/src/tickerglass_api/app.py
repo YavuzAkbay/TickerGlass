@@ -1,7 +1,7 @@
 import asyncio
+import logging
 import math
 from collections.abc import AsyncIterator
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -15,17 +15,18 @@ from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .db import make_engine, run_migrations
-from .live import LiveHub, LiveSource, Poller, market_poller
+from .live import LiveHub, LiveSource, Poller
 from .notifications.dispatcher import Dispatcher
 from .providers.base import (
     MarketDataProvider,
     ProviderError,
+    ProviderNotConfigured,
+    ProviderUnsupported,
     RateLimited,
     SymbolNotFound,
     UpstreamUnavailable,
 )
-from .providers.guard import GuardedProvider, UpstreamGuard
-from .providers.registry import PROVIDERS
+from .providers.registry import PROVIDERS, ProviderSpec, is_configured
 from .routes import (
     alerts,
     bars,
@@ -43,12 +44,23 @@ from .routes import (
     user_settings,
     watchlists,
 )
-from .services.bars import BarService, TailPolicy
-from .services.maintenance import CacheMaintenance
-from .services.market import MarketService
+from .services.cache_gate import CacheGate, CacheRetired
+from .services.cache_source import ensure_cache_source
+from .services.provider_choice import SelectedBy, env_choice, resolve_startup_provider
 from .services.stats import CacheStats
-from .services.symbols import SymbolService
 from .settings import Settings, get_settings
+from .stack import (
+    ProviderRuntime as ProviderRuntime,  # re-exported: routes and tests import it from here
+)
+from .stack import (
+    ProviderSwitcher,
+    build_stack,
+    install,
+    live_config,
+)
+from .stack import build_runtime as build_runtime  # re-exported (tests)
+
+log = logging.getLogger(__name__)
 
 
 def _finite(value: Any) -> Any:
@@ -71,88 +83,66 @@ def create_app(
 ) -> FastAPI:
     settings = settings_override or get_settings()
     db_url = database_url or settings.database_url
+    if provider is None and settings.market_provider not in PROVIDERS:
+        raise ValueError(
+            f"unknown MARKET_PROVIDER {settings.market_provider!r}; valid: {', '.join(PROVIDERS)}"
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         run_migrations(db_url)
         engine = make_engine(db_url)
         app.state.sessionmaker = sessionmaker(engine, expire_on_commit=False)
-        spec = PROVIDERS[settings.market_provider] if provider is None else None
-        inner: MarketDataProvider
-        if provider is not None:
-            inner = provider
-        else:
-            assert spec is not None
-            inner = spec.make(settings)
-        # Every upstream call (services and the live poller) goes through one guard.
         stats = CacheStats()
-        guard = UpstreamGuard(
-            rate_per_min=settings.upstream_rate_per_min,
-            burst=settings.upstream_burst,
-            cooldown_initial_s=settings.upstream_cooldown_initial_s,
-            cooldown_max_s=settings.upstream_cooldown_max_s,
-            unavailable_cooldown_s=settings.upstream_unavailable_cooldown_s,
-        )
-        prov = GuardedProvider(inner, guard, stats)
         app.state.cache_stats = stats
-        app.state.upstream_guard = guard
-        app.state.provider = prov
-        # Background refreshes of stale cache entries, shared by every in-memory cache.
-        refresher = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cache-refresh")
-        app.state.cache_refresher = refresher
-        app.state.symbol_service = SymbolService(
-            engine,
-            prov,
-            settings=settings,
+        gate = CacheGate()
+        app.state.cache_gate = gate
+        spec: ProviderSpec | None = None
+        selected_by: SelectedBy = env_choice(settings)
+        if provider is None:
+            # MARKET_PROVIDER, or the provider last picked in the app (see provider_choice).
+            provider_id, selected_by = resolve_startup_provider(engine, settings, is_configured)
+            spec = PROVIDERS[provider_id]
+            # Cached bars and metadata belong to the provider that fetched them.
+            ensure_cache_source(engine, spec.id)
+        stack = build_stack(
+            spec,
+            settings,
+            engine=engine,
             stats=stats,
-            refresher=refresher,
-            background=guard.background,
+            gate=gate,
+            generation=gate.generation,
+            hub=lambda: app.state.live_hub,
+            selected_by=selected_by,
+            provider=provider,
+            live_source=live_source,
         )
-        # Bar tails follow the market session of the symbol's stored metadata.
-        app.state.bar_service = BarService(
-            engine,
-            prov,
-            stats=stats,
-            session_lookup=app.state.symbol_service.cached_info,
-            policy=TailPolicy.from_settings(settings),
-        )
-        app.state.market_service = MarketService(
-            prov,
-            settings=settings,
-            stats=stats,
-            refresher=refresher,
-            background=guard.background,
-        )
-        source = live_source
-        if source is None:
-            # A custom provider (tests) has no spec: Yahoo's relay, as before.
-            source = (spec or PROVIDERS["yahoo"]).make_live(inner)
-        app.state.provider_spec = spec
-        app.state.live_hub = LiveHub(
-            source,
-            live_poller
-            if live_poller is not None
-            else market_poller(app.state.market_service, guard),
-            poll_after_s=settings.live_poll_after_s,
-            poll_interval_s=settings.live_poll_interval_s,
-            poll_closed_interval_s=settings.live_poll_closed_interval_s,
-        )
-        app.state.settings = settings
+        install(app, stack)
+        app.state.live_hub = LiveHub(**live_config(stack, live_poller))
         app.state.live_hub.bind_loop(asyncio.get_running_loop())
         app.state.alerts_service = alerts.ServiceState()
-        dispatcher = Dispatcher(app.state.sessionmaker, settings, app.state.live_hub)
+        dispatcher = Dispatcher(app.state.sessionmaker, stack.runtime.settings, app.state.live_hub)
         app.state.dispatcher = dispatcher
         dispatcher.start()
-        maintenance = CacheMaintenance(engine, app.state.bar_service, settings, stats)
-        app.state.cache_maintenance = maintenance
-        if settings.cache_maintenance_enabled:
-            maintenance.start()
+        switcher = ProviderSwitcher(
+            app,
+            engine,
+            gate,
+            stats,
+            live_poller=live_poller,
+            switching_enabled=settings.provider_switching,
+            cooldown_s=settings.provider_switch_cooldown_s,
+        )
+        app.state.switcher = switcher
+        await switcher.start_current()
         yield
-        await maintenance.stop()
         await dispatcher.stop()
+        # First: waits for a switch in progress (it holds the switcher's lock) and refuses
+        # later ones, so none can hand the hub a new upstream after the hub is closed.
+        # Stops the maintenance and drops queued refreshes (a running one finishes on its
+        # own thread).
+        await switcher.close()
         await app.state.live_hub.close()
-        # Queued refreshes are dropped; a running one finishes on its own thread.
-        refresher.shutdown(wait=False, cancel_futures=True)
         engine.dispose()
 
     app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
@@ -179,6 +169,33 @@ def create_app(
             status_code=429,
             headers={"Retry-After": str(exc.retry_after)},
         )
+
+    @app.exception_handler(ProviderUnsupported)
+    async def _unsupported(request: Request, exc: ProviderUnsupported) -> JSONResponse:
+        spec: ProviderSpec | None = getattr(request.app.state, "provider_spec", None)
+        name = exc.provider or (spec.id if spec else None)
+        return JSONResponse(
+            {
+                "detail": str(ProviderUnsupported(exc.feature, name)),
+                "code": "unsupported",
+                "feature": exc.feature,
+                "provider": name,
+            },
+            status_code=501,
+        )
+
+    @app.exception_handler(CacheRetired)
+    async def _cache_retired(_: Request, __: CacheRetired) -> JSONResponse:
+        # The data source was switched while this request was running; a retry runs on it.
+        return JSONResponse(
+            {"detail": "data source changed; retry", "code": "provider_switched"},
+            status_code=503,
+            headers={"Retry-After": "1"},
+        )
+
+    @app.exception_handler(ProviderNotConfigured)
+    async def _not_configured(_: Request, exc: ProviderNotConfigured) -> JSONResponse:
+        return JSONResponse({"detail": str(exc), "code": "not_configured"}, status_code=503)
 
     @app.exception_handler(UpstreamUnavailable)
     async def _unavailable(_: Request, exc: UpstreamUnavailable) -> JSONResponse:

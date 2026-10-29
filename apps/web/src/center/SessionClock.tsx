@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
+import { useCapabilities, useProviderName } from '../api/provider';
 import { resolveTimezone, TIMEZONES, utcOffsetLabel } from '../bottombar/timezones';
 import type { ChartSession } from '../chart/session';
 import { commands } from '../commands/registry';
@@ -62,17 +63,23 @@ function Clock({ session }: { session: ChartSession }) {
 
 /** Regular / extended hours toggle and the chart clock of one chart. */
 export function SessionClock({ session }: { session: ChartSession }) {
-  const prepost = useStore(session.view, (s) => s.prepost);
+  const { extendedHistory } = useCapabilities();
+  const provider = useProviderName();
+  // A provider without extended-hours bars serves regular hours whatever the saved setting.
+  const prepost = useStore(session.view, (s) => s.prepost) && extendedHistory;
   return (
     <div className="sh-session">
       <button
         type="button"
         className={`sh-pill${prepost ? ' active' : ''}`}
         aria-pressed={prepost}
+        disabled={!extendedHistory}
         data-tip={
-          prepost
-            ? 'Extended trading hours (click for regular)'
-            : 'Regular trading hours (click for extended)'
+          !extendedHistory
+            ? `Extended trading hours: not available from ${provider}`
+            : prepost
+              ? 'Extended trading hours (click for regular)'
+              : 'Regular trading hours (click for extended)'
         }
         data-tip-side="bottom"
         onClick={() => {

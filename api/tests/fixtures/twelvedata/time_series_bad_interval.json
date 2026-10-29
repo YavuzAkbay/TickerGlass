@@ -1,0 +1,26 @@
+{
+  "request": {
+    "path": "/time_series",
+    "params": {
+      "symbol": "AAPL",
+      "interval": "7min",
+      "outputsize": "5"
+    }
+  },
+  "status": 400,
+  "headers": {
+    "api-credits-used": "6",
+    "api-credits-left": "2",
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "code": 400,
+    "message": "Invalid **interval** provided: 7min. Supported intervals: 1min, 5min, 15min, 30min, 45min, 1h, 2h, 4h, 8h, 1day, 1week, 1month",
+    "status": "error",
+    "meta": {
+      "symbol": "AAPL",
+      "interval": "7min",
+      "exchange": ""
+    }
+  }
+}

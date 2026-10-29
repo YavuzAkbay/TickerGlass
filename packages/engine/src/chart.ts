@@ -166,6 +166,8 @@ export interface ChartErrorInfo {
   status?: number;
   /** Seconds the server asked to wait before retrying (429/503). */
   retryAfter?: number;
+  /** What the data provider does not offer (HTTP 501), e.g. "international symbols". */
+  feature?: string;
 }
 
 function chartErrorInfo(err: unknown, message?: string): ChartErrorInfo {
@@ -173,9 +175,14 @@ function chartErrorInfo(err: unknown, message?: string): ChartErrorInfo {
     message: message ?? (err instanceof Error ? err.message : String(err)),
   };
   if (err instanceof Error) {
-    const { status, retryAfter } = err as { status?: unknown; retryAfter?: unknown };
+    const { status, retryAfter, feature } = err as {
+      status?: unknown;
+      retryAfter?: unknown;
+      feature?: unknown;
+    };
     if (typeof status === 'number') info.status = status;
     if (typeof retryAfter === 'number') info.retryAfter = retryAfter;
+    if (typeof feature === 'string') info.feature = feature;
   }
   return info;
 }

@@ -59,16 +59,27 @@ export function Setting({
   checked,
   label,
   hint,
+  disabled,
   onChange,
 }: {
   checked: boolean;
   label: string;
   hint?: string;
+  /** Not available (e.g. the data provider lacks it); `hint` should say why. */
+  disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="dlg-setting">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label
+      className={`dlg-setting${disabled ? ' disabled' : ''}`}
+      title={disabled ? hint : undefined}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
       <span className="dlg-setting-text">
         <span>{label}</span>
         {hint ? <span className="dlg-setting-hint">{hint}</span> : null}

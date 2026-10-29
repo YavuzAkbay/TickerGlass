@@ -10,6 +10,8 @@ export interface ControlLike {
   onDrawingsChanged(fn: (ids: string[], deleted: string[]) => void): void;
   /** Connection up/down (registry polls every 10 s while down). */
   onConnection(fn: (connected: boolean) => void): void;
+  /** The API switched its data provider: bars and symbol data changed under every series. */
+  onProviderChanged(fn: () => void): void;
 }
 
 const PING_MS = 25_000;
@@ -26,6 +28,7 @@ export class ControlSocket implements ControlLike {
   private readonly alertsFns: ((ids: string[], deleted: string[]) => void)[] = [];
   private readonly drawingsFns: ((ids: string[], deleted: string[]) => void)[] = [];
   private readonly connFns: ((c: boolean) => void)[] = [];
+  private readonly providerFns: (() => void)[] = [];
 
   constructor(
     private readonly url: string,
@@ -44,6 +47,10 @@ export class ControlSocket implements ControlLike {
   }
   onConnection(fn: (c: boolean) => void): void {
     this.connFns.push(fn);
+  }
+
+  onProviderChanged(fn: () => void): void {
+    this.providerFns.push(fn);
   }
 
   start(): void {
@@ -157,6 +164,9 @@ export class ControlSocket implements ControlLike {
         break;
       case 'drawings.changed':
         for (const fn of this.drawingsFns) fn(strs(m.ids), strs(m.deleted));
+        break;
+      case 'provider.changed':
+        for (const fn of this.providerFns) fn();
         break;
       case 'error':
         this.log.warn('control socket error frame', { message: String(m.message) });

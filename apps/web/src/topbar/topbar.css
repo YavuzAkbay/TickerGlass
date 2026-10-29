@@ -516,3 +516,30 @@
     width: min(292px, calc(100vw - 24px));
   }
 }
+
+/* Data provider budget: only shown while credits are throttled or used up. */
+.tb-budget {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 460px;
+  height: 26px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--down) 40%, transparent);
+  border-radius: 999px;
+  background: var(--down-soft);
+  color: var(--down);
+  white-space: nowrap;
+}
+.tb-budget.throttled {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-muted);
+}
+.tb-budget .tb-label {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
