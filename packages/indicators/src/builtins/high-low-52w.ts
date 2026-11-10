@@ -19,6 +19,8 @@ export const HIGH_LOW_52W = defineIndicator({
   id: 'high-low-52w',
   name: '52-Week Range',
   shortName: '52W H/L',
+  description:
+    'Tracks the rolling 52-week high and low with the current price between them; a common breakout range.',
   category: 'other',
   keywords: ['52 week', '52w', 'high', 'low', 'year', 'annual', 'range'],
   overlay: true,

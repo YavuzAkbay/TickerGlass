@@ -9,6 +9,8 @@ export const PVT = defineIndicator({
   id: 'pvt',
   name: 'Price Volume Trend',
   shortName: 'PVT',
+  description:
+    'Price Volume Trend: accumulates volume scaled by each per-bar percent change, refining the OBV flow picture.',
   category: 'volume',
   keywords: ['pvt', 'price volume trend', 'volume', 'cumulative'],
   overlay: false,

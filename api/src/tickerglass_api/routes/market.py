@@ -6,8 +6,10 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from ..deps import BarServiceDep, MarketServiceDep, SymbolServiceDep, UpstreamGuardDep
 from ..intervals import resolve_interval
 from ..providers.base import Capabilities, ProviderError, ProviderUnsupported
+from ..providers.guard import Priority
 from ..services.performance import compute_performance
 from ._cache_headers import set_max_age, set_no_cache
+from ._priority import PriorityDep
 
 router = APIRouter(tags=["market"])
 
@@ -44,6 +46,12 @@ def _parse_symbols(symbols: str, limit: int) -> list[str]:
     return parsed
 
 
+def _screen_priority(asked: Priority) -> Priority:
+    """`visible` for what is on screen; an `X-TickerGlass-Priority: background` caller
+    (a side pane, not the chart) yields to it. Anything else keeps the route default."""
+    return "background" if asked == "background" else "visible"
+
+
 # Declared before any /quotes/{...} route.
 @router.get("/quotes/extended")
 def extended_quotes(
@@ -61,9 +69,13 @@ def extended_quotes(
 
 @router.get("/events/{symbol}")
 def events(
-    response: Response, market: MarketServiceDep, guard: UpstreamGuardDep, symbol: str
+    response: Response,
+    market: MarketServiceDep,
+    guard: UpstreamGuardDep,
+    priority: PriorityDep,
+    symbol: str,
 ) -> dict[str, Any]:
-    with guard.priority("visible"):
+    with guard.priority(_screen_priority(priority)):
         out = market.events(symbol)
     set_max_age(response, SLOW_MAX_AGE_S)
     return out
@@ -108,19 +120,26 @@ def news_multi(
 def news(
     response: Response,
     market: MarketServiceDep,
+    guard: UpstreamGuardDep,
+    priority: PriorityDep,
     symbol: str,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
-    items = market.news(symbol, limit)
+    with guard.priority(priority):
+        items = market.news(symbol, limit)
     set_max_age(response, NEWS_MAX_AGE_S)
     return items
 
 
 @router.get("/fundamentals/{symbol}")
 def fundamentals(
-    response: Response, market: MarketServiceDep, guard: UpstreamGuardDep, symbol: str
+    response: Response,
+    market: MarketServiceDep,
+    guard: UpstreamGuardDep,
+    priority: PriorityDep,
+    symbol: str,
 ) -> dict[str, Any]:
-    with guard.priority("visible"):
+    with guard.priority(_screen_priority(priority)):
         out = market.fundamentals(symbol)
     set_max_age(response, SLOW_MAX_AGE_S)
     return out

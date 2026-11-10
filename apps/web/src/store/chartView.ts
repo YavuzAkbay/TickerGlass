@@ -12,6 +12,8 @@ import { normalizeSymbol, useAppStore } from './app';
 /** What the status line (the legend over the chart) shows. */
 export interface StatusLineSettings {
   title: LegendTitleMode;
+  /** The glass quote card in the legend header; false collapses it to a ticker pill. */
+  quoteCard: boolean;
   exchange: boolean;
   ohlc: boolean;
   barChange: boolean;
@@ -24,6 +26,7 @@ export interface StatusLineSettings {
 
 export const DEFAULT_STATUS_LINE: StatusLineSettings = {
   title: 'ticker',
+  quoteCard: true,
   exchange: false,
   ohlc: true,
   barChange: true,

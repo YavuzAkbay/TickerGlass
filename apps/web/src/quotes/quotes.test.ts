@@ -11,6 +11,7 @@ import {
   RETAIN_MS,
   SNAP_FRESH_MS,
   STABLE_MS,
+  TICK_FLUSH_MS,
   type SocketLike,
 } from './stream';
 import { useQuoteStore } from './store';
@@ -114,6 +115,15 @@ describe('mergeTick', () => {
 });
 
 describe('mergeSnapshot', () => {
+  it('records when the snapshot was merged, even if a fresh tick keeps the price', () => {
+    expect(emptyQuote('AAPL').snapshotMs).toBeNull();
+    const a = mergeTick(undefined, tick({ price: 120, time: 1000 }));
+    expect(a.snapshotMs).toBeNull();
+    expect(mergeSnapshot(a, snap(), 5000).snapshotMs).toBe(5000);
+    expect(mergeSnapshot(undefined, snap(), 7000).snapshotMs).toBe(7000);
+    expect(mergeTick(mergeSnapshot(a, snap(), 5000), tick({ time: 6000 })).snapshotMs).toBe(5000);
+  });
+
   it('does not override a fresh tick but takes prevClose/currency', () => {
     const a = mergeTick(undefined, tick({ price: 120, time: 1000 }));
     const b = mergeSnapshot(a, snap({ last: 90 }), 1000 + 59_999);
@@ -121,6 +131,53 @@ describe('mergeSnapshot', () => {
     const c = mergeSnapshot(a, snap({ last: 90 }), 1000 + 60_000);
     expect(c.last).toBe(90);
     expect(c.flash).toEqual(a.flash);
+  });
+
+  it('carries day range and the extra fields from a snapshot', () => {
+    const b = mergeSnapshot(
+      undefined,
+      snap({
+        dayHigh: 95,
+        dayLow: 85,
+        open: 86,
+        fiftyTwoWeekHigh: 120,
+        fiftyTwoWeekLow: 60,
+        marketCap: 1e9,
+        averageVolume: 1000,
+      }),
+      0,
+    );
+    expect(b).toMatchObject({
+      dayHigh: 95,
+      dayLow: 85,
+      open: 86,
+      fiftyTwoWeekHigh: 120,
+      fiftyTwoWeekLow: 60,
+      marketCap: 1e9,
+      averageVolume: 1000,
+    });
+    // A snapshot without them keeps what is there.
+    expect(mergeSnapshot(b, snap(), 1)).toMatchObject({ dayHigh: 95, marketCap: 1e9, open: 86 });
+  });
+
+  it('a fresh tick keeps its day range unless the snapshot widens it', () => {
+    const a = mergeTick(undefined, tick({ price: 120, time: 1000, dayHigh: 125, dayLow: 110 }));
+    const narrower = mergeSnapshot(a, snap({ dayHigh: 121, dayLow: 112 }), 1000 + 1000);
+    expect(narrower).toMatchObject({ dayHigh: 125, dayLow: 110 });
+    const wider = mergeSnapshot(a, snap({ dayHigh: 130, dayLow: 100 }), 1000 + 1000);
+    expect(wider).toMatchObject({ dayHigh: 130, dayLow: 100, last: 120 });
+    // A tick without range data: the snapshot fills it in.
+    const noRange = mergeTick(undefined, tick({ price: 120, time: 1000 }));
+    expect(mergeSnapshot(noRange, snap({ dayHigh: 121, dayLow: 112 }), 2000)).toMatchObject({
+      dayHigh: 121,
+      dayLow: 112,
+    });
+  });
+
+  it('a stale tick yields to the snapshot range (new session)', () => {
+    const a = mergeTick(undefined, tick({ price: 120, time: 1000, dayHigh: 125, dayLow: 110 }));
+    const b = mergeSnapshot(a, snap({ dayHigh: 95, dayLow: 85 }), 1000 + 60_000);
+    expect(b).toMatchObject({ dayHigh: 95, dayLow: 85 });
   });
 });
 
@@ -270,7 +327,68 @@ describe('QuoteStream', () => {
     last().push({ type: 'status', upstream: 'connected' });
     expect(useQuoteStore.getState().status).toBe('live');
     last().push(tick({ symbol: 'aapl', price: 7 }));
+    expect(useQuoteStore.getState().quotes.AAPL).toBeUndefined(); // queued until the flush
+    vi.advanceTimersByTime(TICK_FLUSH_MS);
     expect(useQuoteStore.getState().quotes.AAPL?.last).toBe(7);
+  });
+
+  it('batches ticks into one store update per flush, in order', () => {
+    stream.subscribe(['AAPL', 'MSFT']);
+    last().open();
+    let updates = 0;
+    const unsub = useQuoteStore.subscribe(() => updates++);
+    last().push(tick({ symbol: 'AAPL', price: 1 }));
+    last().push(tick({ symbol: 'MSFT', price: 5 }));
+    last().push(tick({ symbol: 'AAPL', price: 2 }));
+    last().push(tick({ symbol: 'AAPL', price: 3 }));
+    expect(updates).toBe(0);
+    vi.advanceTimersByTime(TICK_FLUSH_MS);
+    expect(updates).toBe(1);
+    const q = useQuoteStore.getState().quotes;
+    expect(q.AAPL).toMatchObject({ last: 3, flash: { dir: 1, seq: 2 } });
+    expect(q.MSFT?.last).toBe(5);
+    vi.advanceTimersByTime(1000);
+    expect(updates).toBe(1);
+    last().push(tick({ symbol: 'AAPL', price: 4 }));
+    vi.advanceTimersByTime(TICK_FLUSH_MS);
+    expect(updates).toBe(2);
+    unsub();
+  });
+
+  it('uses requestAnimationFrame when available', () => {
+    const cbs: (() => void)[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => cbs.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    try {
+      stream.subscribe(['AAPL']);
+      last().open();
+      last().push(tick({ price: 9 }));
+      last().push(tick({ price: 10 }));
+      expect(cbs).toHaveLength(1);
+      expect(useQuoteStore.getState().quotes.AAPL).toBeUndefined();
+      cbs[0]!();
+      expect(useQuoteStore.getState().quotes.AAPL?.last).toBe(10);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a snapshot merges against ticks that are still queued', async () => {
+    stream.dispose();
+    stream = new QuoteStream({
+      url: 'ws://test/ws',
+      createSocket: (u) => new FakeSocket(u),
+      fetchJson: async <T>() => [snap({ last: 90 })] as unknown as T,
+      isVisible: () => true,
+      random: () => 0.5,
+      now: () => Date.now(),
+    });
+    stream.subscribe(['AAPL']);
+    last().open();
+    last().push(tick({ price: 120, time: Date.now() }));
+    await vi.advanceTimersByTimeAsync(0); // snapshot batch not due yet, tick still queued
+    await vi.advanceTimersByTimeAsync(60); // snapshot arrives after the tick flush
+    expect(useQuoteStore.getState().quotes.AAPL?.last).toBe(120);
   });
 
   it('reconnects with backoff, re-subscribes, and resets the backoff on open', async () => {
@@ -344,6 +462,7 @@ describe('QuoteStream', () => {
     const r = stream.subscribe(['AAPL']);
     last().open();
     last().push(tick({ symbol: 'AAPL', price: 7 }));
+    vi.advanceTimersByTime(TICK_FLUSH_MS);
     expect(useQuoteStore.getState().quotes.AAPL).toBeDefined();
     r();
     await vi.advanceTimersByTimeAsync(2000 + 10_000 + 10);
@@ -521,6 +640,7 @@ describe('QuoteStream', () => {
       last().push({ type: 'provider.changed', id: 'demo' });
       expect(seen).toHaveLength(1);
       last().push(tick({ price: 123 }));
+      vi.advanceTimersByTime(TICK_FLUSH_MS);
       expect(useQuoteStore.getState().quotes.AAPL?.last).toBe(123);
       warn.mockRestore();
     });

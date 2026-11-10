@@ -5,6 +5,8 @@ export const EMA = defineIndicator({
   id: 'ema',
   name: 'Exponential Moving Average',
   shortName: 'EMA',
+  description:
+    'Exponential Moving Average: weights recent bars more heavily, following price faster than a simple average.',
   category: 'movingAverage',
   keywords: ['ma', 'exponential', 'average'],
   overlay: true,

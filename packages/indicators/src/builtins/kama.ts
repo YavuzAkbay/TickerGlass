@@ -11,6 +11,8 @@ export const KAMA = defineIndicator({
   id: 'kama',
   name: 'Kaufman Adaptive Moving Average',
   shortName: 'KAMA',
+  description:
+    'Kaufman Adaptive Moving Average: slows in choppy markets and speeds up in trends via the efficiency ratio.',
   category: 'movingAverage',
   keywords: ['ma', 'kaufman', 'adaptive', 'efficiency ratio', 'average', 'kama'],
   overlay: true,

@@ -10,6 +10,8 @@ export const CHAIKIN_OSC = defineIndicator({
   id: 'chaikin-osc',
   name: 'Chaikin Oscillator',
   shortName: 'Chaikin Osc',
+  description:
+    'MACD-style oscillator of the Accumulation/Distribution line, signaling money-flow momentum via zero-line crosses.',
   category: 'volume',
   keywords: ['chaikin', 'oscillator', 'adosc', 'accumulation', 'distribution', 'volume'],
   overlay: false,

@@ -1,8 +1,9 @@
 /**
  * The drawing dock: five task-based categories built from the tool catalog
- * (`TOOL_GROUPS`), plus the quick-tools defaults. A category lists whole
- * sections of one or more catalog groups; tools keep their catalog group for
- * last-used memory and highlighting.
+ * (`TOOL_GROUPS`), plus the quick-tools defaults. Fib & Gann leads (the tools
+ * traders reach for most), rarely-used shapes sit at the end of Markup. A
+ * category lists whole sections of one or more catalog groups; tools keep
+ * their catalog group for last-used memory and highlighting.
  */
 import * as I from './icons';
 import type { ToolIcon } from './icons';
@@ -34,26 +35,18 @@ const sectionsOf = (groupId: string): ToolSection[] =>
 
 export const DOCK_CATEGORIES: DockCategory[] = [
   {
+    id: 'fib',
+    label: 'Fib & Gann',
+    icon: I.IconFibRetracement,
+    sections: sectionsOf('fib'),
+    groups: ['fib'],
+  },
+  {
     id: 'lines',
     label: 'Lines',
     icon: I.IconTrendLine,
     sections: sectionsOf('lines'),
     groups: ['lines'],
-  },
-  {
-    id: 'shapes',
-    label: 'Shapes',
-    icon: I.IconRectangle,
-    sections: sectionsOf('shapes'),
-    groups: ['shapes'],
-  },
-  {
-    id: 'text',
-    label: 'Text',
-    icon: I.IconText,
-    sections: sectionsOf('annotation'),
-    groups: ['annotation', ICONS_GROUP_ID],
-    stickers: true,
   },
   {
     id: 'measure',
@@ -62,9 +55,8 @@ export const DOCK_CATEGORIES: DockCategory[] = [
     sections: [
       { title: 'Navigate', tools: [MEASURE_TOOL, ZOOM_TOOL] },
       ...sectionsOf('forecasting'),
-      ...sectionsOf('fib'),
     ],
-    groups: ['forecasting', 'fib', 'measure', 'zoom'],
+    groups: ['forecasting', 'measure', 'zoom'],
   },
   {
     id: 'patterns',
@@ -73,12 +65,25 @@ export const DOCK_CATEGORIES: DockCategory[] = [
     sections: sectionsOf('patterns'),
     groups: ['patterns'],
   },
+  {
+    id: 'markup',
+    label: 'Markup',
+    icon: I.IconText,
+    sections: [...sectionsOf('annotation'), ...sectionsOf('shapes')],
+    groups: ['annotation', ICONS_GROUP_ID, 'shapes'],
+    stickers: true,
+  },
 ];
 
 /** Dock category a tool lives in (none for cursors). */
 export function categoryOf(toolId: string): DockCategory | undefined {
   const group = groupOf(toolId);
   return group ? DOCK_CATEGORIES.find((c) => c.groups.includes(group)) : undefined;
+}
+
+/** First available tool of a category — what its rail button arms by default. */
+export function defaultToolOf(cat: DockCategory): ToolDef | undefined {
+  return cat.sections.flatMap((s) => s.tools).find((t) => isToolAvailable(t.id));
 }
 
 /** Every dock tool, in dock order. */

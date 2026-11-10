@@ -20,6 +20,7 @@ export const PRICE_EARNINGS = defineIndicator({
   id: 'fin-pe',
   name: 'Price to Earnings',
   shortName: 'P/E',
+  description: 'Price to Earnings: current price divided by EPS; the classic valuation multiple.',
   category: 'financials',
   keywords: ['pe', 'p/e', 'price to earnings', 'earnings multiple', 'valuation', 'financials'],
   overlay: false,
@@ -27,9 +28,7 @@ export const PRICE_EARNINGS = defineIndicator({
   precision: 2,
   usesFundamentals: true,
   inputs: { period: PERIOD_INPUT },
-  outputs: [
-    { type: 'plot', id: 'pe', title: 'P/E', kind: 'line', color: COLOR.blue },
-  ],
+  outputs: [{ type: 'plot', id: 'pe', title: 'P/E', kind: 'line', color: COLOR.blue }],
   setup({ inputs, env }) {
     const stmts = statementsOf(env.fundamentals, inputs.period);
     const reported = series(stmts?.income, ROW.dilutedEps);

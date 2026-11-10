@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- TickerGlass: candlesticks on the dark panel color (theme/tokens.css --bg). -->
+  <rect width="512" height="512" rx="102" fill="#14130f"/>
+  <g>
+    <rect x="138" y="264" width="46" height="96" rx="6" fill="#7fb069"/>
+    <rect x="157" y="238" width="8" height="146" rx="4" fill="#7fb069"/>
+    <rect x="233" y="118" width="46" height="148" rx="6" fill="#e0a93b"/>
+    <rect x="252" y="92" width="8" height="200" rx="4" fill="#e0a93b"/>
+    <rect x="328" y="196" width="46" height="112" rx="6" fill="#de6a4f"/>
+    <rect x="347" y="170" width="8" height="164" rx="4" fill="#de6a4f"/>
+  </g>
+</svg>

@@ -1,14 +1,17 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -318,3 +321,197 @@ class AlertDelivery(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     last_error: Mapped[str | None] = mapped_column(String(500))
+
+
+# ----------------------------------------------------------------- screener
+#
+# Server-side screener (docs/design/server-screener.md §3). `screener_symbols`, `_lists` and
+# `_list_members` are the universe (seeded from `screener_data/`, see
+# services/screener/universe.py); `screener_snapshots` and `screener_fundamentals` are a
+# provider-specific cache (wiped on a provider switch); `screens` / `screen_states` are user
+# data. Percent columns hold percent (5 = 5%).
+
+
+class ScreenerSymbol(Base):
+    """One screenable symbol: bundled (`source` 'bundled') or added by a list/watchlist
+    ('custom'). `rank` orders the tracked-set cap; `cap_static` is the bundle's cap in USD
+    billions. A symbol the provider keeps rejecting is tombstoned."""
+
+    __tablename__ = "screener_symbols"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    #: stocks | etfs | crypto | commodities
+    cls: Mapped[str] = mapped_column(String(12), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    grp: Mapped[str] = mapped_column(String(64))
+    exchange: Mapped[str | None] = mapped_column(String(32))
+    rank: Mapped[int] = mapped_column(Integer)
+    cap_static: Mapped[float | None] = mapped_column(Float)
+    #: bundled | custom
+    source: Mapped[str] = mapped_column(String(8))
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(String(200))
+    tombstoned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScreenerList(Base):
+    """A symbol list (index constituents or user-made)."""
+
+    __tablename__ = "screener_lists"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    #: index | custom
+    kind: Mapped[str] = mapped_column(String(8))
+    #: "YYYY-MM" of the membership snapshot.
+    as_of: Mapped[str] = mapped_column(String(10))
+    #: bundled | upload
+    source: Mapped[str] = mapped_column(String(8))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScreenerListMember(Base):
+    __tablename__ = "screener_list_members"
+    __table_args__ = (Index("ix_screener_list_members_symbol", "symbol"),)
+
+    list_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("screener_lists.id", ondelete="CASCADE"), primary_key=True
+    )
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+
+class ScreenerSnapshot(Base):
+    """Latest nightly technicals of one symbol (one row per symbol). `prev_*` hold the
+    previous session's value of crossable fields."""
+
+    __tablename__ = "screener_snapshots"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    #: Session date of the newest bar used.
+    as_of_date: Mapped[date] = mapped_column(Date, index=True)
+    #: Open time (unix s) of the newest bar used.
+    bar_ts: Mapped[int] = mapped_column(BigInteger)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    bars_count: Mapped[int] = mapped_column(Integer)
+    last: Mapped[float | None] = mapped_column(Float)
+    prev_close: Mapped[float | None] = mapped_column(Float)
+    chg1d_pct: Mapped[float | None] = mapped_column(Float)
+    gap_pct: Mapped[float | None] = mapped_column(Float)
+    volume: Mapped[float | None] = mapped_column(Float)
+    avg_vol30: Mapped[float | None] = mapped_column(Float)
+    rel_vol: Mapped[float | None] = mapped_column(Float)
+    avg_dollar_vol30: Mapped[float | None] = mapped_column(Float)
+    perf_1w: Mapped[float | None] = mapped_column(Float)
+    perf_1m: Mapped[float | None] = mapped_column(Float)
+    perf_3m: Mapped[float | None] = mapped_column(Float)
+    perf_6m: Mapped[float | None] = mapped_column(Float)
+    perf_ytd: Mapped[float | None] = mapped_column(Float)
+    perf_1y: Mapped[float | None] = mapped_column(Float)
+    rsi14: Mapped[float | None] = mapped_column(Float)
+    prev_rsi14: Mapped[float | None] = mapped_column(Float)
+    sma20: Mapped[float | None] = mapped_column(Float)
+    sma50: Mapped[float | None] = mapped_column(Float)
+    sma200: Mapped[float | None] = mapped_column(Float)
+    prev_last: Mapped[float | None] = mapped_column(Float)
+    prev_sma20: Mapped[float | None] = mapped_column(Float)
+    prev_sma50: Mapped[float | None] = mapped_column(Float)
+    prev_sma200: Mapped[float | None] = mapped_column(Float)
+    pct_vs_sma20: Mapped[float | None] = mapped_column(Float)
+    pct_vs_sma50: Mapped[float | None] = mapped_column(Float)
+    pct_vs_sma200: Mapped[float | None] = mapped_column(Float)
+    hi52: Mapped[float | None] = mapped_column(Float)
+    lo52: Mapped[float | None] = mapped_column(Float)
+    pct_off_hi52: Mapped[float | None] = mapped_column(Float)
+    pct_off_lo52: Mapped[float | None] = mapped_column(Float)
+    new_hi52: Mapped[bool | None] = mapped_column(Boolean)
+    new_lo52: Mapped[bool | None] = mapped_column(Boolean)
+    atr14: Mapped[float | None] = mapped_column(Float)
+    atr_pct: Mapped[float | None] = mapped_column(Float)
+    #: 1 golden cross (SMA50 over SMA200), -1 death cross, null none/unknown.
+    cross_state: Mapped[int | None] = mapped_column(SmallInteger)
+    days_since_cross: Mapped[int | None] = mapped_column(Integer)
+
+
+class ScreenerFundamental(Base):
+    """Quote-extras (refreshed nightly) and `info` fields (weekly) of one symbol."""
+
+    __tablename__ = "screener_fundamentals"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    mcap: Mapped[float | None] = mapped_column(Float)
+    pe: Mapped[float | None] = mapped_column(Float)
+    fwd_pe: Mapped[float | None] = mapped_column(Float)
+    eps_ttm: Mapped[float | None] = mapped_column(Float)
+    div_yield_pct: Mapped[float | None] = mapped_column(Float)
+    beta: Mapped[float | None] = mapped_column(Float)
+    shares_out: Mapped[float | None] = mapped_column(Float)
+    sector: Mapped[str | None] = mapped_column(String(64))
+    industry: Mapped[str | None] = mapped_column(String(100))
+    next_earnings_ts: Mapped[int | None] = mapped_column(BigInteger)
+    quote_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    info_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ScreenerRun(Base):
+    """Bookkeeping of one job run (newest 200 kept)."""
+
+    __tablename__ = "screener_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: snapshot | fundamentals
+    kind: Mapped[str] = mapped_column(String(16))
+    #: schedule | manual
+    trigger: Mapped[str] = mapped_column(String(10))
+    provider: Mapped[str] = mapped_column(String(16))
+    target_date: Mapped[date] = mapped_column(Date)
+    #: running | done | partial | aborted | failed
+    status: Mapped[str] = mapped_column(String(10))
+    total: Mapped[int] = mapped_column(Integer)
+    done: Mapped[int] = mapped_column(Integer)
+    failed: Mapped[int] = mapped_column(Integer)
+    tokens: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(String(500))
+
+
+class JobLease(Base):
+    """Cross-process lease of a background job (one holder at a time)."""
+
+    __tablename__ = "job_leases"
+
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Screen(Base):
+    """A saved screen. `spec` is the validated `ScreenSpec` JSON; `alert` the optional
+    alert config (null = no alert)."""
+
+    __tablename__ = "screens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    alert: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScreenState(Base):
+    """Members of a screen at its last evaluation (to detect entries for alerts)."""
+
+    __tablename__ = "screen_states"
+
+    screen_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("screens.id", ondelete="CASCADE"), primary_key=True
+    )
+    as_of: Mapped[date] = mapped_column(Date)
+    members: Mapped[Any] = mapped_column(JSON)  # {"members": [...], "seen": [...]}; legacy: list
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

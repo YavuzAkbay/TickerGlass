@@ -9,13 +9,7 @@ import { EPS } from './eps';
 import { REVENUE } from './revenue';
 import { REVENUE_GROWTH } from './revenue-growth';
 import { PRICE_EARNINGS } from './pe';
-import {
-  divideBy,
-  series,
-  trailingTwelveMonths,
-  valueAt,
-  yearOverYear,
-} from './common';
+import { divideBy, series, trailingTwelveMonths, valueAt, yearOverYear } from './common';
 
 const DAY = 86_400;
 /** Fiscal period ends, ascending: one year of quarters. */

@@ -443,6 +443,22 @@
   cursor: default;
   background: transparent;
 }
+.dlg-side-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: var(--font-num);
+  font-size: 11px;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.dlg-side-item.active .dlg-side-count {
+  color: var(--accent-text);
+}
+@media (max-width: 768px) {
+  .dlg-side-count {
+    display: none;
+  }
+}
 
 /* ---- settings ---- */
 .dlg-settings-body {
@@ -1168,4 +1184,38 @@
   .sym-field-list {
     max-height: 40dvh;
   }
+}
+
+/* ======== Settings > Server ======== */
+.srv-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+}
+.srv-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.srv-value {
+  font-family: var(--font-num);
+  font-size: 13px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.srv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.srv-update {
+  margin-top: 8px;
+}
+.srv-warn {
+  color: var(--down);
+}
+.srv-inline-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
 }

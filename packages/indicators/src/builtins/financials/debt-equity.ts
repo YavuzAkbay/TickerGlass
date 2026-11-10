@@ -7,6 +7,8 @@ export const DEBT_EQUITY = defineIndicator({
   id: 'fin-debt-equity',
   name: 'Debt to Equity',
   shortName: 'D/E',
+  description:
+    'Total debt relative to shareholder equity; a leverage gauge from the balance sheet.',
   category: 'financials',
   keywords: ['debt to equity', 'debt/equity', 'leverage', 'balance sheet', 'financials'],
   overlay: false,
@@ -18,7 +20,13 @@ export const DEBT_EQUITY = defineIndicator({
     { type: 'plot', id: 'ratio', title: 'Debt / Equity', kind: 'step', color: COLOR.orange },
   ],
   setup({ inputs, env }) {
-    const debt = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.totalDebt, 'total debt');
+    const debt = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'balance',
+      ROW.totalDebt,
+      'total debt',
+    );
     const equity = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.equity, 'equity');
     const ratio = divideBy(debt, equity);
     return (c) => {

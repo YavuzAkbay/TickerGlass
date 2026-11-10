@@ -80,7 +80,11 @@ function makeServer() {
         return w;
       }),
       updateWatchlist: vi.fn(
-        async (id: string, b: { name: string; items: WatchlistItem[]; revision?: number }) => {
+        async (
+          id: string,
+          b: { name: string; items: WatchlistItem[]; revision?: number },
+          _o?: { keepalive?: boolean },
+        ) => {
           if (server.down) throw new TypeError('offline');
           server.calls.push(`PUT ${id}@${b.revision}`);
           const cur = lists.get(id);
@@ -96,15 +100,17 @@ function makeServer() {
         server.calls.push(`DELETE ${id}`);
         if (!lists.delete(id)) throw notFound();
       }),
-      patchFlags: vi.fn(async (patch: Record<string, FlagColor | null>) => {
-        if (server.down) throw new TypeError('offline');
-        for (const [sym, c] of Object.entries(patch)) {
-          if (c === null) flags.delete(sym);
-          else if (flags.get(sym)?.color !== c)
-            flags.set(sym, flag(sym, c, '2026-02-01T00:00:00Z'));
-        }
-        return [...flags.values()];
-      }),
+      patchFlags: vi.fn(
+        async (patch: Record<string, FlagColor | null>, _o?: { keepalive?: boolean }) => {
+          if (server.down) throw new TypeError('offline');
+          for (const [sym, c] of Object.entries(patch)) {
+            if (c === null) flags.delete(sym);
+            else if (flags.get(sym)?.color !== c)
+              flags.set(sym, flag(sym, c, '2026-02-01T00:00:00Z'));
+          }
+          return [...flags.values()];
+        },
+      ),
     },
   };
   return server;
@@ -355,7 +361,7 @@ describe('WatchlistSync.flush', () => {
     const { sync, server } = setup();
     await sync.load();
     const id = st().createList('Mine', [S('A')]);
-    server.lists.set(id, wl(id, 'Mine', 4, [S('OLD')])); // earlier create went through
+    server.lists.set(id, wl(id, 'Mine', 4, [S('A')])); // earlier create went through
     await sync.flush();
     expect(server.calls.slice(-2)).toEqual([`POST ${id}`, `PUT ${id}@4`]);
     expect(server.lists.get(id)).toMatchObject({ items: [S('A')], revision: 5 });
@@ -363,22 +369,278 @@ describe('WatchlistSync.flush', () => {
     await sync.dispose();
   });
 
-  it('adopts the server copy on 409 and "Keep mine" restores', async () => {
+  it('a create 409 on a copy edited elsewhere merges instead of overwriting it', async () => {
+    const { sync, server, onConflict } = setup();
+    await sync.load();
+    const id = st().createList('Mine', [S('A'), S('B')]);
+    // The earlier create (response lost) stored A, B; then another device
+    // removed B and added T, while this one added M.
+    st().addSymbols(id, ['M']);
+    server.lists.set(id, wl(id, 'Theirs', 4, [S('A'), S('T')]));
+    await sync.flush();
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(server.calls.slice(-2)).toEqual([`POST ${id}`, `PUT ${id}@4`]);
+    // Both sides' additions are kept (the real base is unknown, so B stays too).
+    const items = [S('A'), S('T'), S('B'), S('M')];
+    expect(server.lists.get(id)).toMatchObject({ name: 'Theirs', items, revision: 5 });
+    expect(st().lists[id]).toMatchObject({ name: 'Theirs', items, revision: 5, dirty: false });
+    await sync.dispose();
+  });
+
+  it('merges a 409 at item level without a toast when nothing clashes', async () => {
+    const { sync, server, onConflict } = setup();
+    server.lists.set('a', wl('a', 'A', 1, [S('X'), S('Y')]));
+    await sync.load();
+    st().addSymbols('a', ['MINE']);
+    st().removeSymbols('a', ['Y']);
+    server.lists.set('a', wl('a', 'A', 7, [S('X'), S('Y'), S('THEIRS')])); // changed elsewhere
+    await sync.flush();
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(server.lists.get('a')).toMatchObject({ revision: 8 });
+    // Their add goes after its nearest kept predecessor there (X; Y was removed here).
+    expect(server.lists.get('a')!.items).toEqual([S('X'), S('THEIRS'), S('MINE')]);
+    expect(st().lists.a).toMatchObject({ revision: 8, dirty: false });
+    expect(st().lists.a!.items).toEqual([S('X'), S('THEIRS'), S('MINE')]);
+    expect(st().lists.a!.base!.items).toEqual([S('X'), S('THEIRS'), S('MINE')]);
+    await sync.dispose();
+  });
+
+  it('a merge keeps edits made while the save was in flight', async () => {
     const { sync, server, onConflict } = setup();
     server.lists.set('a', wl('a', 'A', 1, [S('X')]));
     await sync.load();
     st().addSymbols('a', ['MINE']);
-    server.lists.set('a', wl('a', 'Renamed', 7, [S('THEIRS')])); // changed elsewhere
+    server.api.updateWatchlist.mockImplementationOnce(async (id) => {
+      st().addSymbols('a', ['TYPED']); // typed on while the request is in flight
+      const cur = { ...server.lists.get(id)!, items: [S('X'), S('THEIRS')], revision: 4 };
+      server.lists.set(id, cur);
+      throw conflict(cur);
+    });
     await sync.flush();
-    expect(st().lists.a).toMatchObject({ name: 'Renamed', revision: 7, dirty: false });
-    expect(st().lists.a!.items).toEqual([S('THEIRS')]);
-    expect(onConflict).toHaveBeenCalledWith('a', 'A', expect.any(Function));
-    onConflict.mock.calls[0]![2]();
-    expect(st().lists.a).toMatchObject({ name: 'A', revision: 7, dirty: true });
-    await sync.flush();
-    expect(server.lists.get('a')).toMatchObject({ name: 'A', revision: 8 });
-    expect(server.lists.get('a')!.items).toEqual([S('X'), S('MINE')]);
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(server.lists.get('a')!.items).toEqual([S('X'), S('THEIRS'), S('MINE'), S('TYPED')]);
+    expect(st().lists.a).toMatchObject({ revision: 5, dirty: false });
     await sync.dispose();
+  });
+
+  it('a merge applies removals from both sides', async () => {
+    const { sync, server, onConflict } = setup();
+    server.lists.set('a', wl('a', 'A', 1, [S('X'), S('Y'), S('Z')]));
+    await sync.load();
+    st().removeSymbols('a', ['X']);
+    server.lists.set('a', wl('a', 'A', 2, [S('X'), S('Z')])); // Y removed elsewhere
+    await sync.flush();
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(server.lists.get('a')!.items).toEqual([S('Z')]);
+    await sync.dispose();
+  });
+
+  it('a true conflict adopts the server copy; "Keep mine" restores the CURRENT local state', async () => {
+    const { sync, server, onConflict } = setup();
+    server.lists.set('a', wl('a', 'A', 1, [S('X')]));
+    await sync.load();
+    st().renameList('a', 'Mine');
+    st().addSymbols('a', ['MINE']);
+    server.api.updateWatchlist.mockImplementationOnce(async (id) => {
+      st().addSymbols('a', ['TYPED']); // newer than the snapshot being saved
+      const cur = { ...server.lists.get(id)!, name: 'Theirs', revision: 7 };
+      server.lists.set(id, cur);
+      throw conflict(cur);
+    });
+    await sync.flush();
+    expect(st().lists.a).toMatchObject({ name: 'Theirs', revision: 7, dirty: false });
+    expect(st().lists.a!.items).toEqual([S('X')]);
+    expect(onConflict).toHaveBeenCalledWith('a', 'Mine', expect.any(Function), [
+      expect.stringContaining('renamed differently'),
+    ]);
+    onConflict.mock.calls[0]![2]();
+    expect(st().lists.a).toMatchObject({ name: 'Mine', revision: 7, dirty: true });
+    expect(st().lists.a!.items).toEqual([S('X'), S('MINE'), S('TYPED')]);
+    await sync.flush();
+    expect(server.lists.get('a')).toMatchObject({ name: 'Mine', revision: 8 });
+    expect(server.lists.get('a')!.items).toEqual([S('X'), S('MINE'), S('TYPED')]);
+    await sync.dispose();
+  });
+
+  it('without a base (older cache) a 409 cannot merge: server copy shown, Keep mine offered', async () => {
+    const { sync, server, onConflict } = setup();
+    server.lists.set('a', wl('a', 'A', 1, [S('X')]));
+    await sync.load();
+    st().addSymbols('a', ['MINE']);
+    useWatchlistStore.setState((s) => ({
+      lists: { ...s.lists, a: { ...s.lists.a!, base: null } },
+    }));
+    server.lists.set('a', wl('a', 'A', 7, [S('THEIRS')]));
+    await sync.flush();
+    expect(onConflict).toHaveBeenCalledOnce();
+    expect(st().lists.a!.items).toEqual([S('THEIRS')]);
+    onConflict.mock.calls[0]![2]();
+    expect(st().lists.a!.items).toEqual([S('X'), S('MINE')]);
+    await sync.dispose();
+  });
+
+  it('keeps the base up to date: after a load and after a save', async () => {
+    const { sync, server } = setup();
+    server.lists.set('a', wl('a', 'A', 1, [S('X')]));
+    await sync.load();
+    expect(st().lists.a!.base).toEqual({ name: 'A', items: [S('X')] });
+    st().addSymbols('a', ['Y']);
+    await sync.flush();
+    expect(st().lists.a!.base).toEqual({ name: 'A', items: [S('X'), S('Y')] });
+    await sync.dispose();
+  });
+
+  it('flush(true) sends keepalive requests; normal flushes pass no options', async () => {
+    const { sync, server } = setup();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    st().addSymbols('a', ['X']);
+    await sync.flush();
+    expect(server.api.updateWatchlist.mock.calls.at(-1)).toHaveLength(2);
+    st().addSymbols('a', ['Y']);
+    st().setFlag('AAPL', 'red');
+    await sync.flush(true);
+    expect(server.api.updateWatchlist.mock.calls.at(-1)![2]).toEqual({ keepalive: true });
+    expect(server.api.patchFlags.mock.calls.at(-1)![1]).toEqual({ keepalive: true });
+    await sync.dispose();
+  });
+
+  it('a pending save is flushed with keepalive when the page is hidden', async () => {
+    const win = new EventTarget(); // node test env: no window; the autosaver listens on this one
+    vi.stubGlobal('window', win);
+    const server = makeServer();
+    const sync = new WatchlistSync({
+      api: server.api as unknown as WatchlistsApi,
+      delay: 60_000, // the debounce never fires in this test
+      retryDelay: 0,
+      onError: vi.fn(),
+      onConflict: vi.fn(),
+    });
+    sync.start();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    st().addSymbols('a', ['X']); // schedules the debounced save
+    win.dispatchEvent(new Event('pagehide'));
+    await settle(() => server.api.updateWatchlist.mock.calls.length > 0);
+    expect(server.api.updateWatchlist).toHaveBeenCalledOnce();
+    expect(server.api.updateWatchlist.mock.calls[0]![2]).toEqual({ keepalive: true });
+    await sync.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it('the page-hide flush issues every request at once, past a save in flight', async () => {
+    const win = new EventTarget();
+    vi.stubGlobal('window', win);
+    const server = makeServer();
+    const onConflict = vi.fn();
+    const sync = new WatchlistSync({
+      api: server.api as unknown as WatchlistsApi,
+      delay: 60_000, // the debounce never fires in this test
+      retryDelay: 0,
+      onError: vi.fn(),
+      onConflict,
+    });
+    sync.start();
+    for (const id of ['a', 'b', 'c']) server.lists.set(id, wl(id, id, 1, [S('X')]));
+    await sync.load();
+    // A normal save of `a` is in flight (its response held back).
+    const gate = deferred();
+    const put = server.api.updateWatchlist.getMockImplementation()!;
+    server.api.updateWatchlist.mockImplementationOnce(async (...args) => {
+      await gate.promise;
+      return put(...args);
+    });
+    st().addSymbols('a', ['A1']);
+    const normal = sync.flush();
+    await settle(() => server.api.updateWatchlist.mock.calls.length > 0);
+    st().addSymbols('b', ['B1']);
+    st().deleteList('c');
+    st().setFlag('AAPL', 'red');
+    const before = server.api.updateWatchlist.mock.calls.length;
+    win.dispatchEvent(new Event('pagehide'));
+    // Synchronously: no response awaited between the requests.
+    const ka = { keepalive: true };
+    expect(server.api.deleteWatchlist).toHaveBeenCalledWith('c', ka);
+    const puts = server.api.updateWatchlist.mock.calls.slice(before);
+    expect(puts.map((c) => c[0]).sort()).toEqual(['a', 'b']);
+    expect(puts.every((c) => c[2]?.keepalive === true)).toBe(true);
+    expect(server.api.patchFlags).toHaveBeenCalledWith({ AAPL: 'red' }, ka);
+    // The held-back save then hits the revision the keepalive one made, and merges.
+    gate.resolve();
+    await normal;
+    await sync.flush();
+    expect(onConflict).not.toHaveBeenCalled();
+    expect(server.lists.get('a')!.items).toEqual([S('X'), S('A1')]);
+    expect(st().lists.a).toMatchObject({
+      revision: server.lists.get('a')!.revision,
+      dirty: false,
+    });
+    expect(st().lists.b).toMatchObject({ revision: 2, dirty: false });
+    expect(server.lists.has('c')).toBe(false);
+    expect(st().flagsDirty).toEqual({});
+    await sync.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it('the page-hide flush keeps within the keepalive byte budget; the rest is sent later', async () => {
+    const { sync, server } = setup();
+    // ~25 KB per list: two fit in the 60 KB budget, the third does not.
+    const big = (p: string) =>
+      Array.from({ length: 600 }, (_, i) => S(`${p}${String(i).padStart(5, '0')}`));
+    for (const id of ['a', 'b', 'c']) server.lists.set(id, wl(id, id, 1));
+    await sync.load();
+    useWatchlistStore.setState((s) => ({
+      lists: Object.fromEntries(
+        Object.entries(s.lists).map(([id, l]) => [id, { ...l, items: big(id), dirty: true }]),
+      ),
+    }));
+    const keepalive = server.api.updateWatchlist.mock.calls.length;
+    await sync.flush(true);
+    const sent = server.api.updateWatchlist.mock.calls.slice(keepalive);
+    expect(sent).toHaveLength(2);
+    const bytes = sent.reduce((n, c) => n + JSON.stringify(c[1]).length, 0);
+    expect(bytes).toBeLessThan(60_000);
+    const left = ['a', 'b', 'c'].filter((id) => !sent.some((c) => c[0] === id));
+    expect(left).toHaveLength(1);
+    expect(st().lists[left[0]!]!.dirty).toBe(true); // kept (and persisted) for later
+    await sync.flush();
+    expect(server.api.updateWatchlist.mock.calls.at(-1)).toEqual([
+      left[0],
+      expect.objectContaining({ revision: 1 }),
+    ]);
+    expect(Object.values(st().lists).every((l) => !l.dirty)).toBe(true);
+    await sync.dispose();
+  });
+
+  it('hidden, then pagehide: the hidden flush already sends with keepalive', async () => {
+    const win = new EventTarget();
+    const doc = Object.assign(new EventTarget(), {
+      visibilityState: 'visible' as DocumentVisibilityState,
+    });
+    vi.stubGlobal('window', win);
+    vi.stubGlobal('document', doc);
+    const server = makeServer();
+    const sync = new WatchlistSync({
+      api: server.api as unknown as WatchlistsApi,
+      delay: 60_000,
+      retryDelay: 0,
+      onError: vi.fn(),
+      onConflict: vi.fn(),
+    });
+    sync.start();
+    server.lists.set('a', wl('a', 'A', 1));
+    await sync.load();
+    st().addSymbols('a', ['X']);
+    doc.visibilityState = 'hidden';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(server.api.updateWatchlist).toHaveBeenCalledOnce();
+    expect(server.api.updateWatchlist.mock.calls[0]![2]).toEqual({ keepalive: true });
+    win.dispatchEvent(new Event('pagehide')); // nothing left: already on its way
+    await settle(() => st().lists.a!.dirty === false);
+    expect(server.api.updateWatchlist).toHaveBeenCalledOnce();
+    expect(st().lists.a).toMatchObject({ revision: 2, dirty: false });
+    await sync.dispose();
+    vi.unstubAllGlobals();
   });
 
   it('recreates a list that was deleted elsewhere (404 on PUT)', async () => {

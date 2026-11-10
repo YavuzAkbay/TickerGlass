@@ -1,0 +1,106 @@
+/* Hotlists panel (sidebar/panels/Hotlists.tsx). */
+.hl-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.hl-tools {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  background: var(--panel);
+}
+.hl-select {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+}
+.hl-asof {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+}
+.hl-asof .rs-muted {
+  font-size: 11px;
+}
+.hl-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.hl-head,
+.hl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 64px 64px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 12px;
+}
+.hl-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 26px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.hl-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hl-row {
+  width: 100%;
+  height: 38px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hl-row:hover {
+  background: var(--hover);
+}
+.hl-row.current {
+  background: var(--active-bg);
+}
+.hl-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.hl-sym {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hl-sym-text {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.hl-name {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hl-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.hl-metric {
+  color: var(--text-strong);
+}

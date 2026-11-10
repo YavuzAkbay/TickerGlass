@@ -504,7 +504,8 @@ export class InteractionController {
     } else if (Math.abs(dx) > Math.abs(dy)) {
       ts.pan(-dx);
     } else {
-      const x = hit.kind === 'pane' ? p.x : this.chart.paneWidth;
+      // Scroll zoom is always anchored at the right edge: the right side stays locked.
+      const x = this.chart.paneWidth;
       // Mouse wheels step in notches: ease those in. Trackpad deltas are smooth already.
       if (e.deltaMode !== 0 || Math.abs(dy) >= 40) this.easeZoom(x, -dy * 0.0015);
       else ts.zoom(x, Math.exp(-dy * 0.0015));

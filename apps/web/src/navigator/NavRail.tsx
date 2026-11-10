@@ -1,4 +1,6 @@
+import { ScanSearch } from 'lucide-react';
 import { type KeyboardEvent } from 'react';
+import { commands } from '../commands/registry';
 import { useAlerts } from '../alerts/store';
 import { useT } from '../i18n';
 import { useUiStore } from '../store/ui';
@@ -47,6 +49,25 @@ export function NavRail({ sections, active, orientation = 'vertical' }: Props) {
     );
   };
 
+  // The screener is its own full-window surface, not a panel section: its rail
+  // entry sits between the watchlist and alerts tabs and opens the screen.
+  const screenerLabel = t('nav.openScreener');
+  const screenerEntry = (
+    <button
+      key="screener-entry"
+      type="button"
+      className="nav-tab nav-screener"
+      aria-label={screenerLabel}
+      tabIndex={0}
+      data-testid="nav-open-screener"
+      data-tip={orientation === 'vertical' ? screenerLabel : undefined}
+      data-tip-side="right"
+      onClick={() => commands.execute('view.screener')}
+    >
+      <ScanSearch size={18} strokeWidth={1.6} />
+    </button>
+  );
+
   return (
     <div
       className="nav-rail"
@@ -58,7 +79,7 @@ export function NavRail({ sections, active, orientation = 'vertical' }: Props) {
         const Icon = s.icon;
         const selected = active === s.id;
         const label = t(s.title);
-        return (
+        const tab = (
           <button
             key={s.id}
             type="button"
@@ -86,6 +107,8 @@ export function NavRail({ sections, active, orientation = 'vertical' }: Props) {
             ) : null}
           </button>
         );
+        // The screener entry lands right after the watchlist tab.
+        return s.id === 'watchlist' ? [tab, screenerEntry] : tab;
       })}
     </div>
   );

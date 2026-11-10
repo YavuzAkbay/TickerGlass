@@ -10,6 +10,8 @@ export const ULTIMATE_OSC = defineIndicator({
   id: 'ultimate-osc',
   name: 'Ultimate Oscillator',
   shortName: 'UO',
+  description:
+    'Averages buying pressure across three timeframes (0-100) to reduce false divergence signals.',
   category: 'momentum',
   keywords: ['uo', 'ultimate oscillator', 'williams', 'oscillator'],
   overlay: false,

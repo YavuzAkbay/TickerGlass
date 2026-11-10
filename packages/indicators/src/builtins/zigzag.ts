@@ -125,6 +125,8 @@ export const ZIGZAG = defineIndicator({
   id: 'zigzag',
   name: 'Zig Zag',
   shortName: 'ZigZag',
+  description:
+    'Filters minor moves and connects major swing highs and lows; note that it repaints as new bars arrive.',
   category: 'other',
   keywords: ['zigzag', 'zig zag', 'swing', 'pivot', 'reversal'],
   overlay: true,

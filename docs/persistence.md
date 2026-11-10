@@ -167,8 +167,17 @@ Implemented in `apps/web/src/persist/` (Phase 7): `migration.ts` (step 1), `boot
 `indicators.defaults`, `watchlist.prefs`), `drawingTemplatesSync.ts`, `notes.ts`, `watchlists.ts` (Phase 8,
 `WatchlistSync`: lists whole with revision checks, flags as `PATCH` batches). Layout cache key: `tickerglass-layout`.
 Watchlist cache keys: `tickerglass-watchlists` (lists, flags, dirty flags, pending deletes) and
-`tickerglass-watchlist-prefs` (mirror of the setting `watchlist.prefs` = `{activeId, columns, sort}`; `activeId` is a
-list id or `flag:<color>`). The first run seeds one list "Watchlist" with the current and recent symbols; seeded
+`tickerglass-watchlist-prefs` (the sidebar table: the synced setting `watchlist.prefs` = `{columns, sort}` plus two
+local-only fields that are never sent to the server: `activeId`, a list id or `flag:<color>`, and `collapsed`, the
+section id -> collapsed map; a section without an entry falls back to the legacy `collapsed` flag older clients stored
+in the list items, so toggling a section never bumps a list's revision). The Watchlists page keeps its own setting
+`watchlist.page.prefs` = `{columns, sort, density}` (cache key `tickerglass-watchlist-page`; the detail-pane toggle
+stays local). On a stale save (409) `WatchlistSync` runs a 3-way merge (`watchlist/merge.ts`) of the last synced copy,
+the local list and the server's: adds from both sides are kept, a removal on either side wins over an untouched copy,
+and a rename only on one side applies. If the merge is clean it is saved on top of the server's revision without
+asking; only a true clash (both sides renamed the list or a section differently, a section renamed on one side and
+removed on the other, or more than 1000 items) shows the server's copy with a "Keep mine" toast that names the
+reasons. The first run seeds one list "Watchlist" with the current and recent symbols; seeded
 offline, it is kept only if the first successful load finds no lists on the server (or it was edited).
 
 Layout `state` (schemaVersion 3): `{ chart: chart.getState(), indicators: IndicatorState[],
@@ -198,10 +207,10 @@ and extended hours moved from the global app store into each slot's `chartSettin
 crosshair, magnet, favorites and recent symbols. A client that only knows v4 rejects a v5 layout. The server
 needs no change (opaque JSON), and `Drawing.chartId` lives inside the drawing's `data`. Chart templates keep their v4 shape (one chart).
 
-| localStorage key                                                                                     | Goes to                                                                           |
-| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| localStorage key                                                                                      | Goes to                                                                           |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `tickerglass-drawings` `{version:1, bySymbol, synced}`                                                | `drawings` (one row per `Drawing`, unchanged JSON)                                |
-| `tickerglass-indicators` `instances` + `tickerglass-app` chart fields                                  | one layout "Default", set last-used                                               |
+| `tickerglass-indicators` `instances` + `tickerglass-app` chart fields                                 | one layout "Default", set last-used                                               |
 | `tickerglass-indicator-prefs` `{favorites, defaults}`                                                 | settings `indicators.favorites`, `indicators.defaults`                            |
 | `tickerglass-drawing-templates` `{byType, defaults}`                                                  | `drawing_templates`; each `defaults[type]` -> `isDefault: true`, name `"Default"` |
 | `tickerglass-app` prefs (theme, favoriteIntervals, customIntervals, recentSymbols, crosshair, magnet) | setting `app.prefs`                                                               |
@@ -214,7 +223,10 @@ needs no change (opaque JSON), and `Drawing.chartId` lives inside the drawing's 
    notes. API data replaces the in-memory stores; localStorage keeps a copy as the **offline cache**.
 3. **Edits**: stores keep writing localStorage (fast, offline) and also push to the API: layout state via
    `createLayoutAutosaver(layout, {onConflict})`; drawings via debounced `batchDrawings`; settings via
-   `patchSettings`; notes via `createAutosaver` + `updateNote` with `revision`. All saves flush on `pagehide`
-   with `keepalive` (bodies over 64 KB may be dropped by the browser there; the next start re-syncs from cache).
+   `patchSettings`; notes via `createAutosaver` + `updateNote` with `revision`. All saves flush when the tab
+   becomes hidden (and again on `pagehide`) with `keepalive`. Keepalive bodies share one ~60 KB in-flight budget
+   (`keepaliveBytesLeft()` in `api/client.ts`); requests over budget go as normal fetches or stay dirty in the local
+   cache, and the next start re-syncs them. Watchlists issue deletes, list PUTs and the flag PATCH concurrently on
+   hide instead of queueing them.
 4. **Offline**: autosavers keep the value pending and retry (`retryDelay`); on reconnect, flush. Unsynced cache
    newer than the server is pushed with revisions, so conflicts surface instead of silent overwrites.

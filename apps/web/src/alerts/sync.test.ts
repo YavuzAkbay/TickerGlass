@@ -216,6 +216,31 @@ describe('AlertsSync load and events', () => {
     h.sync.stop();
   });
 
+  it('alert.fired with alert: null (screen alert) logs and announces the entry', async () => {
+    const h = harness(makeApi());
+    await vi.waitFor(() => expect(useAlerts.getState().status).toBe('ready'));
+    useAlerts.setState({ alerts: { a: alert('a') } });
+    const fn = vi.fn();
+    const off = onAlertFired(fn);
+    const message = "Screen 'Oversold': 3 new symbols — AAPL, MSFT, NVDA";
+    const screenEntry = entry(12, {
+      alertId: null,
+      alertName: 'Oversold',
+      symbol: 'AAPL, MSFT, NVDA',
+      interval: '1d',
+      message,
+    });
+    h.frame({ type: 'alert.fired', entry: screenEntry, alert: null });
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn.mock.calls[0]![0].message).toBe(message);
+    expect(fn.mock.calls[0]![1]).toBeNull();
+    expect(useAlerts.getState().log[0]).toMatchObject({ id: 12, alertId: null });
+    expect(useAlerts.getState().unread).toBe(1);
+    expect(useAlerts.getState().alerts.a?.fireCount).toBe(0);
+    off();
+    h.sync.stop();
+  });
+
   it('catches up after a reconnect: announces recent unread fires, counts older ones', async () => {
     const t0 = Date.parse('2026-06-01T12:00:00Z');
     const fresh = entry(11, { firedAt: new Date(t0 - 60_000).toISOString() });

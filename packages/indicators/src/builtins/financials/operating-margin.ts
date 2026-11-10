@@ -7,6 +7,8 @@ export const OPERATING_MARGIN = defineIndicator({
   id: 'fin-operating-margin',
   name: 'Operating Margin',
   shortName: 'Oper Margin',
+  description:
+    'Operating income as a share of revenue per reporting period; core-business profitability.',
   category: 'financials',
   keywords: ['operating margin', 'operating income', 'margin', 'profitability', 'financials'],
   overlay: false,
@@ -25,7 +27,13 @@ export const OPERATING_MARGIN = defineIndicator({
       ROW.operatingIncome,
       'operating income',
     );
-    const revenue = requireSeries(env.fundamentals, inputs.period, 'income', ROW.revenue, 'revenue');
+    const revenue = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'income',
+      ROW.revenue,
+      'revenue',
+    );
     const margin = scaled(divideBy(operatingIncome, revenue), 100);
     return (c) => {
       c.set('margin', valueAt(margin, c.time[c.i]!));

@@ -10,6 +10,8 @@ export const MFI = defineIndicator({
   id: 'mfi',
   name: 'Money Flow Index',
   shortName: 'MFI',
+  description:
+    'Money Flow Index: volume-weighted RSI from 0 to 100; beyond 80 or below 20 flags volume-backed overextension.',
   category: 'volume',
   keywords: ['mfi', 'money flow', 'volume', 'oscillator'],
   overlay: false,

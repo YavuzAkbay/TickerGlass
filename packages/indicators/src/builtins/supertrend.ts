@@ -11,6 +11,8 @@ export const SUPERTREND = defineIndicator({
   id: 'supertrend',
   name: 'Supertrend',
   shortName: 'Supertrend',
+  description:
+    'ATR-based trailing band that flips sides at trend changes; a popular stop-and-reverse trend filter.',
   category: 'trend',
   keywords: ['supertrend', 'atr', 'trailing stop', 'trend'],
   overlay: true,

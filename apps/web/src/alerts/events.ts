@@ -48,6 +48,13 @@ export interface AlertEventsOptions {
   onReconnect: () => void;
 }
 
+/** `alert` of an `alert.fired` frame; null for log entries without an alert (screen alerts). */
+function asFiredInfo(v: unknown): FiredAlertInfo | null {
+  return v && typeof v === 'object' && typeof (v as FiredAlertInfo).id === 'string'
+    ? (v as FiredAlertInfo)
+    : null;
+}
+
 function asEntry(v: unknown): AlertLogEntry | null {
   return v && typeof v === 'object' && typeof (v as AlertLogEntry).id === 'number'
     ? (v as AlertLogEntry)
@@ -63,7 +70,7 @@ export function startAlertEvents(opts: AlertEventsOptions): () => void {
   const onFired = (frame: EventFrame) => {
     const entry = asEntry(frame.entry);
     if (!entry) return;
-    const info = (frame.alert as FiredAlertInfo | undefined) ?? null;
+    const info = asFiredInfo(frame.alert);
     const known = useAlerts.getState().log.some((e) => e.id === entry.id);
     useAlerts.setState((s) => {
       const alerts = { ...s.alerts };

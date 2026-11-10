@@ -7,6 +7,7 @@ export const NET_INCOME = defineIndicator({
   id: 'fin-net-income',
   name: 'Net Income',
   shortName: 'Net Inc',
+  description: 'Quarterly or annual net income (bottom-line profit) per reporting period.',
   category: 'financials',
   keywords: ['net income', 'profit', 'earnings', 'bottom line', 'income statement', 'financials'],
   overlay: false,

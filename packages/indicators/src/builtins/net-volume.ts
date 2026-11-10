@@ -6,6 +6,8 @@ export const NET_VOLUME = defineIndicator({
   id: 'net-volume',
   name: 'Net Volume',
   shortName: 'Net Volume',
+  description:
+    'Up-tick volume minus down-tick volume per bar, showing whether the period closed with buying or selling pressure.',
   category: 'volume',
   keywords: ['net volume', 'volume', 'signed volume'],
   overlay: false,

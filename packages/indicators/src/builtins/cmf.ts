@@ -7,6 +7,8 @@ export const CMF = defineIndicator({
   id: 'cmf',
   name: 'Chaikin Money Flow',
   shortName: 'CMF',
+  description:
+    'Chaikin Money Flow: volume-weighted close positioning summed over a period; above 0 suggests accumulation.',
   category: 'volume',
   keywords: ['cmf', 'chaikin', 'money flow', 'volume', 'accumulation'],
   overlay: false,

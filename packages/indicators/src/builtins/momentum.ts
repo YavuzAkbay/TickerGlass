@@ -6,6 +6,8 @@ export const MOMENTUM_INDICATOR = defineIndicator({
   id: 'momentum',
   name: 'Momentum',
   shortName: 'Mom',
+  description:
+    'Momentum: percent change of price over a period around zero; the slope shows whether pressure builds or fades.',
   category: 'momentum',
   keywords: ['momentum', 'mom', 'oscillator'],
   overlay: false,

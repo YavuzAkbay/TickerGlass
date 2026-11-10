@@ -6,6 +6,8 @@ export const TRIX = defineIndicator({
   id: 'trix',
   name: 'TRIX',
   shortName: 'TRIX',
+  description:
+    'Triple-smoothed EMA rate of change; zero-line crossings filter noise from longer-term momentum shifts.',
   category: 'momentum',
   keywords: ['trix', 'triple exponential', 'oscillator'],
   overlay: false,

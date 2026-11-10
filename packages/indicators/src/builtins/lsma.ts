@@ -6,6 +6,8 @@ export const LSMA = defineIndicator({
   id: 'lsma',
   name: 'Least Squares Moving Average',
   shortName: 'LSMA',
+  description:
+    'Least Squares Moving Average: linear-regression endpoint that projects the trend with minimal lag.',
   category: 'movingAverage',
   keywords: ['ma', 'least squares', 'linear regression', 'linreg', 'average', 'lsma'],
   overlay: true,

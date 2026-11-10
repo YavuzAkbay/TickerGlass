@@ -8,6 +8,8 @@ export const KELTNER = defineIndicator({
   id: 'keltner',
   name: 'Keltner Channels',
   shortName: 'KC',
+  description:
+    'EMA channel with ATR-sized bands; closes outside the channel flag strong directional pressure.',
   category: 'bands',
   keywords: ['kc', 'keltner', 'channels', 'atr', 'volatility'],
   overlay: true,

@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAutosaver, createLayoutAutosaver } from './autosave';
-import { ApiError, MAX_ENTRIES, cachedJson, clearJsonCache, requestJson } from './client';
+import {
+  ApiError,
+  KEEPALIVE_MAX_BYTES,
+  MAX_ENTRIES,
+  bodyBytes,
+  cachedJson,
+  clearJsonCache,
+  keepaliveBytesLeft,
+  requestJson,
+} from './client';
 import {
   batchDrawings,
   drawingConflicts,
@@ -267,7 +276,7 @@ describe('createAutosaver', () => {
     expect(saved).toEqual(['a', 'b']);
   });
 
-  it('flushes with keepalive on pagehide, normally when the document is hidden', async () => {
+  it('flushes with keepalive on pagehide and when the document is hidden', async () => {
     const ctxs: boolean[] = [];
     const recovered: number[] = [];
     const win = new EventTarget();
@@ -290,7 +299,11 @@ describe('createAutosaver', () => {
     doc.visibilityState = 'hidden';
     doc.dispatchEvent(new Event('visibilitychange'));
     await vi.advanceTimersByTimeAsync(0);
-    expect(ctxs).toEqual([true, false]);
+    expect(ctxs).toEqual([true, true]);
+    // The pagehide that usually follows finds nothing left to send.
+    win.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctxs).toEqual([true, true]);
     // A recovery copy of the pending value is offered before each hide flush.
     expect(recovered).toEqual([1, 2]);
 
@@ -298,12 +311,44 @@ describe('createAutosaver', () => {
     await s.flush();
     s.schedule(3);
     await s.dispose();
-    expect(ctxs).toEqual([true, false, false]);
+    expect(ctxs).toEqual([true, true, false]);
     s.schedule(4);
     s.cancel();
     win.dispatchEvent(new Event('pagehide'));
     await vi.advanceTimersByTimeAsync(20_000);
     expect(ctxs).toHaveLength(3);
+  });
+
+  it('overlapOnHide: a hide flush starts at once, not behind the save in flight', async () => {
+    const win = new EventTarget();
+    const started: [number, boolean][] = [];
+    const gates: (() => void)[] = [];
+    const s = createAutosaver<number>(
+      (v, ctx) => {
+        started.push([v, ctx.keepalive]);
+        return new Promise<void>((r) => gates.push(r));
+      },
+      { delay: 10, window: win, document: fakeDoc(), overlapOnHide: true },
+    );
+    s.schedule(1);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(started).toEqual([[1, false]]);
+    s.schedule(2);
+    win.dispatchEvent(new Event('pagehide'));
+    expect(started).toEqual([
+      [1, false],
+      [2, true],
+    ]); // synchronously, while 1 is still in flight
+    expect(s.pending).toBe(false);
+    let flushed = false;
+    void s.flush().then(() => (flushed = true));
+    gates[0]!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(flushed).toBe(false); // flush waits for the overlapping save too
+    gates[1]!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(flushed).toBe(true);
+    expect(s.saving).toBe(false);
   });
 
   it('reports conflicts and drops the value', async () => {
@@ -414,6 +459,30 @@ describe('requestJson keepalive', () => {
     expect(calls[0]!.init.keepalive).toBe(true);
     expect(calls[1]!.init.keepalive).toBeUndefined();
     expect(String(calls[1]!.init.body)).toHaveLength(70_000 + 8);
+  });
+
+  it('shares the budget between keepalive requests in flight', async () => {
+    const gates: (() => void)[] = [];
+    respond = () => new Promise((r) => gates.push(() => r(json({}))));
+    const body = { s: 'a'.repeat(25_000) }; // 25_008 bytes
+    expect(bodyBytes(body)).toBe(25_008);
+    const sent = [1, 2, 3].map(() => requestJson('PUT', '/x', body, { keepalive: true }));
+    expect(calls.map((c) => c.init.keepalive)).toEqual([true, true, undefined]);
+    expect(keepaliveBytesLeft()).toBe(KEEPALIVE_MAX_BYTES - 2 * 25_008);
+    for (const open of gates) open();
+    await Promise.all(sent);
+    expect(keepaliveBytesLeft()).toBe(KEEPALIVE_MAX_BYTES);
+    respond = () => json({});
+    await requestJson('PUT', '/x', body, { keepalive: true });
+    expect(calls.at(-1)!.init.keepalive).toBe(true);
+  });
+
+  it('frees the budget when a keepalive request fails', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')));
+    await expect(requestJson('PUT', '/x', { s: 'a' }, { keepalive: true })).rejects.toThrow(
+      ApiError,
+    );
+    expect(keepaliveBytesLeft()).toBe(KEEPALIVE_MAX_BYTES);
   });
 });
 

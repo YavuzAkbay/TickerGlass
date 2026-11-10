@@ -10,6 +10,8 @@ export const ICHIMOKU = defineIndicator({
   id: 'ichimoku',
   name: 'Ichimoku Cloud',
   shortName: 'Ichimoku',
+  description:
+    'Ichimoku Cloud: conversion and base lines with leading spans to read trend, momentum and support at a glance.',
   category: 'trend',
   keywords: ['ichimoku', 'kinko hyo', 'cloud', 'kumo', 'tenkan', 'kijun', 'senkou', 'chikou'],
   overlay: true,

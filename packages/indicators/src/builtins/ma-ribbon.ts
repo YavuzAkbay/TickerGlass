@@ -8,6 +8,8 @@ export const MA_RIBBON = defineIndicator({
   id: 'ma-ribbon',
   name: 'Moving Average Ribbon',
   shortName: 'MA Ribbon',
+  description:
+    'Multiple moving averages drawn as a ribbon; expansions, contractions and crossovers outline trend strength.',
   category: 'movingAverage',
   keywords: ['ma', 'ribbon', 'moving averages', 'average'],
   overlay: true,

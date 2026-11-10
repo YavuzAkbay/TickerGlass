@@ -12,6 +12,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 from pydantic.alias_generators import to_camel
 
 from .alerts import BundleAlert
+from .screens import BundleScreen
 
 #: Version of the import/export bundle format (`Bundle.version`).
 BUNDLE_VERSION = 1
@@ -547,6 +548,8 @@ class Bundle(ApiModel):
     alerts: list[BundleAlert] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     #: User indicator scripts (docs/persistence.md); additive, BUNDLE_VERSION stays 1.
     user_scripts: list[BundleUserScript] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    #: Saved screener screens without their alert state; additive, BUNDLE_VERSION stays 1.
+    screens: list[BundleScreen] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
 
 
 class ImportCounts(ApiModel):
@@ -569,3 +572,4 @@ class ImportSummary(ApiModel):
     flags: ImportCounts = Field(default_factory=ImportCounts)
     alerts: ImportCounts = Field(default_factory=ImportCounts)
     user_scripts: ImportCounts = Field(default_factory=ImportCounts)
+    screens: ImportCounts = Field(default_factory=ImportCounts)

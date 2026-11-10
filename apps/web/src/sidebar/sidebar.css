@@ -446,6 +446,33 @@
   border-color: var(--border);
   color: var(--text);
 }
+.rs-notes-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.rs-notes-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.rs-notes-pin:hover {
+  background: var(--hover);
+}
+.rs-notes-pin:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
 
 /* ======== touch + phone ======== */
 .navigator,
@@ -472,6 +499,10 @@
   }
   .rs-notes-tab {
     padding: 8px 14px;
+  }
+  .rs-notes-pin {
+    min-height: 32px;
+    padding: 4px 10px;
   }
   .io-btn.rs-error-btn {
     height: 36px;

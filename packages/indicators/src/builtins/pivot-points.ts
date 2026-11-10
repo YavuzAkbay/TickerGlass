@@ -127,6 +127,8 @@ export const PIVOT_POINTS = defineIndicator({
   id: 'pivot-points',
   name: 'Pivot Points',
   shortName: 'Pivots',
+  description:
+    'Classic floor-trader pivots (P, R1-R3, S1-S3) computed per session; levels act as intraday support and resistance.',
   category: 'other',
   keywords: [
     'pivot',

@@ -7,6 +7,7 @@ export const PRICE_BOOK = defineIndicator({
   id: 'fin-pb',
   name: 'Price to Book',
   shortName: 'P/B',
+  description: 'Price to Book: current price relative to book value per share.',
   category: 'financials',
   keywords: ['pb', 'p/b', 'price to book', 'book multiple', 'valuation', 'financials'],
   overlay: false,
@@ -14,9 +15,7 @@ export const PRICE_BOOK = defineIndicator({
   precision: 2,
   usesFundamentals: true,
   inputs: { period: PERIOD_INPUT },
-  outputs: [
-    { type: 'plot', id: 'pb', title: 'P/B', kind: 'line', color: COLOR.blue },
-  ],
+  outputs: [{ type: 'plot', id: 'pb', title: 'P/B', kind: 'line', color: COLOR.blue }],
   setup({ inputs, env }) {
     const equity = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.equity, 'equity');
     const shares = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.shares, 'shares');

@@ -1,5 +1,5 @@
 import { isExpressionSymbol } from '@tickerglass/engine';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
@@ -93,10 +93,30 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
   const state = marketState(q);
   const source = meta.data?.exchangeName ?? meta.data?.exchange;
   const focus = () => setActiveChart(session.id);
+  // Dismissed cards collapse to a ticker pill until it is clicked again (Settings > Legend persistence).
+  const quoteCard = useStore(session.view, (s) => s.statusLine.quoteCard);
+  const setQuoteCard = (v: boolean) =>
+    session.view.getState().set({
+      statusLine: { ...session.view.getState().statusLine, quoteCard: v },
+    });
   // Phones show one price line and the bar values; a tap on the chevron opens the rest.
   const mobile = useIsMobile();
   const [open, setOpen] = useState(false);
   const compact = mobile && !open;
+
+  if (!quoteCard) {
+    return (
+      <button
+        type="button"
+        className="sc-closed"
+        aria-label={t('symbolHeader.show')}
+        title={t('symbolHeader.show')}
+        onClick={() => setQuoteCard(true)}
+      >
+        {symbol}
+      </button>
+    );
+  }
 
   const toggle = mobile ? (
     <button
@@ -172,6 +192,15 @@ function Card({ session, symbol, expr }: { session: ChartSession; symbol: string
           </button>
         ) : null}
         {compact ? null : <SessionClock session={session} />}
+        <button
+          type="button"
+          className="sc-close"
+          aria-label={t('symbolHeader.hide')}
+          title={t('symbolHeader.hide')}
+          onClick={() => setQuoteCard(false)}
+        >
+          <X size={14} />
+        </button>
         {toggle}
       </div>
       {compact ? null : (

@@ -1,0 +1,90 @@
+.rb {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+}
+.rb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: var(--radius-control, 4px);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.rb-btn:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.rb-btn:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent));
+  outline-offset: 1px;
+}
+.rb-alert.rb-triggered {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rb-count {
+  font-variant-numeric: tabular-nums;
+}
+.rb-note {
+  display: inline-flex;
+  color: var(--muted);
+}
+.rb-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+}
+.rb-fdot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+.rb-stale,
+.rb-missing {
+  border-color: var(--down);
+  color: var(--down);
+}
+.rb-delayed,
+.rb-pre,
+.rb-post {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.rb-closed .rb-fdot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentcolor;
+}
+.rb-compact {
+  gap: 3px;
+  margin-left: 4px;
+}
+.rb-compact .rb-fresh {
+  padding: 0;
+  border: 0;
+}
+.rb-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--muted);
+  transform: rotate(45deg);
+}
+.rb-dot.rb-triggered {
+  background: var(--accent);
+}

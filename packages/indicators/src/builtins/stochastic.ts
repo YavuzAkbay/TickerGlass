@@ -6,6 +6,8 @@ export const STOCHASTIC = defineIndicator({
   id: 'stochastic',
   name: 'Stochastic',
   shortName: 'Stoch',
+  description:
+    'Compares the close to the high-low range over a period (0-100); K and D line crosses flag momentum turns.',
   category: 'momentum',
   keywords: ['stochastic', 'stoch', '%k', '%d', 'oscillator'],
   overlay: false,

@@ -5,6 +5,8 @@ export const SMMA = defineIndicator({
   id: 'smma',
   name: 'Smoothed Moving Average',
   shortName: 'SMMA',
+  description:
+    'Smoothed Moving Average: accumulates like an RMA and reacts slowly, filtering noise from the trend.',
   category: 'movingAverage',
   keywords: ['ma', 'smoothed', 'rma', 'wilder', 'average', 'smma'],
   overlay: true,

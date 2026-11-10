@@ -7,6 +7,8 @@ export const SMI_ERGODIC_OSC = defineIndicator({
   id: 'smi-ergodic-osc',
   name: 'SMI Ergodic Histogram',
   shortName: 'SMI Hist',
+  description:
+    'SMI Ergodic Histogram: the gap between the SMI Ergodic line and its signal, plotted as columns.',
   category: 'momentum',
   keywords: ['smi', 'ergodic', 'tsi', 'blau', 'oscillator', 'histogram'],
   overlay: false,

@@ -6,6 +6,8 @@ export const ENVELOPES = defineIndicator({
   id: 'envelopes',
   name: 'Envelopes',
   shortName: 'Env',
+  description:
+    'Fixed percentage bands above and below an SMA; price at an edge flags stretched short-term moves.',
   category: 'bands',
   keywords: ['envelope', 'envelopes', 'bands', 'percent', 'channel'],
   overlay: true,

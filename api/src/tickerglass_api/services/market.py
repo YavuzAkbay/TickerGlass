@@ -139,6 +139,14 @@ class MarketService:
         self._news: SmartCache[str, _News] = cache("news", s.news_ttl_s)
         self._fundamentals: SmartCache[str, Row] = cache("fundamentals", s.fundamentals_ttl_s)
 
+    def clear_caches(self) -> int:
+        """Drop every in-memory entry (quotes, extended hours, events, news,
+        fundamentals); returns the number dropped. The bars DB is not touched."""
+        return sum(
+            c.clear()
+            for c in (self._quotes, self._extended, self._events, self._news, self._fundamentals)
+        )
+
     def quotes(
         self, symbols: list[str], *, max_age: float | None = None, stale_ok: bool = True
     ) -> list[Row]:

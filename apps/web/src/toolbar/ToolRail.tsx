@@ -18,6 +18,7 @@ import {
   categoryOf,
   DOCK_CATEGORIES,
   dockTools,
+  defaultToolOf,
   filterSections,
   quickTools,
   type DockCategory,
@@ -323,39 +324,34 @@ function CursorButton() {
   );
 }
 
-/** Dock button: opens its category's searchable flyout. */
+/** Dock button: one click arms the category's last-used (or default) tool;
+ * the hover corner arrow opens its searchable flyout. */
 function CategoryButton({ cat }: { cat: DockCategory }) {
   const activeTool = useUiStore((s) => s.activeTool);
-  const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
+  const groupTools = useUiStore((s) => s.groupTools);
   const active = categoryOf(activeTool)?.id === cat.id;
-  // Show the category's active tool, so the dock tells what is armed.
-  const armed = active ? findTool(activeTool) : undefined;
+  // The armed tool: the category's active tool while drawing, else its
+  // last-used tool, else its default — so the dock tells what a click does.
+  const lastId = cat.groups
+    .map((g) => groupTools[g])
+    .find((id) => !!id && categoryOf(id)?.id === cat.id);
+  const armed =
+    (active ? findTool(activeTool) : undefined) ??
+    (lastId ? findTool(lastId) : undefined) ??
+    defaultToolOf(cat);
   const Icon = armed?.icon ?? cat.icon;
   return (
-    <div ref={setWrap} className={`lt-group${open ? ' open' : ''}`}>
-      <IconButton
-        label={cat.label}
-        tipSide="left"
-        active={active}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="lt-btn"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <Icon />
-      </IconButton>
-      <Popover
-        anchor={wrap}
-        open={open}
-        onClose={() => setOpen(false)}
-        placement="left-start"
-        ignore={[wrap]}
-        className="lt-popover"
-      >
-        <CategoryFlyout cat={cat} onClose={() => setOpen(false)} />
-      </Popover>
-    </div>
+    <SplitButton
+      label={armed?.name ?? cat.label}
+      shortcut={armed?.shortcut}
+      active={active}
+      icon={<Icon />}
+      onClick={() => {
+        if (armed) selectTool(armed.id);
+      }}
+      flyoutLabel={cat.label}
+      flyout={(close) => <CategoryFlyout cat={cat} onClose={close} />}
+    />
   );
 }
 
@@ -612,8 +608,10 @@ function QuickToolsMenu({ at }: { at: { x: number; y: number } }) {
 }
 
 /** Drawing dock on the right edge: cursor, five tool categories and the options panel.
- * Tools without a registered drawing definition are dimmed and only show a hint
- * (drawings/attach syncs the active tool and options to the chart). */
+ * Each category button arms its last-used (or default) tool in one click; the
+ * hover corner arrow opens the searchable flyout. Tools without a registered
+ * drawing definition are dimmed and only show a hint (drawings/attach syncs
+ * the active tool and options to the chart). */
 export function ToolRail() {
   const t = useT();
   const showFav = useUiStore((s) => s.showFavoritesBar);

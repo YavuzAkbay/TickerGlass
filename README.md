@@ -2,13 +2,30 @@
 
 TickerGlass is a self-hosted stock charting and technical analysis app. Run it on your own computer or server with Docker Compose and use it in a browser. The application and its storage run on infrastructure you control. Yahoo Finance is the recommended default provider, but you can add or select another supported provider. Yahoo mode contacts Yahoo Finance for data; for a fully offline demo, select the generated demo provider.
 
-Features include multiple chart types, drawing tools, indicators, symbol comparisons, alerts, watchlists, templates, and market replay. Watchlists can be imported and exported as plain text ([guide](docs/watchlists.md)). See [known limitations](docs/LIMITATIONS.md), [market data providers](docs/providers.md), and [caching](docs/caching.md).
+Features include multiple chart types, drawing tools, indicators, symbol comparisons, alerts, watchlists, templates, and market replay. Watchlists can be imported and exported as plain text ([guide](docs/watchlists.md)). A server-side screener ranks stocks, ETFs, crypto and commodities from the daily close snapshot, with saved screens, hotlists and a heatmap ([guide](docs/screener.md)). See [known limitations](docs/LIMITATIONS.md), [market data providers](docs/providers.md), and [caching](docs/caching.md).
 
 ![alt text](https://github.com/user-attachments/assets/1dbc8e17-66e8-4bc8-bc0a-9a4fa009fef0)
 
 ## Run with Docker Compose
 
 Requirements: Docker Engine and the Docker Compose plugin.
+
+### Prebuilt images (recommended)
+
+No clone or build; multi-arch images (amd64 + arm64) are published with every release:
+
+```sh
+mkdir tickerglass && cd tickerglass
+curl -O https://raw.githubusercontent.com/yavuzakbay/TickerGlass/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/yavuzakbay/TickerGlass/main/.env.example
+mv .env.example .env
+docker compose pull
+docker compose up -d
+```
+
+Update later with `docker compose pull && docker compose up -d`; pin a version with `TICKERGLASS_TAG` in `.env`. See the [self-hosting guide](docs/self-hosting.md).
+
+### Build from source
 
 ```sh
 git clone https://github.com/yavuzakbay/TickerGlass.git
@@ -19,9 +36,9 @@ docker compose up -d --build
 
 Open <http://localhost:8080>. The API health endpoint is <http://localhost:8000/api/health>.
 
-The web and API ports bind to localhost by default. To access TickerGlass from another device, configure a reverse proxy and change the port bindings in `docker-compose.yml` deliberately. Use HTTPS and suitable access controls before exposing a server to the internet. Do not expose the API port publicly by default.
+The web and API ports bind to localhost by default. To access TickerGlass from another device, set a password first (`AUTH_PASSWORD` in `.env`) — see [password protection](docs/self-hosting.md#password-protection) — and then expose it via a reverse proxy or Tailscale, with HTTPS. Do not expose the API port publicly by default.
 
-SQLite data is stored in the persistent `api-data` Docker volume. Back up that volume regularly. To use PostgreSQL, follow the commented configuration in `.env.example` and start the optional database profile:
+SQLite data is stored in the persistent `api-data` Docker volume. Back up that volume regularly (or use **Settings → Server → Download backup**). To use PostgreSQL, follow the commented configuration in `.env.example` and start the optional database profile:
 
 ```sh
 docker compose --profile postgres up -d --build
@@ -34,6 +51,10 @@ docker compose down
 ```
 
 To delete the database volume and its data, use `docker compose down -v`.
+
+## Install as an app
+
+The web app is a PWA: in Chrome or Edge on the desktop and in Android browsers, open the install icon in the address bar ("Install TickerGlass" / "Add to home screen"); on iOS use Share → Add to Home Screen. The shell then loads without the browser UI, and stays usable on the charts you have open even when the server is briefly unreachable.
 
 ## Market data and offline use
 
@@ -57,14 +78,16 @@ Alerts are evaluated by the `alerts` service and continue to run while the brows
 
 Copy `.env.example` to `.env`. Common settings include:
 
-| Variable | Purpose |
-| --- | --- |
-| `WEB_PORT` | Local web UI port (default `8080`) |
-| `API_PORT` | Local API port (default `8000`) |
-| `MARKET_PROVIDER` | `yahoo` (default), `twelvedata` (needs `TWELVEDATA_API_KEY`) or generated `demo` data |
-| `DATABASE_URL` | Optional database connection; SQLite is the default |
+| Variable          | Purpose                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `WEB_PORT`        | Local web UI port (default `8080`)                                                        |
+| `API_PORT`        | Local API port (default `8000`)                                                           |
+| `MARKET_PROVIDER` | `yahoo` (default), `twelvedata` (needs `TWELVEDATA_API_KEY`) or generated `demo` data     |
+| `DATABASE_URL`    | Optional database connection; SQLite is the default                                       |
+| `TICKERGLASS_TAG` | Published image tag to run (`latest` default, or `vX.Y.Z`); used by `docker compose pull` |
+| `AUTH_PASSWORD`   | Optional sign-in password; unset keeps the app open (localhost-first)                     |
 
-The example file documents database and alert settings. Avoid sharing `.env` because it may contain passwords, tokens, and webhook secrets.
+The example file documents database, auth and alert settings. Avoid sharing `.env` because it may contain passwords, tokens, and webhook secrets.
 
 ## Development
 
@@ -89,13 +112,13 @@ The web development server runs on port 5173 and proxies API and WebSocket reque
 
 ## Project layout
 
-| Path | Contents |
-| --- | --- |
-| `apps/web` | React application and chart interface |
-| `packages/engine` | Framework-independent Canvas 2D chart engine |
+| Path                  | Contents                                           |
+| --------------------- | -------------------------------------------------- |
+| `apps/web`            | React application and chart interface              |
+| `packages/engine`     | Framework-independent Canvas 2D chart engine       |
 | `packages/indicators` | Indicators shared by the web app and alert service |
-| `services/alerts` | Server-side alert evaluation |
-| `api` | FastAPI market data API, caching, and storage |
+| `services/alerts`     | Server-side alert evaluation                       |
+| `api`                 | FastAPI market data API, caching, and storage      |
 
 ## Privacy
 

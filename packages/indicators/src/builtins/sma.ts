@@ -5,6 +5,8 @@ export const SMA = defineIndicator({
   id: 'sma',
   name: 'Simple Moving Average',
   shortName: 'SMA',
+  description:
+    'Simple Moving Average: unweighted mean of the last N bars, the baseline trend reference.',
   category: 'movingAverage',
   keywords: ['ma', 'simple', 'average'],
   overlay: true,

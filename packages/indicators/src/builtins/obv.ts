@@ -20,6 +20,8 @@ export const OBV = defineIndicator({
   id: 'obv',
   name: 'On Balance Volume',
   shortName: 'OBV',
+  description:
+    'On Balance Volume: cumulative volume added on up bars and subtracted on down bars; divergence hints at hidden flows.',
   category: 'volume',
   keywords: ['obv', 'on balance volume', 'volume', 'accumulation'],
   overlay: false,

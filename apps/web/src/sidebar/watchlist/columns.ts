@@ -1,92 +1,43 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
 import type { LiveQuote } from '../../quotes/types';
+import type { SnapshotRow } from '../../screener/server/snapshot';
+import { COLUMN_DEFS, type CellValue } from '../../watchlist/columns/registry';
 import type { ColumnId } from '../../watchlist/types';
-import { changeClass, fmtAuto, fmtCompact, fmtSigned, isNum } from '../format';
 
-export interface CellValue {
-  text: string;
-  /** Extra class (`up` / `down`). */
-  className?: string;
-}
+export type { CellValue };
 
+/** A column as the sidebar panel sees it (a view over the shared registry). */
 export interface ColumnDef {
   id: ColumnId;
+  /** Header text. */
   label: string;
   /** Long name for tooltips and the columns menu. */
   title: string;
   /** Grid track. */
   width: string;
-  render: (q: LiveQuote | undefined) => CellValue;
-  sortValue: (q: LiveQuote | undefined) => number | null;
+  render: (q: LiveQuote | undefined, snap?: SnapshotRow) => CellValue;
+  sortValue: (q: LiveQuote | undefined, snap?: SnapshotRow) => number | null;
 }
 
-const num = (v: number | null | undefined): number | null => (isNum(v) ? v : null);
-
-export const COLUMNS: Record<ColumnId, ColumnDef> = {
-  last: {
-    id: 'last',
-    label: 'Last',
-    title: 'Last price',
-    width: 'minmax(54px, 1fr)',
-    render: (q) => ({ text: q ? fmtAuto(q.last) : '—' }),
-    sortValue: (q) => num(q?.last),
-  },
-  change: {
-    id: 'change',
-    label: 'Chg',
-    title: 'Change',
-    width: 'minmax(50px, 0.9fr)',
-    render: (q) => ({ text: q ? fmtSigned(q.change) : '', className: changeClass(q?.change) }),
-    sortValue: (q) => num(q?.change),
-  },
-  changePercent: {
-    id: 'changePercent',
-    label: 'Chg%',
-    title: 'Change %',
-    width: 'minmax(56px, 0.9fr)',
-    render: (q) => ({
-      text: q ? fmtSigned(q.changePercent, 2, '%') : '',
-      className: changeClass(q?.changePercent),
-    }),
-    sortValue: (q) => num(q?.changePercent),
-  },
-  volume: {
-    id: 'volume',
-    label: 'Volume',
-    title: 'Volume',
-    width: 'minmax(52px, 0.9fr)',
-    render: (q) => ({ text: q ? fmtCompact(q.volume) : '' }),
-    sortValue: (q) => num(q?.volume),
-  },
-  extPrice: {
-    id: 'extPrice',
-    label: 'Ext',
-    title: 'Pre/post-market price',
-    width: 'minmax(54px, 1fr)',
-    render: (q) => ({ text: q?.ext ? fmtAuto(q.ext.price) : '' }),
-    sortValue: (q) => num(q?.ext?.price),
-  },
-  extChangePercent: {
-    id: 'extChangePercent',
-    label: 'Ext%',
-    title: 'Pre/post-market change %',
-    width: 'minmax(56px, 0.9fr)',
-    render: (q) => ({
-      text: q?.ext ? fmtSigned(q.ext.changePercent, 2, '%') : '',
-      className: changeClass(q?.ext?.changePercent),
-    }),
-    sortValue: (q) => num(q?.ext?.changePercent),
-  },
-  trend: {
-    id: 'trend',
-    label: 'Trend',
-    title: '30-day trend',
-    width: '50px',
-    // Drawn by `Sparkline` (SymbolRow); not sortable.
-    render: () => ({ text: '' }),
-    sortValue: () => null,
-  },
+const view = (id: ColumnId): ColumnDef => {
+  const d = COLUMN_DEFS[id];
+  return {
+    id,
+    label: d.short,
+    title: d.label,
+    width: d.width.sidebar,
+    render: (q, snap) => d.cell({ q, meta: undefined, snap, surface: 'sidebar' }),
+    sortValue: (q, snap) => {
+      const v = d.accessor(q, undefined, snap);
+      return typeof v === 'number' ? v : null;
+    },
+  };
 };
+
+/** Every registry column (the panel only offers those of the sidebar surface). */
+export const COLUMNS = Object.fromEntries(
+  (Object.keys(COLUMN_DEFS) as ColumnId[]).map((id) => [id, view(id)]),
+) as Record<ColumnId, ColumnDef>;
 
 /**
  * Flash an element when the quote's price changed on a tick. Remove, reflow,

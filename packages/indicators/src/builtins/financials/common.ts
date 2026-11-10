@@ -45,9 +45,7 @@ function ascending(stmt: StatementData, row: readonly number[]): Series {
       break;
     }
   if (sorted) return { periods: stmt.periods, values: row };
-  const order = stmt.periods
-    .map((p, k) => [p, k] as const)
-    .sort((a, b) => a[0] - b[0]);
+  const order = stmt.periods.map((p, k) => [p, k] as const).sort((a, b) => a[0] - b[0]);
   return {
     periods: order.map(([p]) => p),
     values: order.map(([, k]) => row[k]!),

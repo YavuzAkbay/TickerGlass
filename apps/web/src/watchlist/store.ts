@@ -8,7 +8,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { isObj } from '../persist/net';
 import { normalizeSymbol } from '../store/app';
-import { MAX_SECTION_TITLE, MAX_WATCHLIST_ITEMS, SYMBOL_RE } from './model';
+import { MAX_SECTION_TITLE, MAX_WATCHLIST_ITEMS, SYMBOL_RE, sectionCollapsed } from './model';
+import { useWatchlistPagePrefs } from './page/pagePrefs';
+import { useWatchlistPrefs } from './prefs';
 import type { FlagColor, WatchlistEntry, WatchlistItem } from './types';
 
 export const DEFAULT_LIST_NAME = 'Watchlist';
@@ -22,7 +24,34 @@ export interface PendingSeed {
   sigs: Record<string, string>;
 }
 
+/**
+ * What a removal took out, with the positions, so `restore` can put it back
+ * (also after other edits: items go to their old index, clamped).
+ */
+export interface UndoSnapshot {
+  listId: string;
+  entries: { index: number; item: WatchlistItem }[];
+}
+
+export interface MoveResult {
+  /** Added to the target. */
+  moved: number;
+  /** Already in the target; only removed from the source. */
+  alreadyThere: number;
+  /** Did not fit in the target (1000-item cap); left in the source. */
+  leftBehind: number;
+}
+
 interface WatchlistState {
+  /** The last removal that can still be undone (`undoLast`). Not persisted. */
+  lastUndo: UndoSnapshot | null;
+  /**
+   * The server's lists have been merged in at least once this session (set by the
+   * persistence bootstrap). Until then `lists` may lack lists made on other devices.
+   * Not persisted.
+   */
+  loaded: boolean;
+
   lists: Record<string, WatchlistEntry>;
   /**
    * Ids deleted locally, still to delete on the server. Includes lists never
@@ -52,17 +81,34 @@ interface WatchlistState {
    * Returns the symbols actually added.
    */
   addSymbols: (id: string, symbols: string[], at?: number) => string[];
-  removeSymbols: (id: string, symbols: string[]) => void;
+  /** Returns what was removed (for `restore`), or null if nothing was. */
+  removeSymbols: (id: string, symbols: string[]) => UndoSnapshot | null;
   /** New section at the end, or at index `at` (above the item there). '' if the list is full. */
   addSection: (id: string, title: string, at?: number) => string;
   renameSection: (id: string, sid: string, title: string) => void;
-  removeSection: (id: string, sid: string, keepSymbols: boolean) => void;
+  /** Returns what was removed (the section, and its symbols unless `keepSymbols`), or null. */
+  removeSection: (id: string, sid: string, keepSymbols: boolean) => UndoSnapshot | null;
+  /**
+   * Re-insert removed items at their old positions; items already present (same
+   * symbol / section id) are skipped and the item cap is respected. Returns how
+   * many items were put back.
+   */
+  restore: (snap: UndoSnapshot) => number;
+  /** `restore` of the last removal; 0 if there is none. */
+  undoLast: () => number;
+  /**
+   * Collapse/expand. Local only (`useWatchlistPrefs.collapsed`): the list is not
+   * marked dirty and its revision does not change.
+   */
   toggleSection: (id: string, sid: string) => void;
   /** Move the item (a section moves with its symbols) so it ends up at index `to`. */
   moveItem: (id: string, from: number, to: number) => void;
   /** Move symbols between lists; those already in the target are only removed from the source. Returns how many were added to the target. */
   moveSymbols: (fromId: string, toId: string, symbols: string[]) => number;
-  setFlag: (symbol: string, color: FlagColor | null) => void;
+  /** `moveSymbols` with the full outcome (for reporting what did not fit). */
+  moveSymbolsDetailed: (fromId: string, toId: string, symbols: string[]) => MoveResult;
+  /** `at` (ISO time) restores an earlier flag time, e.g. on undo; default is now. */
+  setFlag: (symbol: string, color: FlagColor | null, at?: string) => void;
 }
 
 const cleanName = (name: string): string => name.trim().slice(0, 200) || DEFAULT_LIST_NAME;
@@ -93,6 +139,16 @@ export function sanitizeItems(items: WatchlistItem[]): WatchlistItem[] {
     }
   }
   return out;
+}
+
+/** Whether section `sid` of list `listId` is collapsed here (local pref, else the legacy synced flag). */
+export function isSectionCollapsed(listId: string, sid: string): boolean {
+  const item = useWatchlistStore
+    .getState()
+    .lists[listId]?.items.find((i) => i.type === 'section' && i.id === sid);
+  const local = useWatchlistPrefs.getState().collapsed[sid];
+  if (local !== undefined) return local;
+  return item?.type === 'section' ? sectionCollapsed(undefined, item) : false;
 }
 
 /** Items [from, end) that move together with the item at `from`. */
@@ -169,6 +225,8 @@ export const useWatchlistStore = create<WatchlistState>()(
       };
 
       return {
+        lastUndo: null,
+        loaded: false,
         lists: {},
         pendingDeletes: [],
         flags: {},
@@ -212,6 +270,11 @@ export const useWatchlistStore = create<WatchlistState>()(
         deleteList: (id) => {
           const cur = get().lists[id];
           if (!cur) return;
+          // The remembered page view of a deleted list goes with it.
+          useWatchlistPagePrefs.getState().forgetViews([id]);
+          useWatchlistPrefs
+            .getState()
+            .forgetSections(cur.items.flatMap((i) => (i.type === 'section' ? [i.id] : [])));
           set((s) => {
             const { [id]: _gone, ...lists } = s.lists;
             return {
@@ -245,10 +308,17 @@ export const useWatchlistStore = create<WatchlistState>()(
 
         removeSymbols: (id, symbols) => {
           const drop = new Set(symbols.map(normalizeSymbol));
+          const out: { snap: UndoSnapshot | null } = { snap: null };
           edit(id, (items) => {
-            const next = items.filter((i) => !(i.type === 'symbol' && drop.has(i.symbol)));
-            return next.length === items.length ? null : next;
+            const entries = items.flatMap((item, index) =>
+              item.type === 'symbol' && drop.has(item.symbol) ? [{ index, item }] : [],
+            );
+            if (!entries.length) return null;
+            out.snap = { listId: id, entries };
+            return items.filter((i) => !(i.type === 'symbol' && drop.has(i.symbol)));
           });
+          if (out.snap) set({ lastUndo: out.snap });
+          return out.snap;
         },
 
         addSection: (id, title, at) => {
@@ -260,7 +330,6 @@ export const useWatchlistStore = create<WatchlistState>()(
               type: 'section',
               id: sid,
               title: cleanTitle(title),
-              collapsed: false,
             };
             return [...items.slice(0, pos), sec, ...items.slice(pos)];
           });
@@ -281,26 +350,52 @@ export const useWatchlistStore = create<WatchlistState>()(
             return changed ? next : null;
           }),
 
-        removeSection: (id, sid, keepSymbols) =>
+        removeSection: (id, sid, keepSymbols) => {
+          const out: { snap: UndoSnapshot | null } = { snap: null };
           edit(id, (items) => {
             const from = items.findIndex((i) => i.type === 'section' && i.id === sid);
             if (from < 0) return null;
             const end = keepSymbols ? from + 1 : blockEnd(items, from);
+            out.snap = {
+              listId: id,
+              entries: items.slice(from, end).map((item, k) => ({ index: from + k, item })),
+            };
             return [...items.slice(0, from), ...items.slice(end)];
-          }),
+          });
+          if (out.snap) set({ lastUndo: out.snap });
+          return out.snap;
+        },
 
-        toggleSection: (id, sid) =>
-          edit(id, (items) => {
-            let changed = false;
-            const next = items.map((i) => {
-              if (i.type === 'section' && i.id === sid) {
-                changed = true;
-                return { ...i, collapsed: !i.collapsed };
-              }
-              return i;
-            });
-            return changed ? next : null;
-          }),
+        restore: (snap) => {
+          let put = 0;
+          edit(snap.listId, (items) => {
+            const syms = new Set(items.flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])));
+            const sids = new Set(items.flatMap((i) => (i.type === 'section' ? [i.id] : [])));
+            const next = [...items];
+            for (const { index, item } of [...snap.entries].sort((a, b) => a.index - b.index)) {
+              if (next.length >= MAX_WATCHLIST_ITEMS) break;
+              if (item.type === 'symbol' ? syms.has(item.symbol) : sids.has(item.id)) continue;
+              next.splice(Math.min(index, next.length), 0, item);
+              put++;
+            }
+            return put ? next : null;
+          });
+          if (get().lastUndo === snap) set({ lastUndo: null });
+          return put;
+        },
+
+        undoLast: () => {
+          const snap = get().lastUndo;
+          return snap ? get().restore(snap) : 0;
+        },
+
+        toggleSection: (id, sid) => {
+          const cur = get().lists[id];
+          const sec = cur?.items.find((i) => i.type === 'section' && i.id === sid);
+          if (!cur || sec?.type !== 'section') return;
+          const prefs = useWatchlistPrefs.getState();
+          prefs.setSectionCollapsed(sid, !sectionCollapsed(prefs.collapsed, sec));
+        },
 
         moveItem: (id, from, to) =>
           edit(id, (items) => {
@@ -320,11 +415,15 @@ export const useWatchlistStore = create<WatchlistState>()(
             return next.every((it, i) => it === items[i]) ? null : next;
           }),
 
-        moveSymbols: (fromId, toId, symbols) => {
-          if (fromId === toId) return 0;
+        moveSymbols: (fromId, toId, symbols) =>
+          get().moveSymbolsDetailed(fromId, toId, symbols).moved,
+
+        moveSymbolsDetailed: (fromId, toId, symbols) => {
+          const none: MoveResult = { moved: 0, alreadyThere: 0, leftBehind: 0 };
+          if (fromId === toId) return none;
           const src = get().lists[fromId];
           const dst = get().lists[toId];
-          if (!src || !dst) return 0;
+          if (!src || !dst) return none;
           const want = [...new Set(symbols.map(normalizeSymbol))];
           const inSrc = new Set(src.items.flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])));
           const inDst = new Set(dst.items.flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])));
@@ -335,17 +434,23 @@ export const useWatchlistStore = create<WatchlistState>()(
           const addedSet = new Set(added);
           const remove = present.filter((s) => inDst.has(s) || addedSet.has(s));
           get().removeSymbols(fromId, remove);
-          return added.length;
+          // A move is not an undoable removal: the symbols still exist in the target.
+          set({ lastUndo: null });
+          return {
+            moved: added.length,
+            alreadyThere: present.filter((s) => inDst.has(s)).length,
+            leftBehind: present.length - remove.length,
+          };
         },
 
-        setFlag: (symbol, color) => {
+        setFlag: (symbol, color, at) => {
           const sym = validSymbol(symbol);
           if (!sym) return;
           const cur = get().flags[sym];
           if ((cur?.color ?? null) === color) return;
           set((s) => {
             const flags = { ...s.flags };
-            if (color) flags[sym] = { color, at: new Date().toISOString() };
+            if (color) flags[sym] = { color, at: at ?? new Date().toISOString() };
             else delete flags[sym];
             return { flags, flagsDirty: { ...s.flagsDirty, [sym]: true } };
           });

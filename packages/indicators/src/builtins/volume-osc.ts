@@ -6,6 +6,8 @@ export const VOLUME_OSC = defineIndicator({
   id: 'volume-osc',
   name: 'Volume Oscillator',
   shortName: 'Volume Osc',
+  description:
+    'Gap between fast and slow volume MAs in percent; positive readings show rising participation.',
   category: 'volume',
   keywords: ['volume oscillator', 'pvo', 'volume', 'oscillator'],
   overlay: false,

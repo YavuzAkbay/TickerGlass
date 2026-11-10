@@ -8,6 +8,8 @@ export const RVI = defineIndicator({
   id: 'rvi',
   name: 'Relative Vigor Index',
   shortName: 'RVGI',
+  description:
+    'Relative Vigor Index: closes relative to the bar range, smoothed; crossings with its signal line flag vigor shifts.',
   category: 'momentum',
   keywords: ['rvi', 'rvgi', 'relative vigor', 'vigor', 'oscillator'],
   overlay: false,

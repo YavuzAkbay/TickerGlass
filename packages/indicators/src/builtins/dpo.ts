@@ -14,6 +14,8 @@ export const DPO = defineIndicator({
   id: 'dpo',
   name: 'Detrended Price Oscillator',
   shortName: 'DPO',
+  description:
+    'Detrended Price Oscillator: shifts price back against an SMA cycle to isolate short-term swings from the trend.',
   category: 'momentum',
   keywords: ['dpo', 'detrended', 'price oscillator', 'cycle'],
   overlay: false,

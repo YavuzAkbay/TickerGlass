@@ -46,6 +46,7 @@ export const SWING_FIB = defineIndicator({
   id: 'swing-fib',
   name: 'Swing Fibonacci',
   shortName: 'Swing Fib',
+  description: 'Auto-draws Fibonacci retracement levels between recent swing highs and lows.',
   category: 'other',
   keywords: ['fib', 'fibonacci', 'retracement', 'auto', 'zigzag', 'levels'],
   overlay: true,

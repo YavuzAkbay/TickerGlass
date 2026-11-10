@@ -20,6 +20,8 @@ export const EPS = defineIndicator({
   id: 'fin-eps',
   name: 'Earnings Per Share',
   shortName: 'EPS',
+  description:
+    'Earnings per share: net income divided by shares outstanding, per reporting period.',
   category: 'financials',
   keywords: ['eps', 'earnings per share', 'diluted', 'income statement', 'financials'],
   overlay: false,
@@ -37,7 +39,13 @@ export const EPS = defineIndicator({
   setup({ inputs, env }) {
     const stmts = statementsOf(env.fundamentals, inputs.period);
     const reported = series(stmts?.income, ROW.dilutedEps);
-    const netIncome = requireSeries(env.fundamentals, inputs.period, 'income', ROW.netIncome, 'net income');
+    const netIncome = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'income',
+      ROW.netIncome,
+      'net income',
+    );
     const shares = series(stmts?.income, ROW.dilutedShares);
     // Diluted EPS row when the provider reports it; otherwise derived from the
     // income statement's own share count, so period ends line up exactly.

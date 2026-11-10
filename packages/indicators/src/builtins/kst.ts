@@ -9,6 +9,8 @@ export const KST = defineIndicator({
   id: 'kst',
   name: 'Know Sure Thing',
   shortName: 'KST',
+  description:
+    'Know Sure Thing: smoothed weighted sum of four rates of change, blending short- and long-term momentum.',
   category: 'momentum',
   keywords: ['kst', 'know sure thing', 'roc', 'oscillator'],
   overlay: false,

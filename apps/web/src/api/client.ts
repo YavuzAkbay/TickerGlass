@@ -17,8 +17,39 @@ const BASE = '/api';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-/** Browsers reject keepalive requests whose body exceeds 64 KB; stay below with a margin. */
+type UnauthorizedHandler = () => void;
+let unauthorizedHandlers: UnauthorizedHandler[] = [];
+
+/** Listen for 401 responses (password auth): the app switches to its login screen. */
+export function onUnauthorized(handler: UnauthorizedHandler): () => void {
+  unauthorizedHandlers.push(handler);
+  return () => {
+    unauthorizedHandlers = unauthorizedHandlers.filter((h) => h !== handler);
+  };
+}
+
+function notifyUnauthorized(): void {
+  for (const h of [...unauthorizedHandlers]) h();
+}
+
+/**
+ * Browsers reject keepalive requests once the bodies of all keepalive requests
+ * in flight exceed 64 KB; stay below with a margin.
+ */
 export const KEEPALIVE_MAX_BYTES = 60_000;
+
+/** Body bytes of the keepalive requests sent by `requestJson` and not yet answered. */
+let keepaliveInFlight = 0;
+
+/** UTF-8 size of `body` as `requestJson` sends it (0 without a body). */
+export function bodyBytes(body: unknown): number {
+  return body === undefined ? 0 : new TextEncoder().encode(JSON.stringify(body)).length;
+}
+
+/** Keepalive body bytes still available (KEEPALIVE_MAX_BYTES minus those in flight). */
+export function keepaliveBytesLeft(): number {
+  return KEEPALIVE_MAX_BYTES - keepaliveInFlight;
+}
 
 /**
  * Worth retrying later: unreachable (status 0), server errors (5xx), request
@@ -56,12 +87,16 @@ export function isNotConfigured(err: unknown): boolean {
 export interface RequestOptions {
   signal?: AbortSignal;
   /**
-   * Let the request outlive the page (saves on `pagehide`). Only honoured for
-   * bodies under KEEPALIVE_MAX_BYTES: larger keepalive requests throw in browsers.
+   * Let the request outlive the page (saves on `pagehide`). Only honoured while
+   * the body fits the budget left by the keepalive requests in flight
+   * (`keepaliveBytesLeft`): over the shared quota, browsers reject them. Sent
+   * as a normal request otherwise.
    */
   keepalive?: boolean;
   /** Query parameters; undefined values are left out. */
   query?: Record<string, string | number | boolean | undefined>;
+  /** Extra request headers (e.g. `X-TickerGlass-Priority`). */
+  headers?: Record<string, string>;
 }
 
 function withQuery(path: string, query: RequestOptions['query']): string {
@@ -84,12 +119,14 @@ export async function requestJson<T>(
   opts: RequestOptions = {},
 ): Promise<T> {
   let res: Response;
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { Accept: 'application/json', ...opts.headers };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   // Stringify once; the size decides whether keepalive is allowed.
   const text = body !== undefined ? JSON.stringify(body) : undefined;
-  const keepalive =
-    !!opts.keepalive && new TextEncoder().encode(text ?? '').length < KEEPALIVE_MAX_BYTES;
+  const size = opts.keepalive ? new TextEncoder().encode(text ?? '').length : 0;
+  // Counted synchronously, so requests issued back to back share the budget.
+  const keepalive = !!opts.keepalive && size < keepaliveBytesLeft();
+  if (keepalive) keepaliveInFlight += size;
   try {
     res = await fetch(`${BASE}${withQuery(path, opts.query)}`, {
       method,
@@ -101,8 +138,11 @@ export async function requestJson<T>(
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     throw new ApiError('Network error: API unreachable', 0);
+  } finally {
+    if (keepalive) keepaliveInFlight -= size;
   }
   if (!res.ok) {
+    if (res.status === 401) notifyUnauthorized();
     let detail = `${res.status} ${res.statusText}`.trim();
     let parsed: unknown;
     try {

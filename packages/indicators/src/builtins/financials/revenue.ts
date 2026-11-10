@@ -11,6 +11,8 @@ export const REVENUE = defineIndicator({
   id: 'fin-revenue',
   name: 'Revenue',
   shortName: 'Revenue',
+  description:
+    'Quarterly or annual total revenue of the chart symbol, plotted per reporting period.',
   category: 'financials',
   keywords: ['revenue', 'sales', 'top line', 'income statement', 'financials', 'fundamental'],
   overlay: false,
@@ -25,7 +27,13 @@ export const REVENUE = defineIndicator({
     { type: 'plot', id: 'ttm', title: 'TTM', kind: 'step', color: COLOR.orange },
   ],
   setup({ inputs, env }) {
-    const revenue = requireSeries(env.fundamentals, inputs.period, 'income', ROW.revenue, 'revenue');
+    const revenue = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'income',
+      ROW.revenue,
+      'revenue',
+    );
     const ttm = trailingTwelveMonths(revenue, inputs.period);
     return (c) => {
       c.set('revenue', valueAt(revenue, c.time[c.i]!));

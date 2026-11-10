@@ -1,12 +1,12 @@
 """The provider-dependent part of the app, built as one unit so it can be swapped.
 
 A `MarketStack` is the active provider's runtime plus everything built on it: the symbol,
-bar and market services, the refresher pool and the cache maintenance. `build_stack` wires
-it, `install` publishes it on `app.state`, and `ProviderSwitcher` replaces the installed one
-at runtime: the new stack's services write the cache under a new generation of the
-`CacheGate`, so requests still running on the old stack cannot put its provider's data into
-the cache the switch has just wiped. The live hub, dispatcher, alerts state and user data
-are not part of the stack and survive a switch.
+bar and market services, the refresher pool, the cache maintenance and the screener job.
+`build_stack` wires it, `install` publishes it on `app.state`, and `ProviderSwitcher`
+replaces the installed one at runtime: the new stack's services write the cache under a
+new generation of the `CacheGate`, so requests still running on the old stack cannot put
+its provider's data into the cache the switch has just wiped. The live hub, dispatcher,
+alerts state and user data are not part of the stack and survive a switch.
 """
 
 import asyncio
@@ -50,6 +50,7 @@ from .services.cache_source import ensure_cache_source
 from .services.maintenance import CacheMaintenance
 from .services.market import MarketService
 from .services.provider_choice import ProviderChoice, SelectedBy, save_provider_choice
+from .services.screener.job import ScreenerJob
 from .services.stats import CacheStats
 from .services.symbols import SymbolService
 from .settings import Settings
@@ -185,6 +186,8 @@ class MarketStack:
     maintenance: CacheMaintenance
     #: See `_poll_pacer`.
     pace: Callable[[int], float]
+    #: Nightly screener snapshots (services/screener/job.py).
+    screener: ScreenerJob
 
 
 def build_stack(
@@ -257,6 +260,20 @@ def build_stack(
         market_service=market_service,
         maintenance=CacheMaintenance(engine, bar_service, eff, stats),
         pace=pace,
+        screener=ScreenerJob(
+            engine,
+            bar_service,
+            prov,
+            guard,
+            stats,
+            eff,
+            provider_id=spec.id if spec is not None else "custom",
+            capabilities=runtime.capabilities,
+            costs=runtime.costs,
+            gate=gate,
+            generation=generation,
+            session_lookup=symbol_service.cached_info,
+        ),
     )
 
 
@@ -501,15 +518,21 @@ class ProviderSwitcher:
 
     @staticmethod
     async def _retire(stack: MarketStack) -> None:
+        # A running screener run is logged aborted and gives its lease up.
+        await stack.screener.stop()
         await stack.maintenance.stop()
         # Queued refreshes are dropped; a running one finishes on its own thread.
         stack.refresher.shutdown(wait=False, cancel_futures=True)
 
     def _start(self, stack: MarketStack, *, seed: bool = True) -> None:
-        """Start the background work of `stack`: cache maintenance, and (`seed`) calibrating
-        the guard from a metered upstream's own credit count."""
+        """Start the background work of `stack`: cache maintenance, the screener job, and
+        (`seed`) calibrating the guard from a metered upstream's own credit count."""
         if stack.runtime.settings.cache_maintenance_enabled:
             stack.maintenance.start()
+        stack.screener.bind(
+            hub=self._hub, dispatcher=lambda: getattr(self._app.state, "dispatcher", None)
+        )
+        stack.screener.start()
         if seed and as_metered(stack.runtime.provider.inner) is not None:
             threading.Thread(
                 target=_seed_usage,

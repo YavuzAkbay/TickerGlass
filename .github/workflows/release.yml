@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  images:
+    # Publishes multi-arch images (amd64 + arm64) tagged with the version, its
+    # major.minor and `latest`. docker-compose.yml references the same names, so
+    # self-hosters can `docker compose pull && docker compose up -d` without cloning.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: tickerglass-api
+            context: ./api
+            dockerfile: api/Dockerfile
+          - image: tickerglass-web
+            context: .
+            dockerfile: docker/node.Dockerfile
+            target: web
+          - image: tickerglass-alerts
+            context: .
+            dockerfile: docker/node.Dockerfile
+            target: alerts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            TICKERGLASS_VERSION=${{ github.ref_name }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max

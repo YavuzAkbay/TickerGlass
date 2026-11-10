@@ -35,6 +35,7 @@ from .base import (
     UpstreamUnavailable,
     Usage,
     as_metered,
+    as_screen_info,
     as_symbol_routing,
     metering,
     usage_reporting,
@@ -693,6 +694,41 @@ class GuardedProvider:
             rows.extend(got)
             confirmed = confirmed and isinstance(got, QuoteList) and got.confirmed
         return rows, confirmed, None, []
+
+    @property
+    def screen_info(self) -> bool:
+        """Whether the provider implements `ScreenInfoProvider` (`screen_fields`, `info`)."""
+        return as_screen_info(self._inner) is not None
+
+    def screen_fields(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """`ScreenInfoProvider.screen_fields`, charged like `quotes` for the same symbols and
+        chunked the same way (a refused later chunk ends the call with what was served; a
+        refused first chunk raises). Raises `ProviderUnsupported` without the capability."""
+        inner = as_screen_info(self._inner)
+        if inner is None:
+            raise ProviderUnsupported("screener fundamentals")
+        symbols = self._billable(symbols)
+        if not symbols:
+            return []
+        chunks = self._quote_chunks(symbols)
+        if len(chunks) == 1:
+            return self._run(
+                "screen_fields",
+                self._costs.quotes(len(symbols)),
+                lambda: inner.screen_fields(symbols),
+            )
+        rows, _, error, rest = self._run_chunks("screen_fields", chunks, inner.screen_fields)
+        if error is not None and len(rest) == len(symbols):
+            raise error
+        return rows
+
+    def info(self, symbol: str) -> dict[str, Any]:
+        """`ScreenInfoProvider.info`, one token. Raises `ProviderUnsupported` without the
+        capability."""
+        inner = as_screen_info(self._inner)
+        if inner is None:
+            raise ProviderUnsupported("screener fundamentals")
+        return self._run_for("info", symbol, 1, lambda: inner.info(symbol))
 
     def events(self, symbol: str) -> dict[str, Any]:
         if not self._caps.events:

@@ -8,6 +8,8 @@ export const ATR = defineIndicator({
   id: 'atr',
   name: 'Average True Range',
   shortName: 'ATR',
+  description:
+    'Average True Range: average bar-to-bar range over a period, used to size stops and gauge volatility.',
   category: 'volatility',
   keywords: ['atr', 'average true range', 'volatility', 'true range'],
   overlay: false,

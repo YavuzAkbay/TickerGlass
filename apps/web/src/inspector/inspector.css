@@ -105,7 +105,7 @@
   max-width: 100%;
   min-width: 0;
 }
-/* Style rows: the output name on its own line, its controls wrapping below. */
+/* Style rows: the output name on its own line, its selects sharing the row below. */
 .insp-settings .ind-style-row {
   flex-wrap: wrap;
   gap: 6px 8px;
@@ -115,8 +115,25 @@
 .insp-settings .ind-style-row .dlg-check {
   flex: 1 1 100%;
 }
+.insp-settings .ind-style-row .dlg-select {
+  flex: 1 1 72px;
+  min-width: 0;
+}
+/* Visibility: name and both bounds on the first line, the slider below. */
 .insp-settings .ind-vis-row {
   flex-wrap: wrap;
+  row-gap: 6px;
+}
+.insp-settings .ind-vis-row .dlg-check {
+  flex: 1;
+  min-width: 0;
+}
+.insp-settings .ind-vis-row .ind-num {
+  order: 1;
+}
+.insp-settings .ind-vis-row .ind-range {
+  order: 2;
+  flex: 1 1 100%;
 }
 
 /* Phones: a bottom sheet over the chart and the tab bar (with its own safe-area padding). */

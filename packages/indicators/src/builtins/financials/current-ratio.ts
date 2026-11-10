@@ -7,6 +7,7 @@ export const CURRENT_RATIO = defineIndicator({
   id: 'fin-current-ratio',
   name: 'Current Ratio',
   shortName: 'Current Ratio',
+  description: 'Current assets divided by current liabilities; the short-term liquidity cushion.',
   category: 'financials',
   keywords: ['current ratio', 'liquidity', 'working capital', 'balance sheet', 'financials'],
   overlay: false,
@@ -14,9 +15,7 @@ export const CURRENT_RATIO = defineIndicator({
   precision: 2,
   usesFundamentals: true,
   inputs: { period: PERIOD_INPUT },
-  outputs: [
-    { type: 'plot', id: 'ratio', title: 'Current Ratio', kind: 'step', color: COLOR.blue },
-  ],
+  outputs: [{ type: 'plot', id: 'ratio', title: 'Current Ratio', kind: 'step', color: COLOR.blue }],
   setup({ inputs, env }) {
     const assets = requireSeries(
       env.fundamentals,

@@ -10,6 +10,8 @@ export const ANCHORED_VWAP = defineIndicator({
   id: 'anchored-vwap',
   name: 'Anchored VWAP',
   shortName: 'Anchored VWAP',
+  description:
+    'VWAP computed from a chosen anchor bar to the present; tests whether price trades above or below a key event average.',
   category: 'volume',
   keywords: ['vwap', 'anchored', 'avwap', 'volume', 'weighted', 'average', 'price'],
   overlay: true,

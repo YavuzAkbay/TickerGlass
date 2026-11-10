@@ -69,6 +69,7 @@ export function addIndicator(type: string, opts: AddOptions = {}): string | null
   }
   const index = store().instances.length;
   store().add(inst, index);
+  useIndicatorPrefs.getState().pushRecent(type);
   useHistory.getState().push({
     label: `Add ${def.shortName}`,
     undo: () => store().remove(inst.id),

@@ -6,6 +6,8 @@ export const WMA = defineIndicator({
   id: 'wma',
   name: 'Weighted Moving Average',
   shortName: 'WMA',
+  description:
+    'Weighted Moving Average: linearly weights recent bars more, sitting between SMA smoothness and EMA speed.',
   category: 'movingAverage',
   keywords: ['ma', 'weighted', 'average', 'lwma'],
   overlay: true,

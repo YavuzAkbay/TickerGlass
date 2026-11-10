@@ -12,6 +12,8 @@ export const VP_SESSION = defineIndicator({
   id: 'vp-session',
   name: 'Volume Profile (Session)',
   shortName: 'VP Sess',
+  description:
+    'Volume Profile per session: horizontal histogram of traded volume by price level with point of control.',
   category: 'volume',
   keywords: ['volume profile', 'svp', 'session', 'poc', 'value area', 'vp'],
   overlay: true,

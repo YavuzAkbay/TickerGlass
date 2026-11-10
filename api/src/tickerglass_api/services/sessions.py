@@ -3,8 +3,9 @@
 Only a weekly schedule is known: one regular session per trading day in the exchange
 time zone, taken from the symbol's metadata. The trading days follow the time zone
 (`TRADING_WEEKS`: Monday-Friday, or Sunday-Thursday for several Middle Eastern
-exchanges); a time zone not listed there is treated as always open. Holidays are not
-known; series that stop receiving bars back off (see `next_check_at`). Crypto,
+exchanges); a time zone not listed there is treated as always open. Holidays are known for
+`America/New_York` only (the NYSE calendar of `services/holidays.py`); elsewhere series
+that stop receiving bars back off (see `next_check_at`). Crypto,
 currencies, futures, unknown instrument types and a missing or unparseable session are
 treated as always open, so a fetch is never skipped wrongly.
 
@@ -21,6 +22,8 @@ from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .holidays import is_trading_day
+
 DAY_S = 86_400
 # Instrument types (lowercased) whose exchange runs a weekday session.
 SESSION_TYPES = frozenset({"equity", "etf", "index", "mutualfund"})
@@ -32,13 +35,16 @@ INTRADAY_GRACE_S = 60
 # Bound on the stored quiet streak; the backoff is capped well below 2**this anyway.
 QUIET_STREAK_MAX = 16
 _SESSION_RE = re.compile(r"^(\d{2})(\d{2})-(\d{2})(\d{2})$")
-# Any span of this many days contains a trading day.
-_SEARCH_DAYS = 8
+# Any span of this many days contains a trading day (NYSE holidays and extra closures too).
+_SEARCH_DAYS = 15
 #: Stored sessions shorter than this may be an early close (a US half day is 3.5 hours).
 SHORT_SESSION = timedelta(hours=4)
 #: Metadata older than this may hold another day's (early-close) session. Kept equal to
 #: `Settings.symbol_info_ttl_s`, whose value callers pass as `max_age`.
 METADATA_MAX_AGE = timedelta(hours=24)
+
+#: The time zone whose exchanges (NYSE, Nasdaq, Cboe) follow the NYSE holiday calendar.
+US_TZ_NAME = "America/New_York"
 
 MON_FRI = frozenset({0, 1, 2, 3, 4})
 SUN_THU = frozenset({6, 0, 1, 2, 3})
@@ -107,6 +113,8 @@ class TradingHours:
     days: frozenset[int] = MON_FRI
     # False when the stored close may be an early one: sessions run until midnight.
     close_known: bool = True
+    # NYSE holidays (`services.holidays`) are closed days; else only `days` decides.
+    us_holidays: bool = False
 
     @classmethod
     def from_symbol_info(
@@ -146,7 +154,21 @@ class TradingHours:
             and now - _utc(info.fetched_at) > max_age
         )
         close_known = length >= SHORT_SESSION and not stale
-        return cls(tz, start, end, extended=prepost, days=days, close_known=close_known)
+        return cls(
+            tz,
+            start,
+            end,
+            extended=prepost,
+            days=days,
+            close_known=close_known,
+            us_holidays=tz_name == US_TZ_NAME,
+        )
+
+    def is_trading_day(self, day: date) -> bool:
+        """Whether the exchange holds a session on `day` (a local date)."""
+        if day.weekday() not in self.days:
+            return False
+        return not self.us_holidays or is_trading_day(day)
 
     def session(self, day: date) -> tuple[datetime, datetime]:
         """Open and close of the session on `day` (a trading day), as aware datetimes."""
@@ -159,7 +181,7 @@ class TradingHours:
     def current_session(self, now: datetime) -> tuple[datetime, datetime] | None:
         """Bounds of the session `now` falls in, or None while closed."""
         day = now.astimezone(self.tz).date()
-        if day.weekday() not in self.days:
+        if not self.is_trading_day(day):
             return None
         start, end = self.session(day)
         return (start, end) if start <= now < end else None
@@ -172,7 +194,7 @@ class TradingHours:
         today = now.astimezone(self.tz).date()
         for back in range(_SEARCH_DAYS):
             day = today - timedelta(days=back)
-            if day.weekday() in self.days and (end := self.session(day)[1]) <= now:
+            if self.is_trading_day(day) and (end := self.session(day)[1]) <= now:
                 return end
         raise AssertionError("no trading day within a week")  # pragma: no cover
 
@@ -181,7 +203,7 @@ class TradingHours:
         today = now.astimezone(self.tz).date()
         for ahead in range(_SEARCH_DAYS + 1):
             day = today + timedelta(days=ahead)
-            if day.weekday() in self.days and (start := self.session(day)[0]) > now:
+            if self.is_trading_day(day) and (start := self.session(day)[0]) > now:
                 return start
         raise AssertionError("no trading day within a week")  # pragma: no cover
 

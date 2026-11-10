@@ -20,6 +20,8 @@ export const TOD_RELATIVE_VOLUME = defineIndicator({
   id: 'tod-relative-volume',
   name: 'Time-of-Day Relative Volume',
   shortName: 'ToD RVol',
+  description:
+    'Compares the current bar volume to the average volume at the same time of day; above 1 means unusually active.',
   category: 'volume',
   keywords: ['relative volume', 'rvol', 'relvol', 'volume at time', 'volume'],
   overlay: false,

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -60,7 +60,7 @@ def check(
 @pytest.mark.parametrize("kind", ["equity", "etf", "index", "mutualfund", "EQUITY"])
 def test_session_types_get_weekday_hours(kind: str) -> None:
     hours = TradingHours.from_symbol_info({**US_EQUITY, "type": kind})
-    assert hours == TradingHours(NY, time(9, 30), time(16, 0))
+    assert hours == TradingHours(NY, time(9, 30), time(16, 0), us_holidays=True)
 
 
 @pytest.mark.parametrize(
@@ -345,3 +345,40 @@ def test_newer_bar_due_daily_family() -> None:
     utc_day = int(datetime(2026, 10, 10, tzinfo=UTC).timestamp())
     assert not newer_bar_due(None, utc_day, 86_400, datetime(2026, 10, 10, 23, tzinfo=UTC))
     assert newer_bar_due(None, utc_day, 86_400, datetime(2026, 10, 11, 0, 1, tzinfo=UTC))
+
+
+# ------------------------------------------------------------ NYSE holidays
+
+
+def test_us_hours_follow_the_nyse_holiday_calendar() -> None:
+    hours = us()
+    assert hours.us_holidays
+    thanksgiving_noon = ny(2026, 11, 26, 12)
+    assert not hours.is_open(thanksgiving_noon)
+    assert hours.is_open(ny(2026, 11, 25, 12))
+    # Closed on the holiday: the last close is Wednesday's, the next open Friday's.
+    assert hours.last_close(thanksgiving_noon) == ny(2026, 11, 25, 16)
+    assert hours.next_open(thanksgiving_noon) == ny(2026, 11, 27, 9, 30)
+    # Good Friday weekend: Monday's open follows Thursday's close.
+    assert hours.last_close(ny(2026, 4, 6, 8)) == ny(2026, 4, 2, 16)
+    assert hours.next_open(ny(2026, 4, 2, 17)) == ny(2026, 4, 6, 9, 30)
+
+
+def test_non_us_and_weekly_only_hours_ignore_the_nyse_calendar() -> None:
+    info = {**US_EQUITY, "timezone": "Europe/London", "session": "0800-1630"}
+    hours = TradingHours.from_symbol_info(info)
+    assert hours is not None and not hours.us_holidays
+    assert hours.is_trading_day(date(2026, 11, 26))  # a US holiday, London trades
+
+
+def test_check_on_a_holiday_waits_for_the_next_trading_open() -> None:
+    hours = us()
+    # Fetched on Thanksgiving noon: the final check was Wednesday's, then the Friday open.
+    due = check(hours, ny(2026, 11, 26, 12), last_fetch=ny(2026, 11, 25, 16, 30))
+    assert due == ny(2026, 11, 27, 9, 30)
+    # Fetched Wednesday after the close + settle: the same.
+    due = check(hours, ny(2026, 11, 25, 17), last_fetch=ny(2026, 11, 25, 16, 21))
+    assert due == ny(2026, 11, 27, 9, 30)
+    # Friday before a holiday Monday (Christmas 2027 observed 12-24): next open Monday 12-27.
+    due = check(hours, ny(2027, 12, 23, 17), last_fetch=ny(2027, 12, 23, 16, 21))
+    assert due == ny(2027, 12, 27, 9, 30)

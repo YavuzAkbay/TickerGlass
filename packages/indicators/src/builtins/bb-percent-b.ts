@@ -6,6 +6,8 @@ export const BB_PERCENT_B = defineIndicator({
   id: 'bb-percent-b',
   name: 'Bollinger Bands %B',
   shortName: 'Bollinger Bands %B',
+  description:
+    'Where price sits within the Bollinger Bands, normalized 0-1; above 1 means a close above the upper band.',
   category: 'volatility',
   keywords: ['bb', 'bollinger', '%b', 'percent b', 'bands'],
   overlay: false,

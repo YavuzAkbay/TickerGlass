@@ -1,4 +1,4 @@
-import { ChevronsLeft, PencilRuler, Plus, X } from 'lucide-react';
+import { ChevronsLeft, Maximize2, PencilRuler, Plus, X } from 'lucide-react';
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
@@ -109,12 +109,21 @@ export function Navigator() {
             <h2 className="nav-title">{t(def.title)}</h2>
             <div className="nav-actions">
               {def.id === 'watchlist' ? (
-                <IconButton
-                  icon={Plus}
-                  label={t('nav.addSymbol')}
-                  className="rs-head-btn"
-                  onClick={() => commands.execute('watchlist.searchAdd')}
-                />
+                <>
+                  <IconButton
+                    icon={Plus}
+                    label={t('nav.addSymbol')}
+                    className="rs-head-btn"
+                    onClick={() => commands.execute('watchlist.searchAdd')}
+                  />
+                  <IconButton
+                    icon={Maximize2}
+                    label={t('nav.openWatchlists')}
+                    className="rs-head-btn"
+                    data-testid="nav-open-watchlists"
+                    onClick={() => commands.execute('view.watchlists')}
+                  />
+                </>
               ) : null}
               {def.id === 'alerts' ? (
                 <IconButton

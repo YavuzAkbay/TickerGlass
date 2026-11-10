@@ -31,6 +31,7 @@ import { isObj, isTransient, readJson, safeStorage } from './net';
 import { GENERAL_NOTE, NotesSync, useNotesStore } from './notes';
 import { SettingsSync } from './settingsSync';
 import { UserScriptsSync } from './userScripts';
+import { useWatchlistStore } from '../watchlist/store';
 import { WatchlistSync } from './watchlists';
 
 export interface Persistence {
@@ -80,6 +81,13 @@ const notifier: Notifier = {
   conflict: (m, actions) => actionToast(m, actions, 'error'),
 };
 
+/** " (<first reason> (+N more))" for the watchlist conflict toast; empty without reasons. */
+export function conflictDetail(reasons: readonly string[]): string {
+  if (!reasons.length) return '';
+  const more = reasons.length > 1 ? ` (+${reasons.length - 1} more)` : '';
+  return ` (${reasons[0]}${more})`;
+}
+
 /** Seed the notes store from the pre-API UI store once (offline first run). */
 function seedLegacyNote(): void {
   const legacy = (useUiStore.getState() as { notes?: unknown }).notes;
@@ -126,9 +134,9 @@ export function startPersistence(): () => void {
   });
   const watchlists = new WatchlistSync({
     onError,
-    onConflict: (_id, name, restore) =>
+    onConflict: (_id, name, restore, reasons) =>
       actionToast(
-        `Watchlist “${name}” was changed elsewhere; the saved version is shown.`,
+        `Watchlist “${name}” was changed elsewhere${conflictDetail(reasons)}; the saved version is shown.`,
         [{ label: 'Keep mine', run: restore }],
         'error',
         10_000,
@@ -255,7 +263,7 @@ export function startPersistence(): () => void {
       drawings.pull(),
       drawingTemplates.load(),
       notes.load(),
-      watchlists.load(),
+      watchlists.load().then(() => useWatchlistStore.setState({ loaded: true })),
       userScripts.load(),
       indicatorTemplates.sync(),
       chartTemplates.sync(),

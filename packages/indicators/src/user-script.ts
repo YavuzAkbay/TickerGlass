@@ -408,6 +408,7 @@ const TOP_READERS: Record<string, Reader> = {
   id: str,
   name: str,
   shortName: str,
+  description: str,
   category: oneOf(CATEGORIES),
   keywords: (v, p) => list(v, p, MAX_LIST).map((k, i) => str(k, `${p}[${i}]`)),
   overlay: bool,

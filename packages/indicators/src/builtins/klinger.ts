@@ -10,6 +10,8 @@ export const KLINGER = defineIndicator({
   id: 'klinger',
   name: 'Klinger Oscillator',
   shortName: 'KVO',
+  description:
+    'Klinger Volume Oscillator: long-term volume flow versus reversals; signal-line crosses mark trend changes.',
   category: 'volume',
   keywords: ['klinger', 'kvo', 'oscillator', 'volume'],
   overlay: false,

@@ -18,6 +18,7 @@ export const ROE = defineIndicator({
   id: 'fin-roe',
   name: 'Return on Equity',
   shortName: 'ROE',
+  description: 'Return on Equity: net income relative to shareholder equity, per reporting period.',
   category: 'financials',
   keywords: ['roe', 'return on equity', 'profitability', 'financials'],
   overlay: false,
@@ -25,9 +26,7 @@ export const ROE = defineIndicator({
   precision: 2,
   usesFundamentals: true,
   inputs: { period: PERIOD_INPUT },
-  outputs: [
-    { type: 'plot', id: 'roe', title: 'ROE', kind: 'step', color: COLOR.purple },
-  ],
+  outputs: [{ type: 'plot', id: 'roe', title: 'ROE', kind: 'step', color: COLOR.purple }],
   setup({ inputs, env }) {
     const netIncome = requireSeries(
       env.fundamentals,

@@ -7,6 +7,7 @@ export const DEBT_CASH = defineIndicator({
   id: 'fin-debt-cash',
   name: 'Debt & Cash',
   shortName: 'Debt & Cash',
+  description: 'Total debt against cash and equivalents from the latest balance sheet.',
   category: 'financials',
   keywords: ['debt', 'cash', 'total debt', 'cash and equivalents', 'balance sheet', 'financials'],
   overlay: false,
@@ -18,7 +19,13 @@ export const DEBT_CASH = defineIndicator({
     { type: 'plot', id: 'cash', title: 'Cash & Equivalents', kind: 'step', color: COLOR.green },
   ],
   setup({ inputs, env }) {
-    const debt = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.totalDebt, 'total debt');
+    const debt = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'balance',
+      ROW.totalDebt,
+      'total debt',
+    );
     const cash = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.cash, 'cash');
     return (c) => {
       c.set('debt', valueAt(debt, c.time[c.i]!));

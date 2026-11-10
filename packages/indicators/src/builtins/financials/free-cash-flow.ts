@@ -19,6 +19,8 @@ export const FREE_CASH_FLOW = defineIndicator({
   id: 'fin-fcf',
   name: 'Free Cash Flow',
   shortName: 'FCF',
+  description:
+    'Free cash flow: operating cash flow minus capital expenditure, per reporting period.',
   category: 'financials',
   keywords: ['free cash flow', 'fcf', 'cash flow', 'capex', 'financials'],
   overlay: false,
@@ -45,7 +47,13 @@ export const FREE_CASH_FLOW = defineIndicator({
         ROW.ocf,
         'operating cash flow',
       );
-      const capex = requireSeries(env.fundamentals, inputs.period, 'cashflow', ROW.capex, 'capital expenditure');
+      const capex = requireSeries(
+        env.fundamentals,
+        inputs.period,
+        'cashflow',
+        ROW.capex,
+        'capital expenditure',
+      );
       fcf = {
         periods: ocf.periods,
         values: ocf.values.map((v, k) => {

@@ -1,4 +1,5 @@
 import { expect, test, openChartSettings, openOverflowItem } from './fixtures';
+import { mockMarket } from './market';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/?feed=synthetic');
@@ -71,6 +72,8 @@ test('a re-rendering parent does not take Escape or Tab from the nested modal', 
 });
 
 test('navigator tabs use tablist semantics and arrow keys', async ({ page }) => {
+  // Arrowing through the rail mounts the Hotlists panel, which asks the screener API.
+  await mockMarket(page);
   await expect(page.getByRole('tablist', { name: 'Panels' })).toBeVisible();
   const panels = page.getByRole('tablist', { name: 'Panels' });
   const watchlist = panels.getByRole('tab', { name: 'Watchlist' });
@@ -79,12 +82,20 @@ test('navigator tabs use tablist semantics and arrow keys', async ({ page }) => 
   await expect(page.getByRole('tabpanel')).toBeVisible();
 
   await page.keyboard.press('ArrowDown');
+  const hotlists = panels.getByRole('tab', { name: 'Hotlists' });
+  await expect(hotlists).toBeFocused();
+  await expect(hotlists).toHaveAttribute('aria-selected', 'true');
+  await expect(watchlist).toHaveAttribute('aria-selected', 'false');
+
+  await page.keyboard.press('ArrowDown');
   const alerts = panels.getByRole('tab', { name: 'Alerts' });
   await expect(alerts).toBeFocused();
   await expect(alerts).toHaveAttribute('aria-selected', 'true');
-  await expect(watchlist).toHaveAttribute('aria-selected', 'false');
+  await expect(hotlists).toHaveAttribute('aria-selected', 'false');
   await expect(page.getByRole('tabpanel')).toHaveAccessibleName('Alerts');
 
+  await page.keyboard.press('ArrowUp');
+  await expect(hotlists).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(watchlist).toBeFocused();
   await page.keyboard.press('ArrowUp');

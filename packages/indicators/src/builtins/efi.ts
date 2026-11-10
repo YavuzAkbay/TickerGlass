@@ -6,6 +6,8 @@ export const EFI = defineIndicator({
   id: 'efi',
   name: 'Elder Force Index',
   shortName: 'EFI',
+  description:
+    'Elder Force Index: multiplies the per-bar price change by volume to measure the strength behind each move.',
   category: 'momentum',
   keywords: ['efi', 'elder', 'force index', 'volume'],
   overlay: false,

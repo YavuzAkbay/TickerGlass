@@ -1,0 +1,80 @@
+.share-dlg .io-modal-body {
+  padding: 16px 20px;
+}
+.share-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+.share-summary {
+  margin: 2px 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.share-link {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.share-actions .io-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.share-note {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.share-warn {
+  margin: 0 0 4px;
+  color: var(--down);
+  line-height: 1.5;
+}
+.share-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.share-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 12px;
+}
+.share-chip-more {
+  color: var(--text-muted);
+}
+.share-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-modes label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.share-field {
+  margin-left: 24px;
+  width: calc(100% - 24px);
+}
+.share-field-full {
+  margin-left: 0;
+  width: 100%;
+}
+.share-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}

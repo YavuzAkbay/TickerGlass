@@ -7,7 +7,7 @@ import {
   type ProviderInfo,
   type Usage,
 } from '../api/provider';
-import { ProviderCard, TestStatus } from './DataSourceDialog';
+import { ProviderCard, ProviderDetails, TestStatus } from './DataSourceDialog';
 
 const SECRET = 'sk-live-0123456789abcdef';
 
@@ -102,15 +102,68 @@ const render = (p: ProviderInfo, active = true, u: Usage | null = usage) =>
     </ul>,
   );
 
+const renderDetails = (
+  p: ProviderInfo,
+  over: { active?: boolean; selectedBy?: string; usage?: Usage | null } = {},
+) =>
+  renderToStaticMarkup(
+    <ProviderDetails
+      p={p}
+      active={over.active ?? true}
+      selectedBy={over.selectedBy}
+      limits={limits}
+      usage={over.usage ?? usage}
+      now={Date.parse('2026-10-27T10:00:00Z')}
+    />,
+  );
+
 describe('ProviderCard', () => {
-  it('lists the config env lines with set / missing / default badges', () => {
+  it('shows only the essentials while collapsed: name, description, status, details toggle', () => {
     const html = render(twelve());
+    expect(html).toContain('Twelve Data');
+    expect(html).toContain('Stocks, forex and crypto over HTTP.');
+    expect(html).toContain('In use');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('Details');
+    // The technical detail lives behind the disclosure.
+    expect(html).not.toContain('ds-chip');
+    expect(html).not.toContain('TWELVEDATA_API_KEY');
+    expect(html).not.toContain('Plan: basic');
+    expect(html).not.toContain('credits per minute');
+    expect(html).not.toContain('progressbar');
+  });
+
+  it('shows the not-configured state as one line naming what to set', () => {
+    const html = render(
+      twelve({
+        configured: false,
+        config: [
+          field({ env: 'TWELVEDATA_API_KEY', label: 'API key', secret: true, required: true }),
+        ],
+      }),
+    );
+    expect(html).toContain('Needs TWELVEDATA_API_KEY set in .env and an API restart.');
+    expect(render(twelve())).not.toContain('ds-missing');
+  });
+
+  it('keeps the instructions for switching to a provider that is not in use when switching is locked', () => {
+    const html = render(twelve(), false);
+    expect(html).toContain('To use it, set');
+    expect(html).toContain('MARKET_PROVIDER=twelvedata');
+    expect(html).toContain('in .env and restart the API.');
+    expect(render(twelve(), true)).not.toContain('To use it, set');
+  });
+});
+
+describe('ProviderDetails', () => {
+  it('lists the config env lines with set / missing / default badges', () => {
+    const html = renderDetails(twelve());
     expect(html).toContain('TWELVEDATA_API_KEY');
     expect(html).toContain('TWELVEDATA_PLAN=basic');
     expect(html).toContain('TWELVEDATA_CREDITS_PER_MIN');
     expect(html).toContain('ds-badge set');
     expect(html).toContain('ds-badge default');
-    const missing = render(
+    const missing = renderDetails(
       twelve({
         configured: false,
         config: [
@@ -122,53 +175,46 @@ describe('ProviderCard', () => {
   });
 
   it('never shows a secret value', () => {
-    const html = render(twelve());
+    const html = renderDetails(twelve());
     expect(html).not.toContain(SECRET);
     expect(html).not.toContain('sk-live');
     expect(html).not.toContain('TWELVEDATA_API_KEY=');
+    expect(render(twelve())).not.toContain(SECRET);
   });
 
-  it('shows the not-configured state with what to set', () => {
-    const html = render(
-      twelve({
-        configured: false,
-        config: [
-          field({ env: 'TWELVEDATA_API_KEY', label: 'API key', secret: true, required: true }),
-        ],
-      }),
-    );
-    expect(html).toContain('Not configured: set');
-    expect(html).toContain('TWELVEDATA_API_KEY');
-    expect(html).toContain('and restart the API');
-    expect(render(twelve())).not.toContain('Not configured');
-  });
-
-  it('shows plan, effective limits, capability chips and the usage bar for the active provider', () => {
-    const html = render(twelve());
+  it('shows the status meta line, capability chips and the usage bar for the active provider', () => {
+    const html = renderDetails(twelve());
+    expect(html).toContain('Online');
     expect(html).toContain('Plan: basic');
-    expect(html).toContain('8 credits per minute, 800 per day (from your plan)');
     expect(html).toContain('aria-label="Live stream: not available"');
     expect(html).toContain('aria-label="Search: available"');
     expect(html).toContain('US stocks');
+    expect(html).toContain('8 credits per minute, 800 per day (from your plan)');
     expect(html).toContain('role="progressbar"');
     expect(html).toContain('200 of 800 used');
     expect(html).toContain('6 of 8 left');
   });
 
-  it('has no usage bar for a provider that is not metered or not in use', () => {
-    expect(render(twelve(), true, { ...usage, metered: false, daily: null })).not.toContain(
-      'progressbar',
+  it('shows the terms note when the provider carries one', () => {
+    // Static markup HTML-escapes the apostrophe, so match a fragment without it.
+    expect(renderDetails(twelve({ terms: "Yahoo's terms allow personal use only." }))).toContain(
+      'terms allow personal use only',
     );
-    expect(render(twelve(), false)).not.toContain('progressbar');
-    expect(render(twelve(), false)).not.toContain('credits per minute');
+    expect(renderDetails(twelve())).not.toContain('ds-terms');
   });
 
-  it('keeps the instructions for switching to a provider that is not in use', () => {
-    const html = render(twelve(), false);
-    expect(html).toContain('To use it, set');
-    expect(html).toContain('MARKET_PROVIDER=twelvedata');
-    expect(html).toContain('in .env and restart the API.');
-    expect(render(twelve(), true)).not.toContain('To use it, set');
+  it('has no usage bar or limits for a provider that is not metered or not in use', () => {
+    expect(
+      renderDetails(twelve(), { usage: { ...usage, metered: false, daily: null } }),
+    ).not.toContain('progressbar');
+    expect(renderDetails(twelve(), { active: false })).not.toContain('progressbar');
+    expect(renderDetails(twelve(), { active: false })).not.toContain('credits per minute');
+  });
+
+  it('notes how the provider in use was chosen', () => {
+    expect(renderDetails(twelve(), { selectedBy: 'selected in app' })).toContain('selected in app');
+    // The collapsed card stays free of it.
+    expect(render(twelve())).not.toContain('selected in app');
   });
 });
 
@@ -187,7 +233,7 @@ describe('ProviderCard onUse', () => {
       </ul>,
     );
 
-  it('replaces the .env instructions with a Use button for a configured provider', () => {
+  it('puts a Use button on a configured provider instead of the .env instructions', () => {
     const html = renderUse(twelve());
     expect(html).toContain('aria-label="Use Twelve Data"');
     expect(html).not.toContain('To use it, set');
@@ -208,8 +254,7 @@ describe('ProviderCard onUse', () => {
       }),
     );
     expect(html).not.toContain('aria-label="Use Twelve Data"');
-    expect(html).toContain('Not configured: set');
-    expect(html).toContain('TWELVEDATA_API_KEY');
+    expect(html).toContain('Needs TWELVEDATA_API_KEY set in .env');
   });
 
   it('keeps the .env instructions without onUse (switching disabled)', () => {
@@ -218,24 +263,16 @@ describe('ProviderCard onUse', () => {
     expect(html).toContain('MARKET_PROVIDER=twelvedata');
     expect(html).not.toContain('aria-label="Use Twelve Data"');
   });
-
-  it('notes how the provider in use was chosen', () => {
-    const html = renderToStaticMarkup(
-      <ul>
-        <ProviderCard
-          p={twelve()}
-          active
-          setting="MARKET_PROVIDER"
-          now={0}
-          selectedBy="selected in app"
-        />
-      </ul>,
-    );
-    expect(html).toContain('(selected in app)');
-  });
 });
 
 describe('TestStatus', () => {
+  it('reports a successful connection compactly', () => {
+    const html = renderToStaticMarkup(
+      <TestStatus test={{ ok: true, symbol: 'SPY', price: 767.89, latencyMs: 1297 }} />,
+    );
+    expect(html).toContain('Connected · SPY 767.89 · 1297 ms');
+  });
+
   it('reports a provider without its settings as not configured', () => {
     const html = renderToStaticMarkup(
       <TestStatus

@@ -5,6 +5,8 @@ export const DEMA = defineIndicator({
   id: 'dema',
   name: 'Double EMA',
   shortName: 'DEMA',
+  description:
+    'Double Exponential Moving Average: double smoothing that cuts lag further than a standard EMA.',
   category: 'movingAverage',
   keywords: ['ma', 'double', 'exponential', 'average', 'dema'],
   overlay: true,

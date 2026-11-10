@@ -27,6 +27,10 @@ export const RETAIN_MS = 300_000;
 /** At most this many released symbols are kept (oldest released go first). */
 export const MAX_RETAINED = 500;
 export const BATCH_MS = 50;
+/** Ticks are applied to the store at most once per frame; this is the no-rAF fallback delay. */
+export const TICK_FLUSH_MS = 16;
+/** Safety net for tabs where rAF is paused (hidden): flush after this long regardless. */
+const TICK_FLUSH_MAX_MS = 250;
 export const BACKOFF_MS = [1000, 2000, 4000, 8000, 16_000, 30_000] as const;
 export const MAX_WS_SYMBOLS = 200;
 const WS_CHUNK = 50;
@@ -102,6 +106,10 @@ export class QuoteStream {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Ticks received since the last flush, in arrival order. */
+  private pendingTicks: TickFrame[] = [];
+  private tickRaf: number | null = null;
+  private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private timers: ReturnType<typeof setInterval>[] = [];
   private pendingSnap = new Set<string>();
@@ -188,6 +196,8 @@ export class QuoteStream {
   /** Stop everything (tests / teardown). */
   dispose(): void {
     this.stop();
+    this.cancelTickFlush();
+    this.pendingTicks = [];
     this.providerFns.clear();
     this.refs.clear();
     this.extRefs.clear();
@@ -209,6 +219,7 @@ export class QuoteStream {
   }
 
   private setStatus(status: StreamStatus): void {
+    this.flushTicks(); // a queued tick must not override a later status change
     if (useQuoteStore.getState().status !== status) useQuoteStore.setState({ status });
   }
 
@@ -257,6 +268,7 @@ export class QuoteStream {
   }
 
   private stop(): void {
+    this.flushTicks();
     this.running = false;
     this.timers.forEach((t) => clearInterval(t));
     this.timers = [];
@@ -367,12 +379,8 @@ export class QuoteStream {
       const sym = t.symbol.toUpperCase();
       const extTick = t.marketHours === 0 || t.marketHours === 2 || t.marketHours === 3;
       (extTick ? this.extTickAt : this.tickAt).set(sym, this.now());
-      useQuoteStore.setState((s) => ({
-        quotes: { ...s.quotes, [sym]: mergeTick(s.quotes[sym], { ...t, symbol: sym }) },
-        ...(s.status === 'connecting' || s.status === 'fallback-polling'
-          ? { status: 'live' as const }
-          : {}),
-      }));
+      this.pendingTicks.push({ ...t, symbol: sym });
+      this.scheduleTickFlush();
     } else if (frame.type === 'status') {
       if (frame.upstream === 'connected') this.setStatus('live');
       else if (frame.upstream === 'polling') this.setStatus('upstream-polling');
@@ -398,6 +406,41 @@ export class QuoteStream {
     } else if (frame.type === 'error') {
       console.warn('quote stream error', frame);
     }
+  }
+
+  private scheduleTickFlush(): void {
+    if (this.tickRaf !== null || this.tickTimer !== null) return;
+    if (typeof requestAnimationFrame === 'function') {
+      this.tickRaf = requestAnimationFrame(() => this.flushTicks());
+      this.tickTimer = setTimeout(() => this.flushTicks(), TICK_FLUSH_MAX_MS);
+    } else {
+      this.tickTimer = setTimeout(() => this.flushTicks(), TICK_FLUSH_MS);
+    }
+  }
+
+  private cancelTickFlush(): void {
+    if (this.tickRaf !== null && typeof cancelAnimationFrame === 'function')
+      cancelAnimationFrame(this.tickRaf);
+    if (this.tickTimer !== null) clearTimeout(this.tickTimer);
+    this.tickRaf = this.tickTimer = null;
+  }
+
+  /** Apply all queued ticks in one store update (one `quotes` copy per flush). */
+  private flushTicks(): void {
+    this.cancelTickFlush();
+    const ticks = this.pendingTicks;
+    if (!ticks.length) return;
+    this.pendingTicks = [];
+    useQuoteStore.setState((s) => {
+      const quotes = { ...s.quotes };
+      for (const t of ticks) quotes[t.symbol] = mergeTick(quotes[t.symbol], t);
+      return {
+        quotes,
+        ...(s.status === 'connecting' || s.status === 'fallback-polling'
+          ? { status: 'live' as const }
+          : {}),
+      };
+    });
   }
 
   private send(msg: object): void {
@@ -519,6 +562,7 @@ export class QuoteStream {
       for (const [s] of kept.slice(0, kept.length - MAX_RETAINED)) drop.add(s);
     }
     if (!drop.size) return;
+    this.flushTicks();
     for (const s of drop) {
       for (const m of [this.snapAt, this.extAt, this.tickAt, this.extTickAt, this.releasedAt])
         m.delete(s);
@@ -546,6 +590,7 @@ export class QuoteStream {
             `/quotes?symbols=${encodeURIComponent(c.join(','))}`,
           );
           const now = this.now();
+          this.flushTicks(); // snapshots merge against the latest ticks
           useQuoteStore.setState((s) => {
             const quotes = { ...s.quotes };
             const missing = { ...s.missing };
@@ -581,6 +626,7 @@ export class QuoteStream {
             `/quotes/extended?symbols=${encodeURIComponent(c.join(','))}`,
           );
           const now = this.now();
+          this.flushTicks();
           useQuoteStore.setState((s) => {
             const quotes: Record<string, LiveQuote> = { ...s.quotes };
             for (const e of list) {

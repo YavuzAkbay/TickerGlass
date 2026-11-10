@@ -357,6 +357,62 @@ class DemoProvider:
             "financials": _demo_statements(symbol, self._clock().date()),
         }
 
+    # ---- ScreenInfoProvider ------------------------------------------------------------
+
+    def screen_fields(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """Synthetic screener fundamentals: shares, EPS, yield and the earnings offset are
+        drawn from the symbol's seed, market cap and P/E follow its latest price, the next
+        earnings date lies a fixed number of days after today."""
+        today = self._clock().astimezone(TZ).date()
+        rows = []
+        for raw in symbols:
+            s = raw.upper()
+            rng = np.random.default_rng(_seed(s, "screen"))
+            shares = float(rng.integers(50, 5000)) * 1e6
+            eps = round(float(rng.normal(3, 2.5)), 2)
+            last = self._last(s).last
+            # Next earnings: a fixed weekday of the symbol in the coming 13 weeks.
+            ahead = int(rng.integers(1, 91))
+            earnings_day = today + timedelta(days=ahead)
+            earnings = datetime(
+                earnings_day.year, earnings_day.month, earnings_day.day, 16, tzinfo=TZ
+            )
+            row: dict[str, Any] = {
+                "symbol": s,
+                "marketCap": round(last * shares, 0),
+                "epsTrailingTwelveMonths": eps,
+                "forwardPE": round(last / max(0.5, eps * 1.1), 2),
+                "trailingAnnualDividendYield": round(float(rng.uniform(0, 0.06)), 4),
+                "sharesOutstanding": shares,
+                "earningsTimestamp": int(earnings.timestamp()),
+                "averageDailyVolume3Month": float(rng.integers(1, 100)) * 1e5,
+            }
+            if eps > 0:
+                row["trailingPE"] = round(last / eps, 2)
+            rows.append(row)
+        return rows
+
+    def info(self, symbol: str) -> dict[str, Any]:
+        rng = np.random.default_rng(_seed(symbol.upper(), "info"))
+        sector = DEMO_SECTORS[int(rng.integers(0, len(DEMO_SECTORS)))]
+        return {
+            "beta": round(float(rng.uniform(0.3, 2.2)), 2),
+            "sector": sector,
+            "industry": f"{sector} (demo)",
+        }
+
+
+#: Sectors the demo `info` picks from.
+DEMO_SECTORS = (
+    "Technology",
+    "Healthcare",
+    "Financial Services",
+    "Consumer Cyclical",
+    "Industrials",
+    "Energy",
+    "Utilities",
+)
+
 
 def _resample(frame: pd.DataFrame, interval: str) -> pd.DataFrame:
     rule = {"5d": "5D", "1wk": "W-MON", "1mo": "MS", "3mo": "QS"}[interval]

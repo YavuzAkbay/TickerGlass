@@ -9,6 +9,8 @@ export const BB_WIDTH = defineIndicator({
   id: 'bb-width',
   name: 'Bollinger BandWidth',
   shortName: 'BBW',
+  description:
+    'Width of the Bollinger Bands relative to their middle band; low values flag squeezes that often precede big moves.',
   category: 'volatility',
   keywords: ['bb', 'bollinger', 'bandwidth', 'width', 'squeeze', 'bands'],
   overlay: false,

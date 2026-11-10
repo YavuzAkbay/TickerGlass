@@ -1,5 +1,9 @@
 # Shared build stage for the web app and the alerts service (pnpm workspace).
 FROM node:22-slim AS build
+# Release tag, stamped into the alerts service bundle (esbuild define) — see
+# .github/workflows/release.yml. Empty/dev falls back to "dev" in the bundle.
+ARG TICKERGLASS_VERSION=dev
+ENV TICKERGLASS_VERSION=${TICKERGLASS_VERSION}
 RUN npm install -g pnpm@12
 WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
@@ -12,6 +16,9 @@ RUN pnpm install --frozen-lockfile
 COPY apps ./apps
 COPY packages ./packages
 COPY services ./services
+# Release version: the vite config reads this when TICKERGLASS_VERSION is empty
+# (compose passes an empty build arg unless overridden — see .github/workflows/release.yml).
+COPY VERSION ./VERSION
 RUN pnpm -r build
 
 FROM nginx:1.29-alpine AS web

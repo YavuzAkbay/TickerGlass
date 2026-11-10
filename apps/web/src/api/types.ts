@@ -12,6 +12,14 @@ export interface Quote {
   marketState?: string | null;
   /** Unix seconds of the latest daily bar (not comparable with tick times). */
   time?: number | null;
+  /** Optional extras (Yahoo v7 only; absent for other providers). */
+  dayHigh?: number | null;
+  dayLow?: number | null;
+  open?: number | null;
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
+  marketCap?: number | null;
+  averageVolume?: number | null;
 }
 
 export interface SymbolMeta {

@@ -11,6 +11,8 @@ export const CORRELATION = defineIndicator({
   id: 'correlation',
   name: 'Correlation Coefficient',
   shortName: 'CC',
+  description:
+    'Pearson correlation between the chart symbol and a second symbol over a rolling window, from -1 to +1.',
   category: 'other',
   keywords: ['correlation', 'cc', 'correl', 'pearson', 'compare', 'symbol'],
   overlay: false,

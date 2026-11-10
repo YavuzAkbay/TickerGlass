@@ -24,6 +24,7 @@ import {
   NAV_SECTIONS,
   useUiStore,
 } from '../store/ui';
+import { parsePagePrefs, useWatchlistPagePrefs } from '../watchlist/page/pagePrefs';
 import { parsePrefs, useWatchlistPrefs } from '../watchlist/prefs';
 
 import { isObj, isTransient, readJson, safeStorage, type SafeStorage } from './net';
@@ -154,12 +155,41 @@ export const SETTING_DEFS: SettingDef[] = [
   },
   {
     key: 'watchlist.prefs',
+    // The active list stays per device (like the open chart): only the table setup syncs.
     read: () => {
-      const { activeId, columns, sort } = useWatchlistPrefs.getState();
-      return { activeId, columns, sort };
+      const { columns, sort } = useWatchlistPrefs.getState();
+      return { columns, sort };
     },
-    write: (v) => useWatchlistPrefs.setState(parsePrefs(v)),
+    write: (v) => {
+      // Older clients also stored `activeId` here; it is not adopted.
+      const { activeId: _local, ...synced } = parsePrefs(v);
+      useWatchlistPrefs.setState(synced);
+    },
+    // Fires for local-only changes too (active list, collapsed sections); `onChange` compares values.
     subscribe: (fn) => useWatchlistPrefs.subscribe(fn),
+  },
+  {
+    key: 'watchlist.page.prefs',
+    read: () => {
+      // `columns`/`sort` are the global layout: a list's own view lives in `views` and never
+      // leaks into them, so browsing lists does not change what other devices adopt.
+      const { global, density, widths, presets, perList, views } = useWatchlistPagePrefs.getState();
+      return {
+        columns: global.columns,
+        sort: global.sort,
+        density,
+        widths,
+        presets,
+        perList,
+        views,
+      };
+    },
+    write: (v) => {
+      // The detail pane toggle stays per device.
+      const { detailOpen: _local, ...synced } = parsePagePrefs(v);
+      useWatchlistPagePrefs.getState().adopt(synced);
+    },
+    subscribe: (fn) => useWatchlistPagePrefs.subscribe(fn),
   },
   {
     key: 'alerts.prefs',

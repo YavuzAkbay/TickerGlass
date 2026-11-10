@@ -8,6 +8,8 @@ export const RSI = defineIndicator({
   id: 'rsi',
   name: 'Relative Strength Index',
   shortName: 'RSI',
+  description:
+    'Relative Strength Index (0-100): momentum of recent gains versus losses; beyond 70 or below 30 flags extremes.',
   category: 'momentum',
   keywords: ['rsi', 'relative strength', 'oscillator', 'overbought', 'oversold'],
   overlay: false,

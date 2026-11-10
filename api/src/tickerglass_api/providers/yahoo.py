@@ -18,6 +18,8 @@ from yfinance.exceptions import YFRateLimitError
 from .base import (
     BAR_COLUMNS,
     FUNDAMENTALS_INFO_KEYS,
+    SCREEN_FIELD_KEYS,
+    SCREEN_TEXT_KEYS,
     PartialQuotes,
     ProviderError,
     QuoteList,
@@ -366,6 +368,40 @@ class YahooProvider:
             raise ProviderError("Yahoo v7 quote: unexpected payload shape")
         return [r for r in result if isinstance(r, dict)]
 
+    def screen_fields(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """`ScreenInfoProvider.screen_fields`: the `SCREEN_FIELD_KEYS` subset of the v7 quote
+        rows, 50 symbols per request (the same call as `quotes`, no fallback). Which of those
+        keys v7 fills varies by instrument and is not guaranteed: a missing or non-numeric
+        value is left out of the row."""
+        rows: list[dict[str, Any]] = []
+        for i in range(0, len(symbols), _V7_CHUNK):
+            for raw in self._call(partial(self._v7_quote, symbols[i : i + _V7_CHUNK])):
+                row = _screen_row(raw)
+                if row is not None:
+                    rows.append(row)
+        return rows
+
+    def info(self, symbol: str) -> dict[str, Any]:
+        """`ScreenInfoProvider.info`: beta, sector and industry from `Ticker.info` (one
+        request; the statements of `fundamentals` are not fetched)."""
+
+        def fetch() -> dict[str, Any]:
+            data: dict[str, Any] = yf.Ticker(symbol).info or {}
+            return data
+
+        data = self._call(fetch)
+        if not data.get("quoteType"):
+            raise SymbolNotFound(symbol)
+        out: dict[str, Any] = {}
+        beta = _num(data.get("beta"))
+        if beta is not None:
+            out["beta"] = beta
+        for key in ("sector", "industry"):
+            value = data.get(key)
+            if isinstance(value, str) and value:
+                out[key] = value
+        return out
+
     def events(self, symbol: str) -> dict[str, Any]:
         def fetch() -> tuple[pd.Series | None, pd.Series | None, pd.DataFrame | None]:
             t = yf.Ticker(symbol)
@@ -576,7 +612,7 @@ def _v7_to_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
     when = _num(raw.get("regularMarketTime"))
     currency = raw.get("currency")
     state = raw.get("marketState")
-    return {
+    out: dict[str, Any] = {
         "symbol": sym,
         "last": last,
         "prevClose": prev,
@@ -587,6 +623,39 @@ def _v7_to_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
         "marketState": state if isinstance(state, str) else None,
         "time": int(when) if when is not None else None,
     }
+    # Optional extras: present only when Yahoo returned them.
+    avg_volume = _num(raw.get("averageDailyVolume3Month"))
+    if avg_volume is None:
+        avg_volume = _num(raw.get("averageDailyVolume10Day"))
+    extras: dict[str, float | None] = {
+        "dayHigh": _num(raw.get("regularMarketDayHigh")),
+        "dayLow": _num(raw.get("regularMarketDayLow")),
+        "open": _num(raw.get("regularMarketOpen")),
+        "fiftyTwoWeekHigh": _num(raw.get("fiftyTwoWeekHigh")),
+        "fiftyTwoWeekLow": _num(raw.get("fiftyTwoWeekLow")),
+        "marketCap": _num(raw.get("marketCap")),
+        "averageVolume": avg_volume,
+    }
+    out.update({k: v for k, v in extras.items() if v is not None})
+    return out
+
+
+def _screen_row(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """`SCREEN_FIELD_KEYS` of a v7 row that hold finite numbers, the non-empty
+    `SCREEN_TEXT_KEYS` strings, plus the symbol."""
+    sym = raw.get("symbol")
+    if not isinstance(sym, str) or not sym:
+        return None
+    row: dict[str, Any] = {"symbol": sym}
+    for key in SCREEN_FIELD_KEYS:
+        value = _num(raw.get(key))
+        if value is not None:
+            row[key] = value
+    for text_key in SCREEN_TEXT_KEYS:
+        code = raw.get(text_key)
+        if isinstance(code, str) and code.strip():
+            row[text_key] = code.strip()[:8]
+    return row
 
 
 def _num(v: Any) -> float | None:

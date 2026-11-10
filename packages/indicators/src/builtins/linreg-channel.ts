@@ -18,6 +18,8 @@ export const LINREG_CHANNEL = defineIndicator({
   id: 'linreg-channel',
   name: 'Linear Regression Channel',
   shortName: 'LinReg',
+  description:
+    'Best-fit regression line over the window with parallel deviation bands; breaks flag trend exits. Repaints.',
   category: 'other',
   keywords: ['linear regression', 'regression', 'channel', 'linreg', 'pearson', 'trend'],
   overlay: true,

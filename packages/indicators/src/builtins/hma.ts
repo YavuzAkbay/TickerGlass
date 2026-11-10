@@ -9,6 +9,8 @@ export const HMA = defineIndicator({
   id: 'hma',
   name: 'Hull Moving Average',
   shortName: 'HMA',
+  description:
+    'Hull Moving Average: weighted average that nearly eliminates lag while staying smooth.',
   category: 'movingAverage',
   keywords: ['ma', 'hull', 'average'],
   overlay: true,

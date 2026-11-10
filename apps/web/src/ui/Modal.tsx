@@ -15,6 +15,8 @@ interface Props {
   className?: string;
   /** Align near the top (search dialogs) instead of centre. */
   top?: boolean;
+  /** false: keep the page fully visible behind the dialog (no backdrop dim). */
+  dim?: boolean;
 }
 
 /** Open modals, innermost last: only the top one handles Escape. */
@@ -40,6 +42,7 @@ export function Modal({
   footer,
   className,
   top,
+  dim = true,
 }: Props) {
   const t = useT();
   const mobile = useIsMobile();
@@ -104,7 +107,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className={`io-modal-overlay${top ? ' io-modal-top' : ''}`}
+      className={`io-modal-overlay${top ? ' io-modal-top' : ''}${dim ? '' : ' io-modal-clear'}`}
       data-modal-open
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();

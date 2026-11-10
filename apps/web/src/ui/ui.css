@@ -164,6 +164,11 @@
   align-items: flex-start;
   padding-top: 8vh;
 }
+/* Undimmed dialogs (indicator picker): the page stays fully visible; the
+   overlay still closes on outside clicks. */
+.io-modal-overlay.io-modal-clear {
+  background: transparent;
+}
 .io-modal {
   display: flex;
   flex-direction: column;

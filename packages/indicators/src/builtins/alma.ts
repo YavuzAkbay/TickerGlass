@@ -9,6 +9,8 @@ export const ALMA = defineIndicator({
   id: 'alma',
   name: 'Arnaud Legoux Moving Average',
   shortName: 'ALMA',
+  description:
+    'Gaussian-weighted moving average that balances smoothness against lag for a responsive yet stable trend line.',
   category: 'movingAverage',
   keywords: ['ma', 'arnaud', 'legoux', 'gaussian', 'average', 'alma'],
   overlay: true,

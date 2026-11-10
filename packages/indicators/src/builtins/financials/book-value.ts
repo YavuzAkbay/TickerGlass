@@ -7,6 +7,7 @@ export const BOOK_VALUE = defineIndicator({
   id: 'fin-bvps',
   name: 'Book Value per Share',
   shortName: 'BVPS',
+  description: 'Book value per share: net assets divided by shares outstanding.',
   category: 'financials',
   keywords: ['book value', 'bvps', 'equity per share', 'balance sheet', 'financials'],
   overlay: false,

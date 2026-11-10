@@ -1,0 +1,1433 @@
+/* Full-screen screener page (scr-). Tokens only: light/dark come from theme/tokens.css.
+   Row heights are owned by screenerPrefs.ts (ROW_H) via the --scr-row-h custom property —
+   the virtualizer and the CSS must agree, so never set a row height here. */
+
+.scr-root {
+  position: fixed;
+  inset: 0;
+  /* Above the shell (z-index <= 7), below modals (800) / popovers (900) / toasts (1000). */
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--font-size)/1.4 var(--font);
+}
+
+/* The page scope's up/down text colors (changeClass). */
+.scr-root .up {
+  color: var(--up);
+}
+.scr-root .down {
+  color: var(--down);
+}
+.scr-root .muted {
+  color: var(--muted);
+}
+
+/* ---- header ---- */
+.scr-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 48px;
+  padding: 0 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.scr-back {
+  margin-right: 2px;
+}
+.scr-title {
+  margin: 0 8px 0 2px;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.scr-asof {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  cursor: help;
+}
+.scr-header-spacer {
+  flex: 1;
+}
+.scr-head-btn {
+  width: 30px;
+  height: 30px;
+}
+
+/* ---- class tabs ---- */
+.scr-tabs {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.scr-tabs::-webkit-scrollbar {
+  display: none;
+}
+.scr-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.scr-tab:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.scr-tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.scr-tab.on {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent-text);
+  font-weight: 650;
+}
+.scr-tab-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+}
+.scr-tab.on .scr-tab-count {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent-text);
+}
+
+/* ---- toolbar ---- */
+.scr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.scr-toolbar-spacer {
+  flex: 1;
+}
+
+/* One-click screens (Finviz-style signals): a chip sets the sort, click again unsets. */
+.scr-presets {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.scr-presets::-webkit-scrollbar {
+  display: none;
+}
+.scr-presets-label {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--accent-text);
+}
+.scr-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.scr-preset-chip:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.scr-preset-chip.on {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.scr-preset-chip:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.scr-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(240px, 44%);
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+  color: var(--muted);
+}
+.scr-filter:focus-within {
+  border-color: var(--accent);
+}
+.scr-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.scr-filter input:focus {
+  outline: none;
+}
+.scr-filter input::placeholder {
+  color: var(--muted);
+}
+.scr-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+}
+.scr-filter-clear:hover {
+  color: var(--text-strong);
+}
+.scr-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 160px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.scr-drop:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+.scr-drop:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.scr-drop.on {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.scr-tool-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--input-bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+.scr-tool-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+  background: var(--hover);
+}
+.scr-tool-btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.scr-tool-btn.on {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.scr-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+/* Numeric filter popover. */
+.scr-numfields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 220px;
+  padding: 12px;
+}
+.scr-numfields label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-numinput {
+  width: 96px;
+  height: 26px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+.scr-numfields-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.scr-numfields-foot .io-btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ---- scan strip ---- */
+.scr-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 3px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.scr-strip::-webkit-scrollbar {
+  display: none;
+}
+.scr-strip-pulse {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.scr-strip-pulse.on {
+  background: var(--accent);
+  animation: scr-pulse 1.2s ease-in-out infinite;
+}
+@keyframes scr-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+.scr-breadth {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.scr-ov-avg {
+  color: var(--text);
+}
+.scr-ov-mover b {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.scr-strip-hint {
+  color: var(--muted);
+}
+.scr-strip-spacer {
+  flex: 1;
+}
+.scr-universe-info {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Active filter chips. */
+.scr-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.scr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 200px;
+  height: 20px;
+  padding: 0 4px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.scr-chip button:hover {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.scr-chip-clear {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.scr-chip-clear:hover {
+  color: var(--text-strong);
+  background: var(--hover);
+}
+
+/* ---- main area ---- */
+.scr-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---- table ---- */
+.scr-table {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.scr-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  outline: none;
+}
+.scr-grid:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.scr-head,
+.scr-row {
+  display: grid;
+  grid-template-columns: var(--scr-cols);
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+}
+.scr-head {
+  flex: 0 0 auto;
+  height: 30px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  user-select: none;
+}
+.scr-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.scr-th.right {
+  justify-content: flex-end;
+}
+.scr-th:hover,
+.scr-th.sorted {
+  color: var(--text-strong);
+}
+.scr-th-gutter {
+  justify-content: center;
+  cursor: default;
+}
+.scr-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.scr-row {
+  position: relative;
+  height: var(--scr-row-h);
+  border-left: 3px solid transparent;
+  padding-left: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.scr-row:hover {
+  background: var(--hover);
+}
+.scr-row.current {
+  background: var(--active-bg);
+}
+.scr-row.current .scr-sym::before {
+  content: '';
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 2px;
+}
+.scr-row.active {
+  background: var(--active-bg);
+}
+.scr-sym {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.scr-sym-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-cell {
+  overflow: hidden;
+  min-width: 0;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+.scr-cell.scr-name {
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-cell.scr-static {
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-cap {
+  color: var(--muted);
+}
+.scr-last {
+  color: var(--text-strong);
+}
+/* Change % pill: tinted by the row's up/down text color (only when it has one). */
+.scr-cell.scr-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+.scr-trend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.scr-gutter {
+  display: block;
+}
+.scr-heat {
+  position: relative;
+}
+.scr-heat::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--scr-heat, transparent);
+}
+
+/* Day range: low—high track with a marker at the last price. */
+.scr-range-cell {
+  display: flex;
+  align-items: center;
+}
+.scr-range {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.scr-range-track {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+.scr-range-dot {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translate(-50%, -50%);
+}
+.scr-range.up .scr-range-dot {
+  background: var(--up);
+}
+.scr-range.down .scr-range-dot {
+  background: var(--down);
+}
+.scr-range-empty {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ---- footer ---- */
+.scr-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-foot-count {
+  white-space: nowrap;
+}
+.scr-foot-spacer {
+  flex: 1;
+}
+.scr-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.scr-pager-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+}
+.scr-pager-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.scr-pager-info {
+  min-width: 72px;
+  text-align: center;
+  white-space: nowrap;
+}
+.io-btn[data-testid='scr-pagesize-btn'] {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Quick change bounds inside the numeric filter popover. */
+.scr-quick {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.scr-quick-label {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.scr-quick-chip {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.scr-quick-chip:hover {
+  color: var(--text-strong);
+}
+.scr-quick-chip.on {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* ---- empty states ---- */
+.scr-empty {
+  position: absolute;
+  inset: 30px 0 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 40px 16px;
+  color: var(--muted);
+  text-align: center;
+  pointer-events: none;
+}
+.scr-empty > * {
+  pointer-events: auto;
+}
+.scr-empty-title {
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 600;
+}
+.scr-empty-text {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.io-btn.scr-empty-btn {
+  margin-top: 10px;
+}
+
+/* ---- loading (universe chunk) ---- */
+.scr-loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---- inline quote error (matches the sidebar's rs-inline-error placement) ---- */
+.scr-quote-error {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  z-index: 5;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--down) 45%, transparent);
+  border-radius: 999px;
+  background: var(--popover);
+  color: var(--down);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* ---- detail pane ---- */
+.scr-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 0 0 344px;
+  width: 344px;
+  min-height: 0;
+  padding: 14px 16px;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.scr-detail-none {
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: center;
+}
+.scr-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* Desktop keeps the pane toggled from the header; the close button is for the phone sheet. */
+.scr-detail-close {
+  display: none;
+}
+.scr-detail-id {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.scr-detail-symbol {
+  color: var(--text-strong);
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.scr-detail-name {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scr-detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.scr-detail-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.scr-detail-close {
+  width: 24px;
+  height: 24px;
+}
+.scr-detail-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.scr-detail-last {
+  color: var(--text-strong);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.scr-detail-chg {
+  font-size: 13px;
+}
+.scr-detail-state {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.scr-detail-range {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scr-detail-range .scr-range-track {
+  height: 4px;
+}
+.scr-range-ends {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+.scr-detail-kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  margin: 0;
+}
+.scr-detail-kv > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.scr-detail-kv dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-detail-kv dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.scr-kv-note {
+  margin-left: 4px;
+  color: var(--muted);
+  cursor: help;
+}
+.scr-detail-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scr-detail-trend-head {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--panel-2);
+}
+.scr-detail-trend-head button {
+  flex: 1;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.scr-detail-trend-head button[aria-pressed='true'] {
+  background: var(--panel);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.scr-detail-trend-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+}
+.scr-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.scr-detail-actions .io-btn {
+  height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* ======== touch + phone ======== */
+@media (pointer: coarse) {
+  .scr-head-btn,
+  .scr-tool-btn {
+    width: 36px;
+    height: 34px;
+  }
+  .scr-drop {
+    height: 34px;
+  }
+  .scr-filter {
+    height: 36px;
+  }
+  .scr-filter input {
+    font-size: 16px; /* blocks iOS zoom-on-focus */
+  }
+  .scr-tab {
+    height: 36px;
+  }
+  .scr-numinput {
+    height: 34px;
+    font-size: 16px;
+  }
+  .scr-detail-actions .io-btn {
+    height: 38px;
+  }
+  .scr-detail-trend-head button {
+    height: 34px;
+  }
+}
+
+@media (max-width: 768px) {
+  .scr-header {
+    height: 44px;
+  }
+  .scr-title {
+    font-size: 14px;
+  }
+  .scr-asof {
+    display: none;
+  }
+  .scr-main {
+    flex-direction: column;
+  }
+  /* The detail pane becomes a bottom sheet over the table. */
+  .scr-detail {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 200;
+    width: auto;
+    flex: 0 0 auto;
+    max-height: 62dvh;
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    box-shadow: var(--shadow);
+  }
+  .scr-detail-none {
+    display: none;
+  }
+  .scr-detail-close {
+    display: inline-flex;
+  }
+  .scr-detail-actions .io-btn {
+    flex: 1 1 40%;
+  }
+  .scr-ov-mover {
+    display: none;
+  }
+  .scr-drop {
+    max-width: 110px;
+  }
+  .scr-universe-info {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scr-strip-pulse.on {
+    animation: none;
+  }
+}
+
+/* ---- live sort toggle, live-filter note, validation, missing rows ---- */
+.scr-live-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--accent-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scr-universe-info {
+  flex: 0 0 auto;
+  margin-left: 10px;
+}
+.scr-live-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin-left: 10px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.scr-live-toggle:hover {
+  color: var(--text-strong);
+}
+.scr-live-toggle.on {
+  border-color: color-mix(in srgb, var(--up) 40%, transparent);
+  color: var(--up);
+}
+.scr-live-toggle[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.scr-numinput.invalid {
+  border-color: var(--down);
+}
+.scr-numerror {
+  color: var(--down);
+  font-size: 11px;
+  line-height: 1.4;
+}
+/* A quick chip that will replace the opposite bound. */
+.scr-quick-chip.clears {
+  border-style: dashed;
+}
+/* Unknown / delisted: the provider answered without data. */
+.scr-row.missing {
+  opacity: 0.5;
+}
+.scr-row.missing .scr-sym {
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+/* Quote-bound filters waiting for the first quotes. */
+.scr-skel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, 80%);
+  margin-bottom: 10px;
+}
+.scr-skel-row {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 8%, transparent),
+    color-mix(in srgb, var(--text) 16%, transparent),
+    color-mix(in srgb, var(--text) 8%, transparent)
+  );
+  background-size: 200% 100%;
+  animation: scr-shimmer 1.4s linear infinite;
+}
+@keyframes scr-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scr-skel-row {
+    animation: none;
+  }
+}
+
+/* ---- server screener: snapshot banner, rules toggle, saved screens, universe menu ---- */
+.scr-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--text) 3%, var(--panel));
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+.scr-banner[data-kind='ready'] {
+  color: var(--text);
+}
+.scr-banner-text {
+  white-space: nowrap;
+}
+.scr-banner-note {
+  color: var(--muted);
+}
+.scr-banner-spacer {
+  flex: 1;
+}
+.scr-banner-bar {
+  display: inline-block;
+  width: 96px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  overflow: hidden;
+}
+.scr-banner-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.scr-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.scr-banner-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.scr-banner-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.scr-banner-btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.scr-tabs-spacer {
+  flex: 1;
+}
+.scr-uni-btn {
+  gap: 4px;
+}
+
+.scr-rules-btn {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 12px;
+}
+.scr-rule-summary {
+  min-width: 0;
+  max-width: 52%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-loading {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scr-screens-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-screens-dirty {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.scr-screens-pop {
+  min-width: 280px;
+}
+.scr-screens {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  padding: 8px;
+  overflow: auto;
+}
+.scr-screens-actions {
+  display: flex;
+  gap: 6px;
+}
+.scr-screens-actions .io-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.scr-screens-head {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.scr-screens-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-screens-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scr-screens-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-control);
+}
+.scr-screens-list li.on {
+  background: var(--accent-soft);
+}
+.scr-screens-load {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.scr-screens-load:hover {
+  background: var(--hover);
+}
+.scr-screens-load:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+.scr-screens .rb-icon-btn.on {
+  color: var(--accent-text);
+}
+.scr-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 12px;
+}
+.scr-alert legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.scr-alert label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scr-symbols-text {
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  resize: vertical;
+}
+.scr-symbols-count {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.scr-symbols-count.over {
+  color: var(--down);
+}
+
+/* Snapshot older than the latest session: still shown, dimmed (tooltip says why). */
+.scr-row.stale {
+  opacity: 0.6;
+}
+
+/* ---- group rows (Group by: sector / group) and the heatmap view ---- */
+.scr-grouprow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+  height: var(--scr-row-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--raised);
+  color: var(--text);
+  white-space: nowrap;
+}
+.scr-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scr-group-toggle:hover {
+  background: var(--hover);
+}
+.scr-group-toggle:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.scr-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-group-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.scr-group-agg {
+  display: inline-flex;
+  gap: 14px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.scr-heat-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}

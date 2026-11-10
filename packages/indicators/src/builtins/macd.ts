@@ -8,6 +8,8 @@ export const MACD = defineIndicator({
   id: 'macd',
   name: 'Moving Average Convergence Divergence',
   shortName: 'MACD',
+  description:
+    'MACD: gap between fast and slow EMAs with a signal line and histogram; crosses flag momentum shifts.',
   category: 'momentum',
   keywords: ['macd', 'convergence', 'divergence', 'histogram', 'oscillator'],
   overlay: false,

@@ -37,6 +37,8 @@ export const SEASONALITY = defineIndicator({
   id: 'seasonality',
   name: 'Seasonality',
   shortName: 'Seasonality',
+  description:
+    'Average return by calendar period over chart history, revealing recurring seasonal patterns.',
   category: 'other',
   keywords: ['seasonality', 'seasonal', 'ytd', 'year to date', 'annual', 'calendar'],
   overlay: false,

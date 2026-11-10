@@ -41,8 +41,10 @@ export function registerGridCommands(): () => void {
       hidden: true,
       shortcut: 'Escape',
       // Dialogs, menus and popovers own Escape while open; so do a drawing tool in
-      // progress and a drawing selection (they step back first).
+      // progress and a drawing selection (they step back first). A full-window
+      // screen (watchlists) owns it too.
       enabled: () =>
+        useUiStore.getState().screen === 'charts' &&
         isMaximized() &&
         !document.querySelector('[data-modal-open], [role="menu"], .io-popover') &&
         isCursorTool(useUiStore.getState().activeTool) &&

@@ -18,7 +18,11 @@ import { Registry } from './registry';
 import { Series, type SeriesHost } from './series';
 import { StateStore } from './state';
 
-export const SERVICE_VERSION = '0.1.0';
+/**
+ * Stamped by esbuild (`--define:__VERSION__`) from TICKERGLASS_VERSION in Docker;
+ * source checkouts and tests report "dev".
+ */
+export const SERVICE_VERSION: string = typeof __VERSION__ === 'string' ? __VERSION__ : 'dev';
 const SYNC_MS = 60_000;
 const DOWN_SYNC_MS = 10_000;
 const LIVE_CAP = 200;

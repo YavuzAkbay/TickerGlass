@@ -10,6 +10,7 @@ export const NET_INCOME_GROWTH = defineIndicator({
   id: 'fin-net-income-growth',
   name: 'Net Income Growth',
   shortName: 'NI Growth',
+  description: 'Year-over-year net income growth per reporting period, in percent.',
   category: 'financials',
   keywords: ['net income growth', 'earnings growth', 'growth', 'yoy', 'financials'],
   overlay: false,

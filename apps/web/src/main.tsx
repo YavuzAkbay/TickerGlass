@@ -24,3 +24,13 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+// PWA installability (docs/self-hosting.md): the shell worker registers in
+// production only; the app works unchanged without it.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Best-effort: installability fails silently (e.g. no HTTPS), nothing breaks.
+    });
+  });
+}

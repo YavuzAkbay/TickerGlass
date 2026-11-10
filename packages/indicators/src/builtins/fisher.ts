@@ -19,6 +19,8 @@ export const FISHER = defineIndicator({
   id: 'fisher',
   name: 'Fisher Transform',
   shortName: 'Fisher',
+  description:
+    'Fisher Transform sharpens price positioning into a gaussian-like oscillator, making turns easier to spot.',
   category: 'momentum',
   keywords: ['fisher', 'transform', 'ehlers', 'oscillator'],
   overlay: false,
