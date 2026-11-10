@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// Shared with the API's pytest suite: both parsers must agree on every vector.
-import vectors from '../../../../../api/tests/data/formula_vectors.json';
 import { parseFilter } from '../server/spec';
 import type { FieldDef, FieldType, Group } from '../server/types';
 import {
@@ -35,24 +33,51 @@ interface VectorField {
 }
 
 const catalog = (fundamentals: boolean): FormulaField[] =>
-  (vectors.fields as VectorField[]).map((f) => ({
+  vectors.fields.map((f) => ({
     id: f.id,
     type: f.type,
     crossable: f.crossable,
     available: fundamentals || !f.fundamental,
   }));
 
+// Shared with the API's pytest suite: both parsers must agree on every vector.
+// Loaded via import.meta.glob (resolved by Vite at test time) rather than a static
+// import so `tsc` in the web Docker build, which has no api/ dir, doesn't need it.
+interface ValidVector {
+  formula: string;
+  sexpr: string;
+}
+interface InvalidVector {
+  formula: string;
+  code: string;
+  offset: number;
+  fundamentals?: boolean;
+}
+interface Vectors {
+  fields: VectorField[];
+  valid: ValidVector[];
+  invalid: InvalidVector[];
+}
+const vectors = Object.values(
+  import.meta.glob<Vectors>('../../../../../api/tests/data/formula_vectors.json', {
+    eager: true,
+    import: 'default',
+  }),
+)[0] ?? { fields: [], valid: [], invalid: [] };
+
 describe('shared formula vectors', () => {
+  it('loads the shared vectors', () => {
+    expect(vectors.valid.length).toBeGreaterThan(0);
+    expect(vectors.invalid.length).toBeGreaterThan(0);
+  });
+
   it.each(vectors.valid)('parses $formula', ({ formula, sexpr: want }) => {
     const r = parseFormula(formula, catalog(true));
     expect(r.ok ? sexpr(r.node) : r.error).toBe(want);
   });
 
   it.each(vectors.invalid)('rejects $formula', (vec) => {
-    const r = parseFormula(
-      vec.formula,
-      catalog((vec as { fundamentals?: boolean }).fundamentals ?? true),
-    );
+    const r = parseFormula(vec.formula, catalog(vec.fundamentals ?? true));
     expect(r.ok ? null : { code: r.error.code, offset: r.error.offset }).toEqual({
       code: vec.code,
       offset: vec.offset,
