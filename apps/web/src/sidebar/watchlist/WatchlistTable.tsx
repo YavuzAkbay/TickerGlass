@@ -11,17 +11,25 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { commands } from '../../commands/registry';
+import { useT } from '../../i18n';
 import { useLiveQuotes } from '../../quotes/hooks';
 import { useQuoteStore } from '../../quotes/store';
 import { useChartView } from '../../store/chartView';
 import { IconButton } from '../../ui/IconButton';
-import { DropdownMenu, type MenuItem } from '../../ui/Menu';
+import { DropdownMenu } from '../../ui/Menu';
+import { useVirtualRows } from '../../ui/virtualRows';
 import { buildRows, flagRows, isFlagRef } from '../../watchlist/model';
 import { useWatchlistPrefs } from '../../watchlist/prefs';
 import { useWatchlistStore } from '../../watchlist/store';
+import { useUnavailableColumns } from '../../watchlist/columns/availability';
+import { COLUMN_DEFS } from '../../watchlist/columns/registry';
+import { useSnapshotColumns } from '../../watchlist/columns/useSnapshotColumns';
+import { columnsMenu } from '../../watchlist/columns/columnsMenu';
+import { deleteColumnPreset, saveColumnPreset } from '../../watchlist/columns/presetActions';
+import { useWatchlistPagePrefs } from '../../watchlist/page/pagePrefs';
 import {
-  ALL_COLUMNS,
   FLAG_COLORS,
+  type ColumnId,
   type FlagColor,
   type ListRef,
   type Row,
@@ -33,9 +41,16 @@ import { useDebounce, useEvent } from './useEvent';
 import { SectionRow } from './SectionRow';
 import { rowMenu } from './rowMenu';
 import { SymbolRow } from './SymbolRow';
+import { rowDomId } from './rowId';
+import { visibleSymbols } from './visibleSymbols';
+import { useStableRows, useTableFreeze } from './useStableRows';
+import { useDragEndSafety, windowSegments } from './windowSegments';
 
 const NO_DND: HTMLAttributes<HTMLDivElement> = {};
 const NAV_DEBOUNCE_MS = 150;
+/** Row heights in px; keep in sync with `--wl-row-h` (watchlist.css). Fixed so rows can be windowed. */
+const ROW_H = 32;
+const ROW_H_COARSE = 48;
 const TYPE_AHEAD_MS = 500;
 
 /** End (exclusive) of the block that moves with the item at `from`. */
@@ -59,13 +74,17 @@ interface Props {
 
 /** Sortable, reorderable quote grid of the active list (or a flag list). */
 export function WatchlistTable({ listRef }: Props) {
+  const t = useT();
   const isFlag = isFlagRef(listRef);
   const entry = useWatchlistStore((s) => (isFlag ? undefined : s.lists[listRef]));
   const flags = useWatchlistStore((s) => s.flags);
   const columns = useWatchlistPrefs((s) => s.columns);
   const sort = useWatchlistPrefs((s) => s.sort);
+  const collapsed = useWatchlistPrefs((s) => s.collapsed);
   const setSort = useWatchlistPrefs((s) => s.setSort);
   const toggleColumn = useWatchlistPrefs((s) => s.toggleColumn);
+  const setColumns = useWatchlistPrefs((s) => s.setColumns);
+  const presets = useWatchlistPagePrefs((s) => s.presets);
   const chartSymbol = useChartView((s) => s.symbol);
   const quoteError = useQuoteStore((s) => s.error);
 
@@ -95,17 +114,26 @@ export function WatchlistTable({ listRef }: Props) {
         : (entry?.items ?? []),
     [isFlag, flags, listRef, entry],
   );
-  const symbols = useMemo(
-    () => items.flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])),
-    [items],
-  );
+  // Symbols under collapsed sections have no rows: no live subscription for them.
+  const liveSymbols = useMemo(() => visibleSymbols(items, collapsed), [items, collapsed]);
   const ext = columns.includes('extPrice') || columns.includes('extChangePercent');
-  const quotes = useLiveQuotes(symbols, { ext });
+  const quotes = useLiveQuotes(liveSymbols, { ext });
+  const quoteUnavailable = useUnavailableColumns(columns, liveSymbols, quotes);
+  // Server-screener snapshot columns (fetched only while one is visible or sorted by).
+  const { snaps, unavailable } = useSnapshotColumns(
+    columns,
+    liveSymbols,
+    sort?.key,
+    quoteUnavailable,
+  );
 
-  const rows: Row[] = useMemo(() => {
-    const built = buildRows(items, sort, quotes);
+  const builtRows: Row[] = useMemo(() => {
+    const built = buildRows(items, sort, quotes, true, undefined, collapsed, snaps);
     return isFlag ? built.map((r) => (r.kind === 'symbol' ? { ...r, index: -1 } : r)) : built;
-  }, [items, sort, quotes, isFlag]);
+  }, [items, sort, quotes, isFlag, collapsed, snaps]);
+  // Live-sorted rows hold their order between commits (and while the pointer is over them).
+  const freeze = useTableFreeze(dragFrom !== null);
+  const rows = useStableRows(builtRows, { sort, items, frozen: freeze.frozen });
   const symbolRows = useMemo(
     () => rows.flatMap((r) => (r.kind === 'symbol' ? [r.symbol] : [])),
     [rows],
@@ -114,10 +142,25 @@ export function WatchlistTable({ listRef }: Props) {
   const canDrag = !sort && !isFlag;
   const listId = entry?.id ?? '';
 
+  const coarse = useIsCoarsePointer();
+  const rowH = coarse ? ROW_H_COARSE : ROW_H;
+  const { scrollerRef, range, scrollToRow } = useVirtualRows(rows.length, rowH);
+
   // Selection follows the chart symbol when it changes elsewhere.
+  const scrollSelected = useEvent(() => {
+    const i = selected ? rows.findIndex((r) => r.kind === 'symbol' && r.symbol === selected) : -1;
+    if (i >= 0) scrollToRow(i);
+  });
   useEffect(() => {
-    if (selected) document.getElementById(`wl-r-${selected}`)?.scrollIntoView({ block: 'nearest' });
-  }, [selected]);
+    scrollSelected();
+  }, [selected, scrollSelected]);
+  // After a keyboard move the row lands elsewhere once the store updates.
+  const forceScroll = useRef(false);
+  useEffect(() => {
+    if (!forceScroll.current) return;
+    forceScroll.current = false;
+    scrollSelected();
+  }, [rows, scrollSelected]);
 
   const openNow = (symbol: string) => {
     nav.cancel();
@@ -174,12 +217,13 @@ export function WatchlistTable({ listRef }: Props) {
     setDragFrom(null);
     setDrop(null);
   });
+  // A row scrolled out of the window mid-drag never delivers its own dragend.
+  useDragEndSafety(dragFrom !== null, onDragEnd);
   const dnd = useMemo<HTMLAttributes<HTMLDivElement>>(
     () => ({ draggable: true, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }),
     [onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd],
   );
   // Native HTML5 drag steals the touch long-press (row menu); skip it on touch.
-  const coarse = useIsCoarsePointer();
   const dndFor = canDrag && !coarse ? dnd : NO_DND;
   const dropPosOf = (row: Row): 'above' | 'below' | null =>
     drop && dragFrom !== null && drop.index === row.index && row.index !== dragFrom
@@ -194,6 +238,7 @@ export function WatchlistTable({ listRef }: Props) {
     const cur = rows[i];
     const target = rows[i + dir];
     if (!cur || cur.kind !== 'symbol' || !target) return;
+    forceScroll.current = true;
     commitMove(cur.index, insertionPoint(items, target, dir > 0));
   };
 
@@ -241,7 +286,7 @@ export function WatchlistTable({ listRef }: Props) {
       }
     } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       handled();
-      const el = selected ? document.getElementById(`wl-r-${selected}`) : null;
+      const el = selected ? document.getElementById(rowDomId('wl-r', selected)) : null;
       if (selected && el) {
         const r = el.getBoundingClientRect();
         rowMenu(selected, listRef, r.left + 16, r.bottom);
@@ -265,15 +310,16 @@ export function WatchlistTable({ listRef }: Props) {
     else setSort(null);
   };
 
-  const menuItems: MenuItem[] = [
-    ...ALL_COLUMNS.map((id): MenuItem => ({
-      label: COLUMNS[id].title,
-      checked: columns.includes(id),
-      onSelect: () => toggleColumn(id),
-    })),
-    { type: 'separator' },
-    { label: 'Clear sort', disabled: !sort, onSelect: () => setSort(null) },
-  ];
+  const menuItems = columnsMenu({
+    surface: 'sidebar',
+    columns,
+    presets,
+    onToggle: toggleColumn,
+    onApply: (cols) => setColumns(cols),
+    onSavePreset: () => void saveColumnPreset(columns, {}, 'sidebar'),
+    onDeletePreset: deleteColumnPreset,
+    clearSort: { disabled: !sort, onSelect: () => setSort(null) },
+  });
 
   const template = `minmax(64px, 1.4fr) ${columns.map((c) => COLUMNS[c].width).join(' ')} 28px`;
   const hint = sort && !isFlag ? 'Clear sorting to reorder' : undefined;
@@ -299,8 +345,18 @@ export function WatchlistTable({ listRef }: Props) {
         aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
         data-testid={`wl-col-${key}`}
         className={`wl-th${active ? ' sorted' : ''}${align === 'right' ? ' right' : ''}`}
-        title={`Sort by ${title}`}
+        title={
+          unavailable.has(key as ColumnId)
+            ? `${title}: ${t(COLUMN_DEFS[key as ColumnId]?.snapshot ? 'wlp.snapUnavailable' : 'wlp.colUnavailable')}`
+            : `Sort by ${title}`
+        }
+        tabIndex={0}
         onClick={() => toggleSort(key)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          toggleSort(key);
+        }}
       >
         {label}
         {active ? sort.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} /> : null}
@@ -308,21 +364,24 @@ export function WatchlistTable({ listRef }: Props) {
     );
   };
 
+  // Only a rendered row can be the active descendant (the rest is virtualized away).
+  const selAt = selected ? rows.findIndex((r) => r.kind === 'symbol' && r.symbol === selected) : -1;
+  const activeDescendant =
+    selAt >= range.start && selAt < range.end ? rowDomId('wl-r', selected!) : undefined;
+
   return (
-    <div className="wl-table">
+    <div className="wl-table" style={{ '--wl-row-h': `${rowH}px` } as CSSProperties}>
       <div
         role="grid"
         aria-label="Watchlist"
         aria-rowcount={rows.length + 1}
-        aria-activedescendant={
-          selected && symbolRows.includes(selected) ? `wl-r-${selected}` : undefined
-        }
+        aria-activedescendant={activeDescendant}
         tabIndex={0}
         className="wl-grid"
         style={{ '--wl-cols': template } as CSSProperties}
         onKeyDown={onKeyDown}
       >
-        <div role="row" className="wl-head">
+        <div role="row" aria-rowindex={1} className="wl-head">
           {headCell('symbol', 'Symbol', 'symbol', 'left')}
           {columns.map((id) => headCell(id, COLUMNS[id].label, COLUMNS[id].title, 'right'))}
           <span role="columnheader" className="wl-th wl-th-gutter">
@@ -349,33 +408,55 @@ export function WatchlistTable({ listRef }: Props) {
           items={menuItems}
           placement="bottom-end"
         />
-        {rows.map((row) =>
-          row.kind === 'section' ? (
-            <SectionRow
-              key={`s-${row.id}`}
-              listId={listId}
-              row={row}
-              dnd={dndFor}
-              dropPos={dropPosOf(row)}
-            />
-          ) : (
-            <SymbolRow
-              key={row.symbol}
-              symbol={row.symbol}
-              listRef={listRef}
-              q={quotes[row.symbol]}
-              columns={columns}
-              flag={flags[row.symbol]?.color ?? null}
-              current={row.symbol === chartSymbol}
-              selected={row.symbol === selected}
-              index={row.index}
-              onActivate={activate}
-              dnd={dndFor}
-              dropPos={dropPosOf(row)}
-              {...(hint ? { hint } : {})}
-            />
-          ),
-        )}
+        <div role="presentation" ref={scrollerRef} className="wl-body" {...freeze.bodyProps}>
+          {rows.length ? (
+            <>
+              {windowSegments(
+                rows.length,
+                range,
+                dragFrom === null ? null : rows.findIndex((r) => r.index === dragFrom),
+              ).flatMap((seg) =>
+                seg.gap ? (
+                  <div key={seg.key} role="presentation" style={{ height: seg.rows * rowH }} />
+                ) : (
+                  rows
+                    .slice(seg.from, seg.to)
+                    .map((row, k) =>
+                      row.kind === 'section' ? (
+                        <SectionRow
+                          key={`s-${row.id}`}
+                          listId={listId}
+                          rowIndex={seg.from + k + 2}
+                          row={row}
+                          dnd={dndFor}
+                          dropPos={dropPosOf(row)}
+                        />
+                      ) : (
+                        <SymbolRow
+                          key={row.symbol}
+                          symbol={row.symbol}
+                          listRef={listRef}
+                          q={quotes[row.symbol]}
+                          snap={snaps[row.symbol]}
+                          columns={columns}
+                          unavailable={unavailable}
+                          flag={flags[row.symbol]?.color ?? null}
+                          current={row.symbol === chartSymbol}
+                          selected={row.symbol === selected}
+                          index={row.index}
+                          rowIndex={seg.from + k + 2}
+                          onActivate={activate}
+                          dnd={dndFor}
+                          dropPos={dropPosOf(row)}
+                          {...(hint ? { hint } : {})}
+                        />
+                      ),
+                    )
+                ),
+              )}
+            </>
+          ) : null}
+        </div>
       </div>
       {rows.length === 0 ? (
         <div className="wl-empty">

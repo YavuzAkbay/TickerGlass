@@ -6,6 +6,8 @@ export const STOCH_RSI = defineIndicator({
   id: 'stoch-rsi',
   name: 'Stochastic RSI',
   shortName: 'Stoch RSI',
+  description:
+    'Stochastic applied to RSI (0-100): the most responsive RSI variant for timing overbought and oversold turns.',
   category: 'momentum',
   keywords: ['stochastic', 'rsi', 'stochrsi', 'oscillator'],
   overlay: false,

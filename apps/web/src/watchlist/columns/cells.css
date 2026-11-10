@@ -1,0 +1,52 @@
+/* Shared by the sidebar and page cells (ColumnCell.tsx). */
+
+/* Range bar: low—high track with a marker at the last price. */
+.wlp-range-cell {
+  display: flex;
+  align-items: center;
+}
+.wlp-range {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.wlp-range-track {
+  position: relative;
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+.wlp-range-dot {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translate(-50%, -50%);
+}
+.wlp-range.up .wlp-range-dot {
+  background: var(--up);
+}
+.wlp-range.down .wlp-range-dot {
+  background: var(--down);
+}
+.wlp-range-empty {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Relative volume at or above the highlight threshold. */
+.wl-cell.hot,
+.wlp-cell.hot {
+  color: var(--accent);
+  font-weight: 600;
+}
+/* A column the data source cannot fill. */
+.wl-cell.na,
+.wlp-cell.na {
+  color: var(--muted);
+}

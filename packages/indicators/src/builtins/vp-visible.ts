@@ -69,6 +69,8 @@ export const VP_VISIBLE = defineIndicator({
   id: 'vp-visible',
   name: 'Volume Profile (Visible Bars)',
   shortName: 'VP Vis',
+  description:
+    'Volume Profile over the visible bars: traded volume by price level with the point-of-control line.',
   category: 'volume',
   keywords: ['volume profile', 'vrvp', 'visible range', 'poc', 'value area', 'vp'],
   overlay: true,

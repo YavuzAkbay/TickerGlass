@@ -137,6 +137,38 @@ def fake() -> FakeProvider:
     return FakeProvider()
 
 
+def test_v7_to_quote_carries_optional_extras() -> None:
+    row = {
+        "symbol": "X",
+        "regularMarketPrice": 10.0,
+        "regularMarketDayHigh": 11.5,
+        "regularMarketDayLow": 9.5,
+        "regularMarketOpen": 10.1,
+        "fiftyTwoWeekHigh": 20.0,
+        "fiftyTwoWeekLow": 5.0,
+        "marketCap": 1.5e9,
+        "averageDailyVolume3Month": 1_000_000,
+        "averageDailyVolume10Day": 2_000_000,
+    }
+    q = _v7_to_quote(row)
+    assert q is not None
+    assert q["dayHigh"] == 11.5 and q["dayLow"] == 9.5 and q["open"] == 10.1
+    assert q["fiftyTwoWeekHigh"] == 20.0 and q["fiftyTwoWeekLow"] == 5.0
+    assert q["marketCap"] == 1.5e9 and q["averageVolume"] == 1_000_000
+    # The 10-day average is the fallback; non-finite or missing extras are omitted.
+    q2 = _v7_to_quote(
+        {
+            "symbol": "Y",
+            "averageDailyVolume10Day": 7,
+            "marketCap": float("nan"),
+            "regularMarketOpen": None,
+        }
+    )
+    assert q2 is not None
+    assert q2["averageVolume"] == 7
+    assert "marketCap" not in q2 and "open" not in q2 and "dayHigh" not in q2
+
+
 @pytest.fixture
 def client(fake: FakeProvider, tmp_path: Path) -> Iterator[TestClient]:
     app = create_app(provider=fake, database_url=f"sqlite:///{tmp_path}/t.db")

@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FolderInput,
   FolderPlus,
+  NotebookText,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -14,6 +15,7 @@ import { commands } from '../../commands/registry';
 import { openContextMenu } from '../../ui/ContextMenu';
 import { promptName } from '../../ui/Prompt';
 import { toast } from '../../ui/Toast';
+import { moveWithReport } from '../../watchlist/actions';
 import { isFlagRef, sortedLists } from '../../watchlist/model';
 import { useWatchlistPrefs } from '../../watchlist/prefs';
 import { useWatchlistStore } from '../../watchlist/store';
@@ -38,19 +40,33 @@ export const FLAG_ICONS = Object.fromEntries(
   ]),
 ) as unknown as Record<FlagColor, IconType>;
 
-/** Context menu of a watchlist row. */
-export function rowMenu(symbol: string, listRef: ListRef, x: number, y: number): void {
+/** Context menu of a watchlist row. `onOpen` replaces the default "Open" action
+    (set the chart symbol) — e.g. the watchlists page navigates back first. */
+export function rowMenu(
+  symbol: string,
+  listRef: ListRef,
+  x: number,
+  y: number,
+  opts?: { onOpen?: (symbol: string) => void },
+): void {
   const { lists, flags } = useWatchlistStore.getState();
   const inFlagList = isFlagRef(listRef);
   const current = flags[symbol]?.color ?? null;
   const entry = inFlagList ? undefined : lists[listRef];
+  const open = () =>
+    opts?.onOpen ? opts.onOpen(symbol) : commands.execute('chart.setSymbol', symbol);
 
   const items: MenuItem[] = [
-    { label: 'Open', onSelect: () => commands.execute('chart.setSymbol', symbol) },
+    { label: 'Open', onSelect: open },
     {
       label: 'Add alert…',
       icon: Bell,
       onSelect: () => commands.execute('alert.create', { symbol }),
+    },
+    {
+      label: 'Open note',
+      icon: NotebookText,
+      onSelect: () => commands.execute('notes.openForSymbol', { symbol }),
     },
     {
       label: 'Flag',
@@ -80,8 +96,7 @@ export function rowMenu(symbol: string, listRef: ListRef, x: number, y: number):
         ...others.map((l): MenuItem => ({
           label: l.name,
           onSelect: () => {
-            useWatchlistStore.getState().moveSymbols(entry.id, l.id, [symbol]);
-            toast(`Moved ${symbol} to ${l.name}`, 'success');
+            moveWithReport(entry.id, l.id, l.name, [symbol]);
           },
         })),
         ...(others.length ? [{ type: 'separator' } as MenuItem] : []),
@@ -95,9 +110,8 @@ export function rowMenu(symbol: string, listRef: ListRef, x: number, y: number):
               okLabel: 'Create',
             }).then((name) => {
               if (!name) return;
-              const store = useWatchlistStore.getState();
-              const id = store.createList(name);
-              store.moveSymbols(entry.id, id, [symbol]);
+              const id = useWatchlistStore.getState().createList(name);
+              moveWithReport(entry.id, id, name, [symbol]);
               useWatchlistPrefs.getState().setActive(id);
             });
           },

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, openOverflowItem, pickTool, test } from './fixtures';
 import { mockMarket, type MockMarket } from './market';
-import type { MockServer } from './persistence';
+import { seedActiveList, type MockServer } from './persistence';
 
 declare global {
   interface Window {
@@ -206,8 +206,8 @@ test('price-axis "+" prefills the hovered price', async ({ page, server }) => {
   await open(page);
   const { x, y } = await page.evaluate(() => {
     const r = document.querySelector('canvas')!.getBoundingClientRect();
-    // The "+" is the first 18 px of the price label, at the left edge of the axis.
-    return { x: r.left + window.chart.paneWidth + 10, y: r.top + 140 };
+    // The "+" is the last 18 px of the price label, just inside the pane edge.
+    return { x: r.left + window.chart.paneWidth - 10, y: r.top + 140 };
   });
   await page.mouse.move(x + 20, y);
   await page.mouse.move(x, y, { steps: 3 });
@@ -283,10 +283,10 @@ test('watchlist row menu: "Add alert…" uses the row symbol', async ({ page, se
     ],
   });
   server.settings.set('watchlist.prefs', {
-    activeId: 'wl1',
     columns: ['last', 'change', 'changePercent'],
     sort: null,
   });
+  await seedActiveList(page, 'wl1');
   await open(page);
   await page.locator('[data-panel="watchlist"]').click();
   await page.getByTestId('wl-row-NVDA').click({ button: 'right' });

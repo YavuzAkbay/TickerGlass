@@ -495,6 +495,8 @@ export interface IndicatorDefinition<
   category: IndicatorCategory;
   /** Extra search terms for the dialog. */
   keywords?: readonly string[];
+  /** One-line explanation shown in the Indicators dialog detail pane. */
+  description?: string;
   /** true: drawn on the price pane; false: new pane below. */
   overlay: boolean;
   format?: ValueFormat;

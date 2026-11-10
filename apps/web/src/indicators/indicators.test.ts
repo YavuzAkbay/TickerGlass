@@ -32,7 +32,9 @@ import { useUiStore } from '../store/ui';
 import { indicatorMenuItems, overlayOption, overlaySymbols, sourceOptions } from './menu';
 import { firstOutputId } from '../alerts/dialog/sources';
 import {
+  RECENTS_MAX,
   effectiveInstances,
+  migrateIndicatorPrefs,
   useIndicatorPrefs,
   useIndicatorPreview,
   useIndicatorStore,
@@ -42,7 +44,7 @@ const ids = () => useIndicatorStore.getState().instances.map((i) => i.id);
 
 beforeEach(() => {
   useIndicatorStore.setState({ instances: [] });
-  useIndicatorPrefs.setState({ favorites: [], defaults: {} });
+  useIndicatorPrefs.setState({ favorites: [], recents: [], defaults: {} });
   useHistory.getState().clear();
   useIndicatorPreview.setState({ overrides: {} });
 });
@@ -179,6 +181,37 @@ describe('indicator actions', () => {
     expect(useIndicatorPrefs.getState().favorites).toEqual(['sma']);
     useIndicatorPrefs.getState().toggleFavorite('sma');
     expect(useIndicatorPrefs.getState().favorites).toEqual([]);
+  });
+});
+
+describe('recents', () => {
+  it('addIndicator records the type as just added', () => {
+    addIndicator('rsi');
+    expect(useIndicatorPrefs.getState().recents).toEqual(['rsi']);
+    addIndicator('sma');
+    expect(useIndicatorPrefs.getState().recents).toEqual(['sma', 'rsi']);
+    addIndicator('rsi');
+    expect(useIndicatorPrefs.getState().recents).toEqual(['rsi', 'sma']);
+  });
+
+  it('pushRecent dedupes and caps the list, newest first', () => {
+    const types = ['sma', 'ema', 'wma', 'dema', 'tema', 'hma', 'kama', 'vwma', 'alma'];
+    for (const t of types) useIndicatorPrefs.getState().pushRecent(t);
+    const recents = useIndicatorPrefs.getState().recents;
+    expect(recents).toHaveLength(RECENTS_MAX);
+    expect(recents[0]).toBe('alma');
+    expect(recents).not.toContain('sma');
+    useIndicatorPrefs.getState().pushRecent('ema');
+    expect(useIndicatorPrefs.getState().recents[0]).toBe('ema');
+    expect(useIndicatorPrefs.getState().recents.filter((t) => t === 'ema')).toHaveLength(1);
+  });
+
+  it('v2 -> v3 migration adds recents with renamed ids mapped and junk dropped', () => {
+    const prefs = migrateIndicatorPrefs(
+      { favorites: [], defaults: {}, recents: ['rsi', 'rsi', 42, null] },
+      2,
+    );
+    expect(prefs.recents).toEqual(['rsi']);
   });
 });
 

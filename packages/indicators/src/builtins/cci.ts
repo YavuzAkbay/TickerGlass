@@ -6,6 +6,8 @@ export const CCI = defineIndicator({
   id: 'cci',
   name: 'Commodity Channel Index',
   shortName: 'CCI',
+  description:
+    'Deviation of price from its typical-price average, scaled; readings beyond plus or minus 100 flag unusual momentum.',
   category: 'momentum',
   keywords: ['cci', 'commodity channel', 'oscillator'],
   overlay: false,

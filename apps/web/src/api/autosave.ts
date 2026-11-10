@@ -9,7 +9,7 @@ import type { Layout } from './types';
 type Listenable = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 
 export interface SaveContext {
-  /** True when flushing because the page is being hidden/unloaded. */
+  /** True when flushing because the page is being hidden/unloaded (pass it to fetch). */
   keepalive: boolean;
 }
 
@@ -38,9 +38,16 @@ export interface AutosaverOptions<T> {
    */
   onHide?: (value: T) => void;
   onSaved?: (value: T) => void;
+  /**
+   * On page hide, start the save at once (synchronously), even while one is in
+   * flight (default: it waits behind it, and may never be sent if the page goes
+   * away first).
+   * Only for saves that cope with overlapping themselves.
+   */
+  overlapOnHide?: boolean;
   /** `pagehide` source (default `window`). */
   window?: Listenable;
-  /** `visibilitychange` source (default `document`); flushes when hidden. */
+  /** `visibilitychange` source (default `document`); flushes with keepalive when hidden. */
   document?: Listenable & { visibilityState?: DocumentVisibilityState };
 }
 
@@ -61,10 +68,13 @@ export interface Autosaver<T> {
 /**
  * Debounced saves of the latest scheduled value. Saves never overlap (a value
  * scheduled while one is in flight is saved after it), so revision chains stay
- * ordered. On `pagehide` pending work is flushed with `keepalive: true` (pass
- * it to fetch: `requestJson(..., { keepalive })`, which drops it for bodies
- * over 60 KB); on hidden visibility with a normal request. Both call `onHide`
- * first so the caller can keep a recovery copy.
+ * ordered, unless `overlapOnHide`. When the page is hidden (`visibilitychange`
+ * to hidden, then usually `pagehide`) pending work is flushed with `keepalive:
+ * true` (pass it to fetch: `requestJson(..., { keepalive })`, which drops it
+ * over the shared 60 KB budget). Already on visibility: browsers fire it before
+ * `pagehide` and mobile ones may kill a hidden tab without `pagehide`, so a
+ * normal request there would be the only one sent and could be cut off. Both
+ * events call `onHide` first so the caller can keep a recovery copy.
  */
 export function createAutosaver<T>(
   save: (value: T, ctx: SaveContext) => Promise<void>,
@@ -80,7 +90,7 @@ export function createAutosaver<T>(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let has = false;
   let value: T | undefined;
-  let saving = false;
+  let saving = 0;
   let chain: Promise<void> = Promise.resolve();
 
   const clear = () => {
@@ -98,7 +108,7 @@ export function createAutosaver<T>(
     const v = value as T;
     has = false;
     value = undefined;
-    saving = true;
+    saving++;
     try {
       await save(v, ctx);
       failures = 0;
@@ -123,7 +133,7 @@ export function createAutosaver<T>(
         opts.onError?.(err, v);
       }
     } finally {
-      saving = false;
+      saving--;
     }
   };
 
@@ -133,19 +143,22 @@ export function createAutosaver<T>(
     return chain;
   };
 
-  const recover = () => {
-    if (has) opts.onHide?.(value as T);
+  // Page going away (or maybe, when hidden): keepalive lets the request outlive it.
+  const onHide = () => {
+    if (!has) return;
+    opts.onHide?.(value as T);
+    if (!opts.overlapOnHide) {
+      void run({ keepalive: true });
+      return;
+    }
+    // Send now, not behind a save in flight: the page may be gone by then.
+    clear();
+    const now = step({ keepalive: true });
+    chain = Promise.all([chain, now]).then(() => undefined);
   };
-  // Page going away: keepalive lets the request outlive it (small bodies only).
-  const onPageHide = () => {
-    recover();
-    void run({ keepalive: true });
-  };
-  // Tab switched away: the page lives on, so a normal request is fine.
+  const onPageHide = () => onHide();
   const onVisibility = () => {
-    if (doc?.visibilityState !== 'hidden') return;
-    recover();
-    void run({ keepalive: false });
+    if (doc?.visibilityState === 'hidden') onHide();
   };
   win?.addEventListener('pagehide', onPageHide);
   doc?.addEventListener('visibilitychange', onVisibility);
@@ -172,7 +185,7 @@ export function createAutosaver<T>(
       return has;
     },
     get saving() {
-      return saving;
+      return saving > 0;
     },
   };
 }

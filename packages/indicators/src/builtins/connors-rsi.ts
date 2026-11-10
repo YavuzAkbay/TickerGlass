@@ -9,6 +9,8 @@ export const CONNORS_RSI = defineIndicator({
   id: 'connors-rsi',
   name: 'Connors RSI',
   shortName: 'CRSI',
+  description:
+    'Composite of RSI, streak length and percent rank of the change; tuned for short-term mean-reversion setups.',
   category: 'momentum',
   keywords: ['crsi', 'connors', 'rsi', 'streak', 'percent rank', 'oscillator'],
   overlay: false,

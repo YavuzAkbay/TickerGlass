@@ -6,6 +6,8 @@ export const CMO = defineIndicator({
   id: 'cmo',
   name: 'Chande Momentum Oscillator',
   shortName: 'ChandeMO',
+  description:
+    'Chande Momentum Oscillator: pure up versus down momentum over a period, ranging from -100 to +100.',
   category: 'momentum',
   keywords: ['cmo', 'chande', 'momentum', 'oscillator'],
   overlay: false,

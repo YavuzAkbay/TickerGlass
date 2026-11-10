@@ -1,7 +1,9 @@
+from datetime import date
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -79,6 +81,9 @@ class Settings(BaseSettings):
     bars_settle_after_close_s: float = 1200
     #: Cap of the doubling TTL for series that stop receiving bars while open.
     bars_quiet_backoff_max_s: float = 1800
+    #: One-off exchange closures the NYSE calendar cannot derive from rules (days of mourning,
+    #: disasters; `services/holidays.py`): ISO dates, comma separated in `MARKET_EXTRA_HOLIDAYS`.
+    market_extra_holidays: Annotated[list[date], NoDecode] = []
 
     # Bar storage bounds (BarService.prune). Series read within the last day are kept.
     #: Bar rows across all series; above it the least recently used series are deleted,
@@ -112,6 +117,39 @@ class Settings(BaseSettings):
     alerts_log_max: int = 5000
     #: When set, service-only routes require the `X-Alerts-Token` header.
     alerts_internal_token: str | None = None
+
+    # Server-side screener (docs/design/server-screener.md).
+    #: None: on for the yahoo and demo providers, off for twelvedata (daily credits); True/False
+    #: forces it.
+    screener_enabled: bool | None = None
+    #: Local time of the daily snapshot run, "HH:MM" in `screener_tz`.
+    screener_run_at: str = "17:15"
+    screener_tz: str = "America/New_York"
+    #: Upstream requests per minute the job may use (further capped by the guard's rate).
+    screener_rate_per_min: float = 24
+    #: Same for the weekly per-stock `info` pass (one request per stock).
+    screener_info_rate_per_min: float = 10
+    #: Most symbols tracked (bars are stored for each): bundled + list + watchlist symbols in
+    #: rank order, the rest dropped. Daily bars of ~800 symbols are ~5M of `bars_max_rows`.
+    screener_max_symbols: int = 800
+    #: Also track every symbol on a watchlist.
+    screener_include_watchlists: bool = True
+    #: A snapshot older than this many days before the latest session is left out of scans.
+    screener_stale_days: int = 7
+
+    # Auth (auth.py, docs/self-hosting.md). Unset: the app is open (localhost-first,
+    # protect with a reverse proxy). Set: a single password guards the API and /ws.
+    auth_password: str | None = None
+    #: Session-token signing secret; defaults to a random secret persisted next to a
+    #: SQLite database (set this for Postgres so sessions survive restarts).
+    auth_secret: str | None = None
+
+    @field_validator("market_extra_holidays", mode="before")
+    @classmethod
+    def _split_dates(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
 
 @lru_cache

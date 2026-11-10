@@ -39,7 +39,7 @@ import { INTERVAL_GROUPS, intervalLabel } from '../topbar/intervals';
 import { DropdownMenu } from '../ui/Menu';
 import { toast } from '../ui/Toast';
 import { ColorSwatch } from '../dialogs/ColorPicker';
-import { Check, Row, Section } from '../dialogs/controls';
+import { Check, Row } from '../dialogs/controls';
 import { SymbolField } from '../dialogs/SymbolField';
 import { useUiStore } from '../store/ui';
 import '../indicators/indicators.css';
@@ -232,6 +232,9 @@ function inputRows(def: AnyIndicatorDefinition): InputRow[] {
   return rows;
 }
 
+/** Controls that need the whole row: a select plus overlay entry, a text field, a time picker. */
+const isWide = (d: InputDef) => d.kind === 'source' || d.kind === 'symbol' || d.kind === 'time';
+
 function InputsTab({
   def,
   inst,
@@ -251,42 +254,55 @@ function InputsTab({
     if (cur && cur.group === r.group) cur.rows.push(r);
     else sections.push({ group: r.group, rows: [r] });
   }
+  const control = (key: string) => (
+    <InputControl
+      id={`ind-in-${key}`}
+      def={def.inputs[key]!}
+      value={inst.inputs[key]}
+      inst={inst}
+      all={all}
+      onChange={(v) => set(key, v)}
+    />
+  );
   const renderRow = (r: InputRow) => {
-    const first = def.inputs[r.keys[0]!]!;
-    const controls = r.keys.map((key, i) => {
-      const d = def.inputs[key]!;
-      const label = i > 0 && d.kind !== 'bool' ? <span>{d.label}</span> : null;
+    if (r.keys.length === 1) {
+      const d = def.inputs[r.keys[0]!]!;
       return (
-        <span key={key} className="ind-inline" title={d.tooltip}>
-          {label}
-          <InputControl
-            id={`ind-in-${key}`}
-            def={d}
-            value={inst.inputs[key]}
-            inst={inst}
-            all={all}
-            onChange={(v) => set(key, v)}
-          />
-        </span>
+        <Row
+          key={r.keys.join('|')}
+          label={d.kind === 'bool' ? '' : d.label}
+          {...(d.kind === 'bool' ? {} : { htmlFor: `ind-in-${r.keys[0]}` })}
+        >
+          {control(r.keys[0]!)}
+        </Row>
       );
-    });
+    }
+    // Inline inputs become a grid of labelled fields: each control keeps its own
+    // label, and wide controls (source, symbol, time) take a full row.
+    const keys = [...r.keys].sort((a, b) => Number(isWide(def.inputs[a]!)) - Number(isWide(def.inputs[b]!)));
     return (
-      <Row
-        key={r.keys.join('|')}
-        label={first.kind === 'bool' ? '' : first.label}
-        {...(first.kind === 'bool' ? {} : { htmlFor: `ind-in-${r.keys[0]}` })}
-      >
-        {controls}
-      </Row>
+      <div key={r.keys.join('|')} className="ind-fields">
+        {keys.map((key) => {
+          const d = def.inputs[key]!;
+          const cls = `ind-field${isWide(d) ? ' ind-field-wide' : ''}${d.kind === 'bool' ? ' ind-field-check' : ''}`;
+          return (
+            <div key={key} className={cls} title={d.tooltip}>
+              {d.kind !== 'bool' ? <span className="ind-field-label">{d.label}</span> : null}
+              <div className="ind-field-control">{control(key)}</div>
+            </div>
+          );
+        })}
+      </div>
     );
   };
   return (
     <>
       {sections.map((s, i) =>
         s.group ? (
-          <Section key={`${s.group}-${i}`} title={s.group}>
+          <section key={`${s.group}-${i}`} className="dlg-section ind-group">
+            <h3 className="dlg-section-head">{s.group}</h3>
             {s.rows.map(renderRow)}
-          </Section>
+          </section>
         ) : (
           <div key={`nogroup-${i}`} className="dlg-section">
             {s.rows.map(renderRow)}

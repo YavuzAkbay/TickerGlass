@@ -6,6 +6,8 @@ export const VORTEX = defineIndicator({
   id: 'vortex',
   name: 'Vortex Indicator',
   shortName: 'VI',
+  description:
+    'Vortex Indicator: VI+ and VI- trend-flow lines whose crossings flag the start of directional moves.',
   category: 'momentum',
   keywords: ['vortex', 'vi', 'trend'],
   overlay: false,

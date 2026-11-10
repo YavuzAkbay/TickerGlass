@@ -80,8 +80,10 @@
 .sc-bar.down .sc-bar-value {
   color: var(--down);
 }
-/* The engine's own legend line (title, OHLC) repeats what the card shows. */
-.io-legend-header:has(.sc-card) + .io-legend-info {
+/* The engine's own legend line (title, OHLC) repeats what the card shows
+   — or, when the card is collapsed, what its ticker pill stands in for. */
+.io-legend-header:has(.sc-card) + .io-legend-info,
+.io-legend-header:has(.sc-closed) + .io-legend-info {
   display: none;
 }
 .sc-top {
@@ -200,6 +202,54 @@
   color: var(--text-strong);
 }
 .sh-name:focus-visible {
+  outline: var(--focus-ring);
+}
+/* The card's dismiss control; clicking collapses the card to a ticker pill. */
+.sc-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sc-close:hover {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.sc-close:focus-visible {
+  outline: var(--focus-ring);
+}
+/* A dismissed card collapses to this ticker pill; clicking it restores the card.
+   It sits in the pointer-transparent legend slot directly, so it enables its own events. */
+.sc-closed {
+  pointer-events: auto;
+  flex: none;
+  /* Same clearance from the legend rows below as the expanded card. */
+  margin-bottom: 6px;
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 60%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sc-closed:hover {
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text-strong);
+}
+.sc-closed:focus-visible {
   outline: var(--focus-ring);
 }
 /* Session and clock at the right of the card's first row. */

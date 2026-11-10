@@ -9,3 +9,6 @@ CODE_OF_CONDUCT.md
 
 # Golden fixtures are generated (scripts/golden*.py); do not reformat.
 packages/indicators/test/golden
+
+# Generated from api/src/tickerglass_api/screener_data (UniverseResponse JSON); do not reformat.
+e2e/fixtures/screener-universe.json

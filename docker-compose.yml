@@ -1,6 +1,13 @@
+# The image names match the multi-arch images the release workflow publishes to
+# ghcr.io. `docker compose pull && docker compose up -d` updates to TICKERGLASS_TAG
+# without building; leaving the images out (or `--build`) builds from this checkout.
 services:
   api:
-    build: ./api
+    image: ghcr.io/yavuzakbay/tickerglass-api:${TICKERGLASS_TAG:-latest}
+    build:
+      context: ./api
+      args:
+        TICKERGLASS_VERSION: ${TICKERGLASS_VERSION:-}
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/tickerglass.db}
@@ -32,6 +39,11 @@ services:
       SMTP_TLS: ${SMTP_TLS:-starttls}
       ALERTS_LOG_MAX: ${ALERTS_LOG_MAX:-5000}
       ALERTS_INTERNAL_TOKEN: ${ALERTS_INTERNAL_TOKEN:-}
+      # Optional single-user password auth (docs/self-hosting.md): empty = off.
+      # When AUTH_PASSWORD is set, also set ALERTS_INTERNAL_TOKEN (any long random
+      # string) so the alerts service can reach the API.
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
     volumes:
       - api-data:/data
     ports:
@@ -51,20 +63,26 @@ services:
       retries: 3
 
   web:
+    image: ghcr.io/yavuzakbay/tickerglass-web:${TICKERGLASS_TAG:-latest}
     build:
       context: .
       dockerfile: docker/node.Dockerfile
       target: web
+      args:
+        TICKERGLASS_VERSION: ${TICKERGLASS_VERSION:-}
     restart: unless-stopped
     depends_on: [api]
     ports:
       - '127.0.0.1:${WEB_PORT:-8080}:80'
 
   alerts:
+    image: ghcr.io/yavuzakbay/tickerglass-alerts:${TICKERGLASS_TAG:-latest}
     build:
       context: .
       dockerfile: docker/node.Dockerfile
       target: alerts
+      args:
+        TICKERGLASS_VERSION: ${TICKERGLASS_VERSION:-}
     restart: unless-stopped
     depends_on:
       api:

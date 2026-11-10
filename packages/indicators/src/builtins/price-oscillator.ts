@@ -6,6 +6,8 @@ export const PRICE_OSCILLATOR = defineIndicator({
   id: 'price-oscillator',
   name: 'Price Oscillator',
   shortName: 'PPO',
+  description:
+    'Percentage gap between fast and slow EMAs (PPO); zero-line and signal crosses flag momentum turns.',
   category: 'momentum',
   keywords: ['ppo', 'apo', 'price oscillator', 'percentage', 'oscillator'],
   overlay: false,

@@ -19,10 +19,16 @@ export const emptyQuote = (symbol: string): LiveQuote => ({
   volume: null,
   dayHigh: null,
   dayLow: null,
+  open: null,
+  fiftyTwoWeekHigh: null,
+  fiftyTwoWeekLow: null,
+  marketCap: null,
+  averageVolume: null,
   currency: null,
   marketState: null,
   ext: null,
   lastTickMs: null,
+  snapshotMs: null,
   flash: null,
 });
 
@@ -42,11 +48,29 @@ function flashOf(
 export function mergeSnapshot(prev: LiveQuote | undefined, q: Quote, now: number): LiveQuote {
   const base = prev ?? emptyQuote(q.symbol);
   const fresh = base.lastTickMs !== null && now - base.lastTickMs < FRESH_TICK_MS;
+  // A fresh tick means the same session: the day's range can only widen, so a snapshot
+  // never narrows what ticks reported. Otherwise the snapshot is the newer source.
+  const range = (
+    tick: number | null,
+    snap: number | null | undefined,
+    pick: (a: number, b: number) => number,
+  ): number | null => {
+    if (snap === null || snap === undefined) return tick;
+    return fresh && tick !== null ? pick(tick, snap) : snap;
+  };
   return {
     ...base,
     prevClose: q.prevClose ?? base.prevClose,
     currency: q.currency ?? base.currency,
     marketState: q.marketState ?? base.marketState,
+    dayHigh: range(base.dayHigh, q.dayHigh, Math.max),
+    dayLow: range(base.dayLow, q.dayLow, Math.min),
+    open: q.open ?? base.open ?? null,
+    fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? base.fiftyTwoWeekHigh ?? null,
+    fiftyTwoWeekLow: q.fiftyTwoWeekLow ?? base.fiftyTwoWeekLow ?? null,
+    marketCap: q.marketCap ?? base.marketCap ?? null,
+    averageVolume: q.averageVolume ?? base.averageVolume ?? null,
+    snapshotMs: now,
     ...(fresh
       ? {}
       : {

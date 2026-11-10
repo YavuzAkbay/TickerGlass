@@ -6,6 +6,8 @@ export const WILLIAMS_R = defineIndicator({
   id: 'williams-r',
   name: 'Williams %R',
   shortName: '%R',
+  description:
+    'Williams %R (0 to -100): position of the close in the period range; extremes flag overbought and oversold turns.',
   category: 'momentum',
   keywords: ['williams', '%r', 'percent range', 'oscillator'],
   overlay: false,

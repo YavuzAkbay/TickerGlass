@@ -5,17 +5,28 @@ import { normalizeSymbol } from '../store/app';
 import { useChartView } from '../store/chartView';
 import { useUiStore } from '../store/ui';
 import { confirmDialog, promptName } from '../ui/Prompt';
+import { useQuoteStore } from '../quotes/store';
+import { peekSnapshots } from '../screener/server/snapshot';
+import { importShareFile, pickShareFile, shareWatchlist } from '../share/open';
 import { toast } from '../ui/Toast';
+import { removeWithUndo } from './actions';
+import { isSnapshotColumn } from './columns/registry';
 import { DEFAULT_LIST_NAME, useWatchlistStore, validSymbol } from './store';
 import {
   addBlocker,
+  describeImport,
+  displayOrder,
   flagRows,
   formatTxt,
   isFlagRef,
   parseTxt,
+  type ParsedTxt,
   resolveActive,
+  type SymbolMeta,
   txtFileName,
 } from './model';
+import { useWatchlistPagePrefs } from './page/pagePrefs';
+import { peekSymbolMeta } from './page/symbolMeta';
 import { useWatchlistPrefs } from './prefs';
 import { FLAG_COLORS, type FlagColor, type ListRef, type WatchlistItem } from './types';
 
@@ -95,6 +106,11 @@ function download(name: string, text: string): void {
 }
 
 export async function importFile(file: File): Promise<void> {
+  // A file shared from a TickerGlass share dialog: preview first, import on confirmation.
+  if (/\.json$/i.test(file.name) || file.type === 'application/json') {
+    await importShareFile(file);
+    return;
+  }
   if (file.size > MAX_IMPORT_BYTES) {
     toast('The file is larger than 1 MB', 'error');
     return;
@@ -106,19 +122,42 @@ export async function importFile(file: File): Promise<void> {
     toast('Could not read the file', 'error');
     return;
   }
-  const { items, unmapped } = parseTxt(text);
-  const count = items.filter((i) => i.type === 'symbol').length;
-  if (!count) {
-    toast('No symbols found in the file', 'error');
-    return;
-  }
   const stem = file.name.replace(/\.[^.]*$/, '').trim() || DEFAULT_LIST_NAME;
-  const id = useWatchlistStore.getState().createList(stem, items);
-  useWatchlistPrefs.getState().setActive(id);
-  toast(
-    `Imported ${count} symbols${unmapped.length ? ` (${unmapped.length} prefixes unmapped)` : ''}`,
-    'success',
+  finishImport(parseTxt(text), stem, 'the file');
+}
+
+/** Create the list from a parse result and say what was (not) imported. */
+function finishImport(parsed: ParsedTxt, name: string, source: string): boolean {
+  const count = parsed.items.filter((i) => i.type === 'symbol').length;
+  const issues = !!(
+    parsed.unmapped.length ||
+    parsed.skipped ||
+    parsed.duplicates ||
+    parsed.truncated
   );
+  if (!count) {
+    const detail = issues
+      ? `: ${describeImport(parsed, 0).replace(/^Imported 0 symbols?; ?/, '')}`
+      : '';
+    toast(`No symbols found in ${source}${detail}`, 'error', issues ? 10_000 : 3500);
+    return false;
+  }
+  const id = useWatchlistStore.getState().createList(name, parsed.items);
+  useWatchlistPrefs.getState().setActive(id);
+  toast(describeImport(parsed, count), issues ? 'info' : 'success', issues ? 10_000 : 3500);
+  return true;
+}
+
+/**
+ * Import pasted text (symbols separated by commas, spaces or new lines, the
+ * `.txt` format's `EXCHANGE:TICKER` entries included) as a new list.
+ */
+export function importText(text: string, name = 'Pasted symbols'): boolean {
+  if (new Blob([text]).size > MAX_IMPORT_BYTES) {
+    toast('The text is larger than 1 MB', 'error');
+    return false;
+  }
+  return finishImport(parseTxt(text, { loose: true }), name, 'the text');
 }
 
 function pickFile(): void {
@@ -143,9 +182,39 @@ function pickFile(): void {
   input.click();
 }
 
-/** Chart symbol one step along the active list. */
+/**
+ * Symbols of the active list as the table shows them: the current sort of the
+ * screen in front (page or sidebar), collapsed sections skipped.
+ */
+export function displayedSymbols(ref: ListRef | null): string[] {
+  if (!ref) return [];
+  const { lists } = useWatchlistStore.getState();
+  const items: WatchlistItem[] = isFlagRef(ref)
+    ? listSymbols(ref).map((symbol) => ({ type: 'symbol', symbol }))
+    : (lists[ref]?.items ?? []);
+  const onPage = useUiStore.getState().screen === 'watchlists';
+  const sort = onPage ? useWatchlistPagePrefs.getState().sort : useWatchlistPrefs.getState().sort;
+  let meta: Record<string, SymbolMeta | undefined> | undefined;
+  if (sort?.key === 'name') {
+    meta = {};
+    for (const i of items)
+      if (i.type === 'symbol') meta[i.symbol] = peekSymbolMeta(i.symbol) ?? undefined;
+  }
+  return displayOrder(
+    items,
+    sort,
+    useQuoteStore.getState().quotes,
+    useWatchlistPrefs.getState().collapsed,
+    meta,
+    sort && isSnapshotColumn(sort.key)
+      ? peekSnapshots(items.flatMap((i) => (i.type === 'symbol' ? [i.symbol] : [])))
+      : undefined,
+  );
+}
+
+/** Chart symbol one step along the active list, in displayed order. */
 function step(dir: 1 | -1): void {
-  const syms = listSymbols(activeRef());
+  const syms = displayedSymbols(activeRef());
   if (!syms.length) return;
   const cur = syms.indexOf(useChartView.getState().symbol);
   const next = cur < 0 ? (dir > 0 ? 0 : syms.length - 1) : cur + dir;
@@ -261,6 +330,27 @@ export function registerWatchlistCommands(): () => void {
     },
     { id: 'watchlist.import', title: 'Import watchlist (.txt)…', category, run: pickFile },
     {
+      id: 'watchlist.importText',
+      title: 'Import from text…',
+      category,
+      run: async (arg) => {
+        const given =
+          typeof arg === 'string'
+            ? arg
+            : arg && typeof arg === 'object' && typeof (arg as { text?: unknown }).text === 'string'
+              ? (arg as { text: string }).text
+              : null;
+        const text =
+          given ??
+          (await promptName({
+            title: 'Import from text',
+            label: 'Symbols (comma, space or new line separated)',
+            okLabel: 'Import',
+          }));
+        if (text) importText(text);
+      },
+    },
+    {
       id: 'watchlist.export',
       title: 'Export watchlist (.txt)',
       category,
@@ -273,6 +363,19 @@ export function registerWatchlistCommands(): () => void {
           : (useWatchlistStore.getState().lists[ref]?.items ?? []);
         download(txtFileName(refName(ref)), formatTxt(items));
       },
+    },
+    {
+      id: 'watchlist.share',
+      title: 'Share watchlist…',
+      category,
+      enabled: () => activeRef() !== null,
+      run: (arg) => shareWatchlist(typeof arg === 'string' ? arg : activeRef()),
+    },
+    {
+      id: 'watchlist.importShared',
+      title: 'Import shared watchlist or screen (.json)…',
+      category,
+      run: pickShareFile,
     },
     {
       id: 'watchlist.flag',
@@ -296,9 +399,7 @@ export function registerWatchlistCommands(): () => void {
       run: (arg) => {
         if (typeof arg !== 'string') return;
         const ref = activeRef();
-        if (!ref) return;
-        if (isFlagRef(ref)) useWatchlistStore.getState().setFlag(arg, null);
-        else useWatchlistStore.getState().removeSymbols(ref, [arg]);
+        if (ref) removeWithUndo(ref, [arg]); // toasts with "Undo"
       },
     },
     {
@@ -316,6 +417,20 @@ export function registerWatchlistCommands(): () => void {
     },
     { id: 'watchlist.next', title: 'Next symbol in watchlist', category, run: () => step(1) },
     { id: 'watchlist.prev', title: 'Previous symbol in watchlist', category, run: () => step(-1) },
+    {
+      id: 'view.watchlists',
+      title: 'Open watchlists screen',
+      category,
+      shortcut: 'Alt+Shift+W',
+      run: () => useUiStore.getState().openScreen('watchlists'),
+    },
+    {
+      id: 'view.watchlists.close',
+      title: 'Close watchlists screen',
+      category,
+      enabled: () => useUiStore.getState().screen === 'watchlists',
+      run: () => useUiStore.getState().closeScreen(),
+    },
   ];
   return commands.register(list);
 }

@@ -9,6 +9,8 @@ export const MCGINLEY = defineIndicator({
   id: 'mcginley',
   name: 'McGinley Dynamic',
   shortName: 'McGinley Dynamic',
+  description:
+    'McGinley Dynamic: self-adjusting average that tracks price faster in trends and slower in chop, avoiding whipsaws.',
   category: 'movingAverage',
   keywords: ['ma', 'mcginley', 'dynamic', 'average'],
   overlay: true,

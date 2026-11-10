@@ -124,6 +124,7 @@ export async function exportChartData(format: 'csv' | 'xlsx'): Promise<void> {
 
 const PANELS: [NavSection | 'details', string][] = [
   ['watchlist', 'Watchlist'],
+  ['hotlists', 'Hotlists'],
   ['alerts', 'Alerts'],
   ['timeline', 'Timeline'],
   ['objectTree', 'Layers'],
@@ -393,6 +394,12 @@ export function registerCoreCommands(): () => void {
           openAlertDialog({ editId: id });
         else toast('Alert not found', 'error');
       },
+    },
+    {
+      id: 'view.hotlists',
+      title: 'Show Hotlists',
+      category: 'Panels',
+      run: () => useUiStore.getState().showNav('hotlists'),
     },
     ...PANELS.map(([id, title]): Command => ({
       id: `view.panel.${id}`,

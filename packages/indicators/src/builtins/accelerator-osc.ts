@@ -6,6 +6,8 @@ export const ACCELERATOR_OSC = defineIndicator({
   id: 'accelerator-osc',
   name: 'Accelerator Oscillator',
   shortName: 'AC',
+  description:
+    'Momentum oscillator derived from the Awesome Oscillator; zero-line crosses flag the acceleration of a trend.',
   category: 'momentum',
   keywords: ['ac', 'accelerator oscillator', 'bill williams', 'awesome', 'oscillator'],
   overlay: false,

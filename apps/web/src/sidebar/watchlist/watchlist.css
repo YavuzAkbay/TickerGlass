@@ -11,7 +11,15 @@
   --wl-flash-down-bg: color-mix(in srgb, var(--down) 30%, transparent);
 }
 
+/* The table scrolls itself (rows are windowed), so the panel is a fixed-height column. */
+.wl-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
 .wl-toolbar {
+  flex: none;
   position: sticky;
   top: 0;
   z-index: 3;
@@ -78,10 +86,26 @@
 }
 
 .wl-table {
+  --wl-row-h: 32px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
   min-width: 0;
+  min-height: 0;
 }
 .wl-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
   outline: none;
+}
+.wl-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .wl-grid:focus-visible {
   box-shadow: inset 0 0 0 1px var(--accent);
@@ -95,9 +119,7 @@
   padding: 0 8px 0 11px;
 }
 .wl-head {
-  position: sticky;
-  top: 36px;
-  z-index: 2;
+  flex: none;
   height: 28px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
@@ -122,6 +144,10 @@
 .wl-th.sorted {
   color: var(--text-strong);
 }
+.wl-th:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .wl-th-gutter {
   justify-content: center;
   cursor: default;
@@ -132,7 +158,7 @@
 }
 .wl-row {
   position: relative;
-  height: 32px;
+  height: var(--wl-row-h);
   border-left: 3px solid transparent;
   padding-left: 8px;
   cursor: pointer;
@@ -149,10 +175,18 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .wl-sym {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--text-strong);
   font-weight: 600;
+}
+.wl-sym-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wl-cell {
   overflow: hidden;
@@ -205,7 +239,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  height: 28px;
+  height: var(--wl-row-h);
   padding: 0 8px 0 8px;
   background: var(--panel-2);
   color: var(--text-muted);
@@ -406,7 +440,6 @@
 /* ======== touch + phone ======== */
 @media (pointer: coarse) {
   .wl-row {
-    height: 48px;
     -webkit-touch-callout: none;
     user-select: none;
   }
@@ -414,14 +447,12 @@
     height: 44px;
   }
   .wl-head {
-    top: 44px;
     height: 34px;
   }
   .wl-switcher {
     height: 38px;
   }
   .wl-section {
-    height: 36px;
     -webkit-touch-callout: none;
     user-select: none;
   }

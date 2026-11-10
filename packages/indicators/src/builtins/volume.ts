@@ -5,6 +5,8 @@ export const VOLUME = defineIndicator({
   id: 'volume',
   name: 'Volume',
   shortName: 'Vol',
+  description:
+    'Bars showing how many shares traded each period, colored by the direction of the bar.',
   category: 'volume',
   keywords: ['volume', 'vol', 'histogram'],
   overlay: false,

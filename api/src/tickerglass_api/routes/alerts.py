@@ -26,6 +26,7 @@ from ..notifications import (
 )
 from ..notifications import effective_webhook_url as effective_url
 from ..notifications.dispatcher import email_content, iso, webhook_body
+from ..notifications.outbox import log_entry, record_log_entry
 from ..settings import Settings
 from ..userdata import alerts as al
 from ..userdata import schemas as s
@@ -170,14 +171,7 @@ def _require_future(status: str, expires_at: datetime | None) -> None:
 
 
 def _entry(session: SessionDep, row: m.AlertLog) -> al.AlertLogEntry:
-    dels = list(
-        session.scalars(
-            select(m.AlertDelivery)
-            .where(m.AlertDelivery.log_id == row.id)
-            .order_by(m.AlertDelivery.id)
-        )
-    )
-    return al.log_entry(row, dels)
+    return log_entry(session, row)
 
 
 # --------------------------------------------------------------- fixed paths
@@ -651,57 +645,12 @@ def fire_alert(
         raise _conflict(_get(session, alert_id))
     alert = store.reload(session, m.Alert, alert_id)
 
-    log = m.AlertLog(
-        fire_id=body.fire_id,
-        alert_id=alert.id,
-        alert_name=alert.name,
-        symbol=alert.symbol,
-        interval=alert.interval,
-        kind="fired",
-        fired_at=fired_at,
-        bar_time=body.bar_time,
-        message=body.message,
-        values=body.values,
-        delayed=body.delayed,
-        final=body.final,
-        read=False,
-    )
-    session.add(log)
-    try:
-        session.flush()
-    except IntegrityError:
-        # A concurrent retry logged this fireId first: that one wins, nothing else happens.
-        session.rollback()
-        winner = session.scalar(select(m.AlertLog).where(m.AlertLog.fire_id == body.fire_id))
-        if winner is None:
-            raise
-        return _entry(session, winner)
-
-    notify = al.AlertNotify.model_validate(alert.notify)
-    wanted: list[tuple[str, str | None]] = []
-    if notify.webhook:
-        wanted.append(("webhook", notify.webhook_url))
-    if notify.telegram:
-        wanted.append(("telegram", None))
-    if notify.email:
-        wanted.append(("email", None))
     t = s.now()
-    for channel, target in wanted:
-        ok = channel_configured(settings, channel, target)
-        session.add(
-            m.AlertDelivery(
-                log_id=log.id,
-                channel=channel,
-                target=target,
-                status="pending" if ok else "failed",
-                attempts=0,
-                next_attempt_at=t,
-                last_error=None if ok else "not configured",
-            )
-        )
 
-    # Same rule as PUT /alerts/states: after a final fire's revision bump this is ignored.
-    if body.state is not None and alert.revision == body.revision:
+    def save_state() -> None:
+        # Same rule as PUT /alerts/states: after a final fire's revision bump this is ignored.
+        if body.state is None or alert.revision != body.revision:
+            return
         srow = session.get(m.AlertState, alert.id)
         if srow is None:
             session.add(
@@ -712,36 +661,33 @@ def fire_alert(
         else:
             srow.revision, srow.state, srow.updated_at = body.revision, body.state, t
 
-    _prune_log(session, settings.alerts_log_max)
-    session.commit()
-
-    entry = _entry(session, log)
-    hub.publish_threadsafe(
-        "alerts",
-        {
-            "type": "alert.fired",
-            "entry": entry.model_dump(mode="json", by_alias=True),
-            "alert": {
-                "id": alert.id,
-                "status": alert.status,
-                "revision": alert.revision,
-                "fireCount": alert.fire_count,
-                "lastFiredAt": iso(fired_at),
-            },
+    recorded = record_log_entry(
+        session,
+        settings,
+        hub,
+        dispatcher,
+        fire_id=body.fire_id,
+        name=alert.name,
+        symbol=alert.symbol,
+        interval=alert.interval,
+        kind="fired",
+        bar_time=body.bar_time,
+        message=body.message,
+        values=body.values,
+        notify=al.AlertNotify.model_validate(alert.notify),
+        alert_id=alert.id,
+        fired_at=fired_at,
+        delayed=body.delayed,
+        final=body.final,
+        alert_payload={
+            "id": alert.id,
+            "status": alert.status,
+            "revision": alert.revision,
+            "fireCount": alert.fire_count,
+            "lastFiredAt": iso(fired_at),
         },
+        before_commit=save_state,
     )
-    if body.final:
+    if recorded.created and body.final:
         _changed(hub, [alert.id])
-    dispatcher.wake()
-    return entry
-
-
-def _prune_log(session: SessionDep, keep: int) -> None:
-    """Keep the newest `keep` log entries (deliveries go with them)."""
-    cutoff = session.scalar(
-        select(m.AlertLog.id).order_by(m.AlertLog.id.desc()).offset(max(keep, 1)).limit(1)
-    )
-    if cutoff is None:
-        return
-    session.execute(delete(m.AlertDelivery).where(m.AlertDelivery.log_id <= cutoff))
-    session.execute(delete(m.AlertLog).where(m.AlertLog.id <= cutoff))
+    return _entry(session, recorded.log)

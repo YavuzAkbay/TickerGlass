@@ -55,7 +55,9 @@ export function loadConfig(env: Env = process.env): Config {
   const token = env['ALERTS_INTERNAL_TOKEN']?.trim();
   return {
     apiUrl: rawUrl.replace(/\/+$/, ''),
-    wsUrl,
+    // With API auth on, socket handshakes cannot carry headers, so the token rides
+    // as an auth_token query parameter (matched by the API's auth middleware).
+    wsUrl: token ? `${wsUrl}?auth_token=${encodeURIComponent(token)}` : wsUrl,
     token: token ? token : null,
     pollMs: int(env, 'ALERTS_POLL_MS', 30_000, 1000),
     closeGraceS: int(env, 'ALERTS_CLOSE_GRACE_S', 60, 0),

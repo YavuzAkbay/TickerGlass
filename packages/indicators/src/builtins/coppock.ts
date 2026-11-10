@@ -7,6 +7,8 @@ export const COPPOCK = defineIndicator({
   id: 'coppock',
   name: 'Coppock Curve',
   shortName: 'Coppock',
+  description:
+    'Long-term momentum: two rates of change summed and smoothed; zero-line crossings signal major trend turns.',
   category: 'momentum',
   keywords: ['coppock', 'curve', 'roc', 'oscillator'],
   overlay: false,

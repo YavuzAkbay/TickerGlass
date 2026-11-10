@@ -4,7 +4,7 @@ import { formatTxt } from '../apps/web/src/watchlist/model';
 import { STARTER_LISTS } from '../apps/web/src/watchlist/starters';
 import { expect, test } from './fixtures';
 import { mockMarket, quote } from './market';
-import type { MockServer } from './persistence';
+import { seedActiveList, type MockServer } from './persistence';
 
 declare global {
   interface Window {
@@ -15,7 +15,14 @@ declare global {
 type SeedItem = string | { section: string; id: string; collapsed?: boolean };
 
 /** Put a list on the mock server before the page loads; it becomes the active list. */
-function seed(server: MockServer, id: string, name: string, items: SeedItem[], active = true) {
+async function seed(
+  page: Page,
+  server: MockServer,
+  id: string,
+  name: string,
+  items: SeedItem[],
+  active = true,
+) {
   const t = new Date(Date.UTC(2026, 0, 1, 0, 0, server.watchlists.size)).toISOString();
   server.watchlists.set(id, {
     id,
@@ -29,12 +36,13 @@ function seed(server: MockServer, id: string, name: string, items: SeedItem[], a
         : { type: 'section', id: i.id, title: i.section, collapsed: i.collapsed ?? false },
     ),
   });
-  if (active)
+  if (active) {
     server.settings.set('watchlist.prefs', {
-      activeId: id,
       columns: ['last', 'change', 'changePercent'],
       sort: null,
     });
+    await seedActiveList(page, id);
+  }
 }
 
 async function open(page: Page) {
@@ -178,7 +186,7 @@ test('create a list, add by Alt+W and by search, reload, rename, duplicate', asy
 
 test('add a section, drag MSFT above it, order survives a reload', async ({ page, server }) => {
   await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL', 'MSFT', 'TSLA']);
+  await seed(page, server, 'w1', 'Main', ['AAPL', 'MSFT', 'TSLA']);
   await open(page);
 
   await rightClick(page, 'MSFT');
@@ -212,7 +220,7 @@ test('sort by Chg% descending and clear; sorted rows are not draggable', async (
   server,
 }) => {
   await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL', 'MSFT', 'TSLA']);
+  await seed(page, server, 'w1', 'Main', ['AAPL', 'MSFT', 'TSLA']);
   await open(page);
   await expect(row(page, 'TSLA')).toContainText('103');
   await expect(row(page, 'AAPL')).toHaveAttribute('draggable', 'true');
@@ -240,7 +248,7 @@ test('Vol and Ext columns; extended tick fills Ext, regular tick flashes Last', 
   server,
 }) => {
   const market = await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL', 'MSFT']);
+  await seed(page, server, 'w1', 'Main', ['AAPL', 'MSFT']);
   await open(page);
   await toggleColumn(page, 'Volume');
   await toggleColumn(page, 'Pre/post-market price');
@@ -266,7 +274,7 @@ test('Vol and Ext columns; extended tick fills Ext, regular tick flashes Last', 
 
 test('flag red via the context menu, see it under Flagged, unflag', async ({ page, server }) => {
   await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL', 'MSFT']);
+  await seed(page, server, 'w1', 'Main', ['AAPL', 'MSFT']);
   await open(page);
 
   await rightClick(page, 'AAPL');
@@ -288,8 +296,8 @@ test('flag red via the context menu, see it under Flagged, unflag', async ({ pag
 
 test('move a symbol to another list, remove one', async ({ page, server }) => {
   await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'a', 'Alpha', ['AAPL', 'MSFT']);
-  seed(server, 'b', 'Beta', [], false);
+  await seed(page, server, 'a', 'Alpha', ['AAPL', 'MSFT']);
+  await seed(page, server, 'b', 'Beta', [], false);
   await open(page);
 
   await rightClick(page, 'MSFT');
@@ -310,7 +318,7 @@ test('keyboard: arrows move the selection and change the chart symbol', async ({
   server,
 }) => {
   await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL', 'MSFT', 'TSLA']);
+  await seed(page, server, 'w1', 'Main', ['AAPL', 'MSFT', 'TSLA']);
   await open(page);
   expect(await chartSymbol(page)).toBe('AAPL');
 
@@ -327,7 +335,7 @@ test('keyboard: arrows move the selection and change the chart symbol', async ({
 
 test('.txt import and export round-trip', async ({ page, server }) => {
   await mockMarket(page);
-  seed(server, 'w1', 'Main', ['AAPL']);
+  await seed(page, server, 'w1', 'Main', ['AAPL']);
   await open(page);
 
   const txt = '###INDICES,SP:SPX,NASDAQ:AAPL,BIST:THYAO,BINANCE:BTCUSDT,CME_MINI:ES1!,FX:EURUSD';
@@ -358,7 +366,7 @@ test('.txt import and export round-trip', async ({ page, server }) => {
 test('closed /ws: quotes fall back to polling /api/quotes', async ({ page, server }) => {
   test.setTimeout(90_000);
   const market = await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL', 'MSFT']);
+  await seed(page, server, 'w1', 'Main', ['AAPL', 'MSFT']);
   await open(page);
   await expect.poll(() => market.sockets).toBe(1);
   await expect(row(page, 'AAPL')).toContainText('101');
@@ -375,12 +383,12 @@ test('closed /ws: quotes fall back to polling /api/quotes', async ({ page, serve
     .toBe(true);
 });
 
-test('API down: edits queue and sync later; a stale save offers "Keep mine"', async ({
+test('API down: edits queue and sync later; a stale save merges cleanly', async ({
   page,
   server,
 }) => {
   await mockMarket(page, { quotes: QUOTES });
-  seed(server, 'w1', 'Main', ['AAPL']);
+  await seed(page, server, 'w1', 'Main', ['AAPL']);
   await open(page);
   await expect(row(page, 'AAPL')).toBeVisible();
 
@@ -393,7 +401,8 @@ test('API down: edits queue and sync later; a stale save offers "Keep mine"', as
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect.poll(() => serverItems(server, 'w1'), { timeout: 20_000 }).toEqual(['AAPL', 'MSFT']);
 
-  // Another device changed the list: our next save is stale (409).
+  // Another device renamed the list and dropped MSFT: our next save is stale (409), but the
+  // edits do not clash, so both sides' changes are merged without a prompt.
   const w = server.watchlists.get('w1')!;
   Object.assign(w, {
     name: 'Main (other device)',
@@ -401,9 +410,25 @@ test('API down: edits queue and sync later; a stale save offers "Keep mine"', as
     revision: w.revision + 1,
   });
   await searchAdd(page, 'TSLA');
+  await expect.poll(() => serverItems(server, 'w1'), { timeout: 20_000 }).toEqual(['AAPL', 'TSLA']);
+  expect(server.watchlists.get('w1')!.name).toBe('Main (other device)');
+  await expect(page.getByRole('status').filter({ hasText: /changed elsewhere/ })).toHaveCount(0);
+});
+
+test('a stale save that cannot merge offers "Keep mine"', async ({ page, server }) => {
+  await mockMarket(page, { quotes: QUOTES });
+  await seed(page, server, 'w1', 'Main', ['AAPL']);
+  await open(page);
+  await expect(row(page, 'AAPL')).toBeVisible();
+
+  // Another device renamed the list; so do we, differently: the names clash.
+  const w = server.watchlists.get('w1')!;
+  Object.assign(w, { name: 'Main (other device)', revision: w.revision + 1 });
+  await listAction(page, 'Rename…');
+  await promptName(page, 'Main (mine)');
   const toast = page.getByRole('status').filter({ hasText: /changed elsewhere/ });
   await expect(toast).toBeVisible();
-  await expect(toast.getByRole('button', { name: 'Keep mine' })).toBeVisible();
+  await expect(toast).toContainText(/renamed differently/);
   await toast.getByRole('button', { name: 'Keep mine' }).click();
-  await expect.poll(() => serverItems(server, 'w1')).toEqual(['AAPL', 'MSFT', 'TSLA']);
+  await expect.poll(() => server.watchlists.get('w1')!.name).toBe('Main (mine)');
 });

@@ -7,6 +7,8 @@ export const GROSS_MARGIN = defineIndicator({
   id: 'fin-gross-margin',
   name: 'Gross Margin',
   shortName: 'Gross Margin',
+  description:
+    'Gross profit as a share of revenue per reporting period; a proxy for pricing power and production costs.',
   category: 'financials',
   keywords: ['gross margin', 'gross profit', 'margin', 'profitability', 'financials'],
   overlay: false,
@@ -25,7 +27,13 @@ export const GROSS_MARGIN = defineIndicator({
       ROW.grossProfit,
       'gross profit',
     );
-    const revenue = requireSeries(env.fundamentals, inputs.period, 'income', ROW.revenue, 'revenue');
+    const revenue = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'income',
+      ROW.revenue,
+      'revenue',
+    );
     const margin = scaled(divideBy(grossProfit, revenue), 100);
     return (c) => {
       c.set('margin', valueAt(margin, c.time[c.i]!));

@@ -9,6 +9,8 @@ export const AROON = defineIndicator({
   id: 'aroon',
   name: 'Aroon',
   shortName: 'Aroon',
+  description:
+    'Measures bars since the highest high and lowest low (0-100) to gauge trend direction, strength and fresh breakouts.',
   category: 'momentum',
   keywords: ['aroon', 'up', 'down', 'trend'],
   overlay: false,

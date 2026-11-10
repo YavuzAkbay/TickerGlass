@@ -469,6 +469,8 @@ export const CHART_PATTERNS = defineIndicator({
   id: 'chart-patterns',
   name: 'Chart Patterns',
   shortName: 'Patterns',
+  description:
+    'Automatically detects classic chart patterns such as head and shoulders, double tops and triangles, and draws them.',
   category: 'other',
   keywords: [
     'pattern',

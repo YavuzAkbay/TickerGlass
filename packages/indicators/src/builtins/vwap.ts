@@ -70,6 +70,8 @@ export const VWAP = defineIndicator({
   id: 'vwap',
   name: 'Volume Weighted Average Price',
   shortName: 'VWAP',
+  description:
+    'Volume Weighted Average Price, reset per session; an institutional fair-value line for intraday bias.',
   category: 'volume',
   keywords: ['vwap', 'volume', 'weighted', 'average', 'price', 'session'],
   overlay: true,

@@ -12,6 +12,8 @@ export const SWING_HL = defineIndicator({
   id: 'swing-hl',
   name: 'Swing Highs/Lows',
   shortName: 'Swing HL',
+  description:
+    'Marks confirmed swing highs and lows, giving structure anchors for trendlines and retracements.',
   category: 'other',
   keywords: ['pivot', 'pivots', 'high', 'low', 'swing', 'fractal'],
   overlay: true,

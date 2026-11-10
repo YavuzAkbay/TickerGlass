@@ -9,8 +9,11 @@ from sqlalchemy import CursorResult, Result, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import models as m
+from ..notifications import DeliveryError, webhook, webhook_allow_private
+from ..settings import Settings
 from . import alerts as al
 from . import schemas as s
+from . import screens as sc
 
 _T = TypeVar("_T")
 
@@ -239,6 +242,10 @@ def export_bundle(session: Session) -> s.Bundle:
             s.BundleUserScript(**user_script(r).model_dump())
             for r in rows(m.UserScript, m.UserScript.created_at, m.UserScript.id)
         ],
+        screens=[
+            sc.BundleScreen(**sc.screen_out(r).model_dump())
+            for r in rows(m.Screen, m.Screen.created_at, m.Screen.id)
+        ],
     )
 
 
@@ -270,6 +277,7 @@ SECTIONS: dict[str, Any] = {
     "flags": m.SymbolFlag,
     "alerts": m.Alert,
     "user_scripts": m.UserScript,
+    "screens": m.Screen,
 }
 
 _SAFE_LAYOUT_ID = re.compile(r"[A-Za-z0-9_-]{1,36}")
@@ -298,8 +306,11 @@ def import_bundle(
     bundle: s.Bundle,
     mode: Literal["merge", "replace"],
     touched: Touched | None = None,
+    settings: Settings | None = None,
 ) -> s.ImportSummary:
-    """Apply `bundle` in `session` (the caller commits or rolls back).
+    """Apply `bundle` in `session` (the caller commits or rolls back). With `settings`, a
+    screen's own webhook URL gets the SSRF check that creating a screen applies (a refused
+    URL fails the whole import, like any other invalid part of a bundle).
 
     merge: layouts, drawings, notes and user scripts match by id; templates by name
     (drawing templates by tool type + name); settings by key. Matches are
@@ -332,6 +343,9 @@ def import_bundle(
 
     _dupes([x.id for x in bundle.alerts], "alert id")
     _dupes([x.id for x in bundle.user_scripts], "user script id")
+    _dupes([x.id for x in bundle.screens], "screen id")
+    if settings is not None:
+        _check_screen_webhooks(settings, bundle.screens)
 
     summary = s.ImportSummary(mode=mode, dry_run=False)
     touched = touched if touched is not None else Touched()
@@ -346,6 +360,8 @@ def import_bundle(
                 session.execute(delete(m.AlertState))
             elif section == "drawings":
                 touched.drawings_deleted.update(session.scalars(select(m.DrawingRow.id)))
+            elif section == "screens":
+                session.execute(delete(m.ScreenState))
             session.execute(delete(model))
         session.flush()
 
@@ -559,14 +575,34 @@ def import_bundle(
 
     for a in bundle.alerts:
         _import_alert(session, a, t, summary, touched)
+    for sx in bundle.screens:
+        _import_screen(session, sx, t, summary)
     session.flush()
     if bundle.alerts and (session.scalar(select(func.count()).select_from(m.Alert)) or 0) > (
         al.MAX_ALERTS
     ):
         raise BundleError(f"import would exceed {al.MAX_ALERTS} alerts")
+    if bundle.screens and (session.scalar(select(func.count()).select_from(m.Screen)) or 0) > (
+        sc.MAX_SCREENS
+    ):
+        raise BundleError(f"import would exceed {sc.MAX_SCREENS} screens")
     touched.alerts_deleted -= touched.alerts
     touched.drawings_deleted -= touched.drawings
     return summary
+
+
+def _check_screen_webhooks(settings: Settings, screens: list[sc.BundleScreen]) -> None:
+    """`routes/screens.py`'s webhook check for every distinct per-screen URL of a bundle."""
+    checked: set[str] = set()
+    for x in screens:
+        url = x.alert.notify.webhook_url if x.alert is not None else None
+        if not url or url in checked:
+            continue
+        try:
+            webhook.check_url(url, webhook_allow_private(settings, url))
+        except DeliveryError as exc:
+            raise BundleError(f"screen {x.id}: webhookUrl: {exc}") from None
+        checked.add(url)
 
 
 def _import_alert(
@@ -610,6 +646,37 @@ def _import_alert(
         session.execute(delete(m.AlertState).where(m.AlertState.alert_id == aid))
         summary.alerts.updated += 1
     touched.alerts.add(aid)
+
+
+def _import_screen(session: Session, x: sc.BundleScreen, t: Any, summary: s.ImportSummary) -> None:
+    """Merge one screen by id (revision bumped on a match). Its alert state is dropped when the
+    spec changed or the alert was switched on, so the next evaluation starts from a baseline."""
+    sid = x.id if _SAFE_LAYOUT_ID.fullmatch(x.id) else s.new_id()
+    spec = sc.dump_spec(x.spec)
+    alert = sc.dump_alert(x.alert)
+    row = session.get(m.Screen, sid)
+    if row is None:
+        session.add(
+            m.Screen(
+                id=sid,
+                name=x.name,
+                spec=spec,
+                schema_version=sc.SCREEN_SCHEMA_VERSION,
+                alert=alert,
+                revision=1,
+                created_at=x.created_at or t,
+                updated_at=t,
+            )
+        )
+        summary.screens.created += 1
+        return
+    if row.spec != spec or (sc.alert_enabled(alert) and not sc.alert_enabled(row.alert)):
+        session.execute(delete(m.ScreenState).where(m.ScreenState.screen_id == sid))
+    row.name, row.spec, row.alert = x.name, spec, alert
+    row.schema_version = sc.SCREEN_SCHEMA_VERSION
+    row.revision += 1
+    row.updated_at = t
+    summary.screens.updated += 1
 
 
 def _free_id(session: Session, model: Any, wanted: str | None) -> str:

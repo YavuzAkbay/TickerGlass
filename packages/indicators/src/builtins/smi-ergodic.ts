@@ -25,6 +25,8 @@ export const SMI_ERGODIC = defineIndicator({
   id: 'smi-ergodic',
   name: 'SMI Ergodic',
   shortName: 'SMI Erg',
+  description:
+    'SMI Ergodic: double-smoothed true-strength index with a signal line for trend-momentum confirmation.',
   category: 'momentum',
   keywords: ['smi', 'ergodic', 'tsi', 'blau', 'oscillator'],
   overlay: false,

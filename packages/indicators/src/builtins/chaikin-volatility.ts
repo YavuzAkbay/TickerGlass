@@ -6,6 +6,8 @@ export const CHAIKIN_VOLATILITY = defineIndicator({
   id: 'chaikin-volatility',
   name: 'Chaikin Volatility',
   shortName: 'CV',
+  description:
+    'Percent change of the high-low range smoothed by an EMA; rising values mark expanding volatility.',
   category: 'volatility',
   keywords: ['chaikin', 'volatility', 'cv', 'range'],
   overlay: false,

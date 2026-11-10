@@ -6,6 +6,7 @@ export const TYPICAL_PRICE = defineIndicator({
   id: 'typical-price',
   name: 'Typical Price',
   shortName: 'Typical Price',
+  description: 'Average of each bar high, low and close, plotted as a line; the input behind CCI.',
   category: 'other',
   keywords: ['typical', 'hlc3', 'price'],
   overlay: true,

@@ -1,3 +1,9 @@
+/* Auth gate: the brief blank screen while /auth/state answers. */
+.app-boot {
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
 /* App frame: command bar across the top, then the navigator on the left, the chart pane, and the
    drawing tool rail on the right edge (collapsible to zero width). */
 .app {
@@ -73,6 +79,16 @@
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+/* A full-window screen (watchlists) covers the shell: its parts stay mounted
+   (charts keep their data) but are unpainted and untabbable (inert is set in App.tsx). */
+.app.has-screen > .app-top,
+.app.has-screen > .navigator,
+.app.has-screen > .center,
+.app.has-screen > .inspector,
+.app.has-screen > .app-rail {
+  visibility: hidden;
 }
 
 .chart-stack {

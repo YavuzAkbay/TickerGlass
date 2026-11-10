@@ -6,6 +6,8 @@ export const DONCHIAN = defineIndicator({
   id: 'donchian',
   name: 'Donchian Channels',
   shortName: 'DC',
+  description:
+    'Highest high and lowest low over a period; the classic breakout channel used by trend-following systems.',
   category: 'bands',
   keywords: ['dc', 'donchian', 'channels', 'breakout', 'highest', 'lowest'],
   overlay: true,

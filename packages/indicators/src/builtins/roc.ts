@@ -16,6 +16,8 @@ export const ROC = defineIndicator({
   id: 'roc',
   name: 'Rate Of Change',
   shortName: 'ROC',
+  description:
+    'Rate of Change: percent price change over N bars; zero-line crossings mark momentum direction shifts.',
   category: 'momentum',
   keywords: ['roc', 'rate of change', 'momentum', 'oscillator'],
   overlay: false,

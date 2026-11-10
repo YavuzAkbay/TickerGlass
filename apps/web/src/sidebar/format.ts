@@ -1,6 +1,39 @@
 /** Number/date formatting shared by the sidebar panels. */
 
 const DASH = '—';
+const FALLBACK_LOCALE = 'en-US';
+
+let localeOverride: string | undefined;
+const nfCache = new Map<string, Intl.NumberFormat>();
+
+/** Number locale: the browser's (`navigator.language`), else en-US. */
+export function formatLocale(): string {
+  if (localeOverride) return localeOverride;
+  return (typeof navigator !== 'undefined' && navigator.language) || FALLBACK_LOCALE;
+}
+
+/** Test hook: pin (or with no argument release) the number locale. */
+export function setFormatLocale(locale?: string): void {
+  localeOverride = locale;
+}
+
+/** Cached `Intl.NumberFormat` (construction is slow; tables format thousands of cells per tick). */
+function numberFormat(min: number, max: number): Intl.NumberFormat {
+  const locale = formatLocale();
+  const key = `${locale}|${min}|${max}`;
+  let nf = nfCache.get(key);
+  if (!nf) {
+    const opts = { minimumFractionDigits: min, maximumFractionDigits: max };
+    try {
+      nf = new Intl.NumberFormat(locale, opts);
+    } catch {
+      // Malformed locale tag: fall back rather than throwing in render.
+      nf = new Intl.NumberFormat(FALLBACK_LOCALE, opts);
+    }
+    nfCache.set(key, nf);
+  }
+  return nf;
+}
 
 export const isNum = (v: number | null | undefined): v is number =>
   typeof v === 'number' && Number.isFinite(v);
@@ -15,10 +48,7 @@ export function decimalsForTick(minTick: number | null | undefined): number {
 
 export function fmtPrice(v: number | null | undefined, decimals = 2): string {
   if (!isNum(v)) return DASH;
-  return v.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
+  return numberFormat(decimals, decimals).format(v);
 }
 
 /** Price with sensible decimals when no tick size is known. */
@@ -45,12 +75,79 @@ export function fmtCompact(v: number | null | undefined): string {
     [1e3, 'K'],
   ];
   for (const [n, u] of units) if (a >= n) return `${(v / n).toFixed(2)}${u}`;
-  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return numberFormat(0, 2).format(v);
+}
+
+/**
+ * Market cap in USD, compact: `$1.2T`, `$350B`, `$42.5M`. One decimal below
+ * 100 units, none from 100 up; below a million the plain amount.
+ */
+export function fmtCap(v: number | null | undefined): string {
+  if (!isNum(v)) return DASH;
+  const a = Math.abs(v);
+  const units: [number, string][] = [
+    [1e12, 'T'],
+    [1e9, 'B'],
+    [1e6, 'M'],
+  ];
+  for (const [n, u] of units) {
+    if (a < n) continue;
+    const x = v / n;
+    const d = Math.abs(x) >= 100 ? 0 : 1;
+    return `$${numberFormat(d, d).format(x)}${u}`;
+  }
+  return `$${numberFormat(0, 0).format(v)}`;
+}
+
+/** Ratio as a multiple: `1.80x`. */
+export function fmtMultiple(v: number | null | undefined): string {
+  if (!isNum(v)) return DASH;
+  return `${numberFormat(2, 2).format(v)}x`;
+}
+
+/** Pence/cents quotes whose ISO code would print the major unit's symbol. */
+const SUBUNIT_MARK: Record<string, string> = { GBp: 'p', GBX: 'p', ZAc: 'c', ILA: 'ag' };
+const currencyCache = new Map<string, string>();
+
+function currencyMark(currency: string, currencyDisplay: 'symbol' | 'narrowSymbol'): string {
+  const parts = new Intl.NumberFormat(formatLocale(), {
+    style: 'currency',
+    currency,
+    currencyDisplay,
+  }).formatToParts(0);
+  return parts.find((p) => p.type === 'currency')?.value ?? '';
+}
+
+/**
+ * Mark to put before a price in `currency`; '' for USD, unknown or missing
+ * currencies (a price is assumed to be dollars unless the quote says otherwise).
+ */
+export function currencyPrefix(currency: string | null | undefined): string {
+  if (!currency || currency === 'USD') return '';
+  const sub = SUBUNIT_MARK[currency];
+  if (sub) return sub;
+  const key = `${formatLocale()}|${currency}`;
+  const hit = currencyCache.get(key);
+  if (hit !== undefined) return hit;
+  let mark: string;
+  try {
+    mark = currencyMark(currency, 'narrowSymbol');
+    // The narrow form of many dollar/peso currencies is a bare `$`, which reads as USD:
+    // use the distinguishing symbol (CA$, A$, HK$), else the ISO code.
+    if (mark === '$') {
+      mark = currencyMark(currency, 'symbol');
+      if (mark === '$' || mark === '') mark = currency;
+    }
+  } catch {
+    mark = '';
+  }
+  currencyCache.set(key, mark);
+  return mark;
 }
 
 export function fmtInt(v: number | null | undefined): string {
   if (!isNum(v)) return DASH;
-  return Math.round(v).toLocaleString('en-US');
+  return numberFormat(0, 0).format(Math.round(v));
 }
 
 export function changeClass(v: number | null | undefined): string {

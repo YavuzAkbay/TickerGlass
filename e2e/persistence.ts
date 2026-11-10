@@ -94,7 +94,7 @@ export function firstChart(state: Json | undefined): Json | undefined {
 
 /** Routes that may reach the real backend (read-only market data). */
 const MARKET =
-  /^\/api\/(bars|quotes|quotes\/extended|health|news|providers)$|^\/api\/(symbols|events|news|fundamentals|performance|providers)\//;
+  /^\/api\/(bars|sparklines|quotes|quotes\/extended|health|news|providers)$|^\/api\/(symbols|events|news|fundamentals|performance|providers)\//;
 const USER_DATA =
   /^\/api\/(layouts|drawings|indicator-templates|drawing-templates|chart-templates|settings|notes|watchlists|flags|alerts|user-scripts|export|import)(\/|$)/;
 const FLAG_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
@@ -1020,6 +1020,18 @@ export class MockServer {
 }
 
 /**
+ * Make list `id` the active watchlist (a local-only preference, not synced: it lives in
+ * localStorage). Applied before the page loads and only while the user has not chosen yet.
+ */
+export async function seedActiveList(page: Page, id: string): Promise<void> {
+  await page.addInitScript((listId) => {
+    const key = 'tickerglass-watchlist-prefs';
+    if (localStorage.getItem(key) === null)
+      localStorage.setItem(key, JSON.stringify({ state: { activeId: listId }, version: 1 }));
+  }, id);
+}
+
+/**
  * Route `/api/**` of `page`: user data to `server`, market data through,
  * anything else recorded in `server.unhandled` (the fixture fails the test).
  */
@@ -1030,6 +1042,10 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
     // Only the backend (not e.g. Vite's /src/api/*.ts modules); market data passes through.
     if (!url.pathname.startsWith('/api/') || MARKET.test(url.pathname)) return route.fallback();
     const call = `${req.method()} ${url.pathname}${url.search}`;
+    // Password auth is off in e2e (answered even while the mock server is down, so
+    // boot behavior matches the pre-auth app exactly).
+    if (url.pathname === '/api/auth/state')
+      return route.fulfill({ status: 200, json: { enabled: false, authed: false } });
     if (!USER_DATA.test(url.pathname)) {
       server.unhandled.push(call);
       return route.fulfill({ status: 501, json: { detail: `e2e: unexpected API call ${call}` } });

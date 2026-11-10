@@ -1,8 +1,13 @@
-import { memo, useRef, type CSSProperties, type HTMLAttributes } from 'react';
+import { memo, useRef, type HTMLAttributes } from 'react';
 import type { LiveQuote } from '../../quotes/types';
+import type { SnapshotRow } from '../../screener/server/snapshot';
 import type { ColumnId, FlagColor } from '../../watchlist/types';
-import { COLUMNS, useFlash } from './columns';
+import { ColumnCell } from '../../watchlist/columns/ColumnCell';
+import { RowBadges } from '../../watchlist/badges';
+import { heatStyle } from '../../watchlist/columns/heat';
+import { useFlash } from './columns';
 import { rowMenu } from './rowMenu';
+import { rowDomId } from './rowId';
 import { Sparkline } from './Sparkline';
 import { useLongPress } from '../../ui/useLongPress';
 import type { ListRef } from '../../watchlist/types';
@@ -11,24 +16,22 @@ interface Props {
   symbol: string;
   listRef: ListRef;
   q: LiveQuote | undefined;
+  /** Server-screener snapshot row (only passed while a snapshot column is visible). */
+  snap?: SnapshotRow | undefined;
   columns: ColumnId[];
+  /** Columns the data source cannot fill (shown as "—" with an explanation). */
+  unavailable: ReadonlySet<ColumnId>;
   flag: FlagColor | null;
   current: boolean;
   selected: boolean;
   /** Position in the list (drag-and-drop target id). */
   index: number;
+  /** 1-based `aria-rowindex` (the table is virtualized, so the DOM can't tell). */
+  rowIndex: number;
   onActivate: (symbol: string) => void;
   dnd: HTMLAttributes<HTMLDivElement>;
   dropPos: 'above' | 'below' | null;
   hint?: string;
-}
-
-function heatStyle(pct: number | null | undefined): CSSProperties | undefined {
-  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct === 0) return undefined;
-  const k = Math.round(Math.min(1, Math.abs(pct) / 3) * 85) + 15;
-  return {
-    ['--wl-heat' as string]: `color-mix(in srgb, var(${pct > 0 ? '--up' : '--down'}) ${k}%, transparent)`,
-  };
 }
 
 /** One symbol row: flag strip, symbol, the visible columns and the heat strip. */
@@ -36,11 +39,14 @@ export const SymbolRow = memo(function SymbolRow({
   symbol,
   listRef,
   q,
+  snap,
   columns,
+  unavailable,
   flag,
   current,
   selected,
   index,
+  rowIndex,
   onActivate,
   dnd,
   dropPos,
@@ -54,7 +60,8 @@ export const SymbolRow = memo(function SymbolRow({
   return (
     <div
       role="row"
-      id={`wl-r-${symbol}`}
+      id={rowDomId('wl-r', symbol)}
+      aria-rowindex={rowIndex}
       aria-current={current ? 'true' : undefined}
       aria-selected={selected}
       data-testid={`wl-row-${symbol}`}
@@ -72,30 +79,28 @@ export const SymbolRow = memo(function SymbolRow({
       {...dnd}
     >
       <span role="gridcell" className="wl-sym">
-        {symbol}
+        <span className="wl-sym-text">{symbol}</span>
+        <RowBadges symbol={symbol} quote={q} compact />
       </span>
       {columns.map((id) => {
         if (id === 'trend')
           return (
             <span key={id} role="gridcell" className="wl-cell wl-trend">
-              <Sparkline symbol={symbol} />
+              <Sparkline symbol={symbol} last={q?.last} />
             </span>
           );
-        const cell = COLUMNS[id].render(q);
-        const isLast = id === 'last';
-        const isExt = id === 'extPrice';
-        // Change % renders as a pill tinted by its up/down class (only with a direction).
-        const pill = id === 'changePercent' && !!cell.className;
         return (
-          <span
+          <ColumnCell
             key={id}
-            role="gridcell"
-            ref={isLast ? lastRef : isExt ? extRef : undefined}
-            data-testid={isLast ? `wl-cell-last-${symbol}` : `wl-cell-${id}-${symbol}`}
-            className={`wl-cell rs-num${isLast ? ' wl-last' : ''}${pill ? ' wl-pill' : ''}${cell.className ? ` ${cell.className}` : ''}`}
-          >
-            {cell.text}
-          </span>
+            id={id}
+            prefix="wl"
+            symbol={symbol}
+            q={q}
+            snap={snap}
+            unavailable={unavailable.has(id)}
+            lastRef={lastRef}
+            extRef={extRef}
+          />
         );
       })}
       {/* Heat strip: the day's move, deeper for bigger moves (full at ±3%). */}

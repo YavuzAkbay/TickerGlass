@@ -122,22 +122,15 @@
   width: 24px;
   height: 22px;
 }
-.ds-warn {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--down) 40%, transparent);
-  border-radius: var(--radius-control);
-  background: var(--down-soft);
+.ds-missing {
+  margin: 6px 0 0;
   color: var(--down);
   font-size: var(--font-size-sm);
   line-height: 1.4;
 }
-.ds-warn svg {
-  flex: none;
-  margin-top: 2px;
+.ds-use {
+  margin-left: auto;
+  padding: 2px 12px;
 }
 .ds-chips {
   display: flex;
@@ -214,6 +207,48 @@
   color: var(--muted);
   font-size: var(--font-size-sm);
   line-height: 1.45;
+}
+.ds-details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 8px;
+  margin-left: -4px;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.ds-details-toggle:hover {
+  color: var(--text);
+}
+.ds-details-toggle svg {
+  transition: transform 0.15s;
+}
+.ds-rot {
+  transform: rotate(180deg);
+}
+.ds-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.ds-details > * {
+  margin: 0;
+}
+.ds-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
 }
 .ds-usage {
   display: flex;

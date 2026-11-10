@@ -6,6 +6,8 @@ export const DMI = defineIndicator({
   id: 'dmi',
   name: 'Directional Movement Index',
   shortName: 'DMI',
+  description:
+    'Directional Movement Index: plus/minus DI lines with the ADX trend-strength gauge in one pane.',
   category: 'trend',
   keywords: ['dmi', 'adx', 'average directional index', 'di', 'directional movement'],
   overlay: false,

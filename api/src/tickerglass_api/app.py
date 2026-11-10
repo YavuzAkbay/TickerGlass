@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 
 from . import __version__
+from .auth import AuthMiddleware, LoginLimiter, session_secret
 from .db import make_engine, run_migrations
 from .live import LiveHub, LiveSource, Poller
 from .notifications.dispatcher import Dispatcher
@@ -29,14 +31,19 @@ from .providers.base import (
 from .providers.registry import PROVIDERS, ProviderSpec, is_configured
 from .routes import (
     alerts,
+    auth,
     bars,
     cache,
     drawings,
+    hotlists,
     layouts,
     live,
     market,
     notes,
     providers,
+    screener,
+    screens,
+    server,
     symbols,
     templates,
     transfer,
@@ -47,6 +54,7 @@ from .routes import (
 from .services.cache_gate import CacheGate, CacheRetired
 from .services.cache_source import ensure_cache_source
 from .services.provider_choice import SelectedBy, env_choice, resolve_startup_provider
+from .services.screener.universe import seed_bundle
 from .services.stats import CacheStats
 from .settings import Settings, get_settings
 from .stack import (
@@ -83,6 +91,10 @@ def create_app(
 ) -> FastAPI:
     settings = settings_override or get_settings()
     db_url = database_url or settings.database_url
+    if db_url != settings.database_url:
+        # Keep settings coherent with the engine (auth's secret file and the server
+        # routes read database_url): a `database_url` argument wins over the settings.
+        settings = settings.model_copy(update={"database_url": db_url})
     if provider is None and settings.market_provider not in PROVIDERS:
         raise ValueError(
             f"unknown MARKET_PROVIDER {settings.market_provider!r}; valid: {', '.join(PROVIDERS)}"
@@ -90,9 +102,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.started_at = time.time()
         run_migrations(db_url)
         engine = make_engine(db_url)
+        app.state.engine = engine
         app.state.sessionmaker = sessionmaker(engine, expire_on_commit=False)
+        with app.state.sessionmaker() as seed_session, seed_session.begin():
+            seed_bundle(seed_session, settings)
         stats = CacheStats()
         app.state.cache_stats = stats
         gate = CacheGate()
@@ -153,6 +169,16 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Optional single-user password auth (auth.py). Off unless AUTH_PASSWORD is set.
+    if settings.auth_password:
+        app.state.auth_secret = session_secret(settings)
+        app.state.login_limiter = LoginLimiter()
+        app.add_middleware(
+            AuthMiddleware,
+            secret=app.state.auth_secret,
+            password=settings.auth_password,
+            internal_token=settings.alerts_internal_token,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -224,7 +250,12 @@ def create_app(
     api.include_router(user_scripts.router)
     api.include_router(watchlists.router)
     api.include_router(watchlists.flags_router)
+    api.include_router(screener.router)
+    api.include_router(hotlists.router)
+    api.include_router(screens.router)
     api.include_router(alerts.router)
+    api.include_router(auth.router)
+    api.include_router(server.router)
     api.include_router(transfer.router)
     app.include_router(api)
     app.include_router(live.router)

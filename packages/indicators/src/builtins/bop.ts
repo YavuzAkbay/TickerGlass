@@ -6,6 +6,8 @@ export const BOP = defineIndicator({
   id: 'bop',
   name: 'Balance of Power',
   shortName: 'BOP',
+  description:
+    'Balance of buyers versus sellers within a bar, derived from open, high, low and close; sustained readings show control.',
   category: 'momentum',
   keywords: ['bop', 'balance of power', 'oscillator'],
   overlay: false,

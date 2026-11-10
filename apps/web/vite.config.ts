@@ -1,7 +1,24 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Connect, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const apiTarget = process.env.API_URL ?? 'http://localhost:8000';
+
+/**
+ * Release version: TICKERGLASS_VERSION when set (Docker/release workflow stamps the
+ * tag), else the root VERSION file — one release version shared by API, web and alerts.
+ * Falls back to "dev" when neither exists (e.g. a minimal Docker build context).
+ */
+const APP_VERSION =
+  process.env.TICKERGLASS_VERSION ||
+  (() => {
+    try {
+      return readFileSync(fileURLToPath(new URL('../../VERSION', import.meta.url)), 'utf8').trim();
+    } catch {
+      return 'dev';
+    }
+  })();
 
 /**
  * Response CSP of the user-script sandbox worker (docs/indicators.md §5a):
@@ -107,6 +124,9 @@ function sandboxWorkerNoAssetRefs(): Plugin {
 }
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+  },
   plugins: [react(), sandboxCsp(), sandboxWorkerNoAssetRefs()],
   worker: {
     // One classic-script file per worker: no chunk imports (sandboxWorkerSelfContained).

@@ -2,7 +2,8 @@
 
 Bars and symbol metadata of one provider are not interchangeable with another's (adjusted
 closes, session hours, symbol forms), so switching `MARKET_PROVIDER` starts from an empty
-cache. The provider id is kept in `app_meta`; user data is never touched.
+cache. The provider id is kept in `app_meta`; user data is never touched, except the derived
+screen-alert states (`screen_states`), whose baselines refer to the wiped snapshots.
 """
 
 import logging
@@ -11,7 +12,15 @@ from datetime import UTC, datetime
 from sqlalchemy import Engine, delete, exists, select
 from sqlalchemy.orm import Session
 
-from ..models import AppMeta, Bar, SeriesMeta, SymbolMeta
+from ..models import (
+    AppMeta,
+    Bar,
+    ScreenerFundamental,
+    ScreenerSnapshot,
+    ScreenState,
+    SeriesMeta,
+    SymbolMeta,
+)
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +34,8 @@ def ensure_cache_source(engine: Engine, source: str) -> bool:
     """Record `source` as the cache's provider. With no marker yet and an empty cache there
     is nothing to clear; a cache without a marker predates the marker and was filled by
     Yahoo, the only provider then. When the recorded provider differs from `source`, bars,
-    series bookkeeping and symbol metadata are deleted in one transaction together with the
+    series bookkeeping, symbol metadata, screener snapshots/fundamentals and screen-alert states
+    (the next evaluation is a fresh baseline) are deleted in one transaction together with the
     marker update. Returns True when the cache was wiped."""
     now = datetime.now(UTC)
     with Session(engine) as session, session.begin():
@@ -41,7 +51,8 @@ def ensure_cache_source(engine: Engine, source: str) -> bool:
             previous = row.value
         if previous == source:
             return False
-        for table in (Bar, SeriesMeta, SymbolMeta):
+        tables = (Bar, SeriesMeta, SymbolMeta, ScreenerSnapshot, ScreenerFundamental, ScreenState)
+        for table in tables:
             session.execute(delete(table))
         row.value = source
         row.updated_at = now

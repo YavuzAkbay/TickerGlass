@@ -83,6 +83,11 @@ class SymbolService:
             clock=clock,
         )
 
+    def clear_caches(self) -> int:
+        """Drop the search results and the in-memory symbol-info entries; returns
+        the number dropped. Stored symbol metadata (the DB) is not touched."""
+        return self._search.clear() + self._fetches.clear()
+
     def info(self, symbol: str) -> dict[str, Any]:
         symbol = symbol.upper()
         now = datetime.now(UTC)

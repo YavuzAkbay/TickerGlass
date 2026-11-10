@@ -7,6 +7,8 @@ export const TSI = defineIndicator({
   id: 'tsi',
   name: 'True Strength Index',
   shortName: 'TSI',
+  description:
+    'True Strength Index: double-smoothed momentum with a signal line, less noisy than single-pass oscillators.',
   category: 'momentum',
   keywords: ['tsi', 'true strength', 'oscillator'],
   overlay: false,

@@ -9,6 +9,8 @@ export const CHOP = defineIndicator({
   id: 'chop',
   name: 'Choppiness Index',
   shortName: 'CHOP',
+  description:
+    'Choppiness Index (0-100): high readings mean sideways consolidation, low readings a directional trending market.',
   category: 'momentum',
   keywords: ['chop', 'choppiness', 'trend', 'range'],
   overlay: false,

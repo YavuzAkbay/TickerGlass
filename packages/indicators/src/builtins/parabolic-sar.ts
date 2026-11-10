@@ -6,6 +6,8 @@ export const PARABOLIC_SAR = defineIndicator({
   id: 'parabolic-sar',
   name: 'Parabolic SAR',
   shortName: 'SAR',
+  description:
+    'Parabolic SAR: trailing dots that flip below or above price, giving trailing-stop levels for trend trades.',
   category: 'trend',
   keywords: ['sar', 'parabolic', 'stop and reverse', 'trailing stop'],
   overlay: true,

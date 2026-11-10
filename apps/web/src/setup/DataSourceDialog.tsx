@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { errorMessage, isNotConfigured, requestJson } from '../api/client';
 import {
@@ -18,7 +18,6 @@ import { Modal } from '../ui/Modal';
 import { markSetupDone } from './firstRun';
 import {
   EnvSwitch,
-  UseButton,
   lockedText,
   selectedByText,
   useChooseProvider,
@@ -95,7 +94,7 @@ export default function DataSourceDialog({ onClose, arg }: { onClose: () => void
       <div className="ds-body">
         <p className="ds-lead">
           {firstRun
-            ? 'Your instance fetches market data from the source below. You can run it on any provider TickerGlass supports.'
+            ? 'Pick where market data comes from. You can change it any time in Settings → Data source.'
             : 'The market data provider this instance runs on.'}
         </p>
         <TestStatus test={test} />
@@ -136,8 +135,7 @@ export function TestStatus({ test }: { test: TestResult | 'running' }) {
   if (test.ok)
     return (
       <div className="ds-test ok" role="status">
-        <Check size={16} /> Connected: {test.symbol} at {test.price.toFixed(2)} ({test.latencyMs}{' '}
-        ms)
+        <Check size={16} /> Connected · {test.symbol} {test.price.toFixed(2)} · {test.latencyMs} ms
       </div>
     );
   if (test.code === 'not_configured')
@@ -312,28 +310,86 @@ export function ProviderCard({
   usage?: Usage | null;
   now: number;
 }) {
-  const Net = p.network ? Wifi : WifiOff;
+  // Collapsed by default: the card answers "which one is running, how do I switch";
+  // what it can do and how it is configured is one click away.
+  const [open, setOpen] = useState(false);
   const missing = p.config.filter((f) => f.required && !f.set);
   return (
     <li className={`ds-card${active ? ' active' : ''}`} aria-current={active || undefined}>
       <div className="ds-card-head">
         <span className="ds-name">{p.name}</span>
-        {selectedBy ? <span className="ds-selected">({selectedBy})</span> : null}
-        <span className="ds-tag" title={p.network ? 'Needs internet' : 'Works offline'}>
-          <Net size={12} /> {p.network ? 'Online' : 'Offline'}
-        </span>
-        {p.plan ? <span className="ds-tag">Plan: {p.plan}</span> : null}
-        {active ? <span className="ds-tag ds-in-use">In use</span> : null}
+        {active ? (
+          <span className="ds-tag ds-in-use">In use</span>
+        ) : onUse && p.configured ? (
+          <button
+            type="button"
+            className="io-btn ds-use"
+            aria-label={`Use ${p.name}`}
+            disabled={busy}
+            onClick={() => onUse(p)}
+          >
+            Use
+          </button>
+        ) : null}
       </div>
       <p className="ds-desc">{p.description}</p>
-      {p.terms ? <p className="ds-terms">{p.terms}</p> : null}
       {p.configured ? null : (
-        <div className="ds-warn" role="alert">
-          <CircleAlert size={14} aria-hidden="true" /> Not configured: set{' '}
-          {missing.map((f) => f.env).join(', ') || 'its required settings'} in .env
-          {' and restart the API.'}
-        </div>
+        <p className="ds-missing" role="alert">
+          Needs {missing.map((f) => f.env).join(', ') || 'its required settings'} set in .env and an{' '}
+          API restart.
+        </p>
       )}
+      {/* Switching is locked: the env line is the only way to switch, so it stays out here. */}
+      {!active && !onUse ? <EnvSwitch p={p} setting={setting} /> : null}
+      <button
+        type="button"
+        className="ds-details-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        Details <ChevronDown size={14} className={open ? 'ds-rot' : ''} aria-hidden="true" />
+      </button>
+      {open ? (
+        <ProviderDetails
+          p={p}
+          active={active}
+          selectedBy={selectedBy}
+          limits={limits}
+          usage={usage}
+          now={now}
+        />
+      ) : null}
+    </li>
+  );
+}
+
+/** The disclosure content of a provider card: status, capabilities, settings, budget. */
+export function ProviderDetails({
+  p,
+  active,
+  selectedBy,
+  limits,
+  usage,
+  now,
+}: {
+  p: ProviderInfo;
+  active: boolean;
+  /** How the provider in use was chosen (shown on its card only). */
+  selectedBy?: string | undefined;
+  /** Effective limits of the provider in use (shown on its card only). */
+  limits?: EffectiveLimits | undefined;
+  usage?: Usage | null | undefined;
+  now: number;
+}) {
+  const Net = p.network ? Wifi : WifiOff;
+  return (
+    <div className="ds-details">
+      <p className="ds-meta">
+        <Net size={12} aria-hidden="true" /> {p.network ? 'Online' : 'Offline'}
+        {p.plan ? <> · Plan: {p.plan}</> : null}
+        {selectedBy ? <> · {selectedBy}</> : null}
+      </p>
+      {p.terms ? <p className="ds-terms">{p.terms}</p> : null}
       <CapabilityChips capabilities={p.capabilities} />
       {p.config.length ? (
         <ul className="ds-config" aria-label={`${p.name} settings`}>
@@ -344,13 +400,6 @@ export function ProviderCard({
       ) : null}
       {active && limits ? <LimitsSummary limits={limits} /> : null}
       {active && usage?.metered ? <UsageBar usage={usage} now={now} /> : null}
-      {active ? null : onUse ? (
-        p.configured ? (
-          <UseButton p={p} onUse={onUse} busy={busy} />
-        ) : null
-      ) : (
-        <EnvSwitch p={p} setting={setting} />
-      )}
-    </li>
+    </div>
   );
 }

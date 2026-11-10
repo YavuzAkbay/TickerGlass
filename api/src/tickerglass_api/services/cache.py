@@ -120,6 +120,15 @@ class SmartCache(Generic[K, V]):
         with self._lock:
             return len(self._data)
 
+    def clear(self) -> int:
+        """Drop every entry; returns the count. Loads already in flight are not
+        interrupted (their outcome is stored once they finish, so a clear racing
+        a refresh can leave that one key behind — harmless, it expires normally)."""
+        with self._lock:
+            n = len(self._data)
+            self._data.clear()
+        return n
+
     def get(
         self,
         key: K,

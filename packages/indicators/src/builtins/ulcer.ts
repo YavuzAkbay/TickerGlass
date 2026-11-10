@@ -6,6 +6,8 @@ export const ULCER = defineIndicator({
   id: 'ulcer',
   name: 'Ulcer Index',
   shortName: 'Ulcer Index',
+  description:
+    'Ulcer Index: depth and duration of drawdowns from highs, penalizing deep or lasting losses.',
   category: 'volatility',
   keywords: ['ulcer', 'drawdown', 'volatility', 'risk'],
   overlay: false,

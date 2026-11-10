@@ -1,0 +1,302 @@
+/* Rule builder (rb-). Tokens only; sits inside the screener page scope. */
+.rb {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  max-height: 40vh;
+  overflow: auto;
+}
+.rb-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+}
+.rb-group.top {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+.rb-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rb-spacer {
+  flex: 1;
+}
+.rb-seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.rb-seg-btn {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.rb-seg-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 650;
+}
+.rb-seg-btn:focus-visible,
+.rb-add:focus-visible,
+.rb-icon-btn:focus-visible,
+.rb-chip:focus-within {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.rb-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.rb-add:hover:not(:disabled) {
+  background: var(--hover);
+}
+.rb-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.rb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rb-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rb-rule.bad .rb-select,
+.rb-rule.bad .rb-input {
+  border-color: var(--down);
+}
+.rb-select,
+.rb-input {
+  height: 26px;
+  font-size: 12px;
+  padding: 0 6px;
+}
+.rb-select {
+  max-width: 190px;
+}
+.rb-opsel {
+  width: 112px;
+}
+.rb-input {
+  width: 96px;
+}
+.rb-input.invalid,
+.rb-select.invalid {
+  border-color: var(--down);
+}
+.rb-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.rb-unit {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rb-between,
+.rb-pct,
+.rb-operand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rb-and {
+  color: var(--muted);
+  font-size: 11px;
+}
+.rb-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 560px;
+}
+.rb-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.rb-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.rb-chip.on {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.rb-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rb-icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-strong);
+}
+.rb-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.rb-issue {
+  flex-basis: 100%;
+  color: var(--down);
+  font-size: 11px;
+}
+.rb-issue.soft {
+  color: var(--muted);
+}
+.rb-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rb-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.rb-hidden {
+  cursor: help;
+  text-decoration: underline dotted;
+}
+.rb-unknown {
+  color: var(--down);
+  font-size: 12px;
+}
+/* Formula rules (rb-fx-). The caret line reuses the input's font and padding so `^` sits
+   under the offending character. */
+.rb-fx {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rb-fx-box {
+  position: relative;
+  display: inline-flex;
+}
+.rb-input.rb-fx-input {
+  width: 260px;
+  font-family: var(--font-mono, monospace);
+}
+.rb-fx-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
+}
+.rb-fx-opt {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rb-fx-opt.on,
+.rb-fx-opt:hover {
+  background: var(--hover);
+}
+.rb-fx-id {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-strong, var(--text));
+}
+.rb-fx-kind {
+  color: var(--muted);
+  font-size: 11px;
+}
+.rb-fx-err {
+  display: flex;
+  flex-direction: column;
+  color: var(--down);
+  font-size: 11px;
+}
+.rb-fx-caret {
+  /* io-input horizontal padding (rb-input) + border */
+  padding-left: 7px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1;
+  white-space: pre;
+}
+.rb-fx-pre {
+  visibility: hidden;
+}
+.rb-fx-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rb-fx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.rb-fx-dialog .rb-input.rb-fx-input {
+  width: 100%;
+}
+.rb-fx-dialog .rb-fx,
+.rb-fx-dialog .rb-fx-box {
+  display: flex;
+}

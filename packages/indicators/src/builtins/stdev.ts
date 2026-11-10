@@ -6,6 +6,8 @@ export const STDEV = defineIndicator({
   id: 'stdev',
   name: 'Standard Deviation',
   shortName: 'StdDev',
+  description:
+    'Rolling standard deviation of price; the raw volatility gauge behind Bollinger Bands.',
   category: 'volatility',
   keywords: ['stdev', 'standard deviation', 'sd', 'volatility'],
   overlay: false,

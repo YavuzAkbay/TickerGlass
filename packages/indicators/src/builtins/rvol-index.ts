@@ -9,6 +9,8 @@ export const RVOL_INDEX = defineIndicator({
   id: 'rvol-index',
   name: 'Relative Volatility Index',
   shortName: 'RVI',
+  description:
+    'Relative Volatility Index: RSI logic applied to standard deviation, used to filter volatility breakouts.',
   category: 'volatility',
   keywords: ['rvi', 'relative volatility', 'volatility', 'stdev', 'oscillator'],
   overlay: false,

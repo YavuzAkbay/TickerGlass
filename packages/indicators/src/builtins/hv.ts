@@ -10,6 +10,8 @@ export const HV = defineIndicator({
   id: 'hv',
   name: 'Historical Volatility',
   shortName: 'HV',
+  description:
+    'Historical Volatility: annualized standard deviation of bar returns, showing realized volatility in percent.',
   category: 'volatility',
   keywords: ['hv', 'historical volatility', 'volatility', 'stdev', 'log return'],
   overlay: false,

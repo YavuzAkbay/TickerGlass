@@ -7,6 +7,7 @@ import { MOBILE_QUERY } from '../ui/useMediaQuery';
 /** Sections of the Navigator panel, in rail order. */
 export const NAV_SECTIONS = [
   'watchlist',
+  'hotlists',
   'alerts',
   /** Alert fires, news and corporate events in one feed (replaced 'events' and 'news'). */
   'timeline',
@@ -47,6 +48,13 @@ export type DialogId =
 /** Drawing tool ids are defined by the left toolbar (Phase 6 implements them). */
 export type DrawingToolId = string;
 
+/**
+ * Full-window screens shown instead of the chart shell. `'charts'` is the
+ * normal state; other values (watchlists, screener) cover the whole window
+ * with their own surface (transient; never saved).
+ */
+export type ScreenId = 'charts' | 'watchlists' | 'screener';
+
 interface UiState {
   /** Interface language (messages in i18n/; only English for now). */
   locale: Locale;
@@ -73,6 +81,8 @@ interface UiState {
   dialog: DialogId | null;
   /** Payload for the open dialog (e.g. initial search text). */
   dialogArg: unknown;
+  /** The full-window screen on top of the chart shell (`'charts'` = none). Not saved. */
+  screen: ScreenId;
   activeTool: DrawingToolId; // 'cursor' | 'cross' | 'dot' | 'arrow' | drawing tool id
   /** Last used tool per toolbar group, shown on the group button. */
   groupTools: Record<string, DrawingToolId>;
@@ -102,6 +112,10 @@ interface UiState {
   toggleMobileTools: () => void;
   openDialog: (id: DialogId, arg?: unknown) => void;
   closeDialog: () => void;
+  /** Show a full-window screen (idempotent). */
+  openScreen: (id: Exclude<ScreenId, 'charts'>) => void;
+  /** Return to the chart shell. */
+  closeScreen: () => void;
   set: (patch: Partial<UiState>) => void;
 }
 
@@ -201,15 +215,19 @@ export function migrateToolIds<T extends object>(state: T): T {
   return out as T;
 }
 
-/** The saved part of the store: no dialog, Inspector or phone tool strip state, no replay trading section. */
+/** The saved part of the store: no dialog, screen, Inspector or phone tool strip state, no replay trading section. */
 export function partializeUi({
   dialog: _d,
   dialogArg: _a,
+  screen: _s,
   inspector: _i,
   mobileToolsOpen: _m,
   navSheet: _n,
   ...rest
-}: UiState): Omit<UiState, 'dialog' | 'dialogArg' | 'inspector' | 'mobileToolsOpen' | 'navSheet'> {
+}: UiState): Omit<
+  UiState,
+  'dialog' | 'dialogArg' | 'screen' | 'inspector' | 'mobileToolsOpen' | 'navSheet'
+> {
   return {
     ...rest,
     // The trading panel only exists while replaying.
@@ -231,6 +249,7 @@ export const useUiStore = create<UiState>()(
       mobileToolsOpen: false,
       dialog: null,
       dialogArg: undefined,
+      screen: 'charts',
       activeTool: 'cross',
       groupTools: {},
       favoriteTools: [],
@@ -268,6 +287,8 @@ export const useUiStore = create<UiState>()(
       toggleMobileTools: () => set((s) => ({ mobileToolsOpen: !s.mobileToolsOpen })),
       openDialog: (id, arg) => set({ dialog: id, dialogArg: arg }),
       closeDialog: () => set({ dialog: null, dialogArg: undefined }),
+      openScreen: (screen) => set({ screen }),
+      closeScreen: () => set({ screen: 'charts' }),
       set: (patch) => set(patch),
     }),
     {

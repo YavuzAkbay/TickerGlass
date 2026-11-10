@@ -8,6 +8,7 @@ import {
   Paintbrush,
   PanelTop,
   Ruler,
+  Server,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import {
@@ -40,6 +41,7 @@ import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
 import { DEFAULT_STATUS_LINE, useChartView, type StatusLineSettings } from '../store/chartView';
 import { TradingTab } from '../replay/TradingTab';
+import { ServerTab } from '../settings/ServerTab';
 import { DataSourcePicker } from '../setup/ProviderPicker';
 import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
@@ -50,7 +52,15 @@ import { Row, Section, Segmented, Setting } from './controls';
 import './dialogs.css';
 
 type TabId =
-  'symbol' | 'status' | 'scales' | 'canvas' | 'trading' | 'alerts' | 'events' | 'dataSource';
+  | 'symbol'
+  | 'status'
+  | 'scales'
+  | 'canvas'
+  | 'trading'
+  | 'alerts'
+  | 'events'
+  | 'dataSource'
+  | 'server';
 
 const TABS: {
   id: TabId;
@@ -66,6 +76,7 @@ const TABS: {
   { id: 'trading', label: 'settings.tab.trading', icon: Briefcase },
   { id: 'alerts', label: 'settings.tab.alerts', icon: AlarmClock },
   { id: 'dataSource', label: 'settings.tab.dataSource', icon: Database },
+  { id: 'server', label: 'settings.tab.server', icon: Server },
 ];
 
 const TIMEZONES = [
@@ -569,6 +580,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
         <DataSourcePicker beforeSwitch={cancel} />
       </Section>
     );
+  } else if (tab === 'server') {
+    content = <ServerTab />;
   } else {
     content = <TradingTab />;
   }

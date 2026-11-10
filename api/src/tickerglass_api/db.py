@@ -43,6 +43,18 @@ def get_engine() -> Engine:
     return make_engine(get_settings().database_url)
 
 
+def sqlite_path(url: str) -> Path | None:
+    """The database file of a `sqlite:///relative` or `sqlite:////absolute` URL;
+    None for other dialects, `:memory:` and empty urls."""
+    prefix = "sqlite:///"
+    if not url.startswith(prefix):
+        return None
+    rest = url[len(prefix) :].split("?", 1)[0]
+    if not rest or rest == ":memory:":
+        return None
+    return Path(rest)
+
+
 @lru_cache
 def get_sessionmaker() -> sessionmaker[Session]:
     return sessionmaker(get_engine(), expire_on_commit=False)

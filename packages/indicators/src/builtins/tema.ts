@@ -6,6 +6,8 @@ export const TEMA = defineIndicator({
   id: 'tema',
   name: 'Triple EMA',
   shortName: 'TEMA',
+  description:
+    'Triple Exponential Moving Average: triple smoothing with lag compensation, staying close to price.',
   category: 'movingAverage',
   keywords: ['ma', 'triple', 'exponential', 'average', 'tema'],
   overlay: true,

@@ -8,6 +8,8 @@ export const ALLIGATOR = defineIndicator({
   id: 'alligator',
   name: 'Williams Alligator',
   shortName: 'Alligator',
+  description:
+    'Three smoothed MAs (jaw, teeth, lips) that reveal trend direction and timing as the lines align and cross.',
   category: 'trend',
   keywords: ['alligator', 'williams', 'jaw', 'teeth', 'lips', 'smma'],
   overlay: true,

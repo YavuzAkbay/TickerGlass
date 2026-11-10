@@ -43,6 +43,8 @@ export const FRACTALS = defineIndicator({
   id: 'fractals',
   name: 'Williams Fractals',
   shortName: 'Fractals',
+  description:
+    'Williams Fractals: marks local highs and lows as up and down arrows, locating swing points and structure.',
   category: 'trend',
   keywords: ['fractals', 'williams', 'bill williams', 'swing', 'pivot'],
   overlay: true,

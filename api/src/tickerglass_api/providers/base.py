@@ -347,6 +347,55 @@ def as_symbol_routing(provider: object) -> SymbolRouting | None:
     )
 
 
+@runtime_checkable
+class ScreenInfoProvider(Protocol):
+    """Optional: fundamentals for the server-side screener (docs/design/server-screener.md),
+    cheap enough to ask for every tracked symbol. Providers without it have no screener
+    fundamentals (the fields are unavailable)."""
+
+    def screen_fields(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """One row per known symbol (`"symbol"` plus the provider's raw fields, e.g. Yahoo's
+        v7 quote subset in `SCREEN_FIELD_KEYS`); unknown symbols are omitted. Costs like
+        `quotes` for the same symbols."""
+        ...
+
+    def info(self, symbol: str) -> dict[str, Any]:
+        """Slow-changing facts of one symbol (`SCREEN_INFO_KEYS`), one request."""
+        ...
+
+
+#: Raw keys `ScreenInfoProvider.screen_fields` rows may carry (besides "symbol").
+SCREEN_FIELD_KEYS = (
+    "marketCap",
+    "trailingPE",
+    "forwardPE",
+    "epsTrailingTwelveMonths",
+    "trailingAnnualDividendYield",
+    "dividendYield",
+    "sharesOutstanding",
+    "earningsTimestamp",
+    "earningsTimestampStart",
+    "earningsTimestampEnd",
+    "averageDailyVolume3Month",
+)
+#: Text keys `screen_fields` rows may also carry: the ISO currency the row's prices and market
+#: cap are quoted in. The screener stores a market cap only for USD (or unspecified) rows.
+SCREEN_TEXT_KEYS = ("currency", "financialCurrency")
+#: Keys `ScreenInfoProvider.info` may return.
+SCREEN_INFO_KEYS = ("beta", "sector", "industry")
+
+
+def as_screen_info(provider: object) -> ScreenInfoProvider | None:
+    """`provider` if it implements `ScreenInfoProvider`, else None (class lookup, like
+    `as_metered`)."""
+    return (
+        cast(ScreenInfoProvider, provider)
+        if callable(getattr(type(provider), "screen_fields", None))
+        and callable(getattr(type(provider), "info", None))
+        else None
+    )
+
+
 class QuoteList(list[dict[str, Any]]):
     """Rows returned by `MarketDataProvider.quotes`, plus whether the upstream answered
     for every requested symbol (`confirmed`): then a symbol without a row is known not to
@@ -410,6 +459,14 @@ class Quote(TypedDict, total=False):
     #: PRE, REGULAR, POST, CLOSED, PREPRE or POSTPOST.
     marketState: str | None
     time: int | None
+    #: Optional extras, present only when the provider knows them (Yahoo v7 today).
+    dayHigh: float | None
+    dayLow: float | None
+    open: float | None
+    fiftyTwoWeekHigh: float | None
+    fiftyTwoWeekLow: float | None
+    marketCap: float | None
+    averageVolume: float | None
 
 
 class ExtendedQuote(TypedDict, total=False):

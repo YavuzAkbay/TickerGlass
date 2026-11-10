@@ -6,6 +6,8 @@ export const VWMA = defineIndicator({
   id: 'vwma',
   name: 'Volume Weighted Moving Average',
   shortName: 'VWMA',
+  description:
+    'Volume Weighted Moving Average: weights each bar by its volume, emphasizing heavily traded prices.',
   category: 'movingAverage',
   keywords: ['ma', 'volume', 'weighted', 'average'],
   overlay: true,

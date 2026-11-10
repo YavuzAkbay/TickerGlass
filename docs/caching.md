@@ -111,7 +111,9 @@ whose `to` is not newer than the newest cached bar never refreshes (`bars.covere
   without a usable session count as always open and are refreshed at the plain TTL.
 - The stored session may be from an early-close day. A session shorter than 4 hours, or metadata older than 24 hours,
   keeps its open time but counts as open until midnight.
-- Holidays are inferred. A series that is open but receives no new bar though one is due is "quiet": its TTL doubles on
+- NYSE holidays are known for `America/New_York` symbols (rule-based calendar in `services/holidays.py`, one-off closures
+  through `MARKET_EXTRA_HOLIDAYS`): a holiday counts as closed, so the series gets its last refresh after the previous
+  close and waits for the next trading day's open. Other exchanges' holidays are inferred. A series that is open but receives no new bar though one is due is "quiet": its TTL doubles on
   each such check, up to `BARS_QUIET_BACKOFF_MAX_S` (1800 s). A quiet series whose newest bar is from before today, 30
   minutes after the regular open (a holiday, a stock with no trade yet, a fund whose NAV comes after the close), is
   checked every `BARS_QUIET_BACKOFF_MAX_S` until the close, and still gets the one refresh after the close.
@@ -176,6 +178,7 @@ are `private` (no shared proxies); there is no `ETag`. Error responses never car
 | `/api/news`, `/api/news/{symbol}`                                  | `private, max-age=120`  |
 | `/api/bars` with `to` at least 2 bars in the past                  | `private, max-age=300`  |
 | `/api/bars` open-ended (no `to`) or ending recently                | `private, no-cache`     |
+| `/api/sparklines`                                                  | `private, max-age=60`   |
 | `/api/quotes`, `/api/quotes/extended`, `/api/performance/{symbol}` | `private, no-cache`     |
 
 ### 1.7 Client caches (browser, memory only)
@@ -195,6 +198,11 @@ Nothing is persisted in the browser by these caches; a reload starts empty.
   refresh skips symbols with a recent live tick unless their snapshot is over 10 min old (it still carries the previous
   close and market state), and does nothing while the page is hidden. Stopping the stream keeps the quotes; released
   symbols are dropped after 5 min, and at most 500 released symbols are kept.
+- **Sparklines** (`apps/web/src/quotes/sparklines.ts`). Watchlist, watchlist page and screener rows do not fetch bars one
+  by one. Rows asking within 50 ms share one `GET /api/sparklines?symbols=A,B&limit=30` (50 symbols per call; daily
+  closes per symbol, `null` for one that failed). The route reads the same bars path as `/api/bars` (cached database
+  bars are reused) and always runs at `background` priority, so it never waits for tokens and leaves the burst reserve to
+  charts and quotes. Results are kept 10 min (30 s when null) in an LRU of 2000, and identical requests in flight are shared.
 - **`cachedJson`** (events and other short-lived JSON): an LRU of 300 paths, with expired entries swept on insert.
 
 ## 2. TTL summary
@@ -249,6 +257,7 @@ All times are in seconds unless the name says otherwise. The defaults suit a sin
 | `BARS_TAIL_TTL_DAILY_S`           | `300`      | Daily, weekly and monthly tail refresh interval while the market is open                  |
 | `BARS_SETTLE_AFTER_CLOSE_S`       | `1200`     | Delay after the close before the day's final refresh                                      |
 | `BARS_QUIET_BACKOFF_MAX_S`        | `1800`     | Cap of the doubling interval for series that stop receiving bars                          |
+| `MARKET_EXTRA_HOLIDAYS`           | empty      | One-off NYSE closures (ISO dates, comma separated) the holiday rules cannot know          |
 | `BARS_MAX_ROWS`                   | `10000000` | Bar rows across all series (about 80 bytes each); least recently used series go beyond it |
 | `BARS_INTRADAY_RETENTION_DAYS`    | `30`       | Intraday series not read for this many days are deleted                                   |
 | `BARS_DAILY_RETENTION_DAYS`       | `365`      | Daily, weekly and monthly series not read for this many days are deleted                  |

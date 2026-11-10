@@ -5,6 +5,7 @@ import { MAX_CHART_SYMBOL, TOO_LONG_FOR_CHART } from '../commands/core';
 import { commands } from '../commands/registry';
 import { ExpressionErrorBox, ExpressionRow, classifyQuery } from '../compare/ExpressionRow';
 import { useAppStore } from '../store/app';
+import { useUiStore } from '../store/ui';
 import { flagRows, isFlagRef, resolveActive } from '../watchlist/model';
 import { useWatchlistPrefs } from '../watchlist/prefs';
 import { useWatchlistStore, validSymbol } from '../watchlist/store';
@@ -103,6 +104,8 @@ export default function SymbolSearchDialog({
       return;
     }
     commands.execute('chart.setSymbol', t);
+    // "Open" means go to the chart, also from a full-window screen (watchlists).
+    if (useUiStore.getState().screen !== 'charts') useUiStore.getState().closeScreen();
     onClose();
   };
 

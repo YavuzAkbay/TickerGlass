@@ -53,11 +53,19 @@ export interface LiveQuote {
   volume: number | null;
   dayHigh: number | null;
   dayLow: number | null;
+  /** Snapshot-only extras (`/quotes`); absent until a snapshot that carries them arrives. */
+  open?: number | null;
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
+  marketCap?: number | null;
+  averageVolume?: number | null;
   currency: string | null;
   marketState: string | null;
   ext: ExtQuote | null;
   /** Last stream/poll tick that set `last` (ms). */
   lastTickMs: number | null;
+  /** When the latest `/quotes` snapshot was merged (ms); null until one arrives. */
+  snapshotMs: number | null;
   /** `seq` increments on every price change from a tick. */
   flash: { dir: 1 | -1; seq: number; target: 'last' | 'ext' } | null;
 }

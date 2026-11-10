@@ -13,6 +13,8 @@ export const AWESOME_OSC = defineIndicator({
   id: 'awesome-osc',
   name: 'Awesome Oscillator',
   shortName: 'AO',
+  description:
+    'Momentum oscillator comparing the 5-bar and 34-bar median-price SMAs; zero-line crossings flag trend shifts.',
   category: 'momentum',
   keywords: ['ao', 'awesome oscillator', 'bill williams', 'oscillator'],
   overlay: false,

@@ -19,6 +19,11 @@ export function closeContextMenu(): void {
   useContextMenu.setState({ pos: null, items: [] });
 }
 
+/** True while a context menu is open (re-renders the caller when that changes). */
+export function useContextMenuOpen(): boolean {
+  return useContextMenu((s) => s.pos !== null);
+}
+
 export function ContextMenuHost() {
   const { pos, items } = useContextMenu();
   return (

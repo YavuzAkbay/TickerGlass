@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 
-from ..deps import HubDep, SessionDep
+from ..deps import HubDep, SessionDep, SettingsDep
 from ..userdata import schemas as s
 from ..userdata import store
 
@@ -21,6 +21,7 @@ def export_all(session: SessionDep) -> s.Bundle:
 def import_all(
     session: SessionDep,
     hub: HubDep,
+    settings: SettingsDep,
     body: s.Bundle,
     mode: Literal["merge", "replace"] = "merge",
     dry_run: Annotated[bool, Query(alias="dryRun")] = False,
@@ -34,7 +35,7 @@ def import_all(
         raise HTTPException(400, "mode=replace deletes data: add confirm=true")
     try:
         touched = store.Touched()
-        summary = store.import_bundle(session, body, mode, touched)
+        summary = store.import_bundle(session, body, mode, touched, settings)
     except store.BundleError as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc

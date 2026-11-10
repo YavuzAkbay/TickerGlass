@@ -10,6 +10,8 @@ export const EOM = defineIndicator({
   id: 'eom',
   name: 'Ease of Movement',
   shortName: 'EOM',
+  description:
+    'Ease of Movement: how easily price travels per unit of volume; high readings mean price moves on light volume.',
   category: 'volume',
   keywords: ['eom', 'ease of movement', 'emv', 'volume'],
   overlay: false,

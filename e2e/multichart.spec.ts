@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { expect, pickTool, test } from './fixtures';
 import { mockMarket, quote } from './market';
-import type { MockServer } from './persistence';
+import { seedActiveList, type MockServer } from './persistence';
 
 declare global {
   interface Window {
@@ -196,7 +196,7 @@ test('removing charts through a smaller template asks first', async ({ page }) =
   await expect(cells(page)).toHaveCount(2);
 });
 
-function seedList(server: MockServer) {
+async function seedList(page: Page, server: MockServer) {
   const t = new Date(Date.UTC(2026, 0, 1)).toISOString();
   server.watchlists.set('wl-1', {
     id: 'wl-1',
@@ -207,17 +207,17 @@ function seedList(server: MockServer) {
     items: ['AAPL', 'MSFT'].map((symbol) => ({ type: 'symbol', symbol })),
   });
   server.settings.set('watchlist.prefs', {
-    activeId: 'wl-1',
     columns: ['last', 'change', 'changePercent'],
     sort: null,
   });
+  await seedActiveList(page, 'wl-1');
 }
 
 test('"Open in new chart" in the watchlist adds a chart with that symbol', async ({
   page,
   server,
 }) => {
-  seedList(server);
+  await seedList(page, server);
   await mockMarket(page, {
     quotes: { AAPL: quote('AAPL', 101, 100), MSFT: quote('MSFT', 98, 100) },
   });

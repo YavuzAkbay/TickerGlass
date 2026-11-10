@@ -1,6 +1,7 @@
 import { ChevronDown, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { commands } from '../../commands/registry';
+import { t } from '../../i18n';
 import { DropdownMenu, type MenuItem } from '../../ui/Menu';
 import { isFlagRef, resolveActive, sortedLists } from '../../watchlist/model';
 import { useWatchlistPrefs } from '../../watchlist/prefs';
@@ -22,6 +23,7 @@ export function listActionItems(ref: ListRef | null): MenuItem[] {
         ]
       : []),
     { label: 'Export list (.txt)', onSelect: () => commands.execute('watchlist.export') },
+    { label: t('share.menu.share'), onSelect: () => commands.execute('watchlist.share') },
     ...(real
       ? [
           { type: 'separator' } as MenuItem,
@@ -109,6 +111,10 @@ export function ListSwitcher() {
       { type: 'separator' },
       { label: 'Create new list…', onSelect: () => commands.execute('watchlist.create') },
       { label: 'Import list…', onSelect: () => commands.execute('watchlist.import') },
+      {
+        label: t('share.menu.importFile'),
+        onSelect: () => commands.execute('watchlist.importShared'),
+      },
     );
     const actions = listActionItems(active);
     if (actions.length) out.push({ type: 'separator' }, ...actions);

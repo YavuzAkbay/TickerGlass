@@ -1772,6 +1772,9 @@ describe('status line settings', () => {
     });
     expect(parseStatusLine({ title: 'bogus' })).toEqual(DEFAULT_STATUS_LINE);
     expect(parseStatusLine(null)).toEqual(DEFAULT_STATUS_LINE);
+    // A dismissed quote card stays dismissed; missing or mistyped falls back to shown.
+    expect(parseStatusLine({ quoteCard: false }).quoteCard).toBe(false);
+    expect(parseStatusLine({ quoteCard: 'no' }).quoteCard).toBe(true);
   });
 
   it('a layout saved without a status line loads with the defaults', () => {

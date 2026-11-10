@@ -20,18 +20,32 @@ export const PRICE_SALES = defineIndicator({
   id: 'fin-ps',
   name: 'Price to Sales',
   shortName: 'P/S',
+  description:
+    'Price to Sales: current price divided by revenue per share; useful for unprofitable companies.',
   category: 'financials',
-  keywords: ['ps', 'p/s', 'price to sales', 'sales multiple', 'revenue multiple', 'valuation', 'financials'],
+  keywords: [
+    'ps',
+    'p/s',
+    'price to sales',
+    'sales multiple',
+    'revenue multiple',
+    'valuation',
+    'financials',
+  ],
   overlay: false,
   format: 'price',
   precision: 2,
   usesFundamentals: true,
   inputs: { period: PERIOD_INPUT },
-  outputs: [
-    { type: 'plot', id: 'ps', title: 'P/S', kind: 'line', color: COLOR.blue },
-  ],
+  outputs: [{ type: 'plot', id: 'ps', title: 'P/S', kind: 'line', color: COLOR.blue }],
   setup({ inputs, env }) {
-    const revenue = requireSeries(env.fundamentals, inputs.period, 'income', ROW.revenue, 'revenue');
+    const revenue = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'income',
+      ROW.revenue,
+      'revenue',
+    );
     const shares = series(statementsOf(env.fundamentals, inputs.period)?.balance, ROW.shares);
     if (!shares) throw new Error(`No ${inputs.period.toLowerCase()} shares data for this symbol`);
     const trailingRevenue = trailingTwelveMonths(revenue, inputs.period);

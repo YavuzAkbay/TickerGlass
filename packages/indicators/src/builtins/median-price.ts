@@ -6,6 +6,7 @@ export const MEDIAN_PRICE = defineIndicator({
   id: 'median-price',
   name: 'Median Price',
   shortName: 'Median Price',
+  description: 'Midpoint of each bar high and low, plotted as a simple price line.',
   category: 'other',
   keywords: ['median', 'hl2', 'price'],
   overlay: true,

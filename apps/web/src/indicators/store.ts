@@ -38,7 +38,7 @@ export function migrateRenamedTypes(list: IndicatorState[]): IndicatorState[] {
 }
 
 /** Picker prefs with renamed ids mapped; a favourite or default already on the new id wins. */
-export function migrateRenamedPrefs(persisted: unknown): IndicatorPrefsData {
+export function migrateRenamedPrefs(persisted: unknown): Omit<IndicatorPrefsData, 'recents'> {
   const s = isObj(persisted) ? persisted : {};
   const favorites: string[] = [];
   for (const t of Array.isArray(s.favorites) ? s.favorites : []) {
@@ -165,14 +165,21 @@ export function useEffectiveInstances(): IndicatorState[] {
   return useEffectiveInstancesOf(useIndicatorStore, useIndicatorPreview);
 }
 
-/** Per-user picker favourites and "Save as default" settings. */
+/** Per-user picker favourites, recently added types and "Save as default" settings. */
 interface IndicatorPrefsData {
   favorites: string[];
+  /** Most recently added indicator types, newest first (picker "Recent" section). */
+  recents: string[];
   defaults: Record<string, IndicatorDefaults>;
 }
 
+/** Picker keeps at most this many recent types. */
+export const RECENTS_MAX = 8;
+
 interface IndicatorPrefs extends IndicatorPrefsData {
   toggleFavorite: (type: string) => void;
+  /** Records a type as just added (dedup, newest first, capped). */
+  pushRecent: (type: string) => void;
   saveDefaults: (type: string, d: IndicatorDefaults) => void;
   clearDefaults: (type: string) => void;
 }
@@ -180,19 +187,32 @@ interface IndicatorPrefs extends IndicatorPrefsData {
 /** zustand `migrate` of `tickerglass-indicator-prefs`. */
 export function migrateIndicatorPrefs(persisted: unknown, version: number): IndicatorPrefs {
   const s = isObj(persisted) ? persisted : {};
-  return (version < 2 ? { ...s, ...migrateRenamedPrefs(s) } : s) as unknown as IndicatorPrefs;
+  const base = version < 2 ? { ...s, ...migrateRenamedPrefs(s) } : s;
+  // v2 -> v3: recents list (renamed built-ins get their current id).
+  const recents: string[] = [];
+  for (const t of Array.isArray(base.recents) ? base.recents : []) {
+    if (typeof t !== 'string') continue;
+    const id = resolveIndicatorId(t);
+    if (!recents.includes(id)) recents.push(id);
+  }
+  return { ...base, recents: recents.slice(0, RECENTS_MAX) } as unknown as IndicatorPrefs;
 }
 
 export const useIndicatorPrefs = create<IndicatorPrefs>()(
   persist(
     (set) => ({
       favorites: [],
+      recents: [],
       defaults: {},
       toggleFavorite: (type) =>
         set((s) => ({
           favorites: s.favorites.includes(type)
             ? s.favorites.filter((t) => t !== type)
             : [...s.favorites, type],
+        })),
+      pushRecent: (type) =>
+        set((s) => ({
+          recents: [type, ...s.recents.filter((t) => t !== type)].slice(0, RECENTS_MAX),
         })),
       saveDefaults: (type, d) => set((s) => ({ defaults: { ...s.defaults, [type]: d } })),
       clearDefaults: (type) =>
@@ -203,8 +223,8 @@ export const useIndicatorPrefs = create<IndicatorPrefs>()(
     }),
     {
       name: 'tickerglass-indicator-prefs',
-      version: 2,
-      // v1 -> v2: renamed built-ins get their current id.
+      version: 3,
+      // v1 -> v2: renamed built-ins get their current id; v2 -> v3: recents list.
       migrate: migrateIndicatorPrefs,
     },
   ),

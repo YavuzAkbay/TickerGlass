@@ -1,6 +1,7 @@
 import {
   AlarmClock,
   ArrowUpDown,
+  Flame,
   History,
   ListTree,
   NotebookPen,
@@ -12,6 +13,7 @@ import type { MessageKey } from '../i18n';
 import { ReplayTrading } from '../replay/ReplayTrading';
 import { Alerts } from '../sidebar/panels/Alerts';
 import { DataWindow } from '../sidebar/panels/DataWindow';
+import { Hotlists } from '../sidebar/panels/Hotlists';
 import { Notes } from '../sidebar/panels/Notes';
 import { ObjectTree } from '../sidebar/panels/ObjectTree';
 import { Watchlist } from '../sidebar/panels/Watchlist';
@@ -28,6 +30,7 @@ export interface SectionDef {
 /** Navigator sections in rail order (matches NAV_SECTIONS). */
 export const SECTIONS: SectionDef[] = [
   { id: 'watchlist', title: 'nav.watchlist', icon: Rows3, render: () => <Watchlist /> },
+  { id: 'hotlists', title: 'nav.hotlists', icon: Flame, render: () => <Hotlists /> },
   { id: 'alerts', title: 'nav.alerts', icon: AlarmClock, render: () => <Alerts /> },
   { id: 'timeline', title: 'nav.timeline', icon: History, render: () => <Timeline /> },
   { id: 'notes', title: 'nav.notes', icon: NotebookPen, render: () => <Notes /> },

@@ -6,6 +6,8 @@ export const BOLLINGER = defineIndicator({
   id: 'bollinger',
   name: 'Bollinger Bands',
   shortName: 'BB',
+  description:
+    'Price bands built from a 20-bar SMA plus and minus standard deviations, widening and contracting with volatility.',
   category: 'bands',
   keywords: ['bb', 'bollinger', 'bands', 'volatility', 'stdev'],
   overlay: true,

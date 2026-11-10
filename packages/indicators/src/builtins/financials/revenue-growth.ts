@@ -10,6 +10,7 @@ export const REVENUE_GROWTH = defineIndicator({
   id: 'fin-revenue-growth',
   name: 'Revenue Growth',
   shortName: 'Rev Growth',
+  description: 'Year-over-year revenue growth per reporting period, in percent.',
   category: 'financials',
   keywords: ['revenue growth', 'growth', 'yoy', 'year over year', 'financials'],
   overlay: false,
@@ -28,7 +29,13 @@ export const REVENUE_GROWTH = defineIndicator({
     },
   ],
   setup({ inputs, env }) {
-    const revenue = requireSeries(env.fundamentals, inputs.period, 'income', ROW.revenue, 'revenue');
+    const revenue = requireSeries(
+      env.fundamentals,
+      inputs.period,
+      'income',
+      ROW.revenue,
+      'revenue',
+    );
     const growth = yearOverYear(revenue, inputs.period);
     return (c) => {
       const v = valueAt(growth, c.time[c.i]!);

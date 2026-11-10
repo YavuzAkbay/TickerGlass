@@ -6,6 +6,8 @@ export const MASS_INDEX = defineIndicator({
   id: 'mass-index',
   name: 'Mass Index',
   shortName: 'Mass Index',
+  description:
+    'Flags range expansions (reversal bulges) when the high-low range widens rapidly over several bars.',
   category: 'volatility',
   keywords: ['mass index', 'mass', 'reversal', 'range', 'volatility'],
   overlay: false,
