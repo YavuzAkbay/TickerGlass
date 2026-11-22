@@ -13,6 +13,7 @@ import {
   type SampleKind,
 } from '@tickerglass/alerts';
 import type { SymbolInfo } from '@tickerglass/engine/node';
+import { scriptIdOf, type IndicatorRegistry } from '@tickerglass/indicators';
 import {
   buildValues,
   refHashes,
@@ -38,12 +39,16 @@ export interface FireJob {
 export interface RunnerOptions {
   minRefireMs: number;
   graceS: number;
+  /** Definitions for message rendering (built-ins plus script stubs). */
+  registry?: IndicatorRegistry;
 }
 
 export class AlertRunner {
   readonly evaluator: AlertEvaluator;
   readonly instances: HashedInstance[];
   readonly drawingIds: string[];
+  /** Ids of the user scripts its indicators use. */
+  readonly scriptIds: string[];
   /** Activated at least once (its evaluator holds live state). */
   seeded = false;
   /** Earliest anchored-VWAP anchor (unix s) among the indicators, or null. */
@@ -64,6 +69,7 @@ export class AlertRunner {
     for (const ref of specRefs(alert.spec)) for (const h of refHashes(ref)) seen.set(h.hash, h);
     this.instances = [...seen.values()];
     this.drawingIds = specDrawingIds(alert.spec);
+    this.scriptIds = [...new Set(this.instances.flatMap((h) => scriptIdOf(h.type) ?? []))];
     let since: number | null = null;
     for (const ref of specRefs(alert.spec)) {
       const t = warmupSince(ref);
@@ -162,6 +168,7 @@ export class AlertRunner {
       barTime: d.barTime,
       values: d.values,
       firedAt: d.firedAt,
+      ...(this.opts.registry ? { registry: this.opts.registry } : {}),
     });
     return {
       alertId: a.id,

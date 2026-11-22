@@ -108,6 +108,10 @@ export function effectiveCap(
   return s.cap ?? null;
 }
 
+/** A ratio only means something when positive (a negative P/E is "no earnings"). */
+const positive = (v: number | null | undefined): number | null =>
+  isFiniteNum(v) && v > 0 ? v : null;
+
 /** Dollar volume (liquidity): shares traded × last price, null without both. */
 export function turnover(q: LiveQuote | undefined): number | null {
   if (!isFiniteNum(q?.volume) || !isFiniteNum(q?.last)) return null;
@@ -264,6 +268,9 @@ export const SCREENER_SORT_KEYS = [
   'exchange',
   'cap',
   'liveCap',
+  'pe',
+  'fwdPe',
+  'eps',
   'last',
   'change',
   'changePercent',
@@ -321,6 +328,12 @@ export function sortResults(
             return isFiniteNum(quotes[s.symbol]?.prevClose) ? quotes[s.symbol]!.prevClose! : null;
           case 'liveCap':
             return effectiveCap(s, quotes[s.symbol], capKind);
+          case 'pe':
+            return positive(quotes[s.symbol]?.trailingPE);
+          case 'fwdPe':
+            return positive(quotes[s.symbol]?.forwardPE);
+          case 'eps':
+            return isFiniteNum(quotes[s.symbol]?.eps) ? quotes[s.symbol]!.eps! : null;
           case 'relVolume':
             return relVolume(quotes[s.symbol]);
           case 'week52Pos':

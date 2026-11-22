@@ -12,3 +12,6 @@ packages/indicators/test/golden
 
 # Generated from api/src/tickerglass_api/screener_data (UniverseResponse JSON); do not reformat.
 e2e/fixtures/screener-universe.json
+
+# Helm templates are Go templates, not YAML
+deploy/helm/*/templates

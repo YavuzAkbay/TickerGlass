@@ -12,16 +12,12 @@ import {
   type ProvidersResponse,
   type Usage,
 } from '../api/provider';
+import { useIsAdmin } from '../auth/access';
 import { useNow } from '../sidebar/hooks';
 import { formatResetTime } from '../topbar/BudgetStatus';
 import { Modal } from '../ui/Modal';
 import { markSetupDone } from './firstRun';
-import {
-  EnvSwitch,
-  lockedText,
-  selectedByText,
-  useChooseProvider,
-} from './ProviderPicker';
+import { EnvSwitch, lockedText, selectedByText, useChooseProvider } from './ProviderPicker';
 import './setup.css';
 
 export type TestResult =
@@ -34,6 +30,8 @@ export type TestResult =
  */
 export default function DataSourceDialog({ onClose, arg }: { onClose: () => void; arg?: unknown }) {
   const firstRun = !!(arg as { firstRun?: unknown } | undefined)?.firstRun;
+  // Testing the connection and switching providers are admin-only (the API answers 403 otherwise).
+  const admin = useIsAdmin();
   const [info, setInfo] = useState<ProvidersResponse | null>(null);
   const usage = useUsage();
   const now = useNow(60_000);
@@ -61,11 +59,13 @@ export default function DataSourceDialog({ onClose, arg }: { onClose: () => void
       (r) => alive && setInfo(r),
       (e: unknown) => alive && setLoadError(errorMessage(e)),
     );
-    void testConnection().then((r) => alive && setTest(r));
+    if (admin) void testConnection().then((r) => alive && setTest(r));
     void refreshUsage(); // the budget bar shows the reading from now, not from a minute ago
     return () => {
       alive = false;
     };
+    // `admin` only changes when the auth state arrives, before this dialog can open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const close = () => {
@@ -81,9 +81,16 @@ export default function DataSourceDialog({ onClose, arg }: { onClose: () => void
       className="ds-dialog"
       footer={
         <>
-          <button type="button" className="io-btn" onClick={runTest} disabled={test === 'running'}>
-            Test connection
-          </button>
+          {admin ? (
+            <button
+              type="button"
+              className="io-btn"
+              onClick={runTest}
+              disabled={test === 'running'}
+            >
+              Test connection
+            </button>
+          ) : null}
           <div className="dlg-footer-spacer" />
           <button type="button" className="io-btn io-btn-primary" onClick={close}>
             {firstRun ? 'Start charting' : 'Done'}
@@ -97,7 +104,7 @@ export default function DataSourceDialog({ onClose, arg }: { onClose: () => void
             ? 'Pick where market data comes from. You can change it any time in Settings → Data source.'
             : 'The market data provider this instance runs on.'}
         </p>
-        <TestStatus test={test} />
+        {admin ? <TestStatus test={test} /> : null}
         {loadError ? (
           <div className="rs-error" role="alert">
             Provider list unavailable: {loadError}
@@ -111,7 +118,8 @@ export default function DataSourceDialog({ onClose, arg }: { onClose: () => void
               active={info.active === p.id}
               setting={info.setting}
               selectedBy={info.active === p.id ? selectedByText(info) : undefined}
-              onUse={info.switchable ? choose.use : undefined}
+              onUse={info.switchable && admin ? choose.use : undefined}
+              readOnly={!admin}
               busy={choose.busy}
               limits={info.effectiveLimits}
               usage={usage}
@@ -119,7 +127,7 @@ export default function DataSourceDialog({ onClose, arg }: { onClose: () => void
             />
           ))}
         </ul>
-        {info && lockedText(info) ? <p className="ds-note">{lockedText(info)}</p> : null}
+        {info && admin && lockedText(info) ? <p className="ds-note">{lockedText(info)}</p> : null}
       </div>
     </Modal>
   );
@@ -296,10 +304,13 @@ export function ProviderCard({
   limits,
   usage,
   now,
+  readOnly,
 }: {
   p: ProviderInfo;
   active: boolean;
   setting: string;
+  /** Non-admin: no switching and no how-to-switch hints. */
+  readOnly?: boolean | undefined;
   /** How the provider in use was chosen (shown on its card only). */
   selectedBy?: string | undefined;
   /** Switch to this provider from the app; absent: show how to set it in .env. */
@@ -340,7 +351,7 @@ export function ProviderCard({
         </p>
       )}
       {/* Switching is locked: the env line is the only way to switch, so it stays out here. */}
-      {!active && !onUse ? <EnvSwitch p={p} setting={setting} /> : null}
+      {!active && !onUse && !readOnly ? <EnvSwitch p={p} setting={setting} /> : null}
       <button
         type="button"
         className="ds-details-toggle"

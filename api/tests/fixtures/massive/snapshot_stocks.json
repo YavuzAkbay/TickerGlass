@@ -1,0 +1,42 @@
+{
+  "note": "hand-built from the documented stocks snapshot shape (not recorded): AAPL traded today, MSFT only has a previous day (pre-open: day values are 0), NVDA has no trade and no minute bar",
+  "request": {
+    "path": "/v2/snapshot/locale/us/markets/stocks/tickers",
+    "params": { "tickers": "AAPL,MSFT,NVDA" }
+  },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "count": 3,
+    "status": "OK",
+    "request_id": "708192a3b4c5d6e7f801122334455667",
+    "tickers": [
+      {
+        "ticker": "AAPL",
+        "day": { "o": 262.1, "h": 265.2, "l": 261.5, "c": 264.0, "v": 51234567, "vw": 263.41 },
+        "min": { "av": 51200000, "t": 1793131140000, "n": 150, "o": 263.9, "h": 264.1, "l": 263.8, "c": 264.0, "v": 20000, "vw": 264.0 },
+        "prevDay": { "o": 261.0, "h": 263.9, "l": 260.4, "c": 262.1, "v": 48123456, "vw": 262.2 },
+        "lastTrade": { "c": [14, 41], "i": "112233", "p": 264.05, "s": 100, "t": 1793131190000000000, "x": 4 },
+        "lastQuote": { "P": 264.06, "S": 3, "p": 264.04, "s": 2, "t": 1793131199000000000 },
+        "todaysChange": 1.95,
+        "todaysChangePerc": 0.744,
+        "updated": 1793131199000000000
+      },
+      {
+        "ticker": "MSFT",
+        "day": { "o": 0, "h": 0, "l": 0, "c": 0, "v": 0, "vw": 0 },
+        "prevDay": { "o": 480.0, "h": 486.0, "l": 478.5, "c": 484.0, "v": 21000000, "vw": 482.0 },
+        "todaysChange": 0,
+        "todaysChangePerc": 0,
+        "updated": 1793073600000000000
+      },
+      {
+        "ticker": "NVDA",
+        "day": { "o": 0, "h": 0, "l": 0, "c": 0, "v": 0, "vw": 0 },
+        "todaysChange": 0,
+        "todaysChangePerc": 0,
+        "updated": 1793073600000000000
+      }
+    ]
+  }
+}

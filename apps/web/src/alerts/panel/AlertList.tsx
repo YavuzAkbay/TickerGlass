@@ -35,6 +35,11 @@ export function AlertList() {
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('created');
   const [query, setQuery] = useState('');
+  const waitingList = useAlerts((s) => s.service?.waiting);
+  const waiting = useMemo(
+    () => new Map((waitingList ?? []).map((w) => [w.alertId, w])),
+    [waitingList],
+  );
   const all = useMemo(() => Object.values(map), [map]);
   const shown = useMemo(() => filterAlerts(all, filter, sort, query), [all, filter, sort, query]);
 
@@ -144,7 +149,7 @@ export function AlertList() {
         </div>
       ) : null}
       {shown.length ? (
-        shown.map((a) => <AlertRow key={a.id} alert={a} />)
+        shown.map((a) => <AlertRow key={a.id} alert={a} waiting={waiting.get(a.id) ?? null} />)
       ) : (
         <div className="rs-empty-text al-none">No alerts match.</div>
       )}

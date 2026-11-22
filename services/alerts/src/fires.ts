@@ -7,6 +7,7 @@ import { ApiError, type ApiClient } from './api';
 import { backoffMs, jitter, type Clock } from './clock';
 import { errText, type Logger } from './log';
 import type { FireJob } from './alert-runner';
+import type { ServiceMetrics } from './metrics';
 
 export interface FireQueueOptions {
   api: Pick<ApiClient, 'fire'>;
@@ -16,6 +17,7 @@ export interface FireQueueOptions {
   onConflict: (alertId: string, reason: 'conflict' | 'gone' | 'invalid') => void;
   onFired?: (job: FireJob, entry: AlertLogEntry) => void;
   onError?: (message: string) => void;
+  metrics?: ServiceMetrics;
 }
 
 export class FireQueue {
@@ -121,6 +123,7 @@ export class FireQueue {
           return 'stale';
         }
         if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
+          if (this.o.metrics) this.o.metrics.firesDropped++;
           this.o.log.warn('fire dropped', {
             alertId: job.alertId,
             status: err.status,
@@ -129,6 +132,7 @@ export class FireQueue {
           this.o.onConflict(job.alertId, err.status === 404 ? 'gone' : 'invalid');
           return err.status === 404 ? 'gone' : 'stale';
         }
+        if (this.o.metrics) this.o.metrics.fireRetries++;
         this.o.onError?.(errText(err));
         this.o.log.warn('fire failed, will retry', { alertId: job.alertId, error: errText(err) });
         await this.wait(jitter(backoffMs(attempt, 1000, 60_000)));

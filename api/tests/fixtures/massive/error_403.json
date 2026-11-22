@@ -1,0 +1,11 @@
+{
+  "note": "hand-built (UNVERIFIED wording): data the plan does not include",
+  "request": { "path": "/v2/aggs/ticker/AAPL/range/1/minute/1/2", "params": {} },
+  "status": 403,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "status": "NOT_AUTHORIZED",
+    "request_id": "a3b4c5d6e7f8011223344556677889aa",
+    "message": "You are not entitled to this data. Please upgrade your plan at https://massive.com/pricing"
+  }
+}

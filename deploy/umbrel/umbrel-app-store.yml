@@ -1,0 +1,5 @@
+# Umbrel community app store manifest. Umbrel reads this file at the root of a store repository,
+# so publish the contents of this folder as its own repository (or fork) and add that repository's
+# URL under Umbrel -> App Store -> Community App Stores. App folders are named <store id>-<app id>.
+id: 'tickerglass-store'
+name: 'TickerGlass App Store'

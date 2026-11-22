@@ -1,0 +1,8 @@
+{
+  "status": {"channel":"status","type":"update","data":[{"version":"2.0.10","system":"online","api_version":"v2","connection_id":18441182997298036282,"upcoming_maintenance":[],"emergency":[]}]},
+  "subscribed": {"method":"subscribe","req_id":7,"result":{"channel":"ticker","event_trigger":"trades","snapshot":true,"symbol":"BTC/USD"},"success":true,"time_in":"2026-11-17T18:24:11.798953Z","time_out":"2026-11-17T18:24:11.799015Z"},
+  "refused": {"error":"Currency pair not supported XDG/USD","method":"subscribe","req_id":7,"success":false,"symbol":"XDG/USD","time_in":"2026-11-17T18:24:11.798953Z","time_out":"2026-11-17T18:24:11.799015Z"},
+  "snapshot": {"channel":"ticker","type":"snapshot","data":[{"symbol":"BTC/USD","bid":63789.9,"bid_qty":0.66933224,"ask":63790.0,"ask_qty":0.23987552,"last":63789.2,"volume":4492.24624645,"vwap":64585.0,"low":63272.3,"high":65471.3,"change":-1073.2,"change_pct":-1.65,"trades":178006,"timestamp":"2026-11-17T18:24:11.745670Z"}]},
+  "heartbeat": {"channel":"heartbeat"},
+  "update": {"channel":"ticker","type":"update","data":[{"symbol":"BTC/USD","bid":63789.9,"bid_qty":0.72596102,"ask":63790.0,"ask_qty":0.00158787,"last":63790.2,"volume":4492.24111200,"vwap":64585.0,"low":63272.3,"high":65471.3,"change":-1071.6,"change_pct":-1.65,"trades":178006,"timestamp":"2026-11-17T18:24:12.501406Z"}]}
+}

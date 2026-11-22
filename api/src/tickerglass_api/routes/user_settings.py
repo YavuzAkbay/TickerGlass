@@ -7,7 +7,8 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import OwnedSessionDep
+from ..ownership import owned_get
 from ..userdata import schemas as s
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -22,12 +23,12 @@ def _key(key: str) -> str:
         raise HTTPException(422, str(exc)) from exc
 
 
-def _all(session: SessionDep) -> dict[str, Any]:
+def _all(session: OwnedSessionDep) -> dict[str, Any]:
     return {r.key: r.value for r in session.scalars(select(m.Setting).order_by(m.Setting.key))}
 
 
-def _put(session: SessionDep, key: str, value: Any) -> None:
-    row = session.get(m.Setting, key)
+def _put(session: OwnedSessionDep, key: str, value: Any) -> None:
+    row = owned_get(session, m.Setting, key)
     if row is None:
         session.add(m.Setting(key=key, value=value, updated_at=s.now()))
     else:
@@ -35,19 +36,21 @@ def _put(session: SessionDep, key: str, value: Any) -> None:
 
 
 @router.get("")
-def get_settings(session: SessionDep) -> dict[str, Any]:
+def get_settings(session: OwnedSessionDep) -> dict[str, Any]:
     return _all(session)
 
 
 @router.patch("")
-def patch_settings(session: SessionDep, body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
+def patch_settings(
+    session: OwnedSessionDep, body: Annotated[dict[str, Any], Body()]
+) -> dict[str, Any]:
     """Set several keys at once; a null value deletes the key. Returns all settings."""
     if len(body) > MAX_PATCH_KEYS:
         raise HTTPException(422, f"at most {MAX_PATCH_KEYS} keys per request")
     for key, value in body.items():
         _key(key)
         if value is None:
-            row = session.get(m.Setting, key)
+            row = owned_get(session, m.Setting, key)
             if row is not None:
                 session.delete(row)
             continue
@@ -61,15 +64,15 @@ def patch_settings(session: SessionDep, body: Annotated[dict[str, Any], Body()])
 
 
 @router.get("/{key}")
-def get_setting(session: SessionDep, key: str) -> Any:
-    row = session.get(m.Setting, _key(key))
+def get_setting(session: OwnedSessionDep, key: str) -> Any:
+    row = owned_get(session, m.Setting, _key(key))
     if row is None:
         raise HTTPException(404, f"setting not found: {key}")
     return row.value
 
 
 @router.put("/{key}", status_code=204)
-def put_setting(session: SessionDep, key: str, body: s.SettingIn) -> Response:
+def put_setting(session: OwnedSessionDep, key: str, body: s.SettingIn) -> Response:
     if body.value is None:
         raise HTTPException(422, "value must not be null (DELETE the key instead)")
     _put(session, _key(key), body.value)
@@ -78,8 +81,8 @@ def put_setting(session: SessionDep, key: str, body: s.SettingIn) -> Response:
 
 
 @router.delete("/{key}", status_code=204)
-def delete_setting(session: SessionDep, key: str) -> Response:
-    row = session.get(m.Setting, _key(key))
+def delete_setting(session: OwnedSessionDep, key: str) -> Response:
+    row = owned_get(session, m.Setting, _key(key))
     if row is not None:
         session.delete(row)
         session.commit()

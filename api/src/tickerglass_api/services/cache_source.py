@@ -2,8 +2,10 @@
 
 Bars and symbol metadata of one provider are not interchangeable with another's (adjusted
 closes, session hours, symbol forms), so switching `MARKET_PROVIDER` starts from an empty
-cache. The provider id is kept in `app_meta`; user data is never touched, except the derived
-screen-alert states (`screen_states`), whose baselines refer to the wiped snapshots.
+cache. The provider id is kept in `app_meta`, extended by the provider's cache identity when
+it has one (`crypto:kraken`, `alpaca:iex`; see `providers.registry.cache_source`): the same
+provider on another exchange or feed serves other data. User data is never touched, except
+the derived screen-alert states (`screen_states`), whose baselines refer to the wiped snapshots.
 """
 
 import logging
@@ -62,3 +64,14 @@ def ensure_cache_source(engine: Engine, source: str) -> bool:
         source,
     )
     return True
+
+
+def clear_market_tables(session: Session) -> dict[str, int]:
+    """Delete the cached bars, series bookkeeping and symbol metadata (rows per table), in
+    the caller's transaction. User data and the `cache_source` marker stay. Shared by
+    `POST /server/cache/clear` and the backup snapshot (on its copy)."""
+    deleted: dict[str, int] = {}
+    for table in (Bar, SeriesMeta, SymbolMeta):
+        result = session.execute(delete(table))
+        deleted[table.__tablename__] = int(getattr(result, "rowcount", 0) or 0)
+    return deleted

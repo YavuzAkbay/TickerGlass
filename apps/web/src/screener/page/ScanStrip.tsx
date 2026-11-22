@@ -1,4 +1,5 @@
 import { Pause, Play, X } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useT, type MessageKey } from '../../i18n';
 import { useLiveQuotes } from '../../quotes/hooks';
 import { changeClass, fmtCompact, fmtSigned } from '../../sidebar/format';
@@ -25,6 +26,8 @@ interface Props {
   onTogglePause: () => void;
   /** True until the first quotes arrived. */
   loading: boolean;
+  /** Quick screens shown first in the row (preset chips). */
+  leading?: ReactNode;
 }
 
 /**
@@ -43,6 +46,7 @@ export function ScanStrip({
   holdReason,
   onTogglePause,
   loading,
+  leading,
 }: Props) {
   const t = useT();
   const quotes = useLiveQuotes(scanSymbols);
@@ -51,6 +55,12 @@ export function ScanStrip({
 
   return (
     <div className="scr-strip" data-testid="scr-strip">
+      {leading ? (
+        <>
+          {leading}
+          <span className="scr-toolbar-sep" aria-hidden="true" />
+        </>
+      ) : null}
       <span className={`scr-strip-pulse${loading ? ' on' : ''}`} aria-hidden="true" />
       {s.count ? (
         <span className="scr-breadth" data-testid="scr-overview">
@@ -59,6 +69,14 @@ export function ScanStrip({
           {s.flat ? (
             <span className="rs-num muted">{t('scr.ovFlat').replace('{n}', String(s.flat))}</span>
           ) : null}
+          <span
+            className="scr-breadth-bar"
+            aria-hidden="true"
+            title={`${s.up} / ${s.flat} / ${s.down}`}
+          >
+            <span style={{ width: `${(s.up / s.count) * 100}%` }} />
+            <span style={{ width: `${(s.down / s.count) * 100}%` }} />
+          </span>
           {s.avgChange !== null ? (
             <span className="scr-ov-avg">
               {t('scr.ovAvg')}{' '}

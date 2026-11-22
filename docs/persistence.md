@@ -10,6 +10,15 @@ through `apps/web/src/api/persistence.ts` and `autosave.ts`. Server code: `api/s
 JSON payloads are **opaque** to the server: it checks the top-level type, size and `schemaVersion` only.
 Wire format is camelCase. Timestamps are ISO 8601 UTC.
 
+**Every table below is per user** (multi-user, [design/multi-user.md](design/multi-user.md)): each row has an
+`owner_id` (FK `users.id`, cascade), every route reads and writes only the signed-in user's rows, and a row of
+another user is a 404. Two things change in the keys shown: `settings` is keyed by `(owner_id, key)` and
+`symbol_flags` by `(owner_id, symbol)`, and the "unique" names / tool defaults below are unique **per user**. Ids
+the client chooses (drawings, watchlists, user scripts, alerts, screens) stay globally unique: creating one that
+belongs to someone else answers `409 {"detail": "id in use"}` and nothing more. `GET /drawings` and
+`GET /user-scripts` carry `ownerId` on each record; called with the alerts-service token they return every user's
+rows (every other user-data route refuses that token). `ownerId` is not part of the export bundle.
+
 | Table                 | Columns (besides `created_at`/`updated_at`)                                                                                                   | Key               |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | `layouts`             | `id` uuid, `name`, `state` JSON object, `schema_version`, `revision`, `is_last_used`                                                          | id                |
@@ -18,7 +27,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 | `drawing_templates`   | `id`, `tool_type`, `name`, `style` JSON, `is_default`, `schema_version`                                                                       | (tool_type, name) |
 | `chart_templates`     | `id`, `name` unique, `data` JSON, `schema_version`                                                                                            | name              |
 | `settings`            | `key` (`[A-Za-z0-9_.-]{1,64}`), `value` JSON (not null)                                                                                       | key               |
-| `notes`               | `id`, `symbol` (null = general), `text` (<= 200k chars), `revision`                                                                           | id                |
+| `notes`               | `id`, `symbol` (null = general), `text` (<= 200k chars), `kind` (`note` \| `journal`), `revision`                                             | id                |
 | `watchlists`          | `id` (client-chosen), `name`, `items` JSON list, `revision`                                                                                   | id                |
 | `user_scripts`        | `id` (client-chosen), `name` (1-100), `source` (<= 200k chars), `manifest` JSON object or null (<= 64 KB), `api_version`, `revision`          | id                |
 | `symbol_flags`        | `symbol` (upper-case), `color` (one of 7)                                                                                                     | symbol            |
@@ -27,7 +36,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 - **Drawings are one row per drawing, global (not per layout).** The server derives `symbol`/`pane_id`/`z` from
   the `Drawing` (`scope: 'all'` -> symbol null; else `symbol` upper-cased). This maps 1:1 onto the web store's
   `apply(upserts, removeIds)`. (docs/drawings.md §6 mentioned per-layout keys; per-layout drawings are deferred.)
-- At most one `is_default` drawing template per tool (setting one clears the others).
+- At most one `is_default` drawing template per tool and user (setting one clears that user's others).
 - **Watchlists** are one row per list; `items` is a JSON array the server validates: `{type:'symbol', symbol}` and
   `{type:'section', id, title, collapsed}`. Symbols after a section belong to it until the next section. Symbols are
   trimmed and upper-cased (`[A-Z0-9.\-=^/&_]{1,32}`), unique within a list (case-insensitive), section ids unique,
@@ -37,7 +46,7 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
   not compile; the server does not run or validate scripts). The client creates the id (UUID v4,
   `[A-Za-z0-9_-]{1,36}`) because indicator instances reference it (`user:<id>`). Names are not unique.
   See [user-scripts.md](user-scripts.md).
-- **Flags** are global: at most one of `red orange yellow green cyan blue purple` per symbol.
+- **Flags** are per user: at most one of `red orange yellow green cyan blue purple` per symbol.
   `created_at` is the time the current color was set (it resets on a color change, not on setting the same color).
 - **Alerts** (Phase 10) are one row per alert with revision checks like watchlists; the evaluation service owns
   `alert_states`, and the API owns the log and the delivery outbox. Tables, endpoints, firing and the `/ws` event
@@ -46,31 +55,31 @@ Wire format is camelCase. Timestamps are ISO 8601 UTC.
 
 ## 2. Endpoints (all under `/api`)
 
-| Method + path                                                               | Client function                                                               | Notes                                                                                                                                                                          |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /layouts`                                                              | `listLayouts`                                                                 | summaries (no state), newest `updatedAt` first                                                                                                                                 |
-| `POST /layouts` `{name,state,schemaVersion?}`                               | `createLayout`                                                                | 201; also "save as"                                                                                                                                                            |
-| `GET /layouts/{id}`                                                         | `getLayout`                                                                   |                                                                                                                                                                                |
-| `PUT /layouts/{id}` `{state,revision,schemaVersion?}`                       | `saveLayout`                                                                  | 409 if `revision` stale; returns new revision                                                                                                                                  |
-| `PATCH /layouts/{id}` `{name}`                                              | `renameLayout`                                                                | does not bump revision                                                                                                                                                         |
-| `POST /layouts/{id}/duplicate` `{name}`                                     | `duplicateLayout`                                                             | copies the _stored_ state                                                                                                                                                      |
-| `DELETE /layouts/{id}`                                                      | `deleteLayout`                                                                | 204                                                                                                                                                                            |
-| `GET/PUT /layouts/last-used` (`{id}`)                                       | `getLastUsedLayout`/`setLastUsedLayout`                                       | GET returns `null` when none                                                                                                                                                   |
-| `GET /layouts/{id}/export`, `POST /layouts/import?name=`                    | `exportLayout`/`importLayout`                                                 | import always creates a new layout                                                                                                                                             |
-| `GET /drawings?symbol=&synced=true`                                         | `getDrawings`                                                                 | no symbol = all; with symbol = its + synced                                                                                                                                    |
-| `POST /drawings/batch`                                                      | `batchDrawings`                                                               | see §3                                                                                                                                                                         |
-| `GET/POST /indicator-templates`, `GET/PUT/DELETE /indicator-templates/{id}` | `list/save/get/update/deleteIndicatorTemplate`                                | POST upserts by name (201 new, 200 replaced); PUT 409 on name clash                                                                                                            |
-| `GET /drawing-templates?toolType=`, `POST`, `GET/PUT/DELETE /{id}`          | `...DrawingTemplate(s)`                                                       | POST upserts by (toolType, name)                                                                                                                                               |
-| `GET/POST /chart-templates`, `GET/PUT/DELETE /{id}`                         | `...ChartTemplate(s)`                                                         | POST upserts by name                                                                                                                                                           |
-| `GET /settings`, `PATCH /settings` `{k: v\|null}`                           | `getSettings`/`patchSettings`                                                 | null deletes; PATCH returns all settings                                                                                                                                       |
-| `GET/PUT/DELETE /settings/{key}` (`{value}`)                                | `getSetting`/`putSetting`/`deleteSetting`                                     | GET 404 if unset; last writer wins per key                                                                                                                                     |
-| `GET /notes?symbol=`, `POST`, `GET/PUT/DELETE /notes/{id}`                  | `listNotes/createNote/getNote/updateNote/deleteNote`                          | PUT with `revision` -> 409 if stale                                                                                                                                            |
-| `GET/POST /watchlists`, `GET/PUT/DELETE /watchlists/{id}`                   | `listWatchlists/createWatchlist/getWatchlist/updateWatchlist/deleteWatchlist` | list includes items, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,items,revision?}` -> 409 if stale; DELETE 404 if missing (treated as done)      |
-| `GET/POST /user-scripts`, `GET/PUT/DELETE /user-scripts/{id}`               | `...UserScript(s)` (web data layer)                                           | list includes sources, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,source,manifest,apiVersion,revision?}` -> 409 if stale; DELETE 404 if missing |
-| `GET /flags`, `PATCH /flags` `{SYMBOL: color\|null}`                        | `getFlags`/`patchFlags`                                                       | PATCH sets or removes flags in one transaction (max 5000) and returns all flags                                                                                                |
-| `/alerts*` (CRUD, status, log, channels, service)                           | `apps/web/src/api/alerts.ts`                                                  | Phase 10: see [alerts.md](alerts.md) §1.4. Mutations are online-only (no localStorage queue)                                                                                   |
-| `GET /export`                                                               | `exportAll`                                                                   | full bundle (§4)                                                                                                                                                               |
-| `POST /import?mode=merge\|replace&dryRun=&confirm=`                         | `importAll`                                                                   | returns per-entity `{created,updated,deleted}`; replace needs `confirm=true`                                                                                                   |
+| Method + path                                                                                       | Client function                                                               | Notes                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /layouts`                                                                                      | `listLayouts`                                                                 | summaries (no state), newest `updatedAt` first                                                                                                                                 |
+| `POST /layouts` `{name,state,schemaVersion?}`                                                       | `createLayout`                                                                | 201; also "save as"                                                                                                                                                            |
+| `GET /layouts/{id}`                                                                                 | `getLayout`                                                                   |                                                                                                                                                                                |
+| `PUT /layouts/{id}` `{state,revision,schemaVersion?}`                                               | `saveLayout`                                                                  | 409 if `revision` stale; returns new revision                                                                                                                                  |
+| `PATCH /layouts/{id}` `{name}`                                                                      | `renameLayout`                                                                | does not bump revision                                                                                                                                                         |
+| `POST /layouts/{id}/duplicate` `{name}`                                                             | `duplicateLayout`                                                             | copies the _stored_ state                                                                                                                                                      |
+| `DELETE /layouts/{id}`                                                                              | `deleteLayout`                                                                | 204                                                                                                                                                                            |
+| `GET/PUT /layouts/last-used` (`{id}`)                                                               | `getLastUsedLayout`/`setLastUsedLayout`                                       | GET returns `null` when none                                                                                                                                                   |
+| `GET /layouts/{id}/export`, `POST /layouts/import?name=`                                            | `exportLayout`/`importLayout`                                                 | import always creates a new layout                                                                                                                                             |
+| `GET /drawings?symbol=&synced=true`                                                                 | `getDrawings`                                                                 | no symbol = all; with symbol = its + synced                                                                                                                                    |
+| `POST /drawings/batch`                                                                              | `batchDrawings`                                                               | see §3                                                                                                                                                                         |
+| `GET/POST /indicator-templates`, `GET/PUT/DELETE /indicator-templates/{id}`                         | `list/save/get/update/deleteIndicatorTemplate`                                | POST upserts by name (201 new, 200 replaced); PUT 409 on name clash                                                                                                            |
+| `GET /drawing-templates?toolType=`, `POST`, `GET/PUT/DELETE /{id}`                                  | `...DrawingTemplate(s)`                                                       | POST upserts by (toolType, name)                                                                                                                                               |
+| `GET/POST /chart-templates`, `GET/PUT/DELETE /{id}`                                                 | `...ChartTemplate(s)`                                                         | POST upserts by name                                                                                                                                                           |
+| `GET /settings`, `PATCH /settings` `{k: v\|null}`                                                   | `getSettings`/`patchSettings`                                                 | null deletes; PATCH returns all settings                                                                                                                                       |
+| `GET/PUT/DELETE /settings/{key}` (`{value}`)                                                        | `getSetting`/`putSetting`/`deleteSetting`                                     | GET 404 if unset; last writer wins per key                                                                                                                                     |
+| `GET /notes?symbol=&kind=note\|journal\|all` (default `note`), `POST`, `GET/PUT/DELETE /notes/{id}` | `listNotes/createNote/getNote/updateNote/deleteNote`                          | PUT with `revision` -> 409 if stale                                                                                                                                            |
+| `GET/POST /watchlists`, `GET/PUT/DELETE /watchlists/{id}`                                           | `listWatchlists/createWatchlist/getWatchlist/updateWatchlist/deleteWatchlist` | list includes items, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,items,revision?}` -> 409 if stale; DELETE 404 if missing (treated as done)      |
+| `GET/POST /user-scripts`, `GET/PUT/DELETE /user-scripts/{id}`                                       | `...UserScript(s)` (web data layer)                                           | list includes sources, oldest first; POST accepts an `id` (409 + `current` if taken); PUT `{name,source,manifest,apiVersion,revision?}` -> 409 if stale; DELETE 404 if missing |
+| `GET /flags`, `PATCH /flags` `{SYMBOL: color\|null}`                                                | `getFlags`/`patchFlags`                                                       | PATCH sets or removes flags in one transaction (max 5000) and returns all flags                                                                                                |
+| `/alerts*` (CRUD, status, log, channels, service)                                                   | `apps/web/src/api/alerts.ts`                                                  | Phase 10: see [alerts.md](alerts.md) §1.4. Mutations are online-only (no localStorage queue)                                                                                   |
+| `GET /export`                                                                                       | `exportAll`                                                                   | full bundle (§4)                                                                                                                                                               |
+| `POST /import?mode=merge\|replace&dryRun=&confirm=`                                                 | `importAll`                                                                   | returns per-entity `{created,updated,deleted}`; replace needs `confirm=true`                                                                                                   |
 
 Errors: `{detail: string}` (400, 404, 409 name clash, 422) or, for revision conflicts, `{detail: {message, current | conflicts}}`.
 `ApiError.message` is the `detail` string or `detail.message`; `ApiError.body` holds the parsed body.
@@ -87,7 +96,8 @@ schemaVersion?, force?}`. Upsert with `baseRevision: null` = create (conflict if
   deleting a missing id is a no-op. **All-or-nothing**: any conflict -> 409 and nothing is written;
   `detail.conflicts[] = {id, revision|null, drawing|null}` (`drawingConflicts(err)`). `force: true` skips checks
   (last writer wins, for "keep mine"). Success returns the written rows (new revisions) and `deleted` ids.
-- **Notes**: optional `revision` on PUT (409 with `detail.current`); omit it to overwrite.
+- **Notes**: optional `revision` on PUT (409 with `detail.current`); omit it to overwrite. `kind` is set at
+  creation (`journal` = owned by a portfolio journal entry, hidden from the default list) and never changes.
 - **Watchlists**: like notes. `PUT` replaces name and items as a whole with one conditional `UPDATE ... WHERE id AND
 revision`; a stale `revision` -> 409 `{detail: {message, current}}`, a missing id -> 404, omitting `revision`
   overwrites. `POST` with an existing `id` -> 409 with `current` (the client then saves with `PUT` instead).
@@ -116,7 +126,7 @@ the batch for the rest, retry. Refetch (`getDrawings`, `getLayout`) on window fo
   "layouts": [{ "id", "name", "state", "schemaVersion", "isLastUsed", ... }],   // "app" is required
   "drawings": [{ "data": <Drawing>, "schemaVersion", ... }],   // id/symbol/z derived from data
   "indicatorTemplates": [...], "drawingTemplates": [...], "chartTemplates": [...],
-  "settings": { "<key>": <value> }, "notes": [{ "id", "symbol", "text", ... }],
+  "settings": { "<key>": <value> }, "notes": [{ "id", "symbol", "text", "kind"?, ... }],
   "watchlists": [{ "id", "name", "items": [...], ... }],   // added in Phase 8
   "flags": [{ "symbol", "color", ... }],                   // added in Phase 8
   "alerts": [{ ...AlertIn, "status", "statusReason", "fireCount", "lastFiredAt" }],   // added in Phase 10
@@ -142,6 +152,13 @@ replace everything. `dryRun=true` returns the same summary and rolls back.
 - `userScripts` is additive too: `merge` matches by id, `replace` empties the table only when the key is present.
   Duplicate ids or an id that is not `[A-Za-z0-9_-]{1,36}` -> 422 (ids are referenced by indicator instances, so
   they are never regenerated).
+- Import and export are per user. Everything lands under the signed-in user; `replace` deletes only their rows.
+  A client id of the bundle that belongs to another user (a file exported by someone else) is stored under a fresh
+  id: layouts, notes, watchlists, alerts, screens, portfolios, transactions, journal entries and drawings (a
+  drawing's own `id` and the `drawingId` of its alerts follow; journal links follow too). User scripts are the
+  exception: they are referenced as `user:<id>` from layouts, templates and alerts, so such a bundle is refused
+  with `409 id in use` and nothing is imported. A database error during import answers a generic 409 (the message
+  is only logged).
 - Layout ids that would shadow a fixed route (`last-used`, `import`, `export`) or are not `[A-Za-z0-9_-]{1,36}` get a
   fresh id on import (`isLastUsed` follows the new id); such layouts are always created, never matched.
 - Settings: `null` values are rejected (422), as with `PUT /settings/{key}`; to remove a key use `PATCH` / `DELETE`.

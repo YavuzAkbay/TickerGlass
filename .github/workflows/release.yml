@@ -32,6 +32,10 @@ jobs:
             context: .
             dockerfile: docker/node.Dockerfile
             target: alerts
+          # All-in-one (API + alerts + web in one container) for Unraid / CasaOS.
+          - image: tickerglass
+            context: .
+            dockerfile: docker/aio.Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -58,7 +62,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # `version` is the bare semver (no `v` prefix), as apps/web/src/api/updates.ts expects.
           build-args: |
-            TICKERGLASS_VERSION=${{ github.ref_name }}
+            TICKERGLASS_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,scope=${{ matrix.image }},mode=max

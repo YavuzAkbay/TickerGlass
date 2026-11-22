@@ -112,8 +112,20 @@ describe('validateAlert', () => {
       webhookRaw: false,
       telegram: false,
       email: false,
+      ntfy: false,
+      gotify: false,
+      apprise: false,
     });
     expect('id' in r.alert).toBe(false);
+  });
+
+  it('accepts the ntfy, gotify and apprise notify flags', () => {
+    const r = validateAlert({ ...base(), notify: { ntfy: true, gotify: true, apprise: true } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.alert.notify).toMatchObject({ ntfy: true, gotify: true, apprise: true });
+    const bad = validateAlert({ ...base(), notify: { ntfy: 'yes' } });
+    expect(bad.ok).toBe(false);
   });
 
   it('rejects a non-object body and unknown nested keys', () => {
@@ -318,6 +330,35 @@ describe('indicators that alerts cannot evaluate', () => {
       { id: 'm', type: 'sma', inputs: { source: { instanceId: 'z', outputId: 'v' } } },
     ];
     expect(errors(withLeft(chain, 'm', 'ma')).map((e) => e[1])).toEqual(['unsupported_indicator']);
+  });
+
+  it('scripts are leaves: neither a source of other indicators nor reading them', () => {
+    const script = {
+      ...plotOnly,
+      id: 'user:abc',
+      name: 'My Script',
+      shortName: 'MS',
+      inputs: { source: { kind: 'source', label: 'Source', default: 'close' } },
+    } as const;
+    registry.register(script);
+    const alone = [{ id: 's', type: 'user:abc', inputs: {} }];
+    expect(errors(withLeft(alone, 's', 'v'))).toEqual([]);
+    const feeding = [
+      ...alone,
+      { id: 'm', type: 'sma', inputs: { source: { instanceId: 's', outputId: 'v' } } },
+    ];
+    expect(errors(withLeft(feeding, 'm', 'ma'))).toEqual([
+      [
+        'spec.left.ref.instances.1.inputs.source',
+        'unsupported_indicator',
+        "scripts can't feed other indicators or read them",
+      ],
+    ]);
+    const reading = [
+      { id: 'm', type: 'sma', inputs: {} },
+      { id: 's', type: 'user:abc', inputs: { source: { instanceId: 'm', outputId: 'ma' } } },
+    ];
+    expect(errors(withLeft(reading, 's', 'v')).map((e) => e[1])).toEqual(['unsupported_indicator']);
   });
 
   it('rejects event-anchored VWAP, accepts calendar anchors', () => {

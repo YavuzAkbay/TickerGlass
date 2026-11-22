@@ -191,14 +191,15 @@ test('inspector moves focus in, restores it, closes on symbol change, and leaves
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
-  const gapBetweenChartAndRail = () =>
+  // The navigator docks on the right edge; the drawing dock floats over the chart.
+  const gapBetweenChartAndNavigator = () =>
     page.evaluate(() => {
       const c = document.querySelector('.center')!.getBoundingClientRect();
-      const r = document.querySelector('.app-rail')!.getBoundingClientRect();
-      return r.left - c.right;
+      const n = document.querySelector('.navigator')!.getBoundingClientRect();
+      return n.left - c.right;
     });
-  // No Inspector: a single 1px hairline between the chart and the tool rail.
-  expect(await gapBetweenChartAndRail()).toBe(1);
+  // No Inspector: a single 1px hairline between the chart and the navigator.
+  expect(await gapBetweenChartAndNavigator()).toBe(1);
 
   // Focus moves in on open and returns to the opener on close.
   const symbolButton = page.getByRole('button', { name: /^Open details for/ });
@@ -214,8 +215,8 @@ test('inspector moves focus in, restores it, closes on symbol change, and leaves
   await symbolButton.click();
   await expect(inspector).toBeVisible();
   const box = await inspector.boundingBox();
-  const rail = await page.locator('.app-rail').boundingBox();
-  expect(Math.round(rail!.x - (box!.x + box!.width))).toBe(1);
+  const nav = await page.locator('.navigator').boundingBox();
+  expect(Math.round(nav!.x - (box!.x + box!.width))).toBe(1);
   await inspector.getByRole('button', { name: 'Close inspector' }).click();
 
   // A drawing's properties close when the symbol changes.

@@ -80,6 +80,17 @@ describe('ProviderPicker', () => {
     expect(html).not.toContain('Switching is disabled');
   });
 
+  it('non-admins see the providers but no switching controls or hints', () => {
+    const html = renderToStaticMarkup(
+      <ProviderPicker info={info()} onUse={() => undefined} readOnly />,
+    );
+    expect(html).toContain('Demo');
+    expect(html).toContain('In use');
+    expect(html).not.toContain('aria-label="Use Demo"');
+    expect(html).not.toContain('Set TWELVEDATA_API_KEY');
+    expect(html).not.toContain('To use it, set');
+  });
+
   it('says how the provider in use was chosen', () => {
     expect(render(info({ selectedBy: 'ui' }))).toContain('(selected in app)');
     expect(render(info({ selectedBy: 'env' }))).toContain('(from MARKET_PROVIDER)');

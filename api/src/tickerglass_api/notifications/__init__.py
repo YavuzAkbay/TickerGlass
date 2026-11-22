@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from ..settings import Settings
 
-CHANNELS = ("webhook", "telegram", "email")
+CHANNELS = ("webhook", "telegram", "email", "ntfy", "gotify", "apprise")
 
 
 class DeliveryError(Exception):
@@ -44,6 +44,18 @@ def email_configured(settings: Settings) -> bool:
     return bool(settings.smtp_host and settings.smtp_from and smtp_recipients(settings))
 
 
+def ntfy_configured(settings: Settings) -> bool:
+    return bool(settings.ntfy_url)
+
+
+def gotify_configured(settings: Settings) -> bool:
+    return bool(settings.gotify_url and settings.gotify_token)
+
+
+def apprise_configured(settings: Settings) -> bool:
+    return bool(settings.apprise_url)
+
+
 def smtp_recipients(settings: Settings) -> list[str]:
     return [a.strip() for a in (settings.smtp_to or "").split(",") if a.strip()]
 
@@ -57,6 +69,12 @@ def channel_configured(
         return telegram_configured(settings)
     if channel == "email":
         return email_configured(settings)
+    if channel == "ntfy":
+        return ntfy_configured(settings)
+    if channel == "gotify":
+        return gotify_configured(settings)
+    if channel == "apprise":
+        return apprise_configured(settings)
     return False
 
 
@@ -64,8 +82,14 @@ def mask_url(url: str | None) -> str | None:
     """`https://host/…`: paths and queries often carry the secret (Slack, Discord, ...)."""
     if not url:
         return None
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc.rpartition('@')[2]}/…"
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        return "(invalid)"
+    host = parts.netloc.rpartition("@")[2]
+    if not parts.scheme or not host:
+        return "(invalid)"
+    return f"{parts.scheme}://{host}/…"
 
 
 def mask_email(address: str) -> str:

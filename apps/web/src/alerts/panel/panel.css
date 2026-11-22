@@ -110,8 +110,19 @@
 }
 .al-reason {
   margin-top: 2px;
+  overflow-wrap: anywhere;
   color: var(--down);
   font-size: 12px;
+}
+.al-waiting {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.al-waiting-reason {
+  display: block;
+  overflow-wrap: anywhere;
+  opacity: 0.8;
 }
 .al-more {
   flex: none;

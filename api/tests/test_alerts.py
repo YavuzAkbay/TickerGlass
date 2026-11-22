@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import Connection, create_engine, func, insert, inspect, select, update
-from test_userdata import NullProvider, drawing, engine_of, interleave
+from test_userdata import NullProvider, drawing, engine_of, interleave, owner_id_of
 
 from tickerglass_api import models as m
 from tickerglass_api.app import create_app
@@ -168,6 +168,7 @@ def test_limit_of_1000_alerts(client: TestClient) -> None:
     t = datetime.now(UTC)
     rows = [
         {
+            "owner_id": owner_id_of(client),
             "id": f"x{i}",
             "name": "n",
             "symbol": "A",
@@ -419,7 +420,12 @@ def test_fire_records_log_and_counters(client: TestClient) -> None:
     assert cur["fireCount"] == 1 and cur["revision"] == 1 and cur["status"] == "active"
     assert cur["lastFiredAt"] == "2026-10-15T14:30:00Z"
     assert client.get("/api/alerts/states").json() == [
-        {"alertId": "a1", "revision": 1, "state": {"prev": {"barTime": 1}}}
+        {
+            "alertId": "a1",
+            "ownerId": cur["ownerId"],
+            "revision": 1,
+            "state": {"prev": {"barTime": 1}},
+        }
     ]
 
 
@@ -497,11 +503,21 @@ def test_fire_creates_deliveries_for_enabled_channels(
     make_client: Callable[..., TestClient],
 ) -> None:
     client = make_client(alerts_webhook_url="http://127.0.0.1:9/hook", alerts_internal_token=None)
-    notify = {"webhook": True, "telegram": True, "email": True, "webhookUrl": None}
+    notify = {
+        "webhook": True,
+        "telegram": True,
+        "email": True,
+        "ntfy": True,
+        "gotify": True,
+        "apprise": True,
+        "webhookUrl": None,
+    }
     a = create(client, id="a1", notify=notify)
     deliveries = fire(client, a).json()["deliveries"]
     by = {d["channel"]: d for d in deliveries}
-    assert set(by) == {"webhook", "telegram", "email"}
+    assert set(by) == {"webhook", "telegram", "email", "ntfy", "gotify", "apprise"}
+    for ch in ("ntfy", "gotify", "apprise"):
+        assert by[ch]["status"] == "failed" and by[ch]["lastError"] == "not configured"
     assert by["telegram"]["status"] == "failed" and by["telegram"]["lastError"] == "not configured"
     assert by["email"]["status"] == "failed" and by["email"]["attempts"] == 0
     assert by["webhook"]["status"] in ("pending", "failed", "sent")
@@ -612,8 +628,9 @@ def test_states_put_ignores_stale_rows(client: TestClient) -> None:
     client.put(
         "/api/alerts/states", json={"states": [{"alertId": "a1", "revision": 1, "state": {"n": 9}}]}
     )
+    owner = client.get("/api/alerts/a1").json()["ownerId"]
     assert client.get("/api/alerts/states").json() == [
-        {"alertId": "a1", "revision": 1, "state": {"n": 9}}
+        {"alertId": "a1", "ownerId": owner, "revision": 1, "state": {"n": 9}}
     ]
 
 
@@ -681,9 +698,9 @@ def test_log_retention_prunes_oldest(make_client: Callable[..., TestClient]) -> 
 
 
 def test_internal_token_guards_service_routes(make_client: Callable[..., TestClient]) -> None:
-    client = make_client(alerts_internal_token="s3cret")
+    client = make_client(alerts_internal_token="s3cret-0123456789abcdef0123456789abcdef")
     a = create(client, id="a1")
-    hdr = {"X-Alerts-Token": "s3cret"}
+    hdr = {"X-Alerts-Token": "s3cret-0123456789abcdef0123456789abcdef"}
     hb = {
         "version": "1",
         "startedAt": "2026-10-15T00:00:00Z",
@@ -729,6 +746,43 @@ def test_service_heartbeat_and_online(client: TestClient) -> None:
     assert client.get("/api/alerts/service").json()["online"] is False
 
 
+def test_service_heartbeat_waiting_alerts(client: TestClient) -> None:
+    hb = {
+        "version": "1.2.3",
+        "startedAt": "2026-10-15T00:00:00Z",
+        "series": 1,
+        "liveSymbols": 1,
+        "polledSeries": 0,
+        "lastError": None,
+    }
+    assert client.post("/api/alerts/service/heartbeat", json=hb).status_code == 204
+    assert client.get("/api/alerts/service").json()["waiting"] == []  # old services omit it
+    create(client, id="a1")  # `waiting` lists only alerts the caller can see
+    waiting = [
+        {
+            "alertId": "a1",
+            "reason": "script exceeded its time limit; the script is disabled for 5 more min",
+            "resumeAt": "2026-10-15T00:06:00Z",
+        }
+    ]
+    assert (
+        client.post("/api/alerts/service/heartbeat", json={**hb, "waiting": waiting}).status_code
+        == 204
+    )
+    got = client.get("/api/alerts/service").json()
+    assert got["waiting"] == waiting
+    # The server status page carries the same list.
+    assert client.get("/api/server/status").json()["alertsService"]["waiting"] == waiting
+    for bad in (
+        [{"alertId": "a1", "reason": "x"}],  # no resumeAt
+        [{**waiting[0], "extra": 1}],  # unknown field
+        [{**waiting[0], "alertId": "not valid!"}],
+        [{**waiting[0], "reason": "x" * 501}],
+    ):
+        res = client.post("/api/alerts/service/heartbeat", json={**hb, "waiting": bad})
+        assert res.status_code == 422, bad
+
+
 # -------------------------------------------------------------- channels
 
 
@@ -737,6 +791,9 @@ def test_channels_masked(make_client: Callable[..., TestClient]) -> None:
         "webhook": {"configured": False, "url": None},
         "telegram": {"configured": False},
         "email": {"configured": False, "to": None},
+        "ntfy": {"configured": False, "url": None},
+        "gotify": {"configured": False, "url": None},
+        "apprise": {"configured": False, "url": None},
     }
     client = make_client(
         alerts_webhook_url="https://hooks.example.com/services/T000/B000/SECRET",
@@ -754,7 +811,7 @@ def test_channels_masked(make_client: Callable[..., TestClient]) -> None:
 
 
 def test_channel_test_requires_configuration(client: TestClient) -> None:
-    for ch in ("webhook", "telegram", "email"):
+    for ch in ("webhook", "telegram", "email", "ntfy", "gotify", "apprise"):
         assert client.post(f"/api/alerts/channels/{ch}/test", json={}).status_code == 400
     assert client.post("/api/alerts/channels/sms/test", json={}).status_code == 422
 
@@ -948,7 +1005,10 @@ def test_alert_tables_in_migration(tmp_path: Path) -> None:
     assert any(u["column_names"] == ["fire_id"] for u in uniques)
     fks = inspect(engine).get_foreign_keys("alert_deliveries")
     assert fks[0]["options"].get("ondelete") == "CASCADE"
-    assert not inspect(engine).get_foreign_keys("alert_log")  # the log outlives the alert
+    # The log outlives the alert: its only foreign key is the owner's.
+    assert [fk["referred_table"] for fk in inspect(engine).get_foreign_keys("alert_log")] == [
+        "users"
+    ]
     command.downgrade(cfg, "50fc9b162b6f")
     assert not set(inspect(engine).get_table_names()) & names
     engine.dispose()

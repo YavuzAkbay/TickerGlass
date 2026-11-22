@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import system_maker
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_userdata import NullProvider
@@ -38,7 +39,15 @@ def spec(**kw: Any) -> dict[str, Any]:
 def alert(**notify: bool) -> dict[str, Any]:
     return {
         "enabled": True,
-        "notify": {"webhook": False, "telegram": False, "email": False, **notify},
+        "notify": {
+            "webhook": False,
+            "telegram": False,
+            "email": False,
+            "ntfy": False,
+            "gotify": False,
+            "apprise": False,
+            **notify,
+        },
     }
 
 
@@ -46,14 +55,15 @@ class Env:
     def __init__(self, client: TestClient) -> None:
         self.client = client
         self.app = client.app
-        self.maker = self.app.state.sessionmaker  # type: ignore[attr-defined]
+        # System sessions, like the screener job's: they see every owner's rows.
+        self.maker = system_maker(self.app.state.sessionmaker.kw["bind"])  # type: ignore[attr-defined]
         self.published: list[dict[str, Any]] = []
         hub = self.app.state.live_hub  # type: ignore[attr-defined]
         orig = hub.publish_threadsafe
 
-        def spy(topic: str, frame: dict[str, Any]) -> None:
+        def spy(topic: str, frame: dict[str, Any], **kw: Any) -> None:
             self.published.append({"topic": topic, **frame})
-            orig(topic, frame)
+            orig(topic, frame, **kw)
 
         hub.publish_threadsafe = spy
 
@@ -162,10 +172,11 @@ def test_first_evaluation_is_only_a_baseline(env: Env) -> None:
 
 def test_entered_symbols_log_once_with_deliveries(env: Env) -> None:
     env.seed({"AAA": 20, "CCC": 50, "DDD": 60})
-    env.screen(alert=alert(webhook=True, telegram=True))
+    env.screen(alert=alert(webhook=True, telegram=True, ntfy=True, apprise=True))
     env.client.patch("/api/screener/screens/scr", json={"alert": {
         "enabled": True,
         "notify": {"webhook": True, "telegram": True, "email": False,
+                   "ntfy": True, "gotify": False, "apprise": True,
                    "webhookUrl": "https://example.com/hook"}}})  # fmt: skip
     assert env.run(D1) == 0
 
@@ -183,10 +194,11 @@ def test_entered_symbols_log_once_with_deliveries(env: Env) -> None:
     assert entry.read is False and entry.final is False and entry.delayed is False
 
     dels = {d.channel: d for d in env.deliveries()}
-    assert set(dels) == {"webhook", "telegram"}
+    assert set(dels) == {"webhook", "telegram", "ntfy", "apprise"}
     assert dels["webhook"].status == "pending"
     assert dels["webhook"].target == "https://example.com/hook"
     assert dels["telegram"].status == "failed" and dels["telegram"].last_error == "not configured"
+    assert dels["ntfy"].status == "failed" and dels["apprise"].last_error == "not configured"
     assert all(d.log_id == entry.id for d in dels.values())
 
     (frame,) = env.published
@@ -211,6 +223,32 @@ def test_rerun_of_same_date_is_idempotent(env: Env) -> None:
         session.commit()
     assert env.run(D2) == 0  # becomes the baseline again
     assert len(env.logs()) == 1
+
+
+def test_a_screen_only_sees_its_owners_watchlists(env: Env) -> None:
+    """Screens are evaluated as their owner: another user's watchlist id resolves to nothing,
+    so its symbols cannot leak into this owner's alert."""
+    with env.maker() as session:
+        session.add(m.User(id="b" * 32, name="B", role="user", disabled=False, created_at=NOW))
+        session.flush()
+        session.add(
+            m.Watchlist(
+                owner_id="b" * 32,
+                id="theirs",
+                name="theirs",
+                items=[{"type": "symbol", "symbol": "AAA"}],
+                revision=1,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        session.commit()
+    env.seed({"AAA": 20, "BBB": 25})
+    env.screen(spec=spec(universe={"kind": "watchlist", "id": "theirs"}))
+    assert env.run(D1) == 0
+    env.seed({"AAA": 10, "BBB": 10}, D2)
+    assert env.run(D2) == 0
+    assert env.logs() == [] and env.state() is None  # skipped: the watchlist is not theirs to read
 
 
 def test_same_date_rerun_announces_late_entries(env: Env) -> None:
@@ -350,13 +388,13 @@ def test_evaluate_screens_is_safe_from_a_worker_thread(env: Env) -> None:
         loop_thread = threading.get_ident()
         hub = LiveHub(None, lambda symbols: asyncio.sleep(0, {}))  # type: ignore[arg-type,return-value]
         hub.bind_loop(asyncio.get_running_loop())
-        client = hub.register()
+        client = hub.register(system=True)
         hub.set_topics(client, ["alerts"])
         real_publish = hub.publish
 
-        def publish(topic: str, frame: dict[str, Any]) -> None:
+        def publish(topic: str, frame: dict[str, Any], **kw: Any) -> None:
             seen["publish_thread_is_loop"] = threading.get_ident() == loop_thread
-            real_publish(topic, frame)
+            real_publish(topic, frame, **kw)
 
         hub.publish = publish  # type: ignore[method-assign]
 

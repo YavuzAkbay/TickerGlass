@@ -8,11 +8,24 @@ from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from pydantic import ValidationError
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from .. import models as m
-from ..deps import DispatcherDep, HubDep, SessionDep, SettingsDep
+from ..accounts import CurrentUser
+from ..deps import (
+    AdminDep,
+    DispatcherDep,
+    HubDep,
+    OwnedSessionDep,
+    SessionDep,
+    SettingsDep,
+    SystemSessionDep,
+    get_service_principal,
+    principal,
+)
 from ..notifications import (
     DeliveryError,
     channel_configured,
@@ -25,8 +38,9 @@ from ..notifications import (
     webhook_allow_private,
 )
 from ..notifications import effective_webhook_url as effective_url
-from ..notifications.dispatcher import email_content, iso, webhook_body
+from ..notifications.dispatcher import PUSH_CHANNELS, email_content, iso, webhook_body
 from ..notifications.outbox import log_entry, record_log_entry
+from ..ownership import id_taken_by_other, owned_get, session_owner
 from ..settings import Settings
 from ..userdata import alerts as al
 from ..userdata import schemas as s
@@ -45,6 +59,11 @@ class ServiceState:
     def __init__(self) -> None:
         self.heartbeat: al.ServiceHeartbeat | None = None
         self.last_at: datetime | None = None
+        #: The heartbeat's valid `metrics` part (docs/design/metrics.md §6), None when absent
+        #: or dropped as invalid.
+        self.metrics: al.HeartbeatMetrics | None = None
+        #: An invalid `metrics` part was already logged (cleared by the next valid heartbeat).
+        self.metrics_warned = False
 
 
 def _service_state(request: Request) -> ServiceState:
@@ -58,20 +77,22 @@ ServiceStateDep = Annotated[ServiceState, Depends(_service_state)]
 def require_service_token(
     settings: SettingsDep, x_alerts_token: Annotated[str | None, Header()] = None
 ) -> None:
-    """Service-only routes need `X-Alerts-Token` when `ALERTS_INTERNAL_TOKEN` is set."""
+    """Service-only routes need `X-Alerts-Token` when `ALERTS_INTERNAL_TOKEN` is set (401).
+    With auth on, `get_service_principal` (listed after) also requires the system principal,
+    which only a valid token gives: with no token configured nobody qualifies (403)."""
     expected = settings.alerts_internal_token
     if expected and not hmac.compare_digest((x_alerts_token or "").encode(), expected.encode()):
         raise HTTPException(401, "missing or invalid X-Alerts-Token")
 
 
-ServiceOnly = [Depends(require_service_token)]
+ServiceOnly = [Depends(require_service_token), Depends(get_service_principal)]
 
 
 # ------------------------------------------------------------------ helpers
 
 
-def _get(session: SessionDep, alert_id: str) -> m.Alert:
-    row = session.get(m.Alert, alert_id)
+def _get(session: Session, alert_id: str) -> m.Alert:
+    row = owned_get(session, m.Alert, alert_id)
     if row is None:
         raise HTTPException(404, f"alert not found: {alert_id}")
     return row
@@ -87,13 +108,17 @@ def _conflict(row: m.Alert) -> HTTPException:
     )
 
 
-def _changed(hub: HubDep, ids: list[str], deleted: list[str] | None = None) -> None:
+def _changed(
+    hub: HubDep, owner_id: str | None, ids: list[str], deleted: list[str] | None = None
+) -> None:
     hub.publish_threadsafe(
-        "alerts", {"type": "alerts.changed", "ids": ids, "deleted": deleted or []}
+        "alerts",
+        {"type": "alerts.changed", "ids": ids, "deleted": deleted or []},
+        owner_id=owner_id,
     )
 
 
-def _sweep_expired(session: SessionDep, hub: HubDep, skip: str | None = None) -> None:
+def _sweep_expired(session: Session, hub: HubDep, skip: str | None = None) -> None:
     """Lazy expiry: active alerts past `expires_at` become `expired` (revision bumped).
 
     `skip` leaves one alert alone (a fire decides its own expiry against `firedAt`)."""
@@ -105,7 +130,11 @@ def _sweep_expired(session: SessionDep, hub: HubDep, skip: str | None = None) ->
     )
     if skip is not None:
         due = (*due, m.Alert.id != skip)
-    ids = list(session.scalars(select(m.Alert.id).where(*due)))
+    owners = {
+        aid: owner
+        for aid, owner in session.execute(select(m.Alert.id, m.Alert.owner_id).where(*due))
+    }
+    ids = list(owners)
     if not ids:
         return
     session.execute(
@@ -115,7 +144,8 @@ def _sweep_expired(session: SessionDep, hub: HubDep, skip: str | None = None) ->
         .execution_options(synchronize_session=False)
     )
     session.commit()
-    _changed(hub, ids)
+    for owner in set(owners.values()):
+        _changed(hub, owner, [aid for aid, o in owners.items() if o == owner])
 
 
 def _check_webhook(settings: Settings, notify: al.AlertNotify) -> None:
@@ -129,10 +159,10 @@ def _check_webhook(settings: Settings, notify: al.AlertNotify) -> None:
         raise HTTPException(422, f"webhookUrl: {exc}") from None
 
 
-def _check_drawings(session: SessionDep, symbol: str, spec: al.AlertSpec) -> None:
+def _check_drawings(session: Session, symbol: str, spec: al.AlertSpec) -> None:
     """Drawing operands must reference a stored drawing that supports the part and symbol."""
     for use in al.drawing_uses(spec):
-        row = session.get(m.DrawingRow, use.drawing_id)
+        row = owned_get(session, m.DrawingRow, use.drawing_id)
         if row is None:
             raise HTTPException(422, f"drawing not saved: {use.drawing_id}")
         dtype = row.data.get("type")
@@ -170,7 +200,7 @@ def _require_future(status: str, expires_at: datetime | None) -> None:
         raise HTTPException(422, "expiresAt must be in the future for an active alert")
 
 
-def _entry(session: SessionDep, row: m.AlertLog) -> al.AlertLogEntry:
+def _entry(session: Session, row: m.AlertLog) -> al.AlertLogEntry:
     return log_entry(session, row)
 
 
@@ -179,16 +209,21 @@ def _entry(session: SessionDep, row: m.AlertLog) -> al.AlertLogEntry:
 
 @router.get("/states", response_model=list[al.StateOut])
 def get_states(session: SessionDep) -> list[al.StateOut]:
-    """Runtime states of all alerts (service)."""
-    q = select(m.AlertState).order_by(m.AlertState.alert_id)
+    """Runtime states of the caller's alerts (the alerts service: of every owner), each with its
+    alert's `ownerId`. The join to `alerts` is what scopes a user's session."""
+    q = (
+        select(m.AlertState, m.Alert.owner_id)
+        .join(m.Alert, m.Alert.id == m.AlertState.alert_id)
+        .order_by(m.AlertState.alert_id)
+    )
     return [
-        al.StateOut(alert_id=r.alert_id, revision=r.revision, state=r.state)
-        for r in session.scalars(q)
+        al.StateOut(alert_id=r.alert_id, owner_id=owner, revision=r.revision, state=r.state)
+        for r, owner in session.execute(q)
     ]
 
 
 @router.put("/states", response_model=al.StatesWritten, dependencies=ServiceOnly)
-def put_states(session: SessionDep, body: al.StatesPut) -> al.StatesWritten:
+def put_states(session: SystemSessionDep, body: al.StatesPut) -> al.StatesWritten:
     """Upsert each state only if the alert exists at exactly that revision; never 409."""
     last: dict[str, al.StateIn] = {x.alert_id: x for x in body.states}
     for attempt in range(_FIRE_RETRIES):
@@ -266,7 +301,7 @@ def get_log(
 
 
 @router.post("/log/read")
-def read_log(session: SessionDep, hub: HubDep, body: al.LogRead) -> dict[str, int]:
+def read_log(session: OwnedSessionDep, hub: HubDep, body: al.LogRead) -> dict[str, int]:
     """Mark entries read (`upTo` inclusive and/or `ids`); returns the new unread total."""
     if body.up_to is None and not body.ids:
         raise HTTPException(422, "give 'upTo' and/or a non-empty 'ids'")
@@ -288,13 +323,13 @@ def read_log(session: SessionDep, hub: HubDep, body: al.LogRead) -> dict[str, in
         frame["ids"] = body.ids
     if body.up_to is not None:
         frame["readUpTo"] = body.up_to
-    hub.publish_threadsafe("alerts", frame)
+    hub.publish_threadsafe("alerts", frame, owner_id=session_owner(session))
     return {"unread": unread}
 
 
 @router.delete("/log", status_code=204)
 def clear_log(
-    session: SessionDep,
+    session: OwnedSessionDep,
     hub: HubDep,
     alert_id: Annotated[str | None, Query(alias="alertId", max_length=36)] = None,
 ) -> Response:
@@ -310,7 +345,7 @@ def clear_log(
     frame: dict[str, Any] = {"type": "alerts.log", "cleared": True}
     if alert_id is not None:
         frame["alertId"] = alert_id
-    hub.publish_threadsafe("alerts", frame)
+    hub.publish_threadsafe("alerts", frame, owner_id=session_owner(session))
     return Response(status_code=204)
 
 
@@ -327,16 +362,27 @@ def get_channels(settings: SettingsDep) -> al.Channels:
             configured=channel_configured(settings, "email"),
             to=", ".join(mask_email(a) for a in recipients) or None,
         ),
+        ntfy=al.PushChannel(
+            configured=channel_configured(settings, "ntfy"), url=mask_url(settings.ntfy_url)
+        ),
+        gotify=al.PushChannel(
+            configured=channel_configured(settings, "gotify"), url=mask_url(settings.gotify_url)
+        ),
+        apprise=al.PushChannel(
+            configured=channel_configured(settings, "apprise"), url=mask_url(settings.apprise_url)
+        ),
     )
 
 
 @router.post("/channels/{channel}/test")
 def test_channel(
+    _: AdminDep,
     settings: SettingsDep,
-    channel: Literal["webhook", "telegram", "email"],
+    channel: Literal["webhook", "telegram", "email", "ntfy", "gotify", "apprise"],
     body: al.ChannelTest | None = None,
 ) -> dict[str, bool]:
-    """Send one test message synchronously (no log entry). 400 if not configured, 502 on failure."""
+    """Send one test message synchronously (no log entry; admins only: the channels are the
+    server's). 400 if not configured, 502 on failure."""
     override = body.webhook_url if body is not None else None
     if channel == "webhook" and override:
         try:
@@ -377,9 +423,12 @@ def test_channel(
         elif channel == "telegram":
             assert settings.telegram_bot_token and settings.telegram_chat_id
             telegram.send(settings.telegram_bot_token, settings.telegram_chat_id, probe.message)
-        else:
+        elif channel == "email":
             subject, text = email_content(probe)
             email.send(settings, subject, text)
+        else:
+            subject, text = email_content(probe)
+            PUSH_CHANNELS[channel].send(settings, subject, text)
     except DeliveryError as exc:
         # Generic on purpose: the cause (refused, timeout, blocked...) would be a port-scan oracle.
         log.warning("%s test failed: %s", channel, exc)
@@ -387,22 +436,55 @@ def test_channel(
     return {"ok": True}
 
 
+def _first_error(exc: ValidationError) -> str:
+    """Where and why the first error arose (field path and message; never the input)."""
+    first = exc.errors(include_input=False, include_url=False)[0]
+    return f"{'.'.join(str(p) for p in first['loc'])}: {first['msg']}"
+
+
 @router.post("/service/heartbeat", status_code=204, dependencies=ServiceOnly)
 def heartbeat(state: ServiceStateDep, body: al.ServiceHeartbeat) -> Response:
-    state.heartbeat, state.last_at = body, s.now()
+    metrics: al.HeartbeatMetrics | None = None
+    if body.metrics is not None:
+        try:
+            metrics = al.HeartbeatMetrics.model_validate(body.metrics)
+        except ValidationError as exc:
+            # The rest of the heartbeat is still good: drop the metrics, say so once.
+            if not state.metrics_warned:
+                state.metrics_warned = True
+                log.warning(
+                    "alerts service heartbeat: invalid metrics dropped (%d errors; first: %s)",
+                    exc.error_count(),
+                    _first_error(exc),
+                )
+    if metrics is not None:
+        state.metrics_warned = False
+    state.heartbeat, state.last_at, state.metrics = body, s.now(), metrics
     return Response(status_code=204)
 
 
 @router.get("/service")
-def get_service(state: ServiceStateDep) -> dict[str, Any]:
-    """Last heartbeat plus `online` (heartbeat less than 90 s old)."""
+def get_service(
+    state: ServiceStateDep, session: SessionDep, who: Annotated[CurrentUser, Depends(principal)]
+) -> dict[str, Any]:
+    """Last heartbeat plus `online` (heartbeat less than 90 s old). The counts are server-wide;
+    `waiting` lists only the caller's alerts and `lastError` (it can name any user's alert) is
+    for admins and the service."""
     if state.heartbeat is None or state.last_at is None:
         return {"online": False}
-    return {
+    out: dict[str, Any] = {
         **state.heartbeat.model_dump(mode="json", by_alias=True),
         "online": s.now() - state.last_at < ONLINE_WITHIN,
         "lastHeartbeatAt": iso(state.last_at),
     }
+    if not (who.is_system or who.is_admin):
+        out["lastError"] = None
+    if not who.is_system:
+        waiting = out.get("waiting") or []
+        ids = [w["alertId"] for w in waiting]
+        mine = set(session.scalars(select(m.Alert.id).where(m.Alert.id.in_(ids)))) if ids else set()
+        out["waiting"] = [w for w in waiting if w["alertId"] in mine]
+    return out
 
 
 # --------------------------------------------------------------------- CRUD
@@ -427,14 +509,17 @@ def list_alerts(
 
 @router.post("", response_model=al.Alert, status_code=201)
 def create_alert(
-    session: SessionDep, hub: HubDep, settings: SettingsDep, body: al.AlertIn
+    session: OwnedSessionDep, hub: HubDep, settings: SettingsDep, body: al.AlertIn
 ) -> al.Alert:
-    """409 (with the stored alert) if a client-chosen `id` already exists."""
+    """409 (with the stored alert) if a client-chosen `id` already exists; 409 `id in use` (and
+    nothing else) when it belongs to another user."""
     _check_webhook(settings, body.notify)
     aid = body.id or s.new_id()
-    existing = session.get(m.Alert, aid)
+    existing = owned_get(session, m.Alert, aid)
     if existing is not None:
         raise _conflict(existing)
+    if id_taken_by_other(session, m.Alert, aid):
+        raise HTTPException(409, "id in use")
     if (session.scalar(select(func.count()).select_from(m.Alert)) or 0) >= al.MAX_ALERTS:
         raise HTTPException(422, f"at most {al.MAX_ALERTS} alerts")
     status = body.status or "active"
@@ -467,11 +552,11 @@ def create_alert(
         session.commit()
     except IntegrityError:
         session.rollback()
-        winner = session.get(m.Alert, aid)
+        winner = owned_get(session, m.Alert, aid)
         if winner is None:
-            raise
+            raise HTTPException(409, "id in use") from None
         raise _conflict(winner) from None
-    _changed(hub, [aid])
+    _changed(hub, row.owner_id, [aid])
     return al.alert_out(row)
 
 
@@ -483,7 +568,11 @@ def get_alert(session: SessionDep, hub: HubDep, alert_id: str) -> al.Alert:
 
 @router.put("/{alert_id}", response_model=al.Alert)
 def update_alert(
-    session: SessionDep, hub: HubDep, settings: SettingsDep, alert_id: str, body: al.AlertUpdate
+    session: OwnedSessionDep,
+    hub: HubDep,
+    settings: SettingsDep,
+    alert_id: str,
+    body: al.AlertUpdate,
 ) -> al.Alert:
     """Replace all editable fields. 409 (with the stored alert) if `revision` is given and stale.
 
@@ -527,14 +616,16 @@ def update_alert(
         session.rollback()
         raise _conflict(_get(session, alert_id))
     session.execute(delete(m.AlertState).where(m.AlertState.alert_id == alert_id))
-    out = store.reload(session, m.Alert, alert_id)
+    out = al.reload_alert(session, alert_id)
     session.commit()
-    _changed(hub, [alert_id])
+    _changed(hub, out.owner_id, [alert_id])
     return al.alert_out(out)
 
 
 @router.patch("/{alert_id}", response_model=al.Alert)
-def patch_alert(session: SessionDep, hub: HubDep, alert_id: str, body: al.AlertPatch) -> al.Alert:
+def patch_alert(
+    session: OwnedSessionDep, hub: HubDep, alert_id: str, body: al.AlertPatch
+) -> al.Alert:
     """Pause or restart (`active` from any status; keeps `fireCount`, drops the state)."""
     row = _get(session, alert_id)
     set_expiry = "expires_at" in body.model_fields_set
@@ -558,26 +649,29 @@ def patch_alert(session: SessionDep, hub: HubDep, alert_id: str, body: al.AlertP
         session.rollback()
         raise _conflict(_get(session, alert_id))
     session.execute(delete(m.AlertState).where(m.AlertState.alert_id == alert_id))
-    out = store.reload(session, m.Alert, alert_id)
+    out = al.reload_alert(session, alert_id)
     session.commit()
-    _changed(hub, [alert_id])
+    _changed(hub, out.owner_id, [alert_id])
     return al.alert_out(out)
 
 
 @router.delete("/{alert_id}", status_code=204)
-def delete_alert(session: SessionDep, hub: HubDep, alert_id: str) -> Response:
+def delete_alert(session: OwnedSessionDep, hub: HubDep, alert_id: str) -> Response:
     """Log entries stay (the log outlives the alert)."""
     row = _get(session, alert_id)
     session.execute(delete(m.AlertState).where(m.AlertState.alert_id == alert_id))
     session.delete(row)
     session.commit()
-    _changed(hub, [], [alert_id])
+    _changed(hub, row.owner_id, [], [alert_id])
     return Response(status_code=204)
 
 
 @router.post("/{alert_id}/status", response_model=al.Alert, dependencies=ServiceOnly)
-def set_status(session: SessionDep, hub: HubDep, alert_id: str, body: al.AlertStatusIn) -> al.Alert:
-    """Service marks an alert `expired`/`error`. Conditional on `revision` and `active` (409)."""
+def set_status(
+    session: SystemSessionDep, hub: HubDep, alert_id: str, body: al.AlertStatusIn
+) -> al.Alert:
+    """Service marks an alert `expired`/`error`. Conditional on `revision` and `active` (409).
+    The write is validated against the stored alert (any owner: the service is system)."""
     stmt = (
         update(m.Alert)
         .where(
@@ -594,15 +688,16 @@ def set_status(session: SessionDep, hub: HubDep, alert_id: str, body: al.AlertSt
     if store.rowcount(session.execute(stmt)) != 1:
         session.rollback()
         raise _conflict(_get(session, alert_id))
-    out = store.reload(session, m.Alert, alert_id)
+    out = al.reload_alert(session, alert_id)
     session.commit()
-    _changed(hub, [alert_id])
+    _changed(hub, out.owner_id, [alert_id])
     return al.alert_out(out)
 
 
 @router.post("/{alert_id}/fire", response_model=al.AlertLogEntry, dependencies=ServiceOnly)
 def fire_alert(
-    session: SessionDep,
+    request: Request,
+    session: SystemSessionDep,
     hub: HubDep,
     dispatcher: DispatcherDep,
     settings: SettingsDep,
@@ -619,6 +714,8 @@ def fire_alert(
     _sweep_expired(session, hub, skip=alert_id)
     prior = session.scalar(select(m.AlertLog).where(m.AlertLog.fire_id == body.fire_id))
     if prior is not None:
+        if prior.alert_id != alert_id:
+            raise HTTPException(409, "fireId in use")  # never hand out another alert's entry
         return _entry(session, prior)
 
     fired_at = al.utc(body.fired_at)
@@ -643,7 +740,7 @@ def fire_alert(
         session.rollback()
         _sweep_expired(session, hub)  # now it may expire, so the 409 carries the stored state
         raise _conflict(_get(session, alert_id))
-    alert = store.reload(session, m.Alert, alert_id)
+    alert = al.reload_alert(session, alert_id)
 
     t = s.now()
 
@@ -666,6 +763,7 @@ def fire_alert(
         settings,
         hub,
         dispatcher,
+        owner_id=alert.owner_id,
         fire_id=body.fire_id,
         name=alert.name,
         symbol=alert.symbol,
@@ -688,6 +786,10 @@ def fire_alert(
         },
         before_commit=save_state,
     )
-    if recorded.created and body.final:
-        _changed(hub, [alert.id])
+    if recorded.created:
+        metrics = getattr(request.app.state, "metrics", None)
+        if metrics is not None:
+            metrics.fired("chart")
+        if body.final:
+            _changed(hub, alert.owner_id, [alert.id])
     return _entry(session, recorded.log)

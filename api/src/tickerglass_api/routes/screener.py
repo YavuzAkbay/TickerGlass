@@ -10,6 +10,8 @@ import json
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 
@@ -17,8 +19,10 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from ..deps import SessionDep, SettingsDep
+from ..accounts import CurrentUser
+from ..deps import AdminDep, SessionDep, SettingsDep, UserDep
 from ..models import Bar, ScreenerFundamental, ScreenerRun, ScreenerSnapshot, ScreenerSymbol
+from ..ownership import session_owner, system_session
 from ..services.screener import universe as uv
 from ..services.screener.fields import definitions, provider_has_screen_info
 from ..services.screener.job import RunInProgress
@@ -174,26 +178,53 @@ def lists(session: SessionDep, response: Response) -> list[dict[str, Any]]:
     return out
 
 
+@contextmanager
+def _list_session(
+    request: Request, session: Session, who: CurrentUser, list_id: str
+) -> Iterator[Session]:
+    """The session a list write runs in: the user's own (custom lists belong to the owner), or,
+    for a shared list (an id of the bundle, or a stored list with no owner), writable by admins
+    only, a system session. Anything else is the user's: an id someone else holds is a 409 from
+    the write itself."""
+    stored = uv.find_list(session, list_id)
+    if list_id not in uv.bundle().lists and (stored is None or stored.owner_id is not None):
+        yield session
+        return
+    if not who.is_admin:
+        raise HTTPException(403, "shared lists are managed by admins")
+    with system_session(request.app.state.sessionmaker) as shared:
+        yield shared
+
+
 @router.put("/lists/{list_id}", response_model=ListSummary)
-def put_list(session: SessionDep, list_id: str, body: ListPut) -> dict[str, Any]:
-    """Create a custom list or override a bundled one (source 'upload')."""
-    try:
-        out = uv.put_list(session, list_id, body.name, body.as_of, body.symbols)
-    except uv.ListError as exc:
-        session.rollback()
-        raise HTTPException(422, {"code": exc.code, "message": str(exc), "path": ""}) from None
-    session.commit()
+def put_list(
+    request: Request, session: SessionDep, who: UserDep, list_id: str, body: ListPut
+) -> dict[str, Any]:
+    """Create a custom list or override a bundled one (source 'upload'; admins only)."""
+    with _list_session(request, session, who, list_id) as target:
+        try:
+            out = uv.put_list(target, list_id, body.name, body.as_of, body.symbols)
+        except uv.ListInUse:
+            target.rollback()
+            raise HTTPException(409, "id in use") from None
+        except uv.ListError as exc:
+            target.rollback()
+            raise HTTPException(422, {"code": exc.code, "message": str(exc), "path": ""}) from None
+        target.commit()
     return out
 
 
 @router.delete("/lists/{list_id}")
-def delete_list(session: SessionDep, list_id: str) -> dict[str, str]:
-    """Revert an overridden bundled list or remove a custom one; 404 if there is none."""
-    status = uv.delete_list(session, list_id)
-    if status == "missing":
-        session.rollback()
-        raise HTTPException(404, f"list not found: {list_id}")
-    session.commit()
+def delete_list(
+    request: Request, session: SessionDep, who: UserDep, list_id: str
+) -> dict[str, str]:
+    """Revert an overridden bundled list (admins only) or remove a custom one; 404 if none."""
+    with _list_session(request, session, who, list_id) as target:
+        status = uv.delete_list(target, list_id)
+        if status == "missing":
+            target.rollback()
+            raise HTTPException(404, f"list not found: {list_id}")
+        target.commit()
     return {"status": status}
 
 
@@ -231,7 +262,9 @@ def scan(
     canonical = json.dumps(
         body.model_dump(mode="json", by_alias=True), sort_keys=True, separators=(",", ":")
     )
-    key = f"{data_version(session, now)}|{int(fundamentals)}|{target}|{canonical}"
+    # The owner is part of the key: the result depends on the user's own watchlists and lists.
+    version = data_version(session, now)
+    key = f"{session_owner(session)}|{version}|{int(fundamentals)}|{target}|{canonical}"
     etag = _etag(hashlib.sha1(key.encode()).hexdigest())
     if _matches(if_none_match, etag):
         return _not_modified(etag)
@@ -367,8 +400,9 @@ def status(
 
 
 @router.post("/runs", status_code=202, response_model=RunResponse)
-def start_run(request: Request, body: RunRequest) -> RunResponse:
-    """Ask the job to start a run now. 409 if one is running, 503 if the screener is off."""
+def start_run(_: AdminDep, request: Request, body: RunRequest) -> RunResponse:
+    """Ask the job to start a run now (admins only). 409 if one is running, 503 if the
+    screener is off."""
     screener = _screener(request)
     if screener is None or not screener.runtime().get("enabled"):
         raise HTTPException(

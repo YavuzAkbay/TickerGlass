@@ -1,0 +1,14 @@
+{
+  "synthetic": "hand-built (not recorded)",
+  "request": {
+    "path": "/v2/stocks/bars",
+    "params": {"symbols": "AAPL", "timeframe": "1Day"}
+  },
+  "status": 401,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "message": "unauthorized."
+  }
+}

@@ -22,6 +22,7 @@ import type {
   LayoutSummary,
   Flag,
   Note,
+  NoteKind,
   Settings,
   StoredDrawing,
   UserScript,
@@ -154,12 +155,15 @@ export const deleteSetting = (key: string, o?: Opts) =>
 
 // ------------------------------------------------------------ notes
 
+/** `kind` defaults to the Notes-panel notes ('note'); journal notes are excluded. */
 export const listNotes = (symbol?: string, o?: Opts) =>
   requestJson<Note[]>('GET', '/notes', undefined, { ...o, query: { symbol } });
 export const getNote = (id: string, o?: Opts) =>
   requestJson<Note>('GET', `/notes/${seg(id)}`, undefined, o);
-export const createNote = (body: { text: string; symbol?: string | null }, o?: Opts) =>
-  requestJson<Note>('POST', '/notes', body, o);
+export const createNote = (
+  body: { text: string; symbol?: string | null; kind?: NoteKind },
+  o?: Opts,
+) => requestJson<Note>('POST', '/notes', body, o);
 /** With `revision`, rejects with 409 (see `noteConflict`) if the note changed elsewhere. */
 export const updateNote = (
   id: string,

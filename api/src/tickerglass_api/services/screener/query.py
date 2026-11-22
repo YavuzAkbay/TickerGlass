@@ -39,6 +39,7 @@ from ...models import (
     ScreenerSymbol,
     Watchlist,
 )
+from ...ownership import session_owner
 from ...settings import Settings
 from ...userdata.schemas import aware
 from . import formula as fx
@@ -373,7 +374,11 @@ def validate_request(req: ScanRequest, *, fundamentals: bool = True) -> None:
 
 
 def _watchlist_symbols(session: Session, wid: str) -> list[str]:
-    items = session.scalar(select(Watchlist.items).where(Watchlist.id == wid))
+    stmt = select(Watchlist.items).where(Watchlist.id == wid)
+    owner = session_owner(session)
+    if owner is not None:  # explicit on top of the session's owner scope
+        stmt = stmt.where(Watchlist.owner_id == owner)
+    items = session.scalar(stmt)
     if items is None:
         raise UniverseNotFound("unknown_watchlist", f"watchlist not found: {wid}")
     out: dict[str, None] = {}
@@ -388,7 +393,7 @@ def _universe_clause(session: Session, req: ScanRequest) -> ColumnElement[bool]:
     if u.kind == "class":
         return _sym.c.symbol.in_(uv.class_symbols(u.cls))
     if u.kind == "list":
-        if session.get(ScreenerList, u.id) is None:
+        if uv.find_list(session, u.id) is None:  # only the caller's lists and the shared ones
             raise UniverseNotFound("unknown_list", f"list not found: {u.id}")
         return _sym.c.symbol.in_(select(_member.c.symbol).where(_member.c.list_id == u.id))
     if u.kind == "watchlist":
@@ -660,11 +665,14 @@ def data_version(session: Session, now: datetime) -> str:
             select(func.max(_fund.c.info_at)).scalar_subquery(),
             select(func.max(_sym.c.updated_at)).scalar_subquery(),
             select(func.count()).where(_sym.c.tombstoned_at.is_not(None)).scalar_subquery(),
-            select(func.max(ScreenerList.__table__.c.updated_at)).scalar_subquery(),
-            select(func.count()).select_from(ScreenerList.__table__).scalar_subquery(),
-            select(func.count()).select_from(_member).scalar_subquery(),
-            select(func.max(Watchlist.__table__.c.updated_at)).scalar_subquery(),
-            select(func.count()).select_from(Watchlist.__table__).scalar_subquery(),
+            select(func.max(ScreenerList.updated_at)).scalar_subquery(),
+            select(func.count()).select_from(ScreenerList).scalar_subquery(),
+            select(func.count())
+            .select_from(_member)
+            .where(_member.c.list_id.in_(select(ScreenerList.id)))  # visible lists only
+            .scalar_subquery(),
+            select(func.max(Watchlist.updated_at)).scalar_subquery(),
+            select(func.count()).select_from(Watchlist).scalar_subquery(),
         )
     ).one()
     return "|".join(str(v) for v in (*row, now.date().isoformat()))

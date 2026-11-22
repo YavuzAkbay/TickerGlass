@@ -33,11 +33,16 @@ export function ChartGrid() {
     : has(maximizedId)
       ? maximizedId
       : null;
+  // Desktop split layouts: the chart controls island gets its own strip above the grid
+  // instead of covering the top-right pane.
+  const strip = !mobile && geometry.cells.length > 1 && !shown;
   useEffect(() => markGridMounted(), []);
   return (
     <>
       {single ? <PaneSwitcher ids={geometry.cells.map((c) => c.chartId)} shown={shown} /> : null}
-      <div className={`chart-stack${single ? ' with-switcher' : ''}`}>
+      <div
+        className={`chart-stack${single ? ' with-switcher' : ''}${strip ? ' with-island-strip' : ''}`}
+      >
         {geometry.cells.map((c) => (
           <ChartCell
             key={c.chartId}

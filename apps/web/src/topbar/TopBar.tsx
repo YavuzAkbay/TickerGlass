@@ -7,7 +7,7 @@ import { useAppStore } from '../store/app';
 import { useChartView } from '../store/chartView';
 import { useReplayStore } from '../replay/store';
 import { IconButton } from '../ui/IconButton';
-import { useIsMobile } from '../ui/useMediaQuery';
+import { useIsMobile, useMediaQuery } from '../ui/useMediaQuery';
 import { Menu, type MenuItem } from '../ui/Menu';
 import { Popover } from '../ui/Popover';
 import { BudgetStatus } from './BudgetStatus';
@@ -25,13 +25,13 @@ import './topbar.css';
 const run = (id: string, arg?: unknown) => commands.execute(id, arg);
 
 /**
- * Command-first bar: chart controls on the left, the command box in the middle (it
- * runs everything: "rsi 14", "4h", "compare MSFT", "alert above 200"), and view
- * toggles on the right. Compare, alerts and snapshots live in the box and "More".
+ * Command bar: brand and layout on the left, the command box in the middle (it runs
+ * everything: "rsi 14", "4h", "compare MSFT", "alert above 200"), and view toggles on the
+ * right. On desktop the chart controls (interval, type, indicators, replay) float over the
+ * chart in `ChartIsland`; phones keep them in this bar.
  */
 export function TopBar() {
   const t = useT();
-  const replayOn = useReplayStore((s) => s.status !== 'off');
   const bar = useRef<HTMLDivElement>(null);
   const left = useRef<HTMLDivElement>(null);
   const right = useRef<HTMLDivElement>(null);
@@ -50,31 +50,21 @@ export function TopBar() {
     <div ref={bar} className={cls.join(' ')} role="toolbar" aria-label={t('topbar.toolbar')}>
       <div className="tb-side tb-left">
         <div ref={left} className="tb-group">
-          <IntervalControl compact={level >= 4} />
-          {mobile ? null : <div className="tb-sep" />}
-          <ChartTypeButton />
-          <CommandButton
-            id="chart.indicators"
-            icon={SquareFunction}
-            label={t('topbar.indicators')}
-          />
-          {mobile ? null : <IndicatorTemplatesButton />}
+          {mobile ? (
+            <ChartControls compact />
+          ) : (
+            <>
+              <Brand />
+              <LayoutMenu />
+            </>
+          )}
         </div>
       </div>
       <PaletteButton ref={palette} />
       <div className="tb-side tb-right">
         <div ref={right} className="tb-group">
           <BudgetStatus />
-          {folded ? null : (
-            <CommandButton
-              id="replay.toggle"
-              icon={Rewind}
-              label={t('topbar.replay')}
-              active={replayOn}
-            />
-          )}
-          {mobile ? null : <LayoutPicker />}
-          <LayoutMenu />
+          {mobile ? <LayoutMenu /> : <LayoutPicker />}
           {mobile ? null : <div className="tb-sep" />}
           {folded ? null : (
             <>
@@ -85,6 +75,52 @@ export function TopBar() {
           <OverflowMenu folded={folded} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function Brand() {
+  return (
+    <div className="tb-brand" aria-hidden="true">
+      <span className="tb-brand-mark" />
+      <span className="tb-brand-name">TickerGlass</span>
+    </div>
+  );
+}
+
+/** Interval, chart type, indicators, indicator sets and replay: the controls of the active chart. */
+export function ChartControls({ compact = false }: { compact?: boolean }) {
+  const t = useT();
+  const mobile = useIsMobile();
+  const replayOn = useReplayStore((s) => s.status !== 'off');
+  return (
+    <>
+      <IntervalControl compact={compact} />
+      {mobile ? null : <div className="tb-sep" />}
+      <ChartTypeButton />
+      <CommandButton id="chart.indicators" icon={SquareFunction} label={t('topbar.indicators')} />
+      {mobile ? null : (
+        <>
+          <IndicatorTemplatesButton />
+          <CommandButton
+            id="replay.toggle"
+            icon={Rewind}
+            label={t('topbar.replay')}
+            active={replayOn}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+/** Desktop: the chart controls as a glass island floating over the top-right of the chart. */
+export function ChartIsland() {
+  const t = useT();
+  const compact = useMediaQuery('(max-width: 1180px)');
+  return (
+    <div className="chart-island glass" role="toolbar" aria-label={t('topbar.toolbar')}>
+      <ChartControls compact={compact} />
     </div>
   );
 }

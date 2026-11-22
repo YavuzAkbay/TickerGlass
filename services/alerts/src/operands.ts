@@ -17,7 +17,12 @@ import {
   type SampleValues,
   type ValueOperand,
 } from '@tickerglass/alerts';
-import { getIndicator, isOutputRef, type InputValueMap } from '@tickerglass/indicators';
+import {
+  getIndicator,
+  isOutputRef,
+  isUserScriptType,
+  type InputValueMap,
+} from '@tickerglass/indicators';
 import type { AnchorTimeline } from '@tickerglass/engine/node';
 
 /** What operand evaluation needs from a series. */
@@ -74,13 +79,16 @@ export function hashInstances(ref: IndicatorRef): Map<string, HashedInstance> {
     if (!inst) throw new Error(`unknown indicator instance '${id}'`);
     if (visiting.has(id)) throw new Error(`indicator cycle at '${id}'`);
     visiting.add(id);
-    const def = getIndicator(inst.type);
-    if (!def) throw new Error(`unknown indicator '${inst.type}'`);
     const inputs: InputValueMap = { ...inst.inputs };
-    for (const [key, d] of Object.entries(def.inputs)) {
-      const v = inputs[key];
-      if (d.kind === 'source' && isOutputRef(v)) {
-        inputs[key] = { instanceId: walk(v.instanceId).hash, outputId: v.outputId };
+    // Scripts are leaves (they read the series' own bars only) and have no built-in definition.
+    if (!isUserScriptType(inst.type)) {
+      const def = getIndicator(inst.type);
+      if (!def) throw new Error(`unknown indicator '${inst.type}'`);
+      for (const [key, d] of Object.entries(def.inputs)) {
+        const v = inputs[key];
+        if (d.kind === 'source' && isOutputRef(v)) {
+          inputs[key] = { instanceId: walk(v.instanceId).hash, outputId: v.outputId };
+        }
       }
     }
     visiting.delete(id);

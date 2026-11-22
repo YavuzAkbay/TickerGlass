@@ -162,6 +162,9 @@ export interface AlertNotify {
   webhookRaw: boolean;
   telegram: boolean;
   email: boolean;
+  ntfy: boolean;
+  gotify: boolean;
+  apprise: boolean;
 }
 
 export const DEFAULT_NOTIFY: Readonly<AlertNotify> = {
@@ -173,6 +176,9 @@ export const DEFAULT_NOTIFY: Readonly<AlertNotify> = {
   webhookRaw: false,
   telegram: false,
   email: false,
+  ntfy: false,
+  gotify: false,
+  apprise: false,
 };
 
 // ------------------------------------------------------------------ wire
@@ -197,6 +203,8 @@ export interface AlertIn {
 }
 
 export interface Alert extends Required<Omit<AlertIn, 'status'>> {
+  /** The user the alert belongs to (multi-user servers; the alerts service resolves scripts and drawings per owner). */
+  ownerId?: string;
   status: AlertStatus;
   statusReason: string | null;
   drawingId: string | null;
@@ -207,7 +215,7 @@ export interface Alert extends Required<Omit<AlertIn, 'status'>> {
   updatedAt: string;
 }
 
-export type DeliveryChannel = 'webhook' | 'telegram' | 'email';
+export type DeliveryChannel = 'webhook' | 'telegram' | 'email' | 'ntfy' | 'gotify' | 'apprise';
 
 export interface AlertDelivery {
   channel: DeliveryChannel;
@@ -249,6 +257,14 @@ export interface FireIn {
   state?: AlertRuntimeState;
 }
 
+/** An alert the service keeps off its series for now: its user script is held off after a fault. */
+export interface WaitingAlert {
+  alertId: string;
+  reason: string;
+  /** When the service attaches it again (ISO time). */
+  resumeAt: string;
+}
+
 /** `POST /alerts/service/heartbeat` body (§1.4). */
 export interface ServiceHeartbeat {
   version: string;
@@ -257,6 +273,39 @@ export interface ServiceHeartbeat {
   liveSymbols: number;
   polledSeries: number;
   lastError: string | null;
+  /** Alerts waiting for a script (absent from services older than this field). */
+  waiting?: WaitingAlert[];
+  /** Counters and the evaluation-lag histogram (absent from services older than this field). */
+  metrics?: ServiceMetricsSnapshot;
+}
+
+/** docs/design/metrics.md §6. Counters are cumulative since the service started. */
+export interface ServiceMetricsSnapshot {
+  /** Runner evaluation passes (seed, bar close, poll). */
+  evaluations: number;
+  /** `runnerFailure` calls. */
+  evaluationFailures: number;
+  /** `enqueueFire` calls. */
+  firesQueued: number;
+  /** Send attempts that failed and will be retried. */
+  fireRetries: number;
+  /** Fires dropped on 404/422. */
+  firesDropped: number;
+  /** Current length of the fire queue. */
+  fireQueueDepth: number;
+  statusPostFailures: number;
+  /** Fault events delivered to `onScriptFault` (hold or final). */
+  scriptFaults: number;
+  /** Seconds between when an evaluation was due and when it completed. */
+  lag: {
+    /** Upper bounds, ascending: 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300. */
+    buckets: number[];
+    /** Cumulative: `counts[i]` = observations <= `buckets[i]`. */
+    counts: number[];
+    /** All observations (the +Inf bucket). */
+    count: number;
+    sum: number;
+  };
 }
 
 // ---------------------------------------------------------------- samples

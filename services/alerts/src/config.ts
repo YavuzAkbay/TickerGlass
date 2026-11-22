@@ -18,6 +18,18 @@ export interface Config {
   stateFlushMs: number;
   maxBars: number;
   maxDrawingBars: number;
+  /** Heap limit of each user-script isolate, MB. */
+  scriptMemoryMb: number;
+  /** Time limit of a script's load, first compute and Check, ms. */
+  scriptLoadMs: number;
+  /** Time limit of one live update of a script, ms. */
+  scriptTickMs: number;
+  /** Share of one CPU (%) a script isolate may use over 5 minutes before it is held off. */
+  scriptCpuPct: number;
+  /** Share of one CPU (%) all script isolates together may use over 5 minutes. */
+  scriptCpuTotalPct: number;
+  /** Resident memory cap of the script child process, MB. */
+  scriptProcessMb: number;
   logLevel: LogLevel;
 }
 
@@ -55,9 +67,9 @@ export function loadConfig(env: Env = process.env): Config {
   const token = env['ALERTS_INTERNAL_TOKEN']?.trim();
   return {
     apiUrl: rawUrl.replace(/\/+$/, ''),
-    // With API auth on, socket handshakes cannot carry headers, so the token rides
-    // as an auth_token query parameter (matched by the API's auth middleware).
-    wsUrl: token ? `${wsUrl}?auth_token=${encodeURIComponent(token)}` : wsUrl,
+    // The token is never part of the URL (access logs): sockets send it as an X-Alerts-Token
+    // header on the handshake, see ws-auth.ts.
+    wsUrl,
     token: token ? token : null,
     pollMs: int(env, 'ALERTS_POLL_MS', 30_000, 1000),
     closeGraceS: int(env, 'ALERTS_CLOSE_GRACE_S', 60, 0),
@@ -65,6 +77,12 @@ export function loadConfig(env: Env = process.env): Config {
     stateFlushMs: int(env, 'ALERTS_STATE_FLUSH_MS', 5000, 100),
     maxBars: int(env, 'ALERTS_MAX_BARS', 5000, 50, 100_000),
     maxDrawingBars: int(env, 'ALERTS_MAX_DRAWING_BARS', 20_000, 50, 100_000),
+    scriptMemoryMb: int(env, 'ALERTS_SCRIPT_MEMORY_MB', 128, 8, 4096),
+    scriptLoadMs: int(env, 'ALERTS_SCRIPT_LOAD_MS', 10_000, 50, 600_000),
+    scriptTickMs: int(env, 'ALERTS_SCRIPT_TICK_MS', 250, 10, 60_000),
+    scriptCpuPct: int(env, 'ALERTS_SCRIPT_CPU_PCT', 20, 1, 100),
+    scriptCpuTotalPct: int(env, 'ALERTS_SCRIPT_CPU_TOTAL_PCT', 50, 1, 100),
+    scriptProcessMb: int(env, 'ALERTS_SCRIPT_PROCESS_MB', 768, 128, 65_536),
     logLevel: level,
   };
 }

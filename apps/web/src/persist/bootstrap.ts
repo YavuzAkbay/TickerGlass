@@ -12,6 +12,8 @@ import { DEFAULT_CHART_VIEW } from '../store/chartView';
 import type { ChartSession } from '../chart/session';
 import { useLayoutGrid } from '../layout/store';
 import { getActiveSession, useChartStore } from '../store/chart';
+import { canClaimLegacyCache } from '../api/auth';
+import { useAuthStore } from '../store/auth';
 import { useUiStore } from '../store/ui';
 import { actionToast, toast } from '../ui/Toast';
 import { DrawingSync } from './drawingSync';
@@ -21,10 +23,10 @@ import { activeSlot, captureLayoutState, parseLayoutState, type LayoutState } fr
 import { LayoutSession, useLayoutStatus, type Notifier } from './layouts';
 import {
   LOCAL_BUNDLE_KEY,
-  MIGRATED_LAYOUT_ID,
   dismissLocalData,
   importLocalData,
   localDataSummary,
+  migratedIds,
   migrateExclusive,
 } from './migration';
 import { isObj, isTransient, readJson, safeStorage } from './net';
@@ -237,10 +239,15 @@ export function startPersistence(): () => void {
     let fromLocal: string | undefined;
     let localData = false;
     try {
+      const authInfo = useAuthStore.getState().info;
       const result = await migrateExclusive(persistence, storage, () => captureLayoutState(), {
         signal: abort.signal,
+        userId: authInfo?.user?.id ?? null,
+        // No auth state (the fetch failed): the user is unknown, so no claim; the migration
+        // is left for a load that knows who is signed in.
+        canClaim: !!authInfo && canClaimLegacyCache(authInfo),
       });
-      if (result === 'migrated') fromLocal = MIGRATED_LAYOUT_ID;
+      if (result === 'migrated') fromLocal = migratedIds(storage).layout;
       localData = result === 'local-data';
     } catch (err) {
       if (disposed) return;

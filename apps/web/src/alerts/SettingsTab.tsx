@@ -9,7 +9,16 @@ import { browserPermission, requestBrowserPermission, type NotifPermission } fro
 import { SOUND_NAMES, useAlertPrefs, type SoundName } from './prefs';
 import { playSound } from './sound';
 
-const CHANNELS = ['webhook', 'telegram', 'email'] as const;
+const CHANNELS = ['webhook', 'telegram', 'email', 'ntfy', 'gotify', 'apprise'] as const;
+
+const CHANNEL_LABELS: Record<(typeof CHANNELS)[number], string> = {
+  webhook: 'Webhook',
+  telegram: 'Telegram',
+  email: 'Email',
+  ntfy: 'ntfy',
+  gotify: 'Gotify',
+  apprise: 'Apprise',
+};
 
 const PERMISSION_TEXT: Record<NotifPermission, string> = {
   granted: 'Allowed',
@@ -130,12 +139,12 @@ export function AlertsSettingsTab() {
         {!channels && !channelsError && <div>Loading...</div>}
         {channels &&
           CHANNELS.map((c) => (
-            <Row key={c} label={c[0]!.toUpperCase() + c.slice(1)}>
-              <span>{channels[c].configured ? 'Configured' : 'Not configured'}</span>
+            <Row key={c} label={CHANNEL_LABELS[c]}>
+              <span>{channels[c]?.configured ? 'Configured' : 'Not configured'}</span>
               <button
                 type="button"
                 className="io-btn"
-                disabled={!channels[c].configured || testing !== null}
+                disabled={!channels[c]?.configured || testing !== null}
                 onClick={() => void test(c)}
               >
                 Send test

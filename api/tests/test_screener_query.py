@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from multiuser import owner_id, system_session
 from pydantic import ValidationError
 from sqlalchemy import Engine, event, inspect
 from sqlalchemy.orm import Session
@@ -160,7 +161,7 @@ def add_fund(session: Session, symbol: str, **cols: Any) -> None:
 def session(engine: Engine) -> Iterator[Session]:
     """Seven symbols: AAA/BBB with full data, CCC all-null snapshot, DDD a day behind (stale),
     EEE too old (excluded), FFF without a snapshot, TTT tombstoned."""
-    with Session(engine) as s:
+    with system_session(engine) as s:
         for i, sym in enumerate(["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "TTT"], start=1):
             add_symbol(
                 s,
@@ -780,6 +781,7 @@ def test_class_list_and_watchlist_universes(session: Session) -> None:
             add_snap(session, sym, last=1.0)
     session.add(
         Watchlist(
+            owner_id=owner_id(session.get_bind()),  # type: ignore[arg-type]
             id="w1",
             name="W",
             items=[
@@ -876,6 +878,10 @@ class Statements:
         event.listen(engine, "before_cursor_execute", self._on)
 
     def _on(self, conn: Any, cursor: Any, statement: str, *args: Any) -> None:
+        if "users" in statement.split("FROM")[-1].split("WHERE")[0] or statement.startswith(
+            "UPDATE users"
+        ):
+            return  # the auth middleware's user lookup (cached), not the screener's SQL
         self.sql.append(statement)
 
 

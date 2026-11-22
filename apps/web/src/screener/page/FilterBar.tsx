@@ -1,5 +1,5 @@
-import { SlidersHorizontal, Search, Settings2, X, Zap } from 'lucide-react';
-import { useState, type RefObject } from 'react';
+import { ChevronDown, SlidersHorizontal, Search, Settings2, X, Zap } from 'lucide-react';
+import { useState, type ReactNode, type RefObject } from 'react';
 import { useT, type MessageKey } from '../../i18n';
 import { DropdownMenu, type MenuItem } from '../../ui/Menu';
 import { Popover } from '../../ui/Popover';
@@ -32,14 +32,14 @@ interface Props {
   universe: Universe;
   filters: ScreenerFilters;
   onFilters: (f: ScreenerFilters) => void;
-  preset: PresetId | null;
-  onPreset: (p: PresetId | null) => void;
   /** Ctrl/Cmd+F lands here. */
   searchRef: RefObject<HTMLInputElement | null>;
+  /** First thing of the bar: the asset-class switch. */
+  lead?: ReactNode;
 }
 
 /** Toolbar of the screener: search, static filters, numeric filters, options. */
-export function FilterBar({ universe, filters, onFilters, preset, onPreset, searchRef }: Props) {
+export function FilterBar({ universe, filters, onFilters, searchRef, lead }: Props) {
   const t = useT();
   const cols = useScreenerPrefs((s) => s.columns);
   const density = useScreenerPrefs((s) => s.density);
@@ -146,6 +146,12 @@ export function FilterBar({ universe, filters, onFilters, preset, onPreset, sear
   return (
     <>
       <div className="scr-toolbar">
+        {lead ? (
+          <>
+            {lead}
+            <span className="scr-toolbar-sep" aria-hidden="true" />
+          </>
+        ) : null}
         <div className="scr-filter">
           <Search size={13} aria-hidden="true" />
           <input
@@ -181,6 +187,7 @@ export function FilterBar({ universe, filters, onFilters, preset, onPreset, sear
           onClick={() => setGroupOpen((o) => !o)}
         >
           {filters.group ?? groupLabel}
+          <ChevronDown size={11} aria-hidden="true" />
         </button>
         <DropdownMenu
           anchor={groupBtn}
@@ -201,6 +208,7 @@ export function FilterBar({ universe, filters, onFilters, preset, onPreset, sear
               onClick={() => setExchOpen((o) => !o)}
             >
               {filters.exchange ?? t('scr.exchange')}
+              <ChevronDown size={11} aria-hidden="true" />
             </button>
             <DropdownMenu
               anchor={exchBtn}
@@ -260,29 +268,40 @@ export function FilterBar({ universe, filters, onFilters, preset, onPreset, sear
           placement="bottom-end"
         />
       </div>
-
-      {/* One-click screens (Finviz signals): a preset only sets the sort. */}
-      <div
-        className="scr-presets"
-        role="group"
-        aria-label={t('scr.presets')}
-        data-testid="scr-presets"
-      >
-        <Zap size={12} strokeWidth={1.6} aria-hidden="true" className="scr-presets-label" />
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={`scr-preset-chip${preset === p.id ? ' on' : ''}`}
-            aria-pressed={preset === p.id}
-            data-testid={`scr-preset-${p.id}`}
-            onClick={() => onPreset(preset === p.id ? null : p.id)}
-          >
-            {t(PRESET_KEYS[p.id])}
-          </button>
-        ))}
-      </div>
     </>
+  );
+}
+
+/** One-click screens (Finviz signals): a chip only sets the sort; click again to unset. */
+export function PresetChips({
+  preset,
+  onPreset,
+}: {
+  preset: PresetId | null;
+  onPreset: (p: PresetId | null) => void;
+}) {
+  const t = useT();
+  return (
+    <div
+      className="scr-presets"
+      role="group"
+      aria-label={t('scr.presets')}
+      data-testid="scr-presets"
+    >
+      <Zap size={12} strokeWidth={1.6} aria-hidden="true" className="scr-presets-label" />
+      {PRESETS.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          className={`scr-preset-chip${preset === p.id ? ' on' : ''}`}
+          aria-pressed={preset === p.id}
+          data-testid={`scr-preset-${p.id}`}
+          onClick={() => onPreset(preset === p.id ? null : p.id)}
+        >
+          {t(PRESET_KEYS[p.id])}
+        </button>
+      ))}
+    </div>
   );
 }
 

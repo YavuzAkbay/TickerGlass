@@ -1,11 +1,12 @@
-"""Watchlists (whole-list revisions, client-chosen ids) and global symbol flags."""
+"""Watchlists (whole-list revisions, client-chosen ids) and the user's symbol flags."""
 
 from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import OwnedSessionDep
+from ..ownership import id_taken_by_other, owned_get
 from ..userdata import schemas as s
 from ..userdata import store
 
@@ -14,8 +15,8 @@ flags_router = APIRouter(prefix="/flags", tags=["watchlists"])
 _FLAG_RETRIES = 3
 
 
-def _get(session: SessionDep, watchlist_id: str) -> m.Watchlist:
-    row = session.get(m.Watchlist, watchlist_id)
+def _get(session: OwnedSessionDep, watchlist_id: str) -> m.Watchlist:
+    row = owned_get(session, m.Watchlist, watchlist_id)
     if row is None:
         raise HTTPException(404, f"watchlist not found: {watchlist_id}")
     return row
@@ -32,19 +33,22 @@ def _conflict(row: m.Watchlist) -> HTTPException:
 
 
 @router.get("", response_model=list[s.Watchlist])
-def list_watchlists(session: SessionDep) -> list[s.Watchlist]:
+def list_watchlists(session: OwnedSessionDep) -> list[s.Watchlist]:
     """All watchlists with their items (oldest first)."""
     q = select(m.Watchlist).order_by(m.Watchlist.created_at, m.Watchlist.id)
     return [store.watchlist(r) for r in session.scalars(q)]
 
 
 @router.post("", response_model=s.Watchlist, status_code=201)
-def create_watchlist(session: SessionDep, body: s.WatchlistIn) -> s.Watchlist:
-    """409 (with the stored list) if a client-chosen `id` already exists."""
+def create_watchlist(session: OwnedSessionDep, body: s.WatchlistIn) -> s.Watchlist:
+    """409 (with the stored list) if a client-chosen `id` already exists; 409 "id in use"
+    (nothing more) if it belongs to another user."""
     wid = body.id or s.new_id()
-    existing = session.get(m.Watchlist, wid)
+    existing = owned_get(session, m.Watchlist, wid)
     if existing is not None:
         raise _conflict(existing)
+    if id_taken_by_other(session, m.Watchlist, wid):
+        raise HTTPException(409, "id in use")
     t = s.now()
     row = m.Watchlist(
         id=wid,
@@ -60,21 +64,24 @@ def create_watchlist(session: SessionDep, body: s.WatchlistIn) -> s.Watchlist:
     except IntegrityError:
         # A concurrent POST claimed this id between our check and insert.
         session.rollback()
-        winner = session.get(m.Watchlist, wid)
+        winner = owned_get(session, m.Watchlist, wid)
         if winner is None:
+            # Not ours: a concurrent POST of another user took the id.
+            if id_taken_by_other(session, m.Watchlist, wid):
+                raise HTTPException(409, "id in use") from None
             raise
         raise _conflict(winner) from None
     return store.watchlist(row)
 
 
 @router.get("/{watchlist_id}", response_model=s.Watchlist)
-def get_watchlist(session: SessionDep, watchlist_id: str) -> s.Watchlist:
+def get_watchlist(session: OwnedSessionDep, watchlist_id: str) -> s.Watchlist:
     return store.watchlist(_get(session, watchlist_id))
 
 
 @router.put("/{watchlist_id}", response_model=s.Watchlist)
 def update_watchlist(
-    session: SessionDep, watchlist_id: str, body: s.WatchlistUpdate
+    session: OwnedSessionDep, watchlist_id: str, body: s.WatchlistUpdate
 ) -> s.Watchlist:
     """409 (with the stored list) if `revision` is given and stale.
 
@@ -103,31 +110,31 @@ def update_watchlist(
 
 
 @router.delete("/{watchlist_id}", status_code=204)
-def delete_watchlist(session: SessionDep, watchlist_id: str) -> Response:
+def delete_watchlist(session: OwnedSessionDep, watchlist_id: str) -> Response:
     session.delete(_get(session, watchlist_id))
     session.commit()
     return Response(status_code=204)
 
 
-def _all_flags(session: SessionDep) -> list[s.Flag]:
+def _all_flags(session: OwnedSessionDep) -> list[s.Flag]:
     q = select(m.SymbolFlag).order_by(m.SymbolFlag.created_at, m.SymbolFlag.symbol)
     return [store.flag(r) for r in session.scalars(q)]
 
 
 @flags_router.get("", response_model=list[s.Flag])
-def list_flags(session: SessionDep) -> list[s.Flag]:
+def list_flags(session: OwnedSessionDep) -> list[s.Flag]:
     return _all_flags(session)
 
 
 @flags_router.patch("", response_model=list[s.Flag])
-def patch_flags(session: SessionDep, body: s.FlagsPatch) -> list[s.Flag]:
+def patch_flags(session: OwnedSessionDep, body: s.FlagsPatch) -> list[s.Flag]:
     """Set (color) or remove (null) flags in one transaction; returns all flags."""
     t = s.now()
     for attempt in range(_FLAG_RETRIES):
         try:
             # Autoflush can raise inside the loop too, so the whole attempt is guarded.
             for symbol, color in body.items():
-                row = session.get(m.SymbolFlag, symbol)
+                row = owned_get(session, m.SymbolFlag, symbol)
                 if color is None:
                     if row is not None:
                         session.delete(row)

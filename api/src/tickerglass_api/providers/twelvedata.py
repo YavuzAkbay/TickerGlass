@@ -528,6 +528,7 @@ class TwelveDataProvider:
             send=send,
             headers={"Authorization": f"apikey {config.api_key.get_secret_value()}"},
             on_headers=self._on_headers,
+            provider="twelvedata",
         )
 
     # -- transport ----------------------------------------------------------------------

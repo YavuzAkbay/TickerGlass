@@ -71,6 +71,7 @@ import {
   dismissLocalData,
   importLocalData,
   migrateExclusive,
+  migratedIds,
   runMigration,
   withMigrationLock,
   type LockManagerLike,
@@ -1401,7 +1402,11 @@ describe('localStorage migration', () => {
     const b = buildMigrationBundle(legacyStorage(), state('i1'))!;
     expect(b.app).toBe('tickerglass');
     expect(b.layouts).toEqual([
-      expect.objectContaining({ id: MIGRATED_LAYOUT_ID, name: 'Default', isLastUsed: true }),
+      expect.objectContaining({
+        id: expect.stringMatching(new RegExp(`^${MIGRATED_LAYOUT_ID}-[0-9a-f]{8}$`)),
+        name: 'Default',
+        isLastUsed: true,
+      }),
     ]);
     expect(b.drawings!.map((d) => (d.data as { id: string }).id).sort()).toEqual(['d1', 'd2']);
     // A blank symbol is filled from its bucket (the server rejects blank ones).
@@ -1459,6 +1464,96 @@ describe('localStorage migration', () => {
     expect(await runMigration(server.api, memStorage(), () => state(''))).toBe('empty');
     expect(server.fns.importAll).not.toHaveBeenCalled();
     expect(server.settings.get(MIGRATION_SETTING)).toMatchObject({ imported: false });
+  });
+
+  it("never imports another user's cache; an unowned or own cache still migrates", async () => {
+    const other = legacyStorage();
+    other.set('tickerglass-user', 'someone-else');
+    const server = fakeImportServer();
+    expect(await runMigration(server.api, other, () => state('i1'), Date.now(), 'u1')).toBe('done');
+    expect(server.fns.importAll).not.toHaveBeenCalled();
+    expect(server.settings.get(MIGRATION_SETTING)).toBeUndefined();
+    expect(other.get(backupKeyOf('tickerglass-drawings'))).toBeNull(); // untouched
+
+    const own = legacyStorage();
+    own.set('tickerglass-user', 'u1');
+    expect(
+      await runMigration(fakeImportServer().api, own, () => state('i1'), Date.now(), 'u1'),
+    ).toBe('migrated');
+    // No recorded owner (first run after the upgrade): as before.
+    expect(
+      await runMigration(
+        fakeImportServer().api,
+        legacyStorage(),
+        () => state('i1'),
+        Date.now(),
+        'u1',
+      ),
+    ).toBe('migrated');
+  });
+
+  it('an unknown user (auth state unavailable) never migrates an owned or unclaimable cache', async () => {
+    // Owned by someone: not shown to be theirs, whatever canClaim says.
+    const owned = legacyStorage();
+    owned.set('tickerglass-user', 'someone-else');
+    const server = fakeImportServer();
+    expect(await runMigration(server.api, owned, () => state('i1'))).toBe('done');
+    // Unowned, but the caller could not tell who signed in (canClaim false): left alone,
+    // nothing imported, no marker, no backup, so the next load retries.
+    const legacy = legacyStorage();
+    expect(await runMigration(server.api, legacy, () => state('i1'), Date.now(), null, false)).toBe(
+      'done',
+    );
+    expect(server.fns.importAll).not.toHaveBeenCalled();
+    expect(server.settings.get(MIGRATION_SETTING)).toBeUndefined();
+    expect(legacy.get(backupKeyOf('tickerglass-drawings'))).toBeNull();
+    expect(legacy.get('tickerglass-user')).toBeNull(); // not claimed either
+    // That load that knows the user (here: open mode) does migrate.
+    expect(await runMigration(server.api, legacy, () => state('i1'), Date.now(), null, true)).toBe(
+      'migrated',
+    );
+  });
+
+  it('a legacy (ownerless) cache is imported only when the user may claim it', async () => {
+    const server = fakeImportServer();
+    const legacy = legacyStorage();
+    expect(await runMigration(server.api, legacy, () => state('i1'), Date.now(), 'u2', false)).toBe(
+      'done',
+    );
+    expect(server.fns.importAll).not.toHaveBeenCalled();
+    expect(server.settings.get(MIGRATION_SETTING)).toBeUndefined();
+    // Owner account: imported.
+    expect(
+      await runMigration(
+        fakeImportServer().api,
+        legacyStorage(),
+        () => state('i1'),
+        Date.now(),
+        'u1',
+        true,
+      ),
+    ).toBe('migrated');
+    // Open mode (no user id): imported.
+    expect(
+      await runMigration(
+        fakeImportServer().api,
+        legacyStorage(),
+        () => state('i1'),
+        Date.now(),
+        null,
+        true,
+      ),
+    ).toBe('migrated');
+  });
+
+  it('migrated ids carry a random suffix, stable within one browser', () => {
+    const a = legacyStorage();
+    const first = buildMigrationBundle(a, state('i1'))!;
+    expect(buildMigrationBundle(a, state('i1'))!.layouts![0]!.id).toBe(first.layouts![0]!.id);
+    expect(migratedIds(a).layout).toBe(first.layouts![0]!.id);
+    expect(migratedIds(a).note).toMatch(/^migrated-general-note-[0-9a-f]{8}$/);
+    const b = legacyStorage();
+    expect(buildMigrationBundle(b, state('i1'))!.layouts![0]!.id).not.toBe(first.layouts![0]!.id);
   });
 });
 
@@ -2349,6 +2444,51 @@ describe('rejected saves keep local edits', () => {
       revision: 3,
     });
     await next.dispose();
+  });
+
+  it('notes: journal-kind notes never replace the panel note of their symbol', async () => {
+    useNotesStore.setState({ notes: {} });
+    const api = noteApi();
+    api.listNotes.mockResolvedValue([
+      {
+        id: 'p1',
+        symbol: 'AAPL',
+        text: 'panel',
+        kind: 'note',
+        revision: 1,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'j1',
+        symbol: 'AAPL',
+        text: 'journal',
+        kind: 'journal',
+        revision: 1,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'j2',
+        symbol: null,
+        text: 'journal general',
+        kind: 'journal',
+        revision: 1,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]);
+    const sync = new NotesSync({
+      api: api as unknown as NotesApi,
+      delay: 0,
+      onError: vi.fn(),
+      onConflict: vi.fn(),
+    });
+    await sync.load();
+    const notes = useNotesStore.getState().notes;
+    expect(notes.AAPL).toMatchObject({ id: 'p1', text: 'panel' });
+    expect(notes[GENERAL_NOTE]).toBeUndefined();
+    await sync.dispose();
   });
 
   it('settings: a rejected value stays dirty and is pushed again on the next start', async () => {

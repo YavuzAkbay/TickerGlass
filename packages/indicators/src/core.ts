@@ -36,6 +36,8 @@ export type { CalendarUnit } from './calendar';
 export { BarStore } from './bars';
 export { IndicatorInstance } from './instance';
 export type { RefResolver } from './instance';
+export { DEFAULT_CHECK_LIVE_BARS, barAt, checkScript, firstMismatch, sameValue } from './check';
+export type { CheckMismatch, CheckOptions, CheckOutcome } from './check';
 export { IndicatorRuntime } from './runtime';
 export type { Change, InstanceSpec, RuntimeContext, RuntimeOptions } from './runtime';
 export {

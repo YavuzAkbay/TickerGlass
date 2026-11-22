@@ -40,6 +40,9 @@ const numCol = (
   };
 };
 
+/** P/E style ratio: one decimal, blank unless positive (no earnings = no ratio). */
+const ratioText = (v: number | null | undefined): string => (isNum(v) && v > 0 ? v.toFixed(1) : '');
+
 /** Column catalog of the screener table. `dayRange`/`week52Range`/`trend` render in ResultRow. */
 export function scrColumns(universe: Universe): Record<ScreenerColumnId, ScrColumnDef> {
   const capTitle =
@@ -151,6 +154,33 @@ export function scrColumns(universe: Universe): Record<ScreenerColumnId, ScrColu
       },
       sortable: true,
     },
+    pe: {
+      id: 'pe',
+      label: 'P/E',
+      title: 'Trailing price-earnings ratio (blank without positive earnings)',
+      width: 'minmax(48px, 0.6fr)',
+      align: 'right',
+      render: ({ q }) => ({ text: ratioText(q?.trailingPE) }),
+      sortable: true,
+    },
+    fwdPe: {
+      id: 'fwdPe',
+      label: 'Fwd P/E',
+      title: 'Forward price-earnings ratio (analyst estimates)',
+      width: 'minmax(54px, 0.7fr)',
+      align: 'right',
+      render: ({ q }) => ({ text: ratioText(q?.forwardPE) }),
+      sortable: true,
+    },
+    eps: {
+      id: 'eps',
+      label: 'EPS',
+      title: 'Earnings per share, trailing 12 months',
+      width: 'minmax(50px, 0.7fr)',
+      align: 'right',
+      render: ({ q }) => ({ text: isNum(q?.eps) ? q.eps.toFixed(2) : '' }),
+      sortable: true,
+    },
     group: {
       id: 'group',
       label: 'Group',
@@ -203,6 +233,9 @@ export const SCR_SORT_KEYS: readonly ScreenerSortKey[] = [
   'exchange',
   'cap',
   'liveCap',
+  'pe',
+  'fwdPe',
+  'eps',
   'last',
   'change',
   'changePercent',

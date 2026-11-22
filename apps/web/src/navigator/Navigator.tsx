@@ -1,4 +1,4 @@
-import { ChevronsLeft, Maximize2, PencilRuler, Plus, X } from 'lucide-react';
+import { ChevronsRight, Maximize2, PencilRuler, Plus, X } from 'lucide-react';
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
@@ -18,7 +18,7 @@ const KEY_STEP = 16;
 const closeSheet = () => useUiStore.getState().set({ navSheet: false });
 
 /**
- * Left-hand navigator: an always-visible rail plus a resizable, collapsible section panel.
+ * Right-hand navigator: an always-visible rail plus a resizable, collapsible section panel.
  * Phones (useIsMobile): the rail becomes the bottom tab bar (with the drawing tools toggle)
  * and the panel a bottom sheet over the chart, closed by its scrim or Escape.
  */
@@ -57,14 +57,15 @@ export function Navigator() {
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (drag.current) setNavWidth(drag.current.w + e.clientX - drag.current.x);
+    // The panel sits left of the rail: dragging its left edge leftwards widens it.
+    if (drag.current) setNavWidth(drag.current.w - (e.clientX - drag.current.x));
   };
   const onPointerUp = () => {
     drag.current = null;
   };
   const onResizeKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowLeft') setNavWidth(width - KEY_STEP);
-    else if (e.key === 'ArrowRight') setNavWidth(width + KEY_STEP);
+    if (e.key === 'ArrowLeft') setNavWidth(width + KEY_STEP);
+    else if (e.key === 'ArrowRight') setNavWidth(width - KEY_STEP);
     else return;
     e.preventDefault();
   };
@@ -134,7 +135,7 @@ export function Navigator() {
                 />
               ) : null}
               <IconButton
-                icon={mobile ? X : ChevronsLeft}
+                icon={mobile ? X : ChevronsRight}
                 label={t('nav.collapse')}
                 className="rs-head-btn"
                 onClick={() => (mobile ? closeSheet() : useUiStore.getState().setNavOpen(false))}

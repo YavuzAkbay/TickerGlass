@@ -1042,10 +1042,30 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
     // Only the backend (not e.g. Vite's /src/api/*.ts modules); market data passes through.
     if (!url.pathname.startsWith('/api/') || MARKET.test(url.pathname)) return route.fallback();
     const call = `${req.method()} ${url.pathname}${url.search}`;
-    // Password auth is off in e2e (answered even while the mock server is down, so
-    // boot behavior matches the pre-auth app exactly).
+    // Auth is off in e2e (open mode: every request is the owner, an admin), answered even while
+    // the mock server is down, so boot behavior matches the pre-auth app exactly. The stable
+    // user id keeps the web cache guard (localStorage 'tickerglass-user') from clearing what
+    // tests seed.
     if (url.pathname === '/api/auth/state')
-      return route.fulfill({ status: 200, json: { enabled: false, authed: false } });
+      return route.fulfill({
+        status: 200,
+        json: {
+          enabled: false,
+          authed: false,
+          methods: [],
+          oidcName: null,
+          user: {
+            id: 'e2e-owner',
+            name: 'Owner',
+            email: null,
+            method: 'password',
+            role: 'admin',
+          },
+          logoutAvailable: false,
+          canManageUsers: false,
+          localAccounts: false,
+        },
+      });
     if (!USER_DATA.test(url.pathname)) {
       server.unhandled.push(call);
       return route.fulfill({ status: 501, json: { detail: `e2e: unexpected API call ${call}` } });

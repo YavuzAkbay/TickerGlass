@@ -1,0 +1,61 @@
+{{- if .Values.alerts.enabled }}
+{{- $env := merge (dict) (.Values.alerts.extraEnv | default dict) (.Values.alerts.env | default dict) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tickerglass.fullname" . }}-alerts
+  labels:
+    {{- include "tickerglass.labels" . | nindent 4 }}
+    app.kubernetes.io/component: alerts
+spec:
+  replicas: 1
+  # Exactly one evaluator at a time (two would fire every alert twice).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tickerglass.selectorLabels" (dict "ctx" . "component" "alerts") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tickerglass.selectorLabels" (dict "ctx" . "component" "alerts") | nindent 8 }}
+      {{- with .Values.alerts.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      # No <SERVICE>_PORT-style env vars injected into the pod (a service named like an env var the
+      # app reads would otherwise override it).
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: alerts
+          image: {{ include "tickerglass.image" (dict "ctx" . "repository" .Values.alerts.image.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- if not (hasKey $env "API_URL") }}
+            - name: API_URL
+              value: {{ printf "http://%s-api:%v" (include "tickerglass.fullname" .) .Values.api.service.port | quote }}
+            {{- end }}
+            {{- if not (hasKey $env "ALERTS_INTERNAL_TOKEN") }}
+            {{- include "tickerglass.secretEnv" (dict "name" "ALERTS_INTERNAL_TOKEN" "ctx" .) | nindent 12 }}
+            {{- end }}
+            {{- include "tickerglass.envList" (dict "env" $env) | nindent 12 }}
+          resources:
+            {{- toYaml .Values.alerts.resources | nindent 12 }}
+      {{- with .Values.alerts.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.alerts.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.alerts.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,11 @@
+{
+  "note": "hand-built (UNVERIFIED wording): reference data of an unknown ticker",
+  "request": { "path": "/v3/reference/tickers/ZZZZNOTREAL", "params": {} },
+  "status": 404,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "status": "NOT_FOUND",
+    "request_id": "5e6f708192a3b4c5d6e7f80112233445",
+    "message": "Ticker not found."
+  }
+}

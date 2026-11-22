@@ -1,0 +1,20 @@
+{
+  "synthetic": "hand-built from the documented GET /v2/assets shape (not recorded)",
+  "request": {
+    "path": "/v2/assets",
+    "params": {"status": "active", "asset_class": "us_equity"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": [
+    {"id": "b0b6dd9d-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NASDAQ", "symbol": "AAPL", "name": "Apple Inc. Common Stock", "status": "active", "tradable": true},
+    {"id": "11111111-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NASDAQ", "symbol": "AAPD", "name": "Direxion Daily AAPL Bear 1X Shares", "status": "active", "tradable": true},
+    {"id": "22222222-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NYSE", "symbol": "BRK.B", "name": "Berkshire Hathaway Inc. Class B Common Stock", "status": "active", "tradable": true},
+    {"id": "33333333-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NYSE", "symbol": "BRK.A", "name": "Berkshire Hathaway Inc. Class A Common Stock", "status": "active", "tradable": true},
+    {"id": "44444444-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "ARCA", "symbol": "SPY", "name": "SPDR S&P 500 ETF Trust", "status": "active", "tradable": true},
+    {"id": "55555555-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NASDAQ", "symbol": "PINE", "name": "Pineapple Holdings (applied sciences)", "status": "active", "tradable": true},
+    {"id": "66666666-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NYSE", "symbol": "OLD", "name": "Delisted Corp", "status": "inactive", "tradable": false}
+  ]
+}

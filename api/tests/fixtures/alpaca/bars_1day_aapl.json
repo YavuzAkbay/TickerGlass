@@ -1,0 +1,31 @@
+{
+  "synthetic": "hand-built from the documented GET /v2/stocks/bars shape (not recorded); daily bars are stamped at New York midnight in UTC (04:00Z in EDT)",
+  "request": {
+    "path": "/v2/stocks/bars",
+    "params": {
+      "symbols": "AAPL",
+      "timeframe": "1Day",
+      "feed": "iex",
+      "adjustment": "split",
+      "limit": "10000",
+      "sort": "asc"
+    }
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "bars": {
+      "AAPL": [
+        {"t": "2026-10-20T04:00:00Z", "o": 338.0, "h": 341.0, "l": 337.5, "c": 340.2, "v": 36000000, "n": 410000, "vw": 339.5},
+        {"t": "2026-10-21T04:00:00Z", "o": 340.2, "h": 343.0, "l": 339.8, "c": 342.5, "v": 33000000, "n": 380000, "vw": 341.7},
+        {"t": "2026-10-22T04:00:00Z", "o": 342.5, "h": 344.1, "l": 341.0, "c": 341.9, "v": 31000000, "n": 360000, "vw": 342.6},
+        {"t": "2026-10-23T04:00:00Z", "o": 341.9, "h": 345.0, "l": 341.2, "c": 344.6, "v": 35000000, "n": 400000, "vw": 343.3},
+        {"t": "2026-10-26T04:00:00Z", "o": 344.6, "h": 345.2, "l": 342.0, "c": 343.91, "v": 29000000, "n": 350000, "vw": 343.8},
+        {"t": "2026-10-27T04:00:00Z", "o": 343.165, "h": 347.77, "l": 342.4, "c": 347.25, "v": 391880, "n": 4000, "vw": 345.1}
+      ]
+    },
+    "next_page_token": null
+  }
+}

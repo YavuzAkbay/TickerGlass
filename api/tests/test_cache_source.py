@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import owner_id, system_session
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,7 @@ def engine(tmp_path: Path) -> Engine:
 
 
 def fill(engine: Engine) -> None:
-    with Session(engine) as s, s.begin():
+    with system_session(engine) as s, s.begin():
         s.add(
             Bar(
                 symbol="AAPL",
@@ -48,12 +49,20 @@ def fill(engine: Engine) -> None:
         )
         s.add(SymbolMeta(symbol="AAPL", data={"symbol": "AAPL"}, fetched_at=NOW))
         s.merge(
-            Note(id="n1", symbol="AAPL", text="keep me", revision=1, created_at=NOW, updated_at=NOW)
+            Note(
+                owner_id=owner_id(engine),
+                id="n1",
+                symbol="AAPL",
+                text="keep me",
+                revision=1,
+                created_at=NOW,
+                updated_at=NOW,
+            )
         )
 
 
 def counts(engine: Engine) -> dict[str, int]:
-    with Session(engine) as s:
+    with system_session(engine) as s:
         return {
             m.__tablename__: s.scalar(select(func.count()).select_from(m)) or 0
             for m in (Bar, SeriesMeta, SymbolMeta, Note)

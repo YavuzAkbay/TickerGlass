@@ -27,7 +27,7 @@ export const VOLUME = defineIndicator({
       title: 'Volume',
       kind: 'columns',
       // 0: up (growing), 1: down (falling)
-      color: ['rgba(127, 176, 105, 0.5)', 'rgba(222, 106, 79, 0.5)'],
+      color: ['rgba(52, 195, 143, 0.3)', 'rgba(242, 98, 107, 0.3)'],
     },
     {
       type: 'plot',

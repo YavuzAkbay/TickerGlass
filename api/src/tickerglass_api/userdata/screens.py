@@ -108,6 +108,9 @@ class ScreenNotify(ScreenModel):
     webhook: StrictBool = False
     telegram: StrictBool = False
     email: StrictBool = False
+    ntfy: StrictBool = False
+    gotify: StrictBool = False
+    apprise: StrictBool = False
     #: null = the API's `ALERTS_WEBHOOK_URL`.
     webhook_url: Annotated[str | None, StringConstraints(max_length=500, pattern=r"^https?://")] = (
         None

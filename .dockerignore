@@ -1,7 +1,12 @@
 .git
-node_modules
-dist
+**/node_modules
+**/dist
 .env
-__pycache__
-.pytest_cache
-.venv
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/.ruff_cache
+**/.mypy_cache
+**/.DS_Store
+.zcode
+test-results

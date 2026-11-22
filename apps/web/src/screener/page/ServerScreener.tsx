@@ -401,16 +401,17 @@ export function ServerScreener({ status, onRefresh }: Props) {
           text: status.asOf ?? '',
           title: t('scr.srv.stampTitle').replace('{date}', status.asOf ?? ''),
         }}
-      />
-      <SnapshotBanner status={status} onRefresh={onRefresh} />
-      <UniversePicker
-        value={draft.universe}
-        onPick={(u) => useScreenerPrefs.getState().setUniverse(u)}
-        loaded={loaded}
-        lists={lists}
-        serverMode
+        status={<SnapshotBanner status={status} onRefresh={onRefresh} />}
       />
       <div className="scr-toolbar" data-testid="scr-srv-toolbar">
+        <UniversePicker
+          value={draft.universe}
+          onPick={(u) => useScreenerPrefs.getState().setUniverse(u)}
+          loaded={loaded}
+          lists={lists}
+          serverMode
+        />
+        <span className="scr-toolbar-sep" aria-hidden="true" />
         <SavedScreensMenu
           draft={draft}
           columns={serverColumns}
@@ -470,33 +471,35 @@ export function ServerScreener({ status, onRefresh }: Props) {
           )}
         </div>
       ) : null}
-      {presets.length ? (
-        <div
-          className="scr-presets"
-          role="group"
-          aria-label={t('scr.presets')}
-          data-testid="scr-presets"
-        >
-          <Zap size={12} strokeWidth={1.6} aria-hidden="true" className="scr-presets-label" />
-          {presets.map((p) => {
-            const spec2: ScreenSpec = { ...p.spec, universe: draft.universe };
-            const on = specKey(spec2) === specNow;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className={`scr-preset-chip${on ? ' on' : ''}`}
-                aria-pressed={on}
-                data-testid={`scr-preset-${p.id}`}
-                onClick={() => loadSpec(on ? { ...spec2, filter: null } : spec2, null)}
-              >
-                {p.name}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
       <ScanStrip
+        leading={
+          presets.length ? (
+            <div
+              className="scr-presets"
+              role="group"
+              aria-label={t('scr.presets')}
+              data-testid="scr-presets"
+            >
+              <Zap size={12} strokeWidth={1.6} aria-hidden="true" className="scr-presets-label" />
+              {presets.map((p) => {
+                const spec2: ScreenSpec = { ...p.spec, universe: draft.universe };
+                const on = specKey(spec2) === specNow;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`scr-preset-chip${on ? ' on' : ''}`}
+                    aria-pressed={on}
+                    data-testid={`scr-preset-${p.id}`}
+                    onClick={() => loadSpec(on ? { ...spec2, filter: null } : spec2, null)}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null
+        }
         cls={tabCls}
         scanSymbols={pageSymbols}
         filters={EMPTY_FILTERS}

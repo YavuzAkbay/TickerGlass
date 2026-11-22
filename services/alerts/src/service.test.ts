@@ -172,6 +172,47 @@ describe('service', () => {
       expect(h.api.fires.at(-1)!.body.values.y).toBe(120);
     });
 
+    it("an alert never resolves another owner's drawing id", async () => {
+      h = await harness();
+      h.api.alerts = [makeAlert({ spec: drawingSpec, drawingId: 'd1', ownerId: 'alice' })];
+      h.api.drawings = [{ ...hline(100), ownerId: 'bob' }];
+      h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [98, 99, 99]));
+      await h.start();
+      await until(() => h!.api.statuses.length === 1, 'status post');
+      expect(h.api.statuses[0]!.body).toMatchObject({
+        status: 'error',
+        reason: 'drawing not found',
+      });
+      expect(h.api.fires).toHaveLength(0);
+    });
+
+    it('a drawing of the alert owner resolves, and two owners never share the memo', async () => {
+      h = await harness();
+      h.api.alerts = [
+        makeAlert({ id: 'a1', spec: drawingSpec, drawingId: 'd1', ownerId: 'alice' }),
+        makeAlert({ id: 'a2', spec: drawingSpec, drawingId: 'd1', ownerId: 'bob' }),
+      ];
+      h.api.drawings = [{ ...hline(100), ownerId: 'alice' }];
+      h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [98, 99, 99]));
+      await h.start();
+      await tick(101);
+      await until(() => h!.api.fires.length >= 1, 'first fire');
+      // Bob's alert references alice's drawing id: it errors, and never fires on alice's level.
+      await until(() => h!.api.statuses.length === 1, 'status post');
+      expect(h.api.statuses[0]!.id).toBe('a2');
+      expect(h.api.fires.every((f) => f.id === 'a1')).toBe(true);
+    });
+
+    it('a drawing without an ownerId only matches an alert without one', async () => {
+      h = await harness();
+      h.api.alerts = [makeAlert({ spec: drawingSpec, drawingId: 'd1', ownerId: 'alice' })];
+      h.api.drawings = [hline(100)];
+      h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [98, 99, 99]));
+      await h.start();
+      await until(() => h!.api.statuses.length === 1, 'status post');
+      expect(h.api.statuses[0]!.body).toMatchObject({ reason: 'drawing not found' });
+    });
+
     it('a missing drawing puts the alert into error', async () => {
       h = await harness();
       h.api.alerts = [makeAlert({ spec: drawingSpec, drawingId: 'd1' })];

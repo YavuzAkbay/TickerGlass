@@ -9,7 +9,7 @@ import contextlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,8 +17,23 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .. import models as m
 from ..live import LiveHub
+from ..ownership import owned_get, system_session
 from ..settings import Settings
-from . import DeliveryError, effective_webhook_url, email, telegram, webhook, webhook_allow_private
+from . import (
+    DeliveryError,
+    apprise,
+    channel_configured,
+    effective_webhook_url,
+    email,
+    gotify,
+    ntfy,
+    telegram,
+    webhook,
+    webhook_allow_private,
+)
+
+if TYPE_CHECKING:
+    from ..metrics import Metrics
 
 log = logging.getLogger(__name__)
 
@@ -38,13 +53,23 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+#: Push channels sharing `send(settings, title, body)`; title/body are `email_content`.
+PUSH_CHANNELS: dict[str, Any] = {"ntfy": ntfy, "gotify": gotify, "apprise": apprise}
+
+
 class Dispatcher:
     def __init__(
-        self, maker: sessionmaker[Session], settings: Settings, hub: LiveHub | None = None
+        self,
+        maker: sessionmaker[Session],
+        settings: Settings,
+        hub: LiveHub | None = None,
+        metrics: "Metrics | None" = None,
     ) -> None:
         self._maker = maker
         self._settings = settings
         self._hub = hub
+        #: Counts delivery outcomes (`tickerglass_notifications_deliveries_total`).
+        self._metrics = metrics
         self._loop: asyncio.AbstractEventLoop | None = None
         self._event: asyncio.Event | None = None
         self._task: asyncio.Task[None] | None = None
@@ -93,8 +118,8 @@ class Dispatcher:
         """Attempt every due pending delivery (up to `BATCH`); returns how many were tried."""
         now = now or _now()
         tried = 0
-        changed: list[int] = []
-        with self._maker() as session:
+        changed: dict[str, list[int]] = {}
+        with system_session(self._maker) as session:
             rows = session.execute(
                 select(m.AlertDelivery, m.AlertLog)
                 .join(m.AlertLog, m.AlertLog.id == m.AlertDelivery.log_id)
@@ -104,20 +129,24 @@ class Dispatcher:
             ).all()
             for delivery, entry in rows:
                 raw = self._raw_webhook(session, entry)
+                outcome: str
                 try:
                     await asyncio.to_thread(
                         self._send, delivery.channel, delivery.target, entry, raw
                     )
                 except DeliveryError as exc:
-                    self._record_failure(delivery, exc, now)
+                    outcome = self._record_failure(delivery, exc, now)
                 except Exception as exc:  # a transport bug must not wedge the outbox
                     log.exception("unexpected %s delivery error", delivery.channel)
-                    self._record_failure(
-                        delivery, DeliveryError(f"{type(exc).__name__}: {exc}"), now
+                    outcome = self._record_failure(
+                        delivery, DeliveryError(f"unexpected error: {type(exc).__name__}"), now
                     )
                 else:
                     delivery.status, delivery.last_error = "sent", None
                     delivery.attempts += 1
+                    outcome = "sent"
+                if self._metrics is not None:
+                    self._metrics.delivery(delivery.channel, outcome)
                 tried += 1
                 try:
                     session.commit()
@@ -125,25 +154,36 @@ class Dispatcher:
                     # The entry was pruned or cleared while we were sending.
                     session.rollback()
                     continue
-                changed.append(entry.id)
-        if changed and self._hub is not None:
-            self._hub.publish("alerts", {"type": "alerts.log", "ids": sorted(set(changed))})
+                changed.setdefault(entry.owner_id, []).append(entry.id)
+        if self._hub is not None:
+            for owner_id, ids in changed.items():
+                self._hub.publish(
+                    "alerts", {"type": "alerts.log", "ids": sorted(set(ids))}, owner_id=owner_id
+                )
         return tried
 
     @staticmethod
-    def _record_failure(delivery: m.AlertDelivery, exc: DeliveryError, now: datetime) -> None:
+    def _record_failure(
+        delivery: m.AlertDelivery, exc: DeliveryError, now: datetime
+    ) -> Literal["retry", "failed"]:
+        """Returns what became of the delivery: `failed` for good, or `retry` later."""
         delivery.attempts += 1
         delivery.last_error = str(exc)[:500]
         if not exc.retryable or delivery.attempts >= MAX_ATTEMPTS:
             delivery.status = "failed"
-            return
+            return "failed"
         delay = max(RETRY_DELAYS_S[delivery.attempts - 1], exc.retry_after or 0.0)
         delivery.next_attempt_at = now + timedelta(seconds=delay)
+        return "retry"
 
     @staticmethod
     def _raw_webhook(session: Session, entry: m.AlertLog) -> bool:
         """`notify.webhookRaw` of the (still existing) alert; JSON envelope otherwise."""
-        alert = session.get(m.Alert, entry.alert_id) if entry.alert_id else None
+        alert = (
+            owned_get(session, m.Alert, entry.alert_id, owner_id=entry.owner_id)
+            if entry.alert_id
+            else None
+        )
         return bool(alert and alert.notify.get("webhookRaw"))
 
     # -- transports ---------------------------------------------------------
@@ -170,6 +210,11 @@ class Dispatcher:
         elif channel == "email":
             subject, text = email_content(entry)
             email.send(s, subject, text)
+        elif channel in PUSH_CHANNELS:
+            if not channel_configured(s, channel):
+                raise DeliveryError("not configured", retryable=False)
+            title, text = email_content(entry)
+            PUSH_CHANNELS[channel].send(s, title, text)
         else:
             raise DeliveryError(f"unknown channel {channel!r}", retryable=False)
 

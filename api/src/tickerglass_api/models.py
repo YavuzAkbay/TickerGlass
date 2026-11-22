@@ -11,14 +11,34 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    false as sa_false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
+
+#: Length of `users.id` (uuid4 hex) and of every `owner_id`.
+OWNER_ID_LEN = 32
+
+
+def _owner(*, primary_key: bool = False, nullable: bool = False) -> Any:
+    """The `owner_id` column of a top-level user-data table (docs/design/multi-user.md): a
+    foreign key to `users` that cascades on delete. Part of the primary key where the table's
+    natural key is per user (`settings`, `symbol_flags`); indexed otherwise."""
+    return mapped_column(
+        String(OWNER_ID_LEN),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=primary_key,
+        nullable=nullable,
+        index=not primary_key,
+    )
 
 
 class Bar(Base):
@@ -83,6 +103,43 @@ class AppMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+# -------------------------------------------------------------------- users
+#
+# Multi-user (docs/design/multi-user.md). Every top-level user-data table below carries an
+# `owner_id`; `ownership.py` scopes every ORM query to the session's owner.
+
+
+class User(Base):
+    """An account. `role` is 'admin' or 'user'; `password_hash` is set for local (password)
+    accounts only (`scrypt$n$r$p$salt$hash`, see `passwords.py`)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(OWNER_ID_LEN), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    email: Mapped[str | None] = mapped_column(String(254))
+    #: admin | user
+    role: Mapped[str] = mapped_column(String(8), default="user", server_default="user")
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UserIdentity(Base):
+    """How a user signs in: `oidc:<sha256(issuer)[:12]>:<sub>`, `header:<name>` or
+    `password:<username>` (lowercased)."""
+
+    __tablename__ = "user_identities"
+
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(OWNER_ID_LEN), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 # ---------------------------------------------------------------- user data
 #
 # Phase 7 persistence (docs/persistence.md). JSON payloads are opaque to the
@@ -96,6 +153,7 @@ class Layout(Base):
 
     __tablename__ = "layouts"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     state: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -111,6 +169,7 @@ class DrawingRow(Base):
 
     __tablename__ = "drawings"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     symbol: Mapped[str | None] = mapped_column(String(32), index=True)
     pane_id: Mapped[str] = mapped_column(String(64))
@@ -125,8 +184,9 @@ class IndicatorTemplate(Base):
     """A named set of indicator instances."""
 
     __tablename__ = "indicator_templates"
-    __table_args__ = (UniqueConstraint("name", name="uq_indicator_templates_name"),)
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_indicator_templates_name"),)
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     instances: Mapped[list[Any]] = mapped_column(JSON)
@@ -139,8 +199,11 @@ class DrawingTemplate(Base):
     """A named style for one drawing tool; `is_default` marks the tool's default style."""
 
     __tablename__ = "drawing_templates"
-    __table_args__ = (UniqueConstraint("tool_type", "name", name="uq_drawing_templates_type_name"),)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "tool_type", "name", name="uq_drawing_templates_type_name"),
+    )
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     tool_type: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(200))
@@ -155,8 +218,9 @@ class ChartTemplate(Base):
     """A named chart style/theme template."""
 
     __tablename__ = "chart_templates"
-    __table_args__ = (UniqueConstraint("name", name="uq_chart_templates_name"),)
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_chart_templates_name"),)
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     data: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -170,19 +234,25 @@ class Setting(Base):
 
     __tablename__ = "settings"
 
+    owner_id: Mapped[str] = _owner(primary_key=True)
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Note(Base):
-    """A free-text note; `symbol` null = general note."""
+    """A free-text note; `symbol` null = general note.
+
+    `kind` 'note' = a Notes-panel note; 'journal' = owned by a journal entry (hidden from the
+    panel's default listing)."""
 
     __tablename__ = "notes"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     symbol: Mapped[str | None] = mapped_column(String(32), index=True)
     text: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(16), default="note", server_default="note")
     revision: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -196,6 +266,7 @@ class Watchlist(Base):
 
     __tablename__ = "watchlists"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     items: Mapped[list[Any]] = mapped_column(JSON)
@@ -212,6 +283,7 @@ class UserScript(Base):
 
     __tablename__ = "user_scripts"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     source: Mapped[str] = mapped_column(Text)
@@ -227,6 +299,7 @@ class SymbolFlag(Base):
 
     __tablename__ = "symbol_flags"
 
+    owner_id: Mapped[str] = _owner(primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     color: Mapped[str] = mapped_column(String(16))
     #: Flagged-at; reset when the color changes.
@@ -246,6 +319,7 @@ class Alert(Base):
 
     __tablename__ = "alerts"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     symbol: Mapped[str] = mapped_column(String(128), index=True)
@@ -286,6 +360,7 @@ class AlertLog(Base):
 
     __tablename__ = "alert_log"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     #: Idempotency key chosen by the service.
     fire_id: Mapped[str] = mapped_column(String(36), unique=True)
@@ -360,6 +435,8 @@ class ScreenerList(Base):
 
     __tablename__ = "screener_lists"
 
+    #: NULL = shared (bundled / admin-managed); otherwise a user's custom list.
+    owner_id: Mapped[str | None] = _owner(nullable=True)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     #: index | custom
@@ -488,12 +565,34 @@ class JobLease(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class BackupRun(Base):
+    """Bookkeeping of one scheduled-backup run (newest 100 kept; docs/design/scheduled-backups.md).
+    Server-wide, not user data: no owner."""
+
+    __tablename__ = "backup_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: schedule | manual
+    trigger: Mapped[str] = mapped_column(String(10))
+    #: running | ok | partial | failed
+    status: Mapped[str] = mapped_column(String(10))
+    file_name: Mapped[str | None] = mapped_column(String(80))
+    size: Mapped[int | None] = mapped_column(BigInteger)
+    #: Per-target outcomes: [{"target": "local", "ok": true, "error": null, "deleted": 0}, ...]
+    results: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    #: Sanitized (never holds a passphrase or key).
+    error: Mapped[str | None] = mapped_column(String(500))
+
+
 class Screen(Base):
     """A saved screen. `spec` is the validated `ScreenSpec` JSON; `alert` the optional
     alert config (null = no alert)."""
 
     __tablename__ = "screens"
 
+    owner_id: Mapped[str] = _owner()
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     spec: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -515,3 +614,134 @@ class ScreenState(Base):
     as_of: Mapped[date] = mapped_column(Date)
     members: Mapped[Any] = mapped_column(JSON)  # {"members": [...], "seen": [...]}; legacy: list
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------- portfolio
+#
+# Portfolio + trade journal (docs/design/portfolio.md). Storage and validation only: the
+# ledger / P&L math lives in `packages/portfolio`. Amounts are doubles; times are UTC.
+
+
+class Portfolio(Base):
+    """A named portfolio (transactions and journal entries hang off it)."""
+
+    __tablename__ = "portfolios"
+
+    owner_id: Mapped[str] = _owner()
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    base_currency: Mapped[str] = mapped_column(String(3))
+    #: Benchmark symbol; null = none.
+    benchmark: Mapped[str | None] = mapped_column(String(32))
+    #: fifo | average
+    cost_method: Mapped[str] = mapped_column(String(8))
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PortfolioTransaction(Base):
+    """One ledger row. Which fields are set depends on `kind` (see `userdata/portfolio.py`)."""
+
+    __tablename__ = "portfolio_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_id", "external_id", name="uq_portfolio_transactions_portfolio_external"
+        ),
+        UniqueConstraint("portfolio_id", "seq", name="uq_portfolio_transactions_portfolio_seq"),
+        Index("ix_portfolio_transactions_portfolio_time_seq", "portfolio_id", "time", "seq"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("portfolios.id", ondelete="CASCADE")
+    )
+    #: Insertion order within the portfolio (1-based, assigned app-side); breaks `time` ties so
+    #: same-timestamp rows (a buy then a sell) always replay in the order they were recorded.
+    seq: Mapped[int] = mapped_column(Integer)
+    #: buy | sell | dividend | split | fee | interest | cashIn | cashOut
+    kind: Mapped[str] = mapped_column(String(12))
+    time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    symbol: Mapped[str | None] = mapped_column(String(32))
+    quantity: Mapped[float | None] = mapped_column(Float)
+    price: Mapped[float | None] = mapped_column(Float)
+    amount: Mapped[float | None] = mapped_column(Float)
+    fee: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    currency: Mapped[str] = mapped_column(String(3))
+    note: Mapped[str | None] = mapped_column(String(2000))
+    #: manual | import:<broker>
+    source: Mapped[str] = mapped_column(String(40))
+    #: Broker-side id; unique per portfolio (import dedupe).
+    external_id: Mapped[str | None] = mapped_column(String(128))
+    import_batch: Mapped[str | None] = mapped_column(String(36))
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class JournalEntry(Base):
+    """A trade-journal entry; its text lives in the linked `notes` row."""
+
+    __tablename__ = "journal_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
+    transaction_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("portfolio_transactions.id", ondelete="SET NULL"), index=True
+    )
+    symbol: Mapped[str | None] = mapped_column(String(32))
+    note_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("notes.id", ondelete="SET NULL"), index=True
+    )
+    setup: Mapped[str | None] = mapped_column(String(80))
+    tags: Mapped[list[Any]] = mapped_column(JSON)
+    #: Initial stop price (drives R).
+    stop: Mapped[float | None] = mapped_column(Float)
+    #: Manual R override.
+    r_multiple: Mapped[float | None] = mapped_column(Float)
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class JournalScreenshot(Base):
+    """The one image attached to a journal entry."""
+
+    __tablename__ = "journal_screenshots"
+
+    entry_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("journal_entries.id", ondelete="CASCADE"), primary_key=True
+    )
+    mime: Mapped[str] = mapped_column(String(16))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+#: Top-level user-data models: every ORM statement on them is scoped to a session's owner
+#: (`ownership.py`). Children (`alert_states`, `alert_deliveries`, `screen_states`,
+#: `portfolio_transactions`, `journal_*`) are reached through an owned parent.
+OWNED_MODELS: tuple[type[Base], ...] = (
+    Layout,
+    DrawingRow,
+    IndicatorTemplate,
+    DrawingTemplate,
+    ChartTemplate,
+    Setting,
+    Note,
+    Watchlist,
+    UserScript,
+    SymbolFlag,
+    Alert,
+    AlertLog,
+    Screen,
+    Portfolio,
+    ScreenerList,
+)
+#: Owned models whose `owner_id` may be NULL: shared rows every user can read (admins write).
+SHARED_OWNED_MODELS: tuple[type[Base], ...] = (ScreenerList,)
+
+from . import ownership as _ownership  # noqa: E402  (needs the models above)
+
+_ownership.install(OWNED_MODELS, SHARED_OWNED_MODELS)

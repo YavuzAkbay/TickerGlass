@@ -1,0 +1,22 @@
+{
+  "note": "hand-built from the documented ticker overview shape (not recorded)",
+  "request": { "path": "/v3/reference/tickers/BRK.B", "params": {} },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "request_id": "4d5e6f708192a3b4c5d6e7f801122334",
+    "results": {
+      "ticker": "BRK.B",
+      "name": "Berkshire Hathaway Inc. Class B",
+      "market": "stocks",
+      "locale": "us",
+      "primary_exchange": "XNYS",
+      "type": "CS",
+      "active": true,
+      "currency_name": "usd",
+      "sic_code": "6331",
+      "sic_description": "FIRE, MARINE & CASUALTY INSURANCE"
+    },
+    "status": "OK"
+  }
+}

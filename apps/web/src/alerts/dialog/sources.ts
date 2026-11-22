@@ -25,7 +25,7 @@ import {
   type ValueOperand,
 } from '@tickerglass/alerts';
 import { BRICK_TYPES, type ChartType } from '@tickerglass/engine';
-import { defaultRegistry, isUserScriptType } from '@tickerglass/indicators';
+import { defaultRegistry, isUserScriptType, type IndicatorRegistry } from '@tickerglass/indicators';
 import { toolName } from '../../drawings/model';
 
 /** The fields of a stored drawing the dialog reads. */
@@ -69,6 +69,14 @@ export interface AlertContext {
   /** Last price: of the chart symbol from its bars, of another symbol from the quote stream. */
   lastPrice: (symbol: string) => number | undefined;
   lastBar: LastBar | null;
+  /**
+   * Definitions the dialog validates against and reads titles from: built-ins plus a
+   * stub per user script (`syncScriptDefinitions`). Default: `defaultRegistry`, which
+   * is the registry the web fills with the script stubs.
+   */
+  registry?: IndicatorRegistry;
+  /** Name of the script behind a `user:<id>` type; undefined once it is gone. Default: assume it exists. */
+  scriptName?: (type: string) => string | undefined;
 }
 
 export const isBrickType = (chartType: string): boolean => BRICK_TYPES.has(chartType as ChartType);
@@ -105,33 +113,95 @@ export interface SourceOption<T = SeriesOperand> {
   label: string;
   group: 'Price' | 'Indicators' | 'Drawings';
   operand: T;
+  /** Listed but not selectable: why. */
+  disabled?: string;
 }
 
-/** Plot outputs of every indicator on the chart, titled like the legend. */
+const registryOf = (ctx: Pick<AlertContext, 'registry'>): IndicatorRegistry =>
+  ctx.registry ?? defaultRegistry;
+
+export const REASON_REPAINTS = "Repainting scripts can't drive alerts";
+export const REASON_COMPILE = "Fix the script's compile error first";
+export const REASON_DELETED = 'The script was deleted';
+export const REASON_SCRIPT_CHAIN = "Alerts can't combine scripts with other indicators";
+
+/** Whether the operand reads a user script's output. */
+export function isScriptOperand(op: SeriesOperand | ValueOperand | DrawingLineOperand): boolean {
+  if (op.kind !== 'indicator') return false;
+  const target = op.ref.instances.find((i) => i.id === op.ref.instanceId);
+  return !!target && isUserScriptType(target.type);
+}
+
+/**
+ * Plot outputs of every indicator on the chart, titled like the legend. Script
+ * outputs the service cannot evaluate are listed with `disabled` (the reason).
+ */
 export function indicatorOptions(ctx: AlertContext): SourceOption<SeriesOperand>[] {
   const out: SourceOption<SeriesOperand>[] = [];
+  const registry = registryOf(ctx);
   for (const inst of ctx.indicators) {
-    if (isUserScriptType(inst.type)) continue;
-    const def = defaultRegistry.get(inst.type);
-    if (!def) continue;
+    const def = registry.get(inst.type);
+    if (!def) {
+      // A script with no usable manifest (compile error) or a deleted one: no outputs are known.
+      if (!isUserScriptType(inst.type)) continue;
+      const name = ctx.scriptName?.(inst.type);
+      const deleted = ctx.scriptName !== undefined && name === undefined;
+      const operand: SeriesOperand = {
+        kind: 'indicator',
+        ref: {
+          instances: [{ id: inst.id, type: inst.type, inputs: {} }],
+          instanceId: inst.id,
+          outputId: '',
+          title: name ?? 'Script',
+        },
+      };
+      out.push({
+        key: operandKey(operand),
+        label: name ?? 'Script',
+        group: 'Indicators',
+        operand,
+        disabled: deleted ? REASON_DELETED : REASON_COMPILE,
+      });
+      continue;
+    }
     for (const o of def.outputs) {
       if (o.type !== 'plot') continue;
-      const ref = tryRef(ctx.indicators, inst.id, o.id);
+      const ref = tryRef(ctx.indicators, inst.id, o.id, registry);
       if (!ref) continue;
       const operand: SeriesOperand = { kind: 'indicator', ref };
-      out.push({ key: operandKey(operand), label: ref.title, group: 'Indicators', operand });
+      const disabled = disabledReason(ref, def.repaints === true);
+      out.push({
+        key: operandKey(operand),
+        label: ref.title,
+        group: 'Indicators',
+        operand,
+        ...(disabled ? { disabled } : {}),
+      });
     }
   }
   return out;
+}
+
+/** Why the service could not evaluate this indicator operand (undefined: it can). */
+function disabledReason(ref: IndicatorRef, repaints: boolean): string | undefined {
+  const target = ref.instances.find((i) => i.id === ref.instanceId);
+  const upstream = ref.instances.filter((i) => i.id !== ref.instanceId);
+  if (upstream.some((i) => isUserScriptType(i.type))) return REASON_SCRIPT_CHAIN;
+  if (target && isUserScriptType(target.type)) {
+    if (repaints) return REASON_REPAINTS;
+    if (upstream.length) return REASON_SCRIPT_CHAIN;
+  }
+  return undefined;
 }
 
 function tryRef(
   instances: readonly ChartInstance[],
   instanceId: string,
   outputId: string,
+  registry: IndicatorRegistry,
 ): IndicatorRef | null {
   try {
-    return buildIndicatorRef(instances, instanceId, outputId);
+    return buildIndicatorRef(instances, instanceId, outputId, registry);
   } catch {
     return null;
   }
@@ -142,14 +212,21 @@ export function indicatorOperand(
   instanceId: string,
   outputId: string,
 ): SeriesOperand | null {
-  const ref = tryRef(ctx.indicators, instanceId, outputId);
-  return ref ? { kind: 'indicator', ref } : null;
+  const registry = registryOf(ctx);
+  const ref = tryRef(ctx.indicators, instanceId, outputId, registry);
+  if (!ref) return null;
+  const repaints = registry.get(
+    ref.instances.find((i) => i.id === instanceId)?.type ?? '',
+  )?.repaints;
+  return disabledReason(ref, repaints === true) ? null : { kind: 'indicator', ref };
 }
 
 /** First plot output of a chart indicator. */
-export function firstOutputId(type: string): string | null {
-  if (isUserScriptType(type)) return null;
-  return defaultRegistry.get(type)?.outputs.find((o) => o.type === 'plot')?.id ?? null;
+export function firstOutputId(
+  type: string,
+  registry: Pick<IndicatorRegistry, 'get'> = defaultRegistry,
+): string | null {
+  return registry.get(type)?.outputs.find((o) => o.type === 'plot')?.id ?? null;
 }
 
 export function priceOptions(): SourceOption<SeriesOperand>[] {

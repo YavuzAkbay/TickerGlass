@@ -79,16 +79,20 @@
   position: fixed;
   z-index: 900;
   animation: io-pop-in 120ms ease-out;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow);
+  /* Floating chrome: the glass material, a little denser than the chart islands so long
+     menus stay readable over busy content. */
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-island);
+  box-shadow: var(--glass-shadow), var(--shadow);
   max-height: calc(100vh - 16px);
   overflow: auto;
 }
 .io-menu {
   min-width: 200px;
-  padding: 6px 0;
+  padding: 5px 0;
   outline: none;
 }
 .io-menu-item {
@@ -102,8 +106,8 @@
   white-space: nowrap;
 }
 .io-menu-item {
-  margin: 0 4px;
-  border-radius: var(--radius-control);
+  margin: 0 5px;
+  border-radius: 9px;
 }
 .io-menu-item.active {
   background: var(--hover);
@@ -139,15 +143,14 @@
 }
 .io-menu-sep {
   height: 1px;
-  margin: 6px 0;
-  background: var(--border);
+  margin: 5px 0;
+  background: var(--glass-edge);
 }
 .io-menu-header {
   padding: 8px 12px 4px 32px;
-  color: var(--text-muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* ---- modals ---- */
@@ -174,23 +177,34 @@
   flex-direction: column;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 64px);
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--shadow);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  box-shadow: var(--glass-shadow), var(--shadow);
+  animation: io-modal-in 160ms ease-out;
+}
+@keyframes io-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
 }
 .io-modal-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 12px 12px 20px;
-  border-bottom: 1px solid var(--border);
+  min-height: 54px;
+  padding: 10px 12px 10px 20px;
+  border-bottom: 1px solid var(--glass-edge);
   cursor: move;
 }
 .io-modal-title {
   flex: 1;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text);
 }
 .io-modal-body {
@@ -203,16 +217,17 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 20px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--glass-edge);
 }
 
 /* ---- buttons + inputs ---- */
 .io-btn {
   height: 32px;
   padding: 0 16px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border);
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
   background: transparent;
+  font-weight: 550;
   cursor: pointer;
 }
 .io-btn:hover {
@@ -230,13 +245,17 @@
 .io-input {
   height: 32px;
   padding: 0 10px;
-  border-radius: var(--radius-control);
+  border-radius: 9px;
   border: 1px solid var(--border);
   background: var(--input-bg);
   outline: none;
 }
+.io-input:hover {
+  border-color: var(--border-strong);
+}
 .io-input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* ---- toasts ---- */
@@ -252,24 +271,34 @@
 .io-toast {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 240px;
   max-width: 420px;
   padding: 8px 8px 8px 14px;
-  border-radius: var(--radius-control);
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  box-shadow: var(--shadow);
+  border-radius: 12px;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow), var(--shadow);
+}
+/* Status dot: iris for information, jade for success, coral for errors. */
+.io-toast::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 .io-toast span {
   flex: 1;
 }
-.io-toast-success {
-  border-left-color: var(--up);
+.io-toast-success::before {
+  background: var(--up);
 }
-.io-toast-error {
-  border-left-color: var(--down);
+.io-toast-error::before {
+  background: var(--down);
 }
 .io-toast-action {
   height: 26px;

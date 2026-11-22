@@ -1,5 +1,6 @@
 import { Database, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useIsAdmin } from '../../auth/access';
 import { useT } from '../../i18n';
 import { errorMessage } from '../../api/client';
 import { toast } from '../../ui/Toast';
@@ -19,6 +20,7 @@ interface Props {
  */
 export function SnapshotBanner({ status, onRefresh }: Props) {
   const t = useT();
+  const admin = useIsAdmin();
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -70,7 +72,8 @@ export function SnapshotBanner({ status, onRefresh }: Props) {
     default:
       text = t('scr.srv.unsupported').replace('{provider}', status.provider);
   }
-  const canRefresh = (kind === 'ready' || kind === 'first_run') && status.supported;
+  // Manual runs are admin-only (the API answers 403 to others).
+  const canRefresh = admin && (kind === 'ready' || kind === 'first_run') && status.supported;
 
   return (
     <div className="scr-banner" data-testid="scr-banner" data-kind={kind} role="status">

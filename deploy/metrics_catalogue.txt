@@ -1,0 +1,60 @@
+# Metric catalogue of TickerGlass /metrics: one "<name> <type>" per line, taken from
+# docs/design/metrics.md section 4 (the metric names there are fixed). deploy/check.py checks
+# every metric the Grafana dashboard and the Prometheus rules use against this list, so the
+# dashboard cannot drift from the code. Histograms are listed by their base name; the
+# _bucket, _sum and _count series are accepted for them. Keep docs/metrics.md in step.
+
+# 4.1 Process and HTTP
+tickerglass_build_info gauge
+tickerglass_http_requests_total counter
+tickerglass_http_request_duration_seconds histogram
+
+# 4.2 Market provider
+tickerglass_provider_requests_total counter
+tickerglass_provider_refused_total counter
+tickerglass_provider_budget_remaining gauge
+tickerglass_provider_budget_limit gauge
+tickerglass_provider_breaker_open gauge
+
+# 4.3 Cache
+tickerglass_cache_requests_total counter
+
+# 4.4 Alerts
+tickerglass_alerts_fired_total counter
+tickerglass_alerts_active gauge
+tickerglass_alerts_service_up gauge
+tickerglass_alerts_service_last_heartbeat_timestamp_seconds gauge
+tickerglass_alerts_service_start_timestamp_seconds gauge
+tickerglass_alerts_series gauge
+tickerglass_alerts_live_symbols gauge
+tickerglass_alerts_polled_series gauge
+tickerglass_alerts_waiting gauge
+tickerglass_alerts_evaluations_total counter
+tickerglass_alerts_evaluation_failures_total counter
+tickerglass_alerts_fires_queued_total counter
+tickerglass_alerts_fire_retries_total counter
+tickerglass_alerts_fires_dropped_total counter
+tickerglass_alerts_fire_queue_depth gauge
+tickerglass_alerts_status_post_failures_total counter
+tickerglass_alerts_script_faults_total counter
+tickerglass_alerts_evaluation_lag_seconds histogram
+
+# 4.5 Notifications
+tickerglass_notifications_deliveries_total counter
+tickerglass_notifications_outbox gauge
+tickerglass_notifications_oldest_pending_age_seconds gauge
+
+# 4.6 Screener
+tickerglass_screener_snapshot_age_seconds gauge
+tickerglass_screener_snapshot_rows gauge
+tickerglass_screener_last_run_timestamp_seconds gauge
+tickerglass_screener_enabled gauge
+
+# 4.7 Backups
+tickerglass_backup_last_success_timestamp_seconds gauge
+tickerglass_backup_last_run_status gauge
+tickerglass_backup_last_size_bytes gauge
+tickerglass_backup_enabled gauge
+
+# 5 Collector health
+tickerglass_metrics_collect_errors_total counter

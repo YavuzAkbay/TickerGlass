@@ -1,0 +1,22 @@
+{
+  "synthetic": "hand-built from the documented GET /v1beta3/crypto/us/snapshots shape (not recorded); wrapped in `snapshots`",
+  "request": {
+    "path": "/v1beta3/crypto/us/snapshots",
+    "params": {"symbols": "BTC/USD"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "snapshots": {
+      "BTC/USD": {
+        "latestTrade": {"t": "2026-10-27T19:59:58.5Z", "p": 98000.5, "s": 0.01, "tks": "B", "i": 123},
+        "latestQuote": {"t": "2026-10-27T19:59:59Z", "ap": 98010.0, "as": 0.5, "bp": 97990.0, "bs": 0.4},
+        "minuteBar": {"t": "2026-10-27T19:59:00Z", "o": 98000.0, "h": 98010.0, "l": 97990.0, "c": 98000.5, "v": 1.2, "n": 12, "vw": 98000.2},
+        "dailyBar": {"t": "2026-10-27T05:00:00Z", "o": 97000.0, "h": 98500.0, "l": 96500.0, "c": 98000.5, "v": 1500.5, "n": 90000, "vw": 97500.0},
+        "prevDailyBar": {"t": "2026-10-26T05:00:00Z", "o": 96000.0, "h": 97500.0, "l": 95800.0, "c": 97000.0, "v": 1800.0, "n": 95000, "vw": 96700.0}
+      }
+    }
+  }
+}

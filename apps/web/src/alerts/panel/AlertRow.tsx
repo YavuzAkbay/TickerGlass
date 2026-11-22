@@ -1,4 +1,4 @@
-import { describeCondition, type Alert } from '@tickerglass/alerts';
+import { describeCondition, type Alert, type WaitingAlert } from '@tickerglass/alerts';
 import { Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Trash2 } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { commands } from '../../commands/registry';
@@ -19,6 +19,14 @@ export function expiryText(a: Pick<Alert, 'expiresAt' | 'status'>): string | nul
   const d = new Date(a.expiresAt);
   const text = Number.isNaN(d.getTime()) ? a.expiresAt : d.toLocaleString();
   return a.status === 'expired' ? `Expired ${text}` : `Expires ${text}`;
+}
+
+/** "14:05": when a waiting alert is attached again (local time). */
+export function resumeTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export function alertMenu(alert: Alert, x: number, y: number): void {
@@ -62,7 +70,14 @@ export function alertMenu(alert: Alert, x: number, y: number): void {
 }
 
 /** One alert: status dot, name, condition, symbol, trigger, expiry and fire count. */
-export function AlertRow({ alert }: { alert: Alert }) {
+/** `waiting`: the service keeps the alert off its series while its script is held off after a fault. */
+export function AlertRow({
+  alert,
+  waiting = null,
+}: {
+  alert: Alert;
+  waiting?: WaitingAlert | null;
+}) {
   const open = () => {
     commands.execute('chart.setSymbol', alert.symbol);
     commands.execute('chart.setInterval', alert.interval);
@@ -100,6 +115,12 @@ export function AlertRow({ alert }: { alert: Alert }) {
         </div>
         {alert.status === 'error' && alert.statusReason ? (
           <div className="al-reason">{alert.statusReason}</div>
+        ) : null}
+        {alert.status === 'active' && waiting ? (
+          <div className="al-waiting" data-testid="al-waiting">
+            Waiting for script — resumes ~{resumeTime(waiting.resumeAt)}
+            <span className="al-waiting-reason">{waiting.reason}</span>
+          </div>
         ) : null}
       </div>
       <button

@@ -38,7 +38,7 @@ import { useScreenerStatus } from '../server/hooks';
 import type { StatusResponse } from '../server/types';
 import { addAllToList, openInChart, openRowMenu } from './actions';
 import { ClassTabs } from './ClassTabs';
-import { FilterBar } from './FilterBar';
+import { FilterBar, PresetChips } from './FilterBar';
 import { ResultsTable, type HoldKind } from './ResultsTable';
 import { ScanStrip } from './ScanStrip';
 import { ScreenerDetail } from './ScreenerDetail';
@@ -346,6 +346,14 @@ function ClientScreener({
     ? t('scr.liveNote').replace('{n}', String(plan.scanned.length))
     : null;
 
+  const classTabs = (
+    <ClassTabs
+      active={tab}
+      onPick={(cls) => useScreenerPrefs.getState().setTab(cls)}
+      loaded={loaded}
+    />
+  );
+
   return (
     <div className="scr-root" role="region" aria-label={t('scr.title')} data-testid="scr-root">
       <ScreenerHeader
@@ -356,12 +364,7 @@ function ClientScreener({
         onToggleDetail={() => useScreenerPrefs.getState().setDetailOpen(!detailOpen)}
         view={view}
         onViewChange={(v) => useScreenerPrefs.getState().setView(v)}
-      />
-      <SnapshotBanner status={status} onRefresh={onRefresh} />
-      <ClassTabs
-        active={tab}
-        onPick={(cls) => useScreenerPrefs.getState().setTab(cls)}
-        loaded={loaded}
+        status={<SnapshotBanner status={status} onRefresh={onRefresh} />}
       />
       {universe ? (
         <>
@@ -369,11 +372,16 @@ function ClientScreener({
             universe={universe}
             filters={classFilters}
             onFilters={setFilters}
-            preset={presetOf(sort)}
-            onPreset={(p) => useScreenerPrefs.getState().setPreset(p)}
             searchRef={searchRef}
+            lead={classTabs}
           />
           <ScanStrip
+            leading={
+              <PresetChips
+                preset={presetOf(sort)}
+                onPreset={(p) => useScreenerPrefs.getState().setPreset(p)}
+              />
+            }
             cls={tab}
             scanSymbols={scanSymbols}
             filters={classFilters}
@@ -435,24 +443,30 @@ function ClientScreener({
           </div>
         </>
       ) : failed[tab] ? (
-        <div className="scr-loading" role="alert" data-testid="scr-universe-error">
-          <ChartLine size={34} strokeWidth={1.1} aria-hidden="true" />
-          <div className="scr-empty-title">{t('scr.universeUnavailable')}</div>
-          <div className="scr-empty-text">
-            {t('scr.classLabel').replace('{class}', CLASS_LABEL[tab])}
+        <>
+          <div className="scr-toolbar">{classTabs}</div>
+          <div className="scr-loading" role="alert" data-testid="scr-universe-error">
+            <ChartLine size={34} strokeWidth={1.1} aria-hidden="true" />
+            <div className="scr-empty-title">{t('scr.universeUnavailable')}</div>
+            <div className="scr-empty-text">
+              {t('scr.classLabel').replace('{class}', CLASS_LABEL[tab])}
+            </div>
+            <button type="button" className="io-btn scr-empty-btn" onClick={retryUniverse}>
+              {t('scr.universeRetry')}
+            </button>
           </div>
-          <button type="button" className="io-btn scr-empty-btn" onClick={retryUniverse}>
-            {t('scr.universeRetry')}
-          </button>
-        </div>
+        </>
       ) : (
-        <div className="scr-loading" aria-live="polite">
-          <ChartLine size={34} strokeWidth={1.1} aria-hidden="true" />
-          <div className="scr-empty-title">{t('scr.loading')}</div>
-          <div className="scr-empty-text">
-            {t('scr.classLabel').replace('{class}', CLASS_LABEL[tab])}
+        <>
+          <div className="scr-toolbar">{classTabs}</div>
+          <div className="scr-loading" aria-live="polite">
+            <ChartLine size={34} strokeWidth={1.1} aria-hidden="true" />
+            <div className="scr-empty-title">{t('scr.loading')}</div>
+            <div className="scr-empty-text">
+              {t('scr.classLabel').replace('{class}', CLASS_LABEL[tab])}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

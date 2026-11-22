@@ -4,12 +4,13 @@
   background: var(--bg);
 }
 
-/* App frame: command bar across the top, then the navigator on the left, the chart pane, and the
-   drawing tool rail on the right edge (collapsible to zero width). */
+/* App frame: command bar across the top, then the chart, the Inspector (when open) and the
+   navigator (panel + icon rail) on the right edge. The drawing tool dock floats over the
+   chart's left edge as a glass island. */
 .app {
   display: grid;
-  grid-template-rows: var(--bar-h, 36px) minmax(0, 1fr);
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: var(--top-h, 48px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto auto;
   height: 100vh;
   height: 100dvh;
   /* Notches and the home indicator (viewport-fit=cover): the inset area shows the panel
@@ -22,13 +23,13 @@
   gap: 1px;
 }
 
-/* Without the Inspector there is no fourth column (an empty one would add a second hairline). */
+/* Without the Inspector there is no third column (an empty one would add a second hairline). */
 .app.no-inspector {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.app.no-inspector .app-rail {
-  grid-area: 2 / 3 / 3 / 4;
+.app.no-inspector .navigator {
+  grid-area: 2 / 2 / 3 / 3;
 }
 
 .app-top {
@@ -43,12 +44,26 @@
   min-width: 0;
 }
 
+/* Drawing tool dock: a glass island over the chart's left edge, vertically centred. */
 .app-rail {
-  grid-area: 2 / 4 / 3 / 5;
+  grid-area: 2 / 1 / 3 / 2;
+  z-index: 8;
+  align-self: center;
+  justify-self: start;
   display: flex;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--panel);
+  max-height: calc(100% - 24px);
+  margin-left: 10px;
+  padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border-radius: var(--radius-island);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
 }
 
 .app-rail.collapsed {
@@ -56,11 +71,85 @@
 }
 
 .navigator {
-  grid-area: 2 / 1 / 3 / 2;
+  grid-area: 2 / 3 / 3 / 4;
+}
+
+/* Chart controls: a glass island over the chart's top-right, clear of the price scale. */
+.chart-island {
+  position: absolute;
+  z-index: 8;
+  top: 10px;
+  right: 76px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 160px);
+  padding: 4px;
+  border-radius: var(--radius-island);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chart-island .io-icon-btn,
+.chart-island .tb-btn {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border-radius: 9px;
+  color: var(--muted);
+}
+
+.chart-island .io-icon-btn:hover,
+.chart-island .tb-btn:hover,
+.chart-island .tb-btn.open {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.chart-island .tb-interval {
+  min-width: 32px;
+  font-weight: 550;
+  font-size: 12.5px;
+}
+
+/* Split layouts: the island sits centred in a strip above the panes (ChartGrid). */
+.chart-stack.with-island-strip {
+  top: 46px;
+  left: 58px;
+}
+/* ...and the drawing dock gets a gutter on the left, so neither covers a pane's legend. */
+.app:has(.chart-stack.with-island-strip) .app-rail {
+  margin-left: 6px;
+}
+.chart-stack.with-island-strip .ax-ranges {
+  left: 8px;
+}
+.center:has(.chart-stack.with-island-strip) .chart-island {
+  top: 5px;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+}
+
+/* The pressed interval reads as a raised pill of the same glass, not an accent block. */
+.chart-island .tb-interval.active,
+.chart-island .tb-btn.active,
+.chart-island .io-icon-btn.active {
+  background: var(--glass-hi);
+  box-shadow: inset 0 0 0 1px var(--glass-edge);
+  color: var(--text);
+}
+
+.chart-island .tb-sep {
+  height: 16px;
+  margin: 0 4px;
+  background: var(--glass-edge);
 }
 
 .center {
-  grid-area: 2 / 2 / 3 / 3;
+  grid-area: 2 / 1 / 3 / 2;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -257,7 +346,7 @@
   .app,
   .app.no-inspector {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--bar-h) minmax(0, 1fr) var(--tabbar-h);
+    grid-template-rows: var(--top-h) minmax(0, 1fr) var(--tabbar-h);
   }
 
   .center {
@@ -271,6 +360,13 @@
     justify-self: end;
     align-self: start;
     max-height: 100%;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: var(--panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: 0;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;

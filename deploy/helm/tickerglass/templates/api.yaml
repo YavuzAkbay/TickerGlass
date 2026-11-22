@@ -1,0 +1,131 @@
+{{- $env := merge (dict) (.Values.api.extraEnv | default dict) (.Values.api.env | default dict) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tickerglass.fullname" . }}-api
+  labels:
+    {{- include "tickerglass.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  # One replica, one ReadWriteOnce volume, SQLite: never run two API pods at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tickerglass.selectorLabels" (dict "ctx" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tickerglass.selectorLabels" (dict "ctx" . "component" "api") | nindent 8 }}
+      {{- with .Values.api.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      # No <SERVICE>_PORT-style env vars injected into the pod (a service named like an env var the
+      # app reads would otherwise override it).
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "tickerglass.image" (dict "ctx" . "repository" .Values.api.image.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            {{- if not (hasKey $env "ALERTS_INTERNAL_TOKEN") }}
+            {{- include "tickerglass.secretEnv" (dict "name" "ALERTS_INTERNAL_TOKEN" "ctx" .) | nindent 12 }}
+            {{- end }}
+            {{- if not (hasKey $env "AUTH_SECRET") }}
+            {{- include "tickerglass.secretEnv" (dict "name" "AUTH_SECRET" "ctx" . "optional" true) | nindent 12 }}
+            {{- end }}
+            {{- if and .Values.api.trustedProxies (not (hasKey $env "TRUSTED_PROXIES")) }}
+            - name: TRUSTED_PROXIES
+              value: {{ .Values.api.trustedProxies | quote }}
+            {{- end }}
+            {{- if and .Values.publicUrl (not (hasKey $env "PUBLIC_URL")) }}
+            - name: PUBLIC_URL
+              value: {{ .Values.publicUrl | quote }}
+            {{- end }}
+            {{- if and .Values.metrics.enabled (not (hasKey $env "METRICS_ENABLED")) }}
+            - name: METRICS_ENABLED
+              value: "true"
+            {{- end }}
+            {{- if and .Values.metrics.enabled (not (hasKey $env "METRICS_TOKEN")) }}
+            - name: METRICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tickerglass.metricsSecretName" . }}
+                  key: METRICS_TOKEN
+            {{- end }}
+            {{- include "tickerglass.envList" (dict "env" $env) | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # The server does not listen until startup finished (migrations, a staged backup restore),
+          # so the liveness probe only starts once this one has succeeded.
+          startupProbe:
+            httpGet:
+              path: /api/health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: {{ .Values.api.startupProbe.failureThreshold | default 60 }}
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.api.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "tickerglass.fullname" .)) .Values.api.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tickerglass.fullname" . }}-api
+  labels:
+    {{- include "tickerglass.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+  selector:
+    {{- include "tickerglass.selectorLabels" (dict "ctx" . "component" "api") | nindent 4 }}

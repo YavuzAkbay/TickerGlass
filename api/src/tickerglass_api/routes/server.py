@@ -5,7 +5,6 @@ Not user data — no revisions, no offline queue; guarded by password auth when
 
 import logging
 import os
-import sqlite3
 import tempfile
 import time
 from datetime import UTC, datetime, timedelta
@@ -14,16 +13,19 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import Engine, delete, func, select, text
+from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from .. import __version__
 from .. import models as m
-from ..deps import SettingsDep
+from ..backups.snapshot import sqlite_copy
+from ..deps import AdminDep, SettingsDep, UserDep
+from ..ownership import system_session
 from ..providers.registry import is_configured
-from ..services.cache_source import CACHE_SOURCE_KEY, LEGACY_SOURCE
+from ..services.cache_source import CACHE_SOURCE_KEY, LEGACY_SOURCE, clear_market_tables
 from ..userdata.alerts import ServiceHeartbeat
+from .backups import summary as backup_summary
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +50,7 @@ def _alerts_service(request: Request) -> dict[str, Any]:
         "liveSymbols": heartbeat.live_symbols,
         "polledSeries": heartbeat.polled_series,
         "lastError": heartbeat.last_error,
+        "waiting": heartbeat.model_dump(mode="json", by_alias=True)["waiting"],
     }
 
 
@@ -82,10 +85,17 @@ def _counts(session: Any) -> dict[str, int]:
 
 
 @router.get("/status")
-def status(request: Request, settings: SettingsDep) -> dict[str, Any]:
+def status(request: Request, settings: SettingsDep, who: UserDep) -> dict[str, Any]:
+    """Admins get everything (counts span every user); other users the version, auth
+    methods and provider name only."""
     spec = getattr(request.app.state, "provider_spec", None)
-    session_maker = request.app.state.sessionmaker
-    with session_maker() as session:
+    if not who.is_admin:
+        return {
+            "version": __version__,
+            "provider": {"id": spec.id if spec else None, "name": spec.name if spec else None},
+            "auth": {"enabled": bool(settings.auth_methods), "methods": settings.auth_methods},
+        }
+    with system_session(request.app.state.sessionmaker) as session:
         counts = _counts(session)
         cache_source = session.get(m.AppMeta, CACHE_SOURCE_KEY)
     return {
@@ -101,13 +111,14 @@ def status(request: Request, settings: SettingsDep) -> dict[str, Any]:
         },
         "alertsService": _alerts_service(request),
         "database": _database(request),
+        "backup": backup_summary(request.app.state.backups),
         "counts": counts,
-        "auth": {"enabled": bool(settings.auth_password)},
+        "auth": {"enabled": bool(settings.auth_methods), "methods": settings.auth_methods},
     }
 
 
 @router.post("/cache/clear")
-def cache_clear(request: Request) -> dict[str, Any]:
+def cache_clear(_: AdminDep, request: Request) -> dict[str, Any]:
     """Wipe cached market data: the bars DB (bars, series bookkeeping, symbol
     metadata) and the in-memory caches of the installed stack. Everything is
     refetched from the provider on demand. User data is never touched."""
@@ -118,10 +129,7 @@ def cache_clear(request: Request) -> dict[str, Any]:
     # refused, so none can land after the wipe (same order as a provider switch).
     generation = gate.advance()
     with Session(engine) as session, session.begin():
-        deleted = {}
-        for table in (m.Bar, m.SeriesMeta, m.SymbolMeta):
-            result = session.execute(delete(table))
-            deleted[table.__tablename__] = int(getattr(result, "rowcount", 0) or 0)
+        deleted = clear_market_tables(session)
     cleared = stack.market_service.clear_caches() + stack.symbol_service.clear_caches()
     log.warning(
         "market data cache cleared (generation %s): %s, %s in-memory entries",
@@ -138,7 +146,7 @@ def cache_clear(request: Request) -> dict[str, Any]:
 
 
 @router.get("/backup")
-def backup(request: Request) -> Response:
+def backup(_: AdminDep, request: Request) -> Response:
     """Download a consistent snapshot of a SQLite database. Postgres backups are
     out of scope on purpose: `pg_dump` is the right tool there."""
     engine: Engine = request.app.state.engine
@@ -157,15 +165,7 @@ def backup(request: Request) -> Response:
     fd, tmp = tempfile.mkstemp(suffix=".db", prefix="tickerglass-backup-")
     os.close(fd)
     try:
-        src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            dest = sqlite3.connect(tmp)
-            try:
-                src.backup(dest)  # consistent snapshot, including the WAL
-            finally:
-                dest.close()
-        finally:
-            src.close()
+        sqlite_copy(path, Path(tmp))  # consistent snapshot, including the WAL
     except Exception:
         os.unlink(tmp)
         raise

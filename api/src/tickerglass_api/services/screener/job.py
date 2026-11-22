@@ -62,6 +62,7 @@ from sqlalchemy.orm import Session
 
 from ...intervals import INTERVALS
 from ...models import ScreenerRun, ScreenerSnapshot, ScreenerSymbol
+from ...ownership import engine_system_session
 from ...providers.base import (
     Capabilities,
     CostModel,
@@ -389,6 +390,7 @@ class ScreenerJob:
         self.lease = lease or Lease(engine, LEASE_NAME)
         self._hub: Callable[[], Any] | None = None
         self._dispatcher: Callable[[], Any] | None = None
+        self._on_fired: Callable[[int], None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._schedule_task: asyncio.Task[None] | None = None
         self._run_task: asyncio.Task[None] | None = None
@@ -477,11 +479,17 @@ class ScreenerJob:
         raise AssertionError("no trading day within two weeks")  # pragma: no cover
 
     def bind(
-        self, *, hub: Callable[[], Any] | None = None, dispatcher: Callable[[], Any] | None = None
+        self,
+        *,
+        hub: Callable[[], Any] | None = None,
+        dispatcher: Callable[[], Any] | None = None,
+        on_fired: Callable[[int], None] | None = None,
     ) -> None:
-        """Where `evaluate_screens` gets the live hub and the dispatcher from."""
+        """Where `evaluate_screens` gets the live hub and the dispatcher from; `on_fired` is
+        told how many screen alerts a run fired (metrics)."""
         self._hub = hub
         self._dispatcher = dispatcher
+        self._on_fired = on_fired
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -771,7 +779,7 @@ class ScreenerJob:
             return
 
         def work() -> int:
-            with Session(self._engine) as s:
+            with engine_system_session(self._engine) as s:
                 fired = int(
                     evaluate(
                         s,
@@ -793,6 +801,8 @@ class ScreenerJob:
             return
         if fired:
             log.info("screen alerts: %d fired for %s", fired, as_of)
+            if self._on_fired is not None:
+                self._on_fired(fired)
 
     # -- blocking helpers (worker threads) ------------------------------------
 
@@ -801,7 +811,7 @@ class ScreenerJob:
             return fn()
 
     def write(self, fn: Callable[[Session], object]) -> None:
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             fn(s)
             if self._gate is None:
                 s.commit()
@@ -823,7 +833,7 @@ class ScreenerJob:
         return used if day == now.astimezone(UTC).date() else 0
 
     def _snapshot_queue(self, target: date) -> list[tuple[str, str]]:
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             tracked = tracked_symbols(s, self._settings)
             s.commit()
             classes: dict[str, str] = {
@@ -852,7 +862,7 @@ class ScreenerJob:
         return [(sym, classes.get(sym, "stocks")) for _, _, sym in queue]
 
     def _fundamentals_queue(self) -> tuple[list[str], list[str]]:
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             tracked = tracked_symbols(s, self._settings)
             s.commit()
             return tracked, fundamentals.info_queue(s, tracked, self.now())
@@ -875,7 +885,7 @@ class ScreenerJob:
             row.fail_count, row.last_error = 0, None
 
     def _insert_run(self, state: RunState) -> int:
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             row = ScreenerRun(
                 kind=state.kind,
                 trigger=state.trigger,
@@ -895,7 +905,7 @@ class ScreenerJob:
     def _abort_stale_runs(self, now: datetime) -> None:
         """With the lease held no other run is going: `running` rows are left-overs of a
         process that exited mid-run."""
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             result = s.execute(
                 update(ScreenerRun)
                 .where(ScreenerRun.status == "running")
@@ -908,7 +918,7 @@ class ScreenerJob:
 
     def _last_done_at(self, kind: RunKind, target: date) -> datetime | None:
         """When the newest `done` `kind` run of `target` (this provider) finished."""
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             found = s.scalar(
                 select(ScreenerRun.finished_at)
                 .where(
@@ -934,18 +944,18 @@ class ScreenerJob:
         }
         if finished_at is not None:
             values["finished_at"] = finished_at
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             s.execute(update(ScreenerRun).where(ScreenerRun.id == state.id).values(**values))
             s.commit()
 
     def _prune_runs(self) -> None:
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             keep = select(ScreenerRun.id).order_by(ScreenerRun.id.desc()).limit(KEEP_RUNS)
             s.execute(delete(ScreenerRun).where(ScreenerRun.id.not_in(keep.scalar_subquery())))
             s.commit()
 
     def _needs_run(self, kind: RunKind, target: date) -> bool:
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             done = s.scalar(
                 select(ScreenerRun.id)
                 .where(
@@ -961,7 +971,7 @@ class ScreenerJob:
     def _first_run_pending(self) -> bool:
         if self._had_done_run:
             return False
-        with Session(self._engine) as s:
+        with engine_system_session(self._engine) as s:
             done = s.scalar(
                 select(ScreenerRun.id)
                 .where(

@@ -24,8 +24,8 @@ Limitations will be listed in [LIMITATIONS.md](LIMITATIONS.md#alerts) (new secti
 | Question                         | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Who writes the database          | Only the API. The service reads and writes through REST (`/api/alerts/...`). SQLite stays single-writer, and every write goes through the same revision checks as the browser's.                                                                                                                                                                                                                                                                                          |
-| Who delivers notifications       | The **API**. In-app frames go out over `/ws`. Webhook, Telegram and email go through a persisted outbox in the API (stdlib `urllib`/`smtplib`, no new dependencies). Secrets live in one place (the API env), "Send test" works while the service is down, and pytest covers delivery. The service only decides _that_ an alert fires.                                                                                                                                    |
-| Service <-> API live data        | The service uses `ExpressionFeed(ResamplingFeed(HttpDataFeed({baseUrl: API_URL})))`, the same stack as `apps/web/src/chart/feed.ts`. Node 22 has global `fetch` and `WebSocket`. Bars, resampling, expression math and live bar building are byte-for-byte the chart's.                                                                                                                                                                                                   |
+| Who delivers notifications       | The **API**. In-app frames go out over `/ws`. Webhook, Telegram, email, ntfy, Gotify and Apprise go through a persisted outbox in the API (stdlib `urllib`/`smtplib`, no new dependencies). Secrets live in one place (the API env), "Send test" works while the service is down, and pytest covers delivery. The service only decides _that_ an alert fires.                                                                                                                                    |
+| Service <-> API live data        | The service uses `ExpressionFeed(ResamplingFeed(HttpDataFeed({baseUrl: API_URL})))`, the same stack as `apps/web/src/chart/feed.ts`. Node 24 has global `fetch` and `WebSocket`. Bars, resampling, expression math and live bar building are byte-for-byte the chart's.                                                                                                                                                                                                   |
 | Service <-> API control          | A second `/ws` connection subscribes to event topics `alerts` and `drawings` (new `op: 'events'`). A full REST resync runs every 60 s as a safety net.                                                                                                                                                                                                                                                                                                                    |
 | Expression symbols (`AAPL/MSFT`) | **Supported.** The expression code (`packages/engine/src/feed/expression/`, `expression-feed.ts`) is pure TS with no DOM. Exposing it through `@tickerglass/engine/node` gives the service the same bars the chart shows, at no extra cost. A node-environment test keeps that entry DOM-free. Legs outside the `/ws` charset get no live ticks; those series fall back to bar polling (§3.6). Watchlist rows cannot hold expressions, so that entry point is unaffected. |
 | Series the alert runs on         | Always **standard time bars** of `(symbol, interval, prepost)` as captured at creation. Heikin Ashi and brick chart types are display transforms. On Heikin Ashi the dialog notes that values use regular candles. On brick types, drawing sources are disabled, because the drawing geometry would differ.                                                                                                                                                               |
@@ -43,7 +43,7 @@ Limitations will be listed in [LIMITATIONS.md](LIMITATIONS.md#alerts) (new secti
 | `alerts`           | `id` String(36) (client-chosen, `[A-Za-z0-9_-]{1,36}`), `name` String(200), `symbol` String(128) index (canonical, plain or expression), `interval` String(16) (`formatInterval` form: `5m 1h 1D 1W 1M`), `prepost` bool, `spec` JSON (§1.2), `schema_version` int, `message` Text (template, <= 2000 chars), `notify` JSON, `status` String(16) index, `status_reason` String(500) null, `expires_at` tz null, `drawing_id` String(64) null index (derived from `spec`), `revision` int, `fire_count` int, `last_fired_at` tz null | id       |
 | `alert_states`     | `alert_id` FK `alerts.id` ON DELETE CASCADE, `revision` int (the alert revision the state belongs to), `state` JSON (`AlertRuntimeState`, §3.5), `updated_at` (no `created_at`)                                                                                                                                                                                                                                                                                                                                                     | alert_id |
 | `alert_log`        | `id` Integer autoincrement, `fire_id` String(36) unique (idempotency key from the service), `alert_id` String(36) null index (no FK: the log outlives the alert), `alert_name` String(200), `symbol` String(128) index, `interval`, `kind` String(8) (`fired`), `fired_at` tz index, `bar_time` BigInteger (unix s, open of the bar), `message` Text (rendered), `values` JSON, `delayed` bool, `final` bool, `read` bool (no `updated_at`)                                                                                         | id       |
-| `alert_deliveries` | `id` Integer autoincrement, `log_id` FK `alert_log.id` ON DELETE CASCADE index, `channel` String(16) (`webhook telegram email`), `target` String(500) null (per-alert webhook URL), `status` String(8) (`pending sent failed`), `attempts` int, `next_attempt_at` tz index, `last_error` String(500) null                                                                                                                                                                                                                           | id       |
+| `alert_deliveries` | `id` Integer autoincrement, `log_id` FK `alert_log.id` ON DELETE CASCADE index, `channel` String(16) (`webhook telegram email ntfy gotify apprise`), `target` String(500) null (per-alert webhook URL), `status` String(8) (`pending sent failed`), `attempts` int, `next_attempt_at` tz index, `last_error` String(500) null                                                                                                                                                                                                                           | id       |
 
 - `status`: `active` (being evaluated), `paused` (by the user), `triggered` (a `once` alert fired), `expired`,
   `error` (permanent problem; `status_reason` says what). Only `active` alerts are evaluated.
@@ -130,6 +130,9 @@ export interface AlertNotify {
   webhookRaw: boolean; // body = rendered message instead of the JSON envelope
   telegram: boolean;
   email: boolean;
+  ntfy: boolean;
+  gotify: boolean;
+  apprise: boolean;
 }
 ```
 
@@ -192,7 +195,7 @@ interface AlertLogEntry {
   final: boolean; // this fire ended the alert (once)
   read: boolean;
   deliveries: {
-    channel: 'webhook' | 'telegram' | 'email';
+    channel: 'webhook' | 'telegram' | 'email' | 'ntfy' | 'gotify' | 'apprise';
     status: 'pending' | 'sent' | 'failed';
     attempts: number;
     lastError: string | null;
@@ -220,9 +223,9 @@ to those words are rejected (422).
 | `GET /alerts/log?alertId=&symbol=&before=&after=&limit=`                   | web          | newest first. `before`/`after` are log ids (exclusive); `limit` defaults to 100, max 500. Returns `{entries, hasMore, unread}` (`unread` = total unread count).                                                                                                                                                       |
 | `POST /alerts/log/read` `{upTo?: id, ids?: id[]}`                          | web          | marks entries read; broadcasts `alerts.log`                                                                                                                                                                                                                                                                           |
 | `DELETE /alerts/log?alertId=`                                              | web          | 204; without `alertId` clears all                                                                                                                                                                                                                                                                                     |
-| `GET /alerts/channels`                                                     | web          | `{webhook:{configured, url: masked\|null}, telegram:{configured}, email:{configured, to: masked\|null}}`                                                                                                                                                                                                              |
+| `GET /alerts/channels`                                                     | web          | `{webhook:{configured, url: masked\|null}, telegram:{configured}, email:{configured, to: masked\|null}, ntfy\|gotify\|apprise:{configured, url: masked\|null}}`                                                                                                                                                                                                              |
 | `POST /alerts/channels/{channel}/test` `{webhookUrl?}`                     | web          | sends one test message synchronously (10 s timeout). 200 `{ok:true}`; 400 if not configured; 502 `{detail}` with the transport error. No log entry.                                                                                                                                                                   |
-| `POST /alerts/service/heartbeat` `ServiceHeartbeat`                        | service      | kept in memory (not in the DB): `{version, startedAt, series, liveSymbols, polledSeries, lastError}`                                                                                                                                                                                                                  |
+| `POST /alerts/service/heartbeat` `ServiceHeartbeat`                        | service      | kept in memory (not in the DB): `{version, startedAt, series, liveSymbols, polledSeries, lastError, waiting}` (`waiting`: `[{alertId, reason, resumeAt}]`, default `[]`)                                                                                                                                              |
 | `GET /alerts/service`                                                      | web          | heartbeat + `online` (last heartbeat less than 90 s ago) + `lastHeartbeatAt`; `{online:false}` before any heartbeat                                                                                                                                                                                                   |
 
 Lazy expiry: `GET /alerts`, `GET /alerts/{id}` and `fire` first run
@@ -231,8 +234,12 @@ and broadcast `alerts.changed` for the affected ids. So the panel shows the righ
 is down.
 
 Optional shared secret: if the API env has `ALERTS_INTERNAL_TOKEN`, the service-only routes (`fire`, `status`,
-`PUT states`, `heartbeat`) require the header `X-Alerts-Token` (401 otherwise). It is unset by default. This is a
-single-user setup behind nginx, and the token only stops a stray browser tab from impersonating the service.
+`PUT states`, `heartbeat`) require the header `X-Alerts-Token` (401 otherwise). The service sends the same header
+on its `/ws` handshake (the API still accepts the older `auth_token` query parameter, and masks it in its logs).
+The token must be at least 32 characters and must not contain `CHANGE-ME`; the API refuses to start otherwise. It is unset by default, which is
+fine in open mode (no auth: one user, so the service needs no token). With auth enabled, these routes accept only
+the system principal (a valid token); a signed-in user, even an admin, gets 403, and with no token configured
+nobody can reach them (the API warns at startup).
 
 ### 1.5 Firing (`POST /alerts/{id}/fire`)
 
@@ -558,24 +565,189 @@ Cumulative indicators (OBV, A/D) have no converging warm-up; their level depends
 chart, where it depends on how far you scrolled. Alerts on their **level** may not match the chart. Crossings
 with another cumulative or relative value (OBV vs its moving average) are unaffected. LIMITATIONS lists this.
 
+### 2.8 Script operands (user scripts)
+
+An alert can read a plot of a [user script](user-scripts.md) (`IndicatorRefInstance.type = "user:<id>"`), on the
+chart symbol like any indicator. The service evaluates it server-side with the same values as the chart.
+Design notes: `docs/design/script-alerts.md`.
+
+- **Where scripts run.** Scripts are the owner's code, so the service never runs them in its own context. Each
+  script id gets one [`isolated-vm`](https://github.com/laverdet/isolated-vm) isolate (a separate V8 heap with no
+  `process`, `require`, `fetch`, timers or host objects; only plain copies cross). Inside it runs the same
+  `compileUserScript` + `IndicatorRuntime` + `ta` the chart uses, bundled to `dist/isolate.js` at build time.
+  The isolate is shared by every series and alert using the script. **The isolates live in a child process**
+  (`dist/scripthost.js`, started by the service with `--no-node-snapshot --max-old-space-size=<ALERTS_SCRIPT_PROCESS_MB>`
+  and an empty environment; `child.ts`), reached over Node IPC with structured-clone serialization
+  (`remoteIsolates.ts`, `childProtocol.ts`): `isolated-vm`'s `memoryLimit` is only a guideline, and a script that
+  grows a `Set`, an object's keys or a list of `WeakRef`s without bound makes V8 abort its whole process with a
+  fatal out-of-memory that no limit stops. With the isolates in a child that is the child's death; the service,
+  and the alerts on built-in indicators, never notice. Per series the host crosses the boundary
+  once per bar update and gets back the changed range of the plot values (`Float64Array` copies); operand reads
+  hit a host-side cache. Docker needs Node 24 (the `isolated-vm` 7 binaries) and runs `node --no-node-snapshot`
+  (an `isolated-vm` requirement on Node 20+; the `start`/`dev` scripts and the vitest config pass it too); if the
+  addon cannot load, the service logs it and runs on, and alerts on scripts get `status: error` ("user scripts
+  are unavailable").
+- **Calls and the event loop.** No script work ever runs in the service's process: every call is an asynchronous
+  IPC request. Loading a script, the first compute (`open`), adding an instance, `setBars` and Check are limited
+  by `ALERTS_SCRIPT_LOAD_MS`, a live bar update by `ALERTS_SCRIPT_TICK_MS` (plus 2 s of IPC margin before the host
+  gives up on an isolate and disposes it). A live update is kept per series (the newest one; a gap in the bars,
+  or a series that needs a rebuild, turns it into `setBars` / `open`) and sent when the script's isolate has
+  nothing else queued; the series waits for it (`UserSeries.settled`) before sampling, so samples never read
+  older values. A series samples the runners without script instances at once; the script runners follow when
+  their values are in, within a deadline (`ALERTS_SCRIPT_TICK_MS` + 2 s): a runner whose values are late skips
+  that sample (logged), so a slow script never delays a built-in alert on the same series. `close` and
+  `removeInstance` are queued the same way. A series awaits inside its serial queue; a result that arrives after
+  the series reloaded, or after the script was edited or deleted (the isolate is disposed on purpose), is
+  dropped and is never counted as a fault. `callAsync` returns the isolate generation the call ran in.
+- **Results are untrusted.** The script runs user code, so everything it hands back is checked on the host
+  before use (`scripts/validate.ts`): the envelope shape; for plot values the instance hash must be one of the
+  series' own for that script, `from` an integer in `[0, bars]`, every value array a `Float64Array` (of the host
+  realm, after the copy) of a plot output the script declares and no longer than the bars left after `from`;
+  error texts are cut at 500 characters; the manifest is re-parsed with `parseManifest`. A violation is a call
+  error (`script failed: malformed result ...`): it ends that script's alerts in `error` like any script error,
+  it does not crash the host. Inside the isolate the entry code (`isolate-entry.ts`) uses builtins captured
+  before any user code (`hardening.ts`), so a script that replaces `Math.min`, `Map.prototype.get` or
+  `Float64Array.prototype.slice` cannot steer it.
+- **The script process.** Fault state (holds, back-off, strikes, CPU budgets) and the validation of every
+  result live in the service, so they survive the child. The service pings the child every 5 s (no answer
+  within 10 s: SIGKILL) and reads its resident memory from the answer (over `ALERTS_SCRIPT_PROCESS_MB`, default
+  768: SIGKILL, which also bounds ICU and other allocations no heap limit counts). When the child dies, every
+  call in flight is rejected (`ScriptCrashed`). Blame is conservative, as scripts share the process: a script
+  is **faulted** (one strike, normal back-off: held 5, 10, 20 ... minutes, so no tight crash loop) only if it
+  was the sole script with a request in flight, or was in flight at 2 of the last 3 deaths; when the process
+  was killed for memory the script with the largest isolate (heap + external, measured at the pings) is blamed
+  instead of the ones merely in flight. Any other script that was in flight gets a 45 s hold that does not
+  count (no back-off growth, never final). A death with nothing in flight is not attributed; three of those
+  within 10 minutes hold every script.
+- **Room for isolates.** Each isolate costs memory in the child (roughly 18 MB with a 5000-bar series; the
+  service measures it at the pings). Before creating one the service checks that the child would stay under
+  85 % of `ALERTS_SCRIPT_PROCESS_MB`; if not, it disposes the least recently used isolate that has been idle
+  for a minute (its series rebuild on their next bar), and if none can go it refuses: the alerts wait 60 s
+  with "too many scripts in use — raise ALERTS_SCRIPT_PROCESS_MB (and the container mem_limit)", nothing
+  restarts. Rule of thumb: `ALERTS_SCRIPT_PROCESS_MB` ≥ 100 + 25 × the number of distinct scripts in use,
+  and `mem_limit` ≥ that + 300 MB. The default 768 fits about 25 scripts. The child restarts on the next use (back-off 1 s up to 30 s); scripts whose isolates were lost
+  rebuild their series' state on its next bar, and the values the service cached keep serving alerts meanwhile.
+  Messages from the child are validated as untrusted (shape, types, sizes of text; a malformed one gets the
+  child killed). If the child cannot start (`isolated-vm` has no binary here) scripts are unavailable as before.
+- **Memory.** The isolate's `memoryLimit` only counts what V8 allocates through its own allocator. Resizable
+  `ArrayBuffer` (`maxByteLength`), growable `SharedArrayBuffer` and `WebAssembly.Memory` reserve memory outside
+  it, so `hardening.ts` removes `WebAssembly` and `SharedArrayBuffer`, replaces `ArrayBuffer` with a wrapper that
+  refuses an options argument (also reached as `view.buffer.constructor`: `ArrayBuffer.prototype.constructor` is
+  the wrapper, non-writable and non-configurable) and deletes `ArrayBuffer.prototype.resize`. Typed arrays and
+  `new ArrayBuffer(n)` work as before. ICU is the same kind of hole: `Intl.*` objects (collators, segmenters,
+  formatters) live outside the heap limit (200k of them took the host to GBs and hung a 1 GB container), so
+  once all modules are loaded the entry removes `Intl`, `Temporal`, the `toLocale*` methods of `Date`,
+  `Number`, `BigInt`, `Array`, typed arrays and `Object` (so nothing falls back to a generic one), and `String.prototype.localeCompare` / `normalize` /
+  `toLocaleUpperCase` / `toLocaleLowerCase`. The calendar (`calendarPeriod`, VWAP anchors) captured
+  `Intl.DateTimeFormat` at module load and keeps at most 64 zone formatters. A script that uses the removed
+  APIs works on the chart but errors in alerts (`Intl is not defined`). `FinalizationRegistry` and
+  `Atomics.waitAsync` are removed too (their callbacks run outside any time limit).
+  `docker-compose.yml` also caps the container (`mem_limit: 1280m`) as the last line of defence.
+- **Scripts are leaves.** A script reads only the series' own bars. The validator (`checkRegistry`) rejects an
+  indicator whose source is a script output, and a script instance whose source is another instance
+  (`unsupported_indicator`, "scripts can't feed other indicators or read them"). Scripts with `repaints: true`
+  are rejected like built-in repainting indicators. No `timeframe`/`symbol` inputs exist for scripts, so there
+  is no multi-timeframe or other-symbol script operand.
+- **Follows the latest saved version.** The service loads `GET /api/user-scripts` (source, stored manifest,
+  revision) at every full sync (60 s, on reconnect, and on demand when an alert names a script it has not seen).
+  Unsaved editor changes are never used. There is no version pinning. `validateAlert` gets a registry of the
+  built-ins plus one stub per stored manifest (`definitionFromManifest`), so no code runs for validation.
+  Warm-up lengths (`alertBars`) and message precision use the same stubs.
+- **Edit = warm restart.** When a script's revision changes, every alert using it is detached and re-attached:
+  the series reloads its history, the script is recompiled and recomputed, and the alert's previous sample is
+  cleared (the rest of the state, `lastFired*`, `lastClosedBarTime`, pending fires, is kept). An edit therefore
+  cannot produce a crossing fire; the first sample afterwards is a first look. In `oncePerBarClose` mode the
+  catch-up rule of §2.2 still applies to bars that closed since the last evaluation.
+- **Manifest trust.** The stored manifest is what the validator, `alertBars` and the dialog read, without running
+  code. After the isolate compiled the script, the host compares its manifest with the stored one (`repaints`,
+  plot output ids, input ids and kinds); a mismatch is a deterministic error, `saved manifest is out of date —
+open and re-save the script`, until the script is saved again.
+- **Check on load.** When a script instance is added to a series, the isolate runs the editor's Check on the
+  series history (full compute on n-K bars, then K=50 live updates, compared with a full compute on n bars;
+  `checkScript` in `@tickerglass/indicators`, shared with the web sandbox). A script that keeps state outside
+  `ta` would show different live values than after a reload, so its alerts go to `error`:
+  `script output 'x' differs between a full recompute and live updates at <bar time> (full a, live b): keep state in ta, see Check`.
+
+Limits (env, §4.1):
+
+| Env                           | Default | Meaning                                                                         |
+| ----------------------------- | ------- | ------------------------------------------------------------------------------- |
+| `ALERTS_SCRIPT_MEMORY_MB`     | 128     | V8 heap limit of each script isolate                                            |
+| `ALERTS_SCRIPT_LOAD_MS`       | 10000   | time limit of a script's load, first full compute and Check                     |
+| `ALERTS_SCRIPT_TICK_MS`       | 250     | time limit of one live update (one call per series per bar update)              |
+| `ALERTS_SCRIPT_CPU_PCT`       | 20      | share of one CPU (%) one isolate may use in live updates over 5 min             |
+| `ALERTS_SCRIPT_PROCESS_MB`    | 768     | resident memory cap of the script child process (killed and restarted above it) |
+| `ALERTS_SCRIPT_CPU_TOTAL_PCT` | 50      | the same for all isolates together (the one using most is faulted)              |
+
+Faults. A script that times out while loading or computing, runs out of memory, dies, or whose live updates use
+more than `ALERTS_SCRIPT_CPU_PCT` of a CPU over a sliding 5 minutes (judged once 30 s of it exist; loads, full
+computes and Check are bounded by `ALERTS_SCRIPT_LOAD_MS` and not charged, so a burst after a restart is not
+punished), or when all isolates together pass `ALERTS_SCRIPT_CPU_TOTAL_PCT` (then the one that used the most), is a
+**fault**: its isolate is disposed and the script is held off for 5 minutes, doubling per repeated fault up to
+1 h. A live update that times out is one strike of three, and a strike hurts only its own series: the isolate
+stays, nothing is suspended, and that series' instances (keeping their last values) are rebuilt on its next bar.
+The third timeout within 10 minutes is a fault. The fault count is forgotten only after the
+script ran an hour without one (not after one good open); saving a new revision forgets it and ends the hold at
+once.
+
+A fault is not an alert error. The API has no transient alert status, so every alert using the script (also
+those attached during the hold) **keeps its status** (`active`), is detached from its series with its state
+(previous sample cleared, pending fires kept, exactly like a script edit) and logged as `alert waits for its
+script`; once the hold is over (plus 2 to 10 s, spread per alert so the series do not all reload at once) the 1 s
+clock re-attaches it (series reload, fresh isolate). The heartbeat carries them as `waiting: [{alertId, reason, resumeAt}]` (`Service.waiting()`;
+kept in memory by the API like the rest of the heartbeat, returned by `GET /alerts/service` and in the
+`alertsService` block of `GET /server/status`), and the Alerts panel marks those rows "Waiting for script —
+resumes ~HH:MM" with the reason, in muted styling (not an error). A script edited while its alerts wait ends the hold: they are attached once on the new
+revision (not restarted a second time, pending fires are sent once). `status: error` is
+posted only when the failure is deterministic (compile error, Check failure, manifest mismatch, script deleted,
+inputs or output no longer matching, unsupported API version, no runtime) or the fault is **final**: the second
+fault in a row at the 1 h cap. After a final fault alerts on the script fail at once with
+`<reason>; it kept failing, edit the script or restart the alert` until the owner edits the script or restarts
+the alert. A failed call is classified by the isolate's own state (`isDisposed`, the call's measured time against
+its limit), not by message text: the entry catches everything a script throws, so a script that throws
+`Error('Script execution timed out.')` is an ordinary script error.
+
+Error statuses of an alert on a script (`status: error`, `statusReason`):
+
+| Situation                                                   | Reason                                                                                               |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| script deleted                                              | `script was deleted`                                                                                 |
+| stored manifest is null (last save did not compile)         | `script does not compile: <message>` (found by compiling the source)                                 |
+| unsupported script API version                              | `script uses an unsupported API version (n)`                                                         |
+| an input of the alert was removed or changed kind           | `script inputs changed — edit the alert` (new inputs take defaults)                                  |
+| the output the alert reads no longer exists / is not a plot | `script output 'x' no longer exists — edit the alert`                                                |
+| script repaints, or feeds / reads another indicator         | `invalid alert: ...` (validator, `unsupported_indicator`)                                            |
+| Check failed                                                | message above                                                                                        |
+| script threw on a bar                                       | the script's error message (with line number)                                                        |
+| fault at the cap (see above): timeout / memory / CPU / died | `script exceeded its time limit (...)` / `... memory limit (n MB)` / `... more than n% of a CPU ...` |
+| script held off after a fault (alerts wait, status stays)   | `<fault reason>; the script is disabled for N more min` (log only)                                   |
+| fault repeated at the 1 h cap (final)                       | `<fault reason>; it kept failing, edit the script or restart the alert`                              |
+| saved manifest differs from the compiled script             | `saved manifest is out of date — open and re-save the script`                                        |
+| an isolate result failed validation                         | `script failed: malformed result from the script isolate: ...`                                       |
+| the isolate runtime could not be loaded                     | `user scripts are unavailable: the script runtime could not be loaded`                               |
+
+If `GET /api/user-scripts` fails before it ever succeeded, alerts on scripts are not attached (and not errored)
+until a later sync succeeds; after that, a failed refresh keeps the last known catalog.
+
 ## 3. Node service (`services/alerts`)
 
 ### 3.1 Modules
 
-| File              | Responsibility                                                                                                                                                                                                                |
+| File | Responsibility |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.ts`        | bootstrap: config, wait for `/api/health` (backoff), load, start loops; SIGINT/SIGTERM -> flush state, close sockets, exit within 5 s                                                                                         |
-| `config.ts`       | env parsing with defaults (§4.1); invalid values are a startup error                                                                                                                                                          |
-| `api.ts`          | typed REST client (`listAlerts getAlert listStates putStates fire setStatus heartbeat getDrawings`); `X-Alerts-Token`; retries with backoff on network/5xx; 409/404/422 surface as typed errors                               |
-| `control.ts`      | control `/ws` (topics `alerts`, `drawings`), reconnect 1 s..30 s with jitter, ping every 25 s; emits `alertsChanged(ids, deleted)` and `drawingsChanged(ids, deleted)`; while down, `registry` polls `GET /alerts` every 10 s |
-| `registry.ts`     | in-memory alerts by id (with revision); diffs a fresh list against memory -> `added / changed / removed`; routes them to series                                                                                               |
-| `series.ts`       | `Series` per key `symbol                                                                                                                                                                                                      | interval | prepost`: `resolveSymbol`, history load (§3.4), `subscribe`, close detection (§2.4), poll fallback (§3.6), `IndicatorRuntime`, timeline/calendar, drawings cache; emits samples to its alerts |
-| `operands.ts`     | per sample: computes each distinct operand once (`price`, indicator output by instance hash, drawing level by drawing id+part+scale)                                                                                          |
-| `alert-runner.ts` | wraps `createAlertEvaluator` from `@tickerglass/alerts` for one alert revision; renders the message; queues fires                                                                                                             |
-| `fires.ts`        | fire queue: `POST /fire` with the same `fireId` until 2xx, 409 (drop and reload the alert) or 404/422 (drop); in order per alert                                                                                              |
-| `state.ts`        | dirty set of alert states; flush with `PUT /alerts/states` every `ALERTS_STATE_FLUSH_MS` (5 s) and on shutdown                                                                                                                |
-| `heartbeat.ts`    | `POST /alerts/service/heartbeat` every 30 s                                                                                                                                                                                   |
-| `log.ts`          | one-line JSON logs (`level, msg, alertId?, series?`); `ALERTS_LOG_LEVEL`                                                                                                                                                      |
+| `index.ts` | bootstrap: config, wait for `/api/health` (backoff), load, start loops; SIGINT/SIGTERM -> flush state, close sockets, exit within 5 s |
+| `config.ts` | env parsing with defaults (§4.1); invalid values are a startup error |
+| `api.ts` | typed REST client (`listAlerts getAlert listStates putStates fire setStatus heartbeat getDrawings`); `X-Alerts-Token`; retries with backoff on network/5xx; 409/404/422 surface as typed errors |
+| `control.ts` | control `/ws` (topics `alerts`, `drawings`), reconnect 1 s..30 s with jitter, ping every 25 s; emits `alertsChanged(ids, deleted)` and `drawingsChanged(ids, deleted)`; while down, `registry` polls `GET /alerts` every 10 s |
+| `registry.ts` | in-memory alerts by id (with revision); diffs a fresh list against memory -> `added / changed / removed`; routes them to series |
+| `series.ts` | `Series` per key `symbol                                                                                                                                                                                                      | interval | prepost`: `resolveSymbol`, history load (§3.4), `subscribe`, close detection (§2.4), poll fallback (§3.6), `IndicatorRuntime`, timeline/calendar, drawings cache; emits samples to its alerts |
+| `operands.ts` | per sample: computes each distinct operand once (`price`, indicator output by instance hash, drawing level by drawing id+part+scale) |
+| `scripts/` | user-script operands (§2.8): `host.ts` (faults, limits, CPU budget), `validate.ts` (checks of every isolate result), `remoteIsolates.ts` + `child.ts` + `childProtocol.ts` (the isolates' child process and its IPC), `isolates.ts` (isolates in one process), `isolate-entry.ts` + `hardening.ts` (run inside the isolate), `catalog.ts` (script list, validator registry), `userSeries.ts` (per-series instances and value cache) |
+| `alert-runner.ts` | wraps `createAlertEvaluator` from `@tickerglass/alerts` for one alert revision; renders the message; queues fires |
+| `fires.ts` | fire queue: `POST /fire` with the same `fireId` until 2xx, 409 (drop and reload the alert) or 404/422 (drop); in order per alert |
+| `state.ts` | dirty set of alert states; flush with `PUT /alerts/states` every `ALERTS_STATE_FLUSH_MS` (5 s) and on shutdown |
+| `heartbeat.ts` | `POST /alerts/service/heartbeat` every 30 s |
+| `log.ts` | one-line JSON logs (`level, msg, alertId?, series?`); `ALERTS_LOG_LEVEL` |
 
 The feed is `new ExpressionFeed(new ResamplingFeed(new HttpDataFeed({ baseUrl: API_URL, wsUrl })))` from
 `@tickerglass/engine/node`, with `wsUrl` derived as `ws(s)://<API_URL host>/ws`. The live socket is the feed's
@@ -666,8 +838,14 @@ crossing that happened inside those 5 s, and the `fireId` and per-bar guard prev
 ### 3.7 Packaging
 
 `docker/node.Dockerfile` copies `packages/alerts/package.json` before `pnpm install`. The `alerts` target keeps
-bundling with esbuild (workspace packages are bundled; `@tickerglass/engine/node` keeps canvas code out).
-`docker-compose.yml` passes the service env (§4.1).
+bundling with esbuild (workspace packages are bundled; `@tickerglass/engine/node` keeps canvas code out) into
+`dist/index.js`, plus `dist/isolate.js` (the script runtime, §2.8) and `dist/scripthost.js` (the child process that runs the isolates). `isolated-vm` is the one runtime dependency:
+a native addon kept `external` in the bundle, installed with `pnpm deploy --prod` into the image's
+`node_modules` from its prebuilt binary (no compiler in any stage), which is why the node stages are
+`node:24-slim`. The image starts `node --no-node-snapshot dist/index.js` (required by `isolated-vm`). Dev and
+tests build the isolate bundle and the child entry on demand with esbuild. `docker-compose.yml` passes the
+service env (§4.1) and caps the container at `mem_limit: 1280m` (service plus the script process, which is limited
+by `ALERTS_SCRIPT_PROCESS_MB`).
 
 ## 4. Notifications
 
@@ -681,27 +859,39 @@ API (`settings.py`, `.env.example`):
 | `ALERTS_WEBHOOK_SECRET`                                                                                                          | unset            | adds `X-TickerGlass-Signature: sha256=<hex HMAC-SHA256 of the body>`                      |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`                                                                                         | unset            | both are required for Telegram                                                            |
 | `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`, `SMTP_TLS` (`starttls` \| `ssl` \| `none`) | unset / as noted | `SMTP_HOST`, `SMTP_FROM`, `SMTP_TO` are required for email; `SMTP_TO` may be a comma list |
+| `NTFY_URL`, `NTFY_TOKEN`, `NTFY_PRIORITY`, `NTFY_TAGS` | unset, unset, `default`, `chart_with_upwards_trend` | ntfy needs `NTFY_URL` (full topic URL, e.g. `https://ntfy.sh/alerts`; last path segment is the topic). `NTFY_TOKEN` (`tk_...`) is sent as `Authorization: Bearer`. `NTFY_PRIORITY` is 1-5 or `min`/`low`/`default`/`high`/`max`/`urgent`; `NTFY_TAGS` a comma list |
+| `GOTIFY_URL`, `GOTIFY_TOKEN`, `GOTIFY_PRIORITY` | unset, unset, 5 | both URL and application token are required for Gotify; priority is an integer 0-10 |
+| `APPRISE_URL`, `APPRISE_URLS`, `APPRISE_TAG` | unset | Apprise needs `APPRISE_URL`, the Apprise API endpoint (`http://apprise:8000/notify` stateless, or `.../notify/<key>` stateful). `APPRISE_URLS` (comma/space list of target URLs, stateless mode) and `APPRISE_TAG` (stateful) are optional |
 | `ALERTS_LOG_MAX`                                                                                                                 | 5000             | log retention                                                                             |
 | `ALERTS_INTERNAL_TOKEN`                                                                                                          | unset            | §1.4                                                                                      |
 
 Service (`docker-compose.yml` `alerts.environment`): `API_URL` (`http://api:8000`), `ALERTS_INTERNAL_TOKEN`,
 `ALERTS_POLL_MS` (30000), `ALERTS_CLOSE_GRACE_S` (60), `ALERTS_MIN_REFIRE_S` (60), `ALERTS_STATE_FLUSH_MS`
-(5000), `ALERTS_MAX_BARS` (5000), `ALERTS_MAX_DRAWING_BARS` (20000), `ALERTS_LOG_LEVEL` (`info`).
+(5000), `ALERTS_MAX_BARS` (5000), `ALERTS_MAX_DRAWING_BARS` (20000), `ALERTS_SCRIPT_MEMORY_MB` (128),
+`ALERTS_SCRIPT_LOAD_MS` (10000), `ALERTS_SCRIPT_TICK_MS` (250), `ALERTS_SCRIPT_CPU_PCT` (20), `ALERTS_SCRIPT_CPU_TOTAL_PCT` (50), `ALERTS_SCRIPT_PROCESS_MB` (768; §2.8), `ALERTS_LOG_LEVEL` (`info`).
 
-Secrets live only in env: the browser never sees them, and `GET /alerts/channels` masks URLs and addresses.
+Secrets live only in env: the browser never sees them, and `GET /alerts/channels` masks URLs and addresses
+(scheme and host only, no userinfo, path or query). `APPRISE_URLS` and all tokens are never returned. Invalid
+`NTFY_PRIORITY` / `GOTIFY_PRIORITY` values fail settings validation at startup. ntfy, Gotify and Apprise URLs come
+from the operator's env and are usually LAN hosts (`http://gotify`, `http://apprise:8000`), so they may point at
+private addresses; the scheme must be http(s) with a host (checked at startup; `NTFY_URL` must not contain a query string, use `NTFY_TOKEN`). `user:pw@` userinfo in any HTTP channel URL (webhook, ntfy, Gotify, Apprise) is sent as `Authorization: Basic` and never appears in errors or logs; an explicit header such as the ntfy bearer token wins. There is no Python `apprise` dependency: the API talks to an
+Apprise API server (caronc/apprise-api).
 
 ### 4.2 Delivery (API `notifications/`)
 
 `dispatcher.py` is an asyncio task started in the lifespan. It wakes on a fire or every 5 s, takes due
 `pending` deliveries (`next_attempt_at <= now`), sends each via `asyncio.to_thread` (stdlib only), and records
 the result. Attempts happen at +0 s, 10 s, 60 s, 5 min and 30 min (5 in total); then the delivery is `failed`.
-Telegram `429` honors `retry_after`; 4xx other than 408/429 fails at once. Pending deliveries survive a restart
+HTTP channels strip URL userinfo and send it as Basic auth (§4.1). Telegram `429` honors `retry_after`; for webhook, ntfy, Gotify and Apprise a `Retry-After` header (seconds, on 429/503, capped at 1 h) sets the next delay when it is longer than the schedule; 4xx other than 408/429 fails at once. Pending deliveries survive a restart
 (the DB is the outbox). Every status change publishes `alerts.log {ids}`.
 
 | Channel  | Request                                                                                                                                                                                                                                                                                        |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | webhook  | `POST`, 10 s timeout. Default body `application/json`: `{alert:{id,name,symbol,interval}, message, firedAt, barTime, values, delayed}`. With `notify.webhookRaw`: the rendered message as the body, sent as `application/json` if it parses as JSON and `text/plain; charset=utf-8` otherwise. |
 | telegram | `POST https://api.telegram.org/bot<token>/sendMessage` `{chat_id, text, disable_web_page_preview: true}`, plain text (no parse mode), message truncated to 4096                                                                                                                                |
+| ntfy     | `POST <scheme://host[/prefix]>/` JSON `{topic, title, message, priority: int, tags: [...]}`; topic is the last path segment of `NTFY_URL`, the rest is the server base; `Authorization: Bearer <NTFY_TOKEN>` when set. Title and message are the email subject and body |
+| gotify   | `POST <GOTIFY_URL>/message` JSON `{title, message, priority}`, header `X-Gotify-Key: <GOTIFY_TOKEN>` (never in the query string). Title and message as email |
+| apprise  | `POST <APPRISE_URL>` JSON `{title, body, type: "info"}`, plus `urls` (from `APPRISE_URLS`) and `tag` (from `APPRISE_TAG`) when set. Title and body as email |
 | email    | `smtplib` with `SMTP_TLS`; subject `TickerGlass alert: <name>`; plain text body: message, then symbol, interval, bar time, fired at                                                                                                                                                            |
 
 ### 4.3 Message templates (`renderMessage`, `packages/alerts/src/template.ts`)
@@ -759,7 +949,7 @@ loaded in `DialogHost.tsx`. Tabs:
   indicator outputs, drawings that support the op), channel bounds, or amount plus bars. Trigger (4 radio
   buttons with one-line explanations), expiry (none, or date and time; preset +1 day, +1 week, +1 month).
 - **Notifications:** toast, sound (preview button), browser notification (asks for permission on check, in the
-  click handler), webhook (+ URL override, raw body), Telegram, email. Unconfigured channels are disabled with
+  click handler), webhook (+ URL override, raw body), Telegram, email, ntfy, Gotify, Apprise. Unconfigured channels are disabled with
   "Not configured (set TELEGRAM_BOT_TOKEN…)" from `GET /alerts/channels`. A "Send test" link per channel.
 - **Message:** name, message template with a placeholder picker, and a live preview rendered with
   `renderMessage` on the chart's current values.
@@ -906,7 +1096,7 @@ when set; bundle export/import with `alerts` (merge, replace, absent key leaves 
 events`: topic set and reply, unknown topic error, `alerts.changed` after a POST (TestClient websocket),
 `drawings.changed` after a drawing batch, publish from a sync route thread; the dispatcher with fake transports
 (monkeypatched `urllib.request.urlopen` and `smtplib.SMTP`): retries and schedule, Telegram 429 `retry_after`,
-HMAC header, raw webhook body, a restart resumes pending deliveries; migration upgrade/downgrade (existing
+HMAC header, raw webhook body, ntfy/Gotify/Apprise request shape (URL, headers, JSON body), ntfy topic/base split with a path prefix, `Retry-After` on 429/503, 4xx permanent and tokens never in `last_error`, unconfigured -> failed without retry, `/alerts/channels` shape and masking, the test endpoint for the new channels, priority validation, a restart resumes pending deliveries; migration upgrade/downgrade (existing
 test). Race test like `test_userdata.py`: a PUT between the fire's read and write -> 409.
 
 ### 6.4 e2e (Playwright, `e2e/alerts.spec.ts`)

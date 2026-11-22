@@ -20,6 +20,7 @@ import { attachIndicators } from '../indicators/attach';
 import { IndicatorLegends } from '../indicators/Legend';
 import { createSandboxWorker } from '../indicators/sandbox/port';
 import type { ProbeResult } from '../indicators/sandbox/protocol';
+import { attachBacktest } from '../backtest/attach';
 import { attachReplay } from '../replay/attach';
 import { ReplayBar } from '../replay/ReplayBar';
 import { useReplayStore } from '../replay/store';
@@ -129,6 +130,7 @@ export function ChartView({ id }: { id: string }) {
       attachAlerts(s),
       attachEvents(s),
       attachReplay(s),
+      attachBacktest(s),
       attachSync(s),
     ];
     return () => {

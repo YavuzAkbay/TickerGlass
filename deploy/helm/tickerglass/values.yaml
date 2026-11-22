@@ -1,0 +1,153 @@
+# TickerGlass chart values. Three Deployments (api, web, alerts), a PVC for the API's /data, one
+# generated Secret (alerts token + session secret) and an optional Ingress.
+
+# Image tag for all three images; empty = the chart's appVersion.
+image:
+  tag: ''
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ''
+fullnameOverride: ''
+
+# Secret with the keys ALERTS_INTERNAL_TOKEN and (optional) AUTH_SECRET. Empty = the chart creates
+# one with random values on first install and keeps them on upgrades (via `lookup`; with
+# `helm template` or Argo CD, which cannot look up, set existingSecret or the values change on every
+# render).
+existingSecret: ''
+
+# Keep the data volume (PVC) and the generated Secret when the release is uninstalled
+# (`helm.sh/resource-policy: keep`): a reinstall finds the database and the same secrets again.
+# Delete them by hand when you really want everything gone. false = Helm removes them.
+keepResources: true
+
+# Public address (https://tickerglass.example.com). Sets PUBLIC_URL; needed for OIDC sign-in and
+# for links in notifications. Empty = unset.
+publicUrl: ''
+
+# Prometheus metrics (docs/metrics.md): the API serves /metrics (also through the web component).
+# Off by default. When on, scraping needs a Bearer token: `token` (16+ characters; empty = the chart
+# generates one on first install and keeps it, like the other generated secrets) or a Secret of
+# your own in existingSecret holding the key METRICS_TOKEN. The API refuses to start when metrics
+# are on, sign-in is on and there is no token (set api.env.METRICS_PUBLIC: 'true' to scrape without).
+metrics:
+  enabled: false
+  token: ''
+  existingSecret: ''
+  # A Prometheus Operator ServiceMonitor for the API service. Only rendered when the cluster has
+  # the monitoring.coreos.com/v1 API (CRDs installed), and only when metrics.enabled is true.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    # Extra labels, e.g. `release: kube-prometheus-stack` so the operator selects it.
+    labels: {}
+
+api:
+  image:
+    repository: ghcr.io/yavuzakbay/tickerglass-api
+  # Environment variables of the API: every name in docs/self-hosting.md / .env.example
+  # (AUTH_PASSWORD, MARKET_PROVIDER, TELEGRAM_BOT_TOKEN, OIDC_*, ...). A map; a value can also be
+  # a Kubernetes `valueFrom` object, e.g. { secretKeyRef: { name: my-secret, key: password } }.
+  # For an external database set DATABASE_URL (postgresql+psycopg://...); the default is SQLite on
+  # the volume. This chart does not bundle PostgreSQL.
+  env:
+    MARKET_PROVIDER: yahoo
+    # Scheduled backups (docs/self-hosting.md "Back up and restore"): on a cluster an S3-compatible
+    # bucket is the natural target. Keep the keys and the passphrase in a Secret:
+    # BACKUP_S3_ENDPOINT: https://s3.eu-central-1.amazonaws.com
+    # BACKUP_S3_BUCKET: tickerglass-backups
+    # BACKUP_S3_ACCESS_KEY_ID: { secretKeyRef: { name: tickerglass-backup, key: access-key-id } }
+    # BACKUP_S3_SECRET_ACCESS_KEY: { secretKeyRef: { name: tickerglass-backup, key: secret-access-key } }
+    # BACKUP_S3_PATH_STYLE: 'false'   # true (default) for MinIO / Garage; false for AWS S3
+    # BACKUP_PASSPHRASE: { secretKeyRef: { name: tickerglass-backup, key: passphrase } }
+    # BACKUP_AT: '03:30'              # in BACKUP_TZ (default UTC)
+  # Same shape as env, merged over it (use it for your own additions so `env` can stay default).
+  extraEnv: {}
+  # TRUSTED_PROXIES: the pod network CIDR (or the web pod's address) the API sees as its peer, e.g.
+  # `10.42.0.0/16` (k3s default), `10.244.0.0/16` (kubeadm/flannel): `kubectl get pods -o wide`
+  # shows the range. Lets the API read the client address and X-Forwarded-Proto from the web pod
+  # (per-client sign-in lockout, `Secure` cookies). Empty = unset: every client looks like the web
+  # pod; set publicUrl=https://... in any case for `Secure` cookies.
+  trustedProxies: ''
+  service:
+    type: ClusterIP
+    port: 8000
+  # Startup probe (GET /api/health/live every 10 s). The API does not listen until its startup
+  # finished: database migrations and, after a restore, unpacking a staged backup (up to several GB).
+  # Liveness and readiness probes only begin once it succeeds. The pod is restarted after
+  # failureThreshold failed tries, so the default of 60 allows 10 minutes; raise it for a very
+  # large restore or a slow disk.
+  startupProbe:
+    failureThreshold: 60
+  persistence:
+    enabled: true
+    existingClaim: ''
+    storageClass: ''
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+web:
+  image:
+    repository: ghcr.io/yavuzakbay/tickerglass-web
+  env: {}
+  extraEnv: {}
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+alerts:
+  # Set false to run without server-side alerts.
+  enabled: true
+  image:
+    repository: ghcr.io/yavuzakbay/tickerglass-alerts
+  # ALERTS_* tuning (see docker-compose.yml). Keep the memory limit above
+  # ALERTS_SCRIPT_PROCESS_MB (default 768) plus about 300 MB.
+  env: {}
+  extraEnv: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 1280Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  # `/` goes to the web component, which proxies /api and /ws to the API.
+  hosts:
+    - host: tickerglass.example.com
+      path: /
+      pathType: Prefix
+  tls: []
+  #  - secretName: tickerglass-tls
+  #    hosts:
+  #      - tickerglass.example.com

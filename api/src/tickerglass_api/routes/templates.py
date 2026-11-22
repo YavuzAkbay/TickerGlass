@@ -16,7 +16,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import OwnedSessionDep
+from ..ownership import owned_get
 from ..userdata import schemas as s
 from ..userdata import store
 
@@ -24,7 +25,7 @@ router = APIRouter(tags=["templates"])
 
 
 def _get(session: Session, model: Any, tid: str, what: str) -> Any:
-    row = session.get(model, tid)
+    row = owned_get(session, model, tid)
     if row is None:
         raise HTTPException(404, f"{what} not found: {tid}")
     return row
@@ -68,14 +69,14 @@ def _commit(session: Session, what: str, name: str) -> None:
 
 
 @router.get("/indicator-templates", response_model=list[s.IndicatorTemplate])
-def list_indicator_templates(session: SessionDep) -> list[s.IndicatorTemplate]:
+def list_indicator_templates(session: OwnedSessionDep) -> list[s.IndicatorTemplate]:
     rows = session.scalars(select(m.IndicatorTemplate).order_by(m.IndicatorTemplate.name))
     return [store.indicator_template(r) for r in rows]
 
 
 @router.post("/indicator-templates", response_model=s.IndicatorTemplate, status_code=201)
 def put_indicator_template(
-    session: SessionDep, body: s.IndicatorTemplateIn, response: Response
+    session: OwnedSessionDep, body: s.IndicatorTemplateIn, response: Response
 ) -> s.IndicatorTemplate:
 
     def build() -> Any:
@@ -99,13 +100,13 @@ def put_indicator_template(
 
 
 @router.get("/indicator-templates/{tid}", response_model=s.IndicatorTemplate)
-def get_indicator_template(session: SessionDep, tid: str) -> s.IndicatorTemplate:
+def get_indicator_template(session: OwnedSessionDep, tid: str) -> s.IndicatorTemplate:
     return store.indicator_template(_get(session, m.IndicatorTemplate, tid, "indicator template"))
 
 
 @router.put("/indicator-templates/{tid}", response_model=s.IndicatorTemplate)
 def update_indicator_template(
-    session: SessionDep, tid: str, body: s.IndicatorTemplateIn
+    session: OwnedSessionDep, tid: str, body: s.IndicatorTemplateIn
 ) -> s.IndicatorTemplate:
     row = _get(session, m.IndicatorTemplate, tid, "indicator template")
     other = session.scalar(select(m.IndicatorTemplate).where(m.IndicatorTemplate.name == body.name))
@@ -118,7 +119,7 @@ def update_indicator_template(
 
 
 @router.delete("/indicator-templates/{tid}", status_code=204)
-def delete_indicator_template(session: SessionDep, tid: str) -> Response:
+def delete_indicator_template(session: OwnedSessionDep, tid: str) -> Response:
     session.delete(_get(session, m.IndicatorTemplate, tid, "indicator template"))
     session.commit()
     return Response(status_code=204)
@@ -129,7 +130,7 @@ def delete_indicator_template(session: SessionDep, tid: str) -> Response:
 
 @router.get("/drawing-templates", response_model=list[s.DrawingTemplate])
 def list_drawing_templates(
-    session: SessionDep,
+    session: OwnedSessionDep,
     tool_type: Annotated[str | None, Query(alias="toolType", max_length=64)] = None,
 ) -> list[s.DrawingTemplate]:
     q = select(m.DrawingTemplate).order_by(m.DrawingTemplate.tool_type, m.DrawingTemplate.name)
@@ -140,7 +141,7 @@ def list_drawing_templates(
 
 @router.post("/drawing-templates", response_model=s.DrawingTemplate, status_code=201)
 def put_drawing_template(
-    session: SessionDep, body: s.DrawingTemplateIn, response: Response
+    session: OwnedSessionDep, body: s.DrawingTemplateIn, response: Response
 ) -> s.DrawingTemplate:
     """Create or replace by (toolType, name). `isDefault` clears the tool's other default."""
 
@@ -172,13 +173,13 @@ def put_drawing_template(
 
 
 @router.get("/drawing-templates/{tid}", response_model=s.DrawingTemplate)
-def get_drawing_template(session: SessionDep, tid: str) -> s.DrawingTemplate:
+def get_drawing_template(session: OwnedSessionDep, tid: str) -> s.DrawingTemplate:
     return store.drawing_template(_get(session, m.DrawingTemplate, tid, "drawing template"))
 
 
 @router.put("/drawing-templates/{tid}", response_model=s.DrawingTemplate)
 def update_drawing_template(
-    session: SessionDep, tid: str, body: s.DrawingTemplateIn
+    session: OwnedSessionDep, tid: str, body: s.DrawingTemplateIn
 ) -> s.DrawingTemplate:
     row = _get(session, m.DrawingTemplate, tid, "drawing template")
     other = session.scalar(
@@ -199,7 +200,7 @@ def update_drawing_template(
 
 
 @router.delete("/drawing-templates/{tid}", status_code=204)
-def delete_drawing_template(session: SessionDep, tid: str) -> Response:
+def delete_drawing_template(session: OwnedSessionDep, tid: str) -> Response:
     session.delete(_get(session, m.DrawingTemplate, tid, "drawing template"))
     session.commit()
     return Response(status_code=204)
@@ -209,14 +210,14 @@ def delete_drawing_template(session: SessionDep, tid: str) -> Response:
 
 
 @router.get("/chart-templates", response_model=list[s.ChartTemplate])
-def list_chart_templates(session: SessionDep) -> list[s.ChartTemplate]:
+def list_chart_templates(session: OwnedSessionDep) -> list[s.ChartTemplate]:
     rows = session.scalars(select(m.ChartTemplate).order_by(m.ChartTemplate.name))
     return [store.chart_template(r) for r in rows]
 
 
 @router.post("/chart-templates", response_model=s.ChartTemplate, status_code=201)
 def put_chart_template(
-    session: SessionDep, body: s.ChartTemplateIn, response: Response
+    session: OwnedSessionDep, body: s.ChartTemplateIn, response: Response
 ) -> s.ChartTemplate:
 
     def build() -> Any:
@@ -238,13 +239,13 @@ def put_chart_template(
 
 
 @router.get("/chart-templates/{tid}", response_model=s.ChartTemplate)
-def get_chart_template(session: SessionDep, tid: str) -> s.ChartTemplate:
+def get_chart_template(session: OwnedSessionDep, tid: str) -> s.ChartTemplate:
     return store.chart_template(_get(session, m.ChartTemplate, tid, "chart template"))
 
 
 @router.put("/chart-templates/{tid}", response_model=s.ChartTemplate)
 def update_chart_template(
-    session: SessionDep, tid: str, body: s.ChartTemplateIn
+    session: OwnedSessionDep, tid: str, body: s.ChartTemplateIn
 ) -> s.ChartTemplate:
     row = _get(session, m.ChartTemplate, tid, "chart template")
     other = session.scalar(select(m.ChartTemplate).where(m.ChartTemplate.name == body.name))
@@ -257,7 +258,7 @@ def update_chart_template(
 
 
 @router.delete("/chart-templates/{tid}", status_code=204)
-def delete_chart_template(session: SessionDep, tid: str) -> Response:
+def delete_chart_template(session: OwnedSessionDep, tid: str) -> Response:
     session.delete(_get(session, m.ChartTemplate, tid, "chart template"))
     session.commit()
     return Response(status_code=204)

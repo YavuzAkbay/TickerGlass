@@ -1,0 +1,14 @@
+{
+  "synthetic": "hand-built from the documented GET /tiingo/crypto shape (not recorded)",
+  "request": {
+    "path": "/tiingo/crypto",
+    "params": {"tickers": "btcusd"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {"ticker": "btcusd", "baseCurrency": "btc", "quoteCurrency": "usd", "name": "Bitcoin (BTC/USD)"}
+  ]
+}

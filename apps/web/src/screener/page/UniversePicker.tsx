@@ -76,11 +76,10 @@ export function UniversePicker({ value, onPick, loaded, lists, serverMode }: Pro
       >
         {serverMode ? (
           <>
-            <span className="scr-tabs-spacer" />
             <button
               type="button"
               ref={setBtn}
-              className={`scr-tab scr-uni-btn${value.kind !== 'class' ? ' on' : ''}`}
+              className={`scr-drop scr-uni-btn${value.kind !== 'class' ? ' on' : ''}`}
               aria-haspopup="menu"
               data-testid="scr-universe-btn"
               onClick={() => setOpen((o) => !o)}
@@ -93,7 +92,7 @@ export function UniversePicker({ value, onPick, loaded, lists, serverMode }: Pro
               open={open}
               onClose={() => setOpen(false)}
               items={items}
-              placement="bottom-end"
+              placement="bottom-start"
             />
           </>
         ) : null}

@@ -1,6 +1,7 @@
 import { Copy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '../api/client';
+import { useIsAdmin } from '../auth/access';
 import { getProviders, type ProviderInfo, type ProvidersResponse } from '../api/provider';
 import { toast } from '../ui/Toast';
 import { chooseProvider } from './switchProvider';
@@ -136,12 +137,15 @@ export function ProviderPicker({
   info,
   onUse,
   busy,
+  readOnly,
 }: {
   info: ProvidersResponse;
   onUse: (p: ProviderInfo) => void;
   busy?: boolean | undefined;
+  /** Non-admins: see the providers, no switching and no how-to-switch hints. */
+  readOnly?: boolean | undefined;
 }) {
-  const locked = lockedText(info);
+  const locked = readOnly ? null : lockedText(info);
   return (
     <div className="ds-picker">
       {locked ? <p className="ds-note">{locked}</p> : null}
@@ -156,7 +160,7 @@ export function ProviderPicker({
                 {active ? <span className="ds-tag ds-in-use">In use</span> : null}
               </div>
               <p className="ds-desc">{p.description}</p>
-              {active ? null : (
+              {active || readOnly ? null : (
                 <Action p={p} info={info} locked={locked !== null} onUse={onUse} busy={busy} />
               )}
             </li>
@@ -177,6 +181,7 @@ export function DataSourcePicker({
   const [info, setInfo] = useState<ProvidersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { busy, use } = useChooseProvider(info, beforeSwitch);
+  const admin = useIsAdmin();
 
   useEffect(() => {
     let alive = true;
@@ -196,7 +201,7 @@ export function DataSourcePicker({
           Provider list unavailable: {error}
         </div>
       ) : null}
-      {info ? <ProviderPicker info={info} onUse={use} busy={busy} /> : null}
+      {info ? <ProviderPicker info={info} onUse={use} busy={busy} readOnly={!admin} /> : null}
     </>
   );
 }

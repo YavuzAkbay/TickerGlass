@@ -24,6 +24,7 @@ from ... import models as m
 from ...live import LiveHub
 from ...notifications.dispatcher import Dispatcher
 from ...notifications.outbox import record_log_entry
+from ...ownership import owned_get, scope_to_owner
 from ...settings import Settings
 from ...userdata import alerts as al
 from ...userdata import screens as sc
@@ -139,7 +140,7 @@ def _notify(alert: dict[str, Any] | None) -> al.AlertNotify:
     n = sc.alert_notify(alert)
     return al.AlertNotify(
         toast=True, sound=True, webhook=n.webhook, webhook_url=n.webhook_url,
-        telegram=n.telegram, email=n.email,
+        telegram=n.telegram, email=n.email, ntfy=n.ntfy, gotify=n.gotify, apprise=n.apprise,
     )  # fmt: skip
 
 
@@ -200,6 +201,7 @@ def _evaluate(
         settings,
         hub,
         dispatcher,
+        owner_id=row.owner_id,
         fire_id=fire_id(screen_id, as_of, entered),
         name=name,
         symbol=_symbols_column(entered),
@@ -245,19 +247,24 @@ def evaluate_screens(
         if not sc.alert_enabled(row.alert):
             continue
         screen_id = row.id
-        try:
-            if _evaluate(
-                session,
-                settings,
-                row,
-                as_of=as_of,
-                complete=complete,
-                hub=hub,
-                dispatcher=dispatcher,
-                now=now,
-            ):
-                fired += 1
-        except Exception:
-            session.rollback()
-            log.exception("screen alert evaluation failed for %s", screen_id)
+        # Each screen is evaluated as its owner: its universe (lists, watchlists) and its log
+        # entries are the owner's, whatever other users have saved.
+        with Session(session.get_bind()) as scoped:
+            scope_to_owner(scoped, row.owner_id)
+            try:
+                mine = owned_get(scoped, m.Screen, screen_id)
+                if mine is not None and _evaluate(
+                    scoped,
+                    settings,
+                    mine,
+                    as_of=as_of,
+                    complete=complete,
+                    hub=hub,
+                    dispatcher=dispatcher,
+                    now=now,
+                ):
+                    fired += 1
+            except Exception:
+                scoped.rollback()
+                log.exception("screen alert evaluation failed for %s", screen_id)
     return fired

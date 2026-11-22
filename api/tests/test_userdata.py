@@ -406,6 +406,50 @@ def test_notes(client: TestClient) -> None:
     assert client.get(f"/api/notes/{sym['id']}").status_code == 404
 
 
+def test_note_kinds(client: TestClient) -> None:
+    panel = client.post("/api/notes", json={"symbol": "AAPL", "text": "mine"}).json()
+    assert panel["kind"] == "note"
+    jr = client.post("/api/notes", json={"symbol": "AAPL", "text": "j", "kind": "journal"}).json()
+    assert jr["kind"] == "journal"
+    ids = lambda params: [n["id"] for n in client.get("/api/notes", params=params).json()]  # noqa: E731
+    assert ids({}) == [panel["id"]]
+    assert ids({"symbol": "aapl"}) == [panel["id"]]
+    assert ids({"kind": "journal"}) == [jr["id"]]
+    assert ids({"kind": "all"}) == [panel["id"], jr["id"]]
+    assert client.get("/api/notes", params={"kind": "bogus"}).status_code == 422
+    assert client.post("/api/notes", json={"text": "x", "kind": "bogus"}).status_code == 422
+    # The kind is fixed at creation.
+    assert (
+        client.put(f"/api/notes/{jr['id']}", json={"text": "x", "kind": "note"}).status_code == 422
+    )
+    res = client.put(f"/api/notes/{jr['id']}", json={"text": "edited"})
+    assert res.status_code == 200 and res.json()["kind"] == "journal"
+
+
+def test_bundle_carries_note_kind(client: TestClient) -> None:
+    client.post("/api/notes", json={"text": "mine"})
+    jr = client.post("/api/notes", json={"text": "j", "kind": "journal"}).json()
+    bundle = client.get("/api/export").json()
+    assert sorted(n["kind"] for n in bundle["notes"]) == ["journal", "note"]
+    client.delete(f"/api/notes/{jr['id']}")
+    assert client.post("/api/import", json=bundle).status_code == 200
+    assert [n["id"] for n in client.get("/api/notes", params={"kind": "journal"}).json()] == [
+        jr["id"]
+    ]
+    # Older bundles have no `kind`: new notes default to 'note', existing ones keep theirs.
+    legacy = {
+        **bundle,
+        "notes": [{k: v for k, v in n.items() if k != "kind"} for n in bundle["notes"]],
+    }
+    assert client.post("/api/import", json=legacy).status_code == 200
+    kinds = {n["id"]: n["kind"] for n in client.get("/api/notes", params={"kind": "all"}).json()}
+    assert kinds[jr["id"]] == "journal" and sorted(kinds.values()) == ["journal", "note"]
+    client.delete(f"/api/notes/{jr['id']}")
+    assert client.post("/api/import", json=legacy).status_code == 200
+    kinds = {n["id"]: n["kind"] for n in client.get("/api/notes", params={"kind": "all"}).json()}
+    assert kinds[jr["id"]] == "note"
+
+
 def script_body(**kw: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "name": "My RSI",
@@ -703,6 +747,13 @@ def engine_of(client: TestClient) -> Engine:
     return engine
 
 
+def owner_id_of(client: TestClient) -> str:
+    """The owner user's id: rows written behind the API's back (competing writers in race
+    tests, bulk inserts) must name an owner."""
+    owner: str = client.app.state.accounts.owner_id()  # type: ignore[attr-defined]
+    return owner
+
+
 @contextmanager
 def interleave(
     client: TestClient, statement: str, competitor: Callable[[Connection], object]
@@ -753,6 +804,7 @@ def test_template_upsert_retries_after_integrity_error(race_client: TestClient) 
     def other(conn: Connection) -> None:
         conn.execute(
             insert(models.IndicatorTemplate).values(
+                owner_id=owner_id_of(client),
                 id="theirs",
                 name="Trend",
                 instances=[],
@@ -818,6 +870,7 @@ def test_drawings_batch_race_is_all_or_nothing(race_client: TestClient) -> None:
     def create(conn: Connection) -> None:
         conn.execute(
             insert(models.DrawingRow).values(
+                owner_id=owner_id_of(client),
                 id="d4",
                 symbol="AAPL",
                 pane_id="main",
@@ -842,7 +895,13 @@ def test_template_name_race_is_a_conflict(race_client: TestClient) -> None:
         t = datetime.now(UTC)
         conn.execute(
             insert(models.IndicatorTemplate).values(
-                id="other", name="Trend", instances=[], schema_version=1, created_at=t, updated_at=t
+                owner_id=owner_id_of(client),
+                id="other",
+                name="Trend",
+                instances=[],
+                schema_version=1,
+                created_at=t,
+                updated_at=t,
             )
         )
 
@@ -861,7 +920,13 @@ def test_template_name_race_is_a_conflict(race_client: TestClient) -> None:
         t = datetime.now(UTC)
         conn.execute(
             insert(models.ChartTemplate).values(
-                id="other", name="Dark", data={}, schema_version=1, created_at=t, updated_at=t
+                owner_id=owner_id_of(client),
+                id="other",
+                name="Dark",
+                data={},
+                schema_version=1,
+                created_at=t,
+                updated_at=t,
             )
         )
 

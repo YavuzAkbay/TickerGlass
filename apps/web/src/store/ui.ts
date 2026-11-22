@@ -14,6 +14,10 @@ export const NAV_SECTIONS = [
   'notes',
   'objectTree',
   'dataWindow',
+  /** Strategy tester: rules, settings and the last backtest report. */
+  'strategy',
+  /** Portfolio: holdings, activity, performance and the trade journal. */
+  'portfolio',
   /** Paper trades of the running replay (only while replaying; never saved). */
   'replayTrading',
 ] as const;

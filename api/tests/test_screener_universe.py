@@ -12,6 +12,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
+from multiuser import owner_id, system_session
 from sqlalchemy import Engine, create_engine, func, inspect, select
 from sqlalchemy.orm import Session
 from test_userdata import alembic_config
@@ -52,7 +53,7 @@ def engine(tmp_path: Path) -> Engine:
 
 @pytest.fixture
 def session(engine: Engine):  # type: ignore[no-untyped-def]
-    with Session(engine) as s:
+    with system_session(engine) as s:
         yield s
 
 
@@ -78,6 +79,7 @@ def count(session: Session, model: Any) -> int:
 def watchlist(session: Session, wid: str, symbols: list[str]) -> None:
     session.add(
         Watchlist(
+            owner_id=owner_id(session.get_bind()),  # type: ignore[arg-type]
             id=wid,
             name=wid,
             items=[{"type": "symbol", "symbol": s} for s in symbols],
@@ -283,6 +285,7 @@ def test_tracked_adds_watchlist_symbols_as_custom_rows(session: Session) -> None
     watchlist(session, "w1", ["AAPL", "zzzz", "BRK-B", "bad symbol!", "NEWIPO"])
     session.add(  # sections are ignored
         Watchlist(
+            owner_id=owner_id(session.get_bind()),  # type: ignore[arg-type]
             id="w2",
             name="w2",
             items=[{"type": "section", "id": "s", "title": "T", "collapsed": False}],
@@ -432,14 +435,14 @@ def test_app_startup_seeds_the_bundle(tmp_path: Path) -> None:
             assert s.get(AppMeta, uv.BUNDLE_KEY).value == uv.bundle_hash()  # type: ignore[union-attr]
     with (
         TestClient(create_app(provider=DemoProvider(), database_url=url)) as client,
-        Session(client.app.state.engine) as s,  # type: ignore[attr-defined]
+        system_session(client.app.state.engine) as s,  # type: ignore[attr-defined]
     ):
         assert count(s, ScreenerSymbol) == UNIQUE
 
 
 def test_provider_switch_wipes_snapshots_and_fundamentals_only(engine: Engine) -> None:
     ensure_cache_source(engine, "yahoo")
-    with Session(engine) as s, s.begin():
+    with system_session(engine) as s, s.begin():
         uv.seed_bundle(s, settings(), now=NOW)
         s.add(
             ScreenerSnapshot(
@@ -454,7 +457,7 @@ def test_provider_switch_wipes_snapshots_and_fundamentals_only(engine: Engine) -
         )
         s.add(ScreenerFundamental(symbol="AAPL", provider="yahoo", mcap=1.0))
     assert ensure_cache_source(engine, "twelvedata") is True
-    with Session(engine) as s:
+    with system_session(engine) as s:
         assert count(s, ScreenerSnapshot) == 0 and count(s, ScreenerFundamental) == 0
         assert count(s, ScreenerSymbol) == UNIQUE and count(s, ScreenerList) == 2
 
@@ -495,9 +498,9 @@ def test_migration_up_down_matches_models(tmp_path: Path) -> None:
 
 
 def test_deleting_a_list_or_screen_cascades(engine: Engine) -> None:
-    with Session(engine) as s, s.begin():
+    with system_session(engine) as s, s.begin():
         uv.put_list(s, "tmp", "Tmp", "2026-01", ["AAPL", "MSFT"])
-    with Session(engine) as s, s.begin():
+    with system_session(engine) as s, s.begin():
         s.delete(s.get(ScreenerList, "tmp"))
-    with Session(engine) as s:
+    with system_session(engine) as s:
         assert count(s, ScreenerListMember) == 0

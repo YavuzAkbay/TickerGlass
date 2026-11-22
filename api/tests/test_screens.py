@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import owner_id, system_maker
 from sqlalchemy import func, select
 from test_userdata import NullProvider
 
@@ -21,7 +22,15 @@ SPEC: dict[str, Any] = {
     "filter": {"op": "and", "rules": [{"field": "rsi14", "op": "<", "value": 30}]},
     "sort": {"field": "rsi14", "dir": "asc"},
 }
-ALERT = {"enabled": True, "notify": {"webhook": False, "telegram": False, "email": False}}
+NOTIFY_OFF = {
+    "webhook": False,
+    "telegram": False,
+    "email": False,
+    "ntfy": False,
+    "gotify": False,
+    "apprise": False,
+}
+ALERT = {"enabled": True, "notify": dict(NOTIFY_OFF)}
 
 
 @pytest.fixture
@@ -186,17 +195,18 @@ def test_invalid_names_and_alerts(client: TestClient) -> None:
         "/api/screener/screens", json={"name": "W", "spec": SPEC, "alert": {"enabled": False}}
     ).json()["alert"] == {
         "enabled": False,
-        "notify": {"webhook": False, "telegram": False, "email": False},
+        "notify": NOTIFY_OFF,
     }
 
 
 def test_screen_cap_is_200(client: TestClient) -> None:
-    maker = client.app.state.sessionmaker  # type: ignore[attr-defined]
+    maker = system_maker(client.app.state.engine)  # type: ignore[attr-defined]
     with maker() as session:
         t = datetime.now(UTC)
         for i in range(sc.MAX_SCREENS):
             session.add(
                 m.Screen(
+                    owner_id=owner_id(client.app.state.engine),  # type: ignore[attr-defined]
                     id=f"s{i}",
                     name=f"S{i}",
                     spec=SPEC,
@@ -321,6 +331,6 @@ def test_export_import_and_counts(client: TestClient) -> None:
 
 def test_screens_in_database_count(client: TestClient) -> None:
     make(client)
-    maker = client.app.state.sessionmaker  # type: ignore[attr-defined]
+    maker = system_maker(client.app.state.engine)  # type: ignore[attr-defined]
     with maker() as session:
         assert session.scalar(select(func.count()).select_from(m.Screen)) == 1

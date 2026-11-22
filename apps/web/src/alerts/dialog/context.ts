@@ -1,9 +1,11 @@
 /** `AlertContext` from the live stores and the chart (the dialog and the commands read it on open). */
+import { scriptIdOf } from '@tickerglass/indicators';
 import { useChartView } from '../../store/chartView';
 import { getChart } from '../../store/chart';
 import { currentDrawings } from '../../drawings/actions';
 import { useIndicatorRuntime, useIndicatorStore } from '../../indicators/store';
 import { useQuoteStore } from '../../quotes/store';
+import { useScriptsStore } from '../../scripts/store';
 import type { AlertContext, LastBar } from './sources';
 
 export function currentAlertContext(): AlertContext {
@@ -31,6 +33,9 @@ export function currentAlertContext(): AlertContext {
     chartType: app.chartType,
     decimals: typeof hint === 'number' && Number.isInteger(hint) && hint >= 0 ? hint : 2,
     indicators: useIndicatorStore.getState().instances,
+    // The web keeps the script stubs in the default registry, next to the built-ins.
+    scriptName: (type) =>
+      useScriptsStore.getState().scripts.find((s) => s.id === scriptIdOf(type))?.name,
     paneOf: (id) => panes[id],
     indicatorValue: (instanceId, outputId) => {
       if (!chart || last < 0) return undefined;

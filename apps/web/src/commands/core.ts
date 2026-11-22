@@ -14,6 +14,9 @@ import {
   Undo2,
 } from 'lucide-react';
 import { useAlerts } from '../alerts/store';
+import { t } from '../i18n';
+import { usePortfolio } from '../portfolio/store';
+import { useQuoteStore } from '../quotes/store';
 import { isCloneArgs, openAlertDialog, sanitizeCreateArgs } from '../alerts/dialog/open';
 import { errorMessage } from '../api/client';
 import { getCapabilities } from '../api/provider';
@@ -131,6 +134,7 @@ const PANELS: [NavSection | 'details', string][] = [
   ['dataWindow', 'Values'],
   ['details', 'Symbol details'],
   ['notes', 'Notes'],
+  ['portfolio', 'Portfolio'],
 ];
 
 export function registerCoreCommands(): () => void {
@@ -400,6 +404,33 @@ export function registerCoreCommands(): () => void {
       title: 'Show Hotlists',
       category: 'Panels',
       run: () => useUiStore.getState().showNav('hotlists'),
+    },
+    {
+      id: 'portfolio.open',
+      title: t('cmd.portfolio.open'),
+      category: 'Panels',
+      run: () => useUiStore.getState().showNav('portfolio'),
+    },
+    {
+      id: 'portfolio.logTrade',
+      title: t('cmd.portfolio.logTrade'),
+      category: 'Panels',
+      run: () => {
+        const symbol = useChartView.getState().symbol;
+        if (!symbol) {
+          toast(t('cmd.portfolio.noChart'), 'error');
+          return;
+        }
+        usePortfolio.getState().set({
+          tab: 'activity',
+          pendingTrade: {
+            symbol,
+            symbolCurrency: useChartStore.getState().symbolInfo?.currency ?? null,
+            last: useQuoteStore.getState().quotes[symbol.toUpperCase()]?.last ?? null,
+          },
+        });
+        useUiStore.getState().showNav('portfolio');
+      },
     },
     ...PANELS.map(([id, title]): Command => ({
       id: `view.panel.${id}`,

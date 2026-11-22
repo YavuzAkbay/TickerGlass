@@ -90,7 +90,10 @@ export class NotesSync {
     const list = await this.api.listNotes();
     // Oldest first: the last note of a key wins (one note per key is created here).
     const latest = new Map<string, Note>();
-    for (const n of list) latest.set(noteKey(n.symbol), n);
+    for (const n of list) {
+      if (n.kind === 'journal') continue; // owned by a journal entry, not the panel
+      latest.set(noteKey(n.symbol), n);
+    }
     const notes = { ...useNotesStore.getState().notes };
     const conflicts: { key: string; mine: string; server: Note }[] = [];
     for (const [key, n] of latest) {

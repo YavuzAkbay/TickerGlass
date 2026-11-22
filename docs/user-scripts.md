@@ -223,6 +223,41 @@ time when a further extreme appears. The rules:
   `ta.vars`). The ZigZag example in section 10 does this for its dashed forecast leg.
 - Writing `NaN` with `setAt` clears a value.
 
+### Alerts on scripts
+
+A script's plot outputs can be the value or a target of an [alert](alerts.md), like a built-in indicator's. The alert
+dialog offers the script instances on the chart (the chart's symbol only) and says "Uses the script's latest saved
+version."
+
+- **It runs on the server.** The alerts service loads the saved script and runs it in an isolated V8 isolate: no
+  network, no file or process access, 128 MB of memory, 10 s to load and compute the history, 250 ms per update, 20 %
+  of a CPU over 5 minutes. The values match the chart's.
+- **Latest saved version.** Alerts follow the script as saved in the editor; unsaved changes are never used and
+  there is no version to pin. When you save an edit, the service recompiles the script, recomputes it from history
+  and warm-restarts the alerts that use it (the previous sample is dropped, so an edit cannot fire a crossing by
+  itself). New inputs get their defaults.
+- **Check must pass.** On load the service runs [Check](#state-rules-live-ticks-and-check) too. A script whose live
+  values would differ from a reload puts its alerts in the error state with the first mismatch; keep state in `ta`.
+- **Not offered, listed disabled in the dialog:** repainting scripts ("Repainting scripts can't drive alerts"), a
+  script with a compile error ("Fix the script's compile error first"), and anything that mixes a script with
+  another indicator.
+- **Failure statuses.** An alert on a script shows an error status with the reason when: the script was deleted; it
+  has a compile error; the alert's inputs no longer match the script's (an input was removed or changed kind: edit
+  the alert); the output the alert uses no longer exists; Check fails; the saved manifest no longer matches what the
+  script compiles to ("saved manifest is out of date": open the script and save it again); or the script keeps
+  running out of time, memory or CPU (see below). The service re-reads the saved scripts every minute, so fixing
+  the script or editing the alert clears the error within about a minute.
+- **Limits wait, they do not error.** A script that runs out of time or memory, or uses more than 20 % of a CPU over
+  5 minutes, is stopped and held off for 5 minutes (doubling up to 1 hour). Its alerts keep their status (they are
+  not shown as errors), stop evaluating, and resume on their own, with the previous sample dropped like after an
+  edit, when the hold ends; saving the script ends the hold at once. Only a second failure in a row at the 1 hour
+  hold puts the alerts in the error state. One live update that takes too long only restarts that chart's
+  copy of the script; three within 10 minutes hold it off.
+- **No `Intl` and no locale methods in alerts.** `Intl`, `toLocaleString` and friends (`Date`, `Number`, `BigInt`,
+  `Array`), `localeCompare`, `normalize` and `toLocaleUpperCase` / `toLocaleLowerCase` are not available to scripts
+  running for alerts (their memory lives outside the isolate's limit). They work on the chart, so a script using
+  them shows fine there but its alerts go to the error state (`Intl is not defined`). `calendarPeriod` is fine.
+
 ## 6. Errors and limits
 
 **Errors in your code.** A script that throws (while loading, in `setup` or in `step`) turns the indicator's
@@ -283,8 +318,8 @@ it bounded in practice.
 - Calling another indicator, reading another script's outputs, or having another indicator read a script's: script
   `source` inputs offer price sources only, and "Add indicator on..." is disabled for script indicators.
 - Other timeframes and other symbols: no `timeframe` or `symbol` inputs, no `c.ext`.
-- Alerts on scripts: the alerts service runs on a Node server that has no sandbox. Script indicators are not offered
-  as alert sources, and "Add alert..." on a script indicator is disabled (tooltip "Not available for scripts").
+- Alerts on repainting scripts (`repaints: true`), and alerts that combine a script with another indicator (see
+  [Alerts on scripts](#alerts-on-scripts)).
 - Output fields that depend on inputs (section 4).
 - TypeScript, other scripting languages, strategies, backtesting, drawings or tables from scripts, `import`, version history,
   sharing or a script library. See [LIMITATIONS.md](LIMITATIONS.md) for which of these are planned.

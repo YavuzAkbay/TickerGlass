@@ -2,7 +2,7 @@
 
 TickerGlass is a self-hosted stock charting and technical analysis app. Run it on your own computer or server with Docker Compose and use it in a browser. The application and its storage run on infrastructure you control. Yahoo Finance is the recommended default provider, but you can add or select another supported provider. Yahoo mode contacts Yahoo Finance for data; for a fully offline demo, select the generated demo provider.
 
-Features include multiple chart types, drawing tools, indicators, symbol comparisons, alerts, watchlists, templates, and market replay. Watchlists can be imported and exported as plain text ([guide](docs/watchlists.md)). A server-side screener ranks stocks, ETFs, crypto and commodities from the daily close snapshot, with saved screens, hotlists and a heatmap ([guide](docs/screener.md)). See [known limitations](docs/LIMITATIONS.md), [market data providers](docs/providers.md), and [caching](docs/caching.md).
+Features include multiple chart types, drawing tools, indicators, symbol comparisons, alerts, watchlists, templates, market replay, and a no-code strategy tester ([guide](docs/backtest.md)), and a portfolio tracker with broker CSV import and a trade journal ([guide](docs/portfolio.md)). Watchlists can be imported and exported as plain text ([guide](docs/watchlists.md)). A server-side screener ranks stocks, ETFs, crypto and commodities from the daily close snapshot, with saved screens, hotlists and a heatmap ([guide](docs/screener.md)). See [known limitations](docs/LIMITATIONS.md), [market data providers](docs/providers.md), and [caching](docs/caching.md).
 
 ![alt text](https://github.com/user-attachments/assets/1dbc8e17-66e8-4bc8-bc0a-9a4fa009fef0)
 
@@ -36,7 +36,7 @@ docker compose up -d --build
 
 Open <http://localhost:8080>. The API health endpoint is <http://localhost:8000/api/health>.
 
-The web and API ports bind to localhost by default. To access TickerGlass from another device, set a password first (`AUTH_PASSWORD` in `.env`) — see [password protection](docs/self-hosting.md#password-protection) — and then expose it via a reverse proxy or Tailscale, with HTTPS. Do not expose the API port publicly by default.
+The web and API ports bind to localhost by default. To access TickerGlass from another device, set up sign-in first (`AUTH_PASSWORD` in `.env`, or [single sign-on](docs/self-hosting.md#single-sign-on-oidc) / an [auth proxy](docs/self-hosting.md#behind-an-auth-proxy)) — see [password protection](docs/self-hosting.md#password-protection) — and then expose it via a reverse proxy or Tailscale, with HTTPS. Do not expose the API port publicly by default.
 
 SQLite data is stored in the persistent `api-data` Docker volume. Back up that volume regularly (or use **Settings → Server → Download backup**). To use PostgreSQL, follow the commented configuration in `.env.example` and start the optional database profile:
 
@@ -51,6 +51,10 @@ docker compose down
 ```
 
 To delete the database volume and its data, use `docker compose down -v`.
+
+### App stores and NAS platforms
+
+Templates for Unraid, TrueNAS, CasaOS, Umbrel and a Helm chart for Kubernetes live in [`deploy/`](deploy), and a single-container all-in-one image (`ghcr.io/yavuzakbay/tickerglass`, port 8080) backs the Unraid and CasaOS ones. See [Option C in the self-hosting guide](docs/self-hosting.md#option-c-app-stores).
 
 ## Install as an app
 
@@ -68,30 +72,35 @@ MARKET_PROVIDER=demo
 
 To use a [Twelve Data](https://twelvedata.com) account instead, set `MARKET_PROVIDER=twelvedata`, `TWELVEDATA_API_KEY` and your `TWELVEDATA_PLAN` (`basic`, `grow`, `pro`, ...) and restart; the app paces its requests to the plan's credits. Switching provider clears the cached market data, not your own data.
 
-Demo prices are synthetic and are not real quotes. The app itself can still use optional integrations you configure, such as Telegram, email, or webhooks for alert delivery. See [provider configuration](docs/providers.md).
+Further providers, each with its own keys, plan limits and caveats in [provider configuration](docs/providers.md): `alpaca` (US stocks and crypto, free IEX feed, live trades; `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`), `tiingo` (`TIINGO_API_KEY`), `massive` (formerly Polygon.io; `MASSIVE_API_KEY`), `stooq` (unofficial daily data; `STOOQ_API_KEY` from a captcha page) and `crypto` (Kraken, Coinbase or Binance public data, no key; `CRYPTO_EXCHANGE`).
+
+Demo prices are synthetic and are not real quotes. The app itself can still use optional integrations you configure, such as Telegram, email, ntfy, Gotify, Apprise, or webhooks for alert delivery. See [provider configuration](docs/providers.md).
 
 ## Alert notifications
 
-Alerts are evaluated by the `alerts` service and continue to run while the browser is closed. In-app, sound, and browser notifications need no external service. Telegram, email, and webhooks are optional and require credentials or endpoints that you provide in `.env`. Keep that file private; do not commit secrets. Setup details are in [the alerts guide](docs/alerts.md#4-notification-delivery).
+Alerts are evaluated by the `alerts` service and continue to run while the browser is closed. In-app, sound, and browser notifications need no external service. Telegram, email, ntfy, Gotify, Apprise, and webhooks are optional and require credentials or endpoints that you provide in `.env`. Keep that file private; do not commit secrets. Setup details are in [the alerts guide](docs/alerts.md#4-notification-delivery).
 
 ## Configuration
 
 Copy `.env.example` to `.env`. Common settings include:
 
-| Variable          | Purpose                                                                                   |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `WEB_PORT`        | Local web UI port (default `8080`)                                                        |
-| `API_PORT`        | Local API port (default `8000`)                                                           |
-| `MARKET_PROVIDER` | `yahoo` (default), `twelvedata` (needs `TWELVEDATA_API_KEY`) or generated `demo` data     |
-| `DATABASE_URL`    | Optional database connection; SQLite is the default                                       |
-| `TICKERGLASS_TAG` | Published image tag to run (`latest` default, or `vX.Y.Z`); used by `docker compose pull` |
-| `AUTH_PASSWORD`   | Optional sign-in password; unset keeps the app open (localhost-first)                     |
+| Variable          | Purpose                                                                                                                                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WEB_PORT`        | Local web UI port (default `8080`)                                                                                                                                                                                               |
+| `API_PORT`        | Local API port (default `8000`)                                                                                                                                                                                                  |
+| `MARKET_PROVIDER` | `yahoo` (default), `twelvedata`, `alpaca`, `tiingo`, `massive`, `stooq` (each needs its key), `crypto` (no key) or generated `demo` data                                                                                         |
+| `DATABASE_URL`    | Optional database connection; SQLite is the default                                                                                                                                                                              |
+| `TICKERGLASS_TAG` | Published image tag to run (`latest` default, or `vX.Y.Z`); used by `docker compose pull`                                                                                                                                        |
+| `AUTH_PASSWORD`   | Optional sign-in password; unset keeps the app open (localhost-first). OIDC and proxy-header sign-in: see `.env.example`. Several people can share one server, each with their own data: see [users](docs/self-hosting.md#users) |
+| `METRICS_ENABLED` | `true` serves Prometheus metrics at `/metrics` (default off); see [metrics](docs/metrics.md)                                                                                                                                     |
+| `METRICS_TOKEN`   | Bearer token (16+ characters) Prometheus must send; required with sign-in unless `METRICS_PUBLIC=true`                                                                                                                           |
+| `METRICS_PUBLIC`  | `true` allows `/metrics` without a token (only if the port is not exposed to untrusted networks)                                                                                                                                 |
 
 The example file documents database, auth and alert settings. Avoid sharing `.env` because it may contain passwords, tokens, and webhook secrets.
 
 ## Development
 
-Requirements: Node.js 22+, [pnpm](https://pnpm.io/), and [uv](https://docs.astral.sh/uv/).
+Requirements: Node.js 24+, [pnpm](https://pnpm.io/), and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 pnpm install

@@ -31,10 +31,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ...models import AppMeta, ScreenerList, ScreenerListMember, ScreenerSymbol, Watchlist
+from ...ownership import id_taken_by_other, session_owner
 from ...settings import Settings
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,14 @@ class ListError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class ListInUse(ListError):
+    """The list id belongs to someone else (another user's list, or a shared one when writing as
+    a user). Says nothing more: the route answers 409 `id in use`."""
+
+    def __init__(self) -> None:
+        super().__init__("id_in_use", "id in use")
 
 
 @dataclass(frozen=True)
@@ -250,11 +259,15 @@ def seed_bundle(
     lists = {lst.id: lst for lst in session.scalars(select(ScreenerList))}
     for lid, bl in b.lists.items():
         cur_list = lists.get(lid)
+        if cur_list is not None and cur_list.owner_id is not None:
+            # A user's custom list took this id before the bundle did: theirs stays untouched.
+            log.warning("bundled list %r skipped: the id belongs to a user's list", lid)
+            continue
         if cur_list is not None and cur_list.source == "upload":
             continue
         _write_list(session, lid, bl.name, "index", bl.as_of, "bundled", bl.symbols, stamp)
     for lid, cur_list in lists.items():
-        if cur_list.source == "bundled" and lid not in b.lists:
+        if cur_list.owner_id is None and cur_list.source == "bundled" and lid not in b.lists:
             session.delete(cur_list)
 
     if meta is None:
@@ -276,12 +289,25 @@ def _write_list(
     symbols: tuple[str, ...] | list[str],
     stamp: datetime,
 ) -> ScreenerList:
-    row = session.get(ScreenerList, list_id)
+    # The list is the session's: an owner session writes its owner's list, a system session a
+    # shared one (owner NULL). The members are only deleted once that is verified.
+    owner = session_owner(session)
+    row = find_list(session, list_id)
     if row is None:
+        if owner is not None and id_taken_by_other(session, ScreenerList, list_id):
+            raise ListInUse
         row = ScreenerList(
-            id=list_id, name=name, kind=kind, as_of=as_of, source=source, updated_at=stamp
+            owner_id=owner,
+            id=list_id,
+            name=name,
+            kind=kind,
+            as_of=as_of,
+            source=source,
+            updated_at=stamp,
         )
         session.add(row)
+    elif row.owner_id != owner:
+        raise ListInUse
     else:
         row.name, row.kind, row.as_of, row.source, row.updated_at = name, kind, as_of, source, stamp
     session.execute(delete(ScreenerListMember).where(ScreenerListMember.list_id == list_id))
@@ -387,19 +413,43 @@ def _summary(row: ScreenerList, count: int) -> dict[str, Any]:
     }
 
 
+def find_list(session: Session, list_id: str) -> ScreenerList | None:
+    """The list with this id if the session may see it: an owner session its own lists and the
+    shared ones (owner NULL), a system session any. Never `session.get` (identity map)."""
+    row = session.execute(
+        select(ScreenerList).where(ScreenerList.id == list_id)
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    owner = session_owner(session)
+    if owner is not None and row.owner_id not in (None, owner):
+        return None  # the hook already filters; this is the second layer
+    return row
+
+
 def list_lists(session: Session) -> list[dict[str, Any]]:
-    """`[{id, name, kind, asOf, source, count}]`: index lists first, then custom, by name."""
+    """`[{id, name, kind, asOf, source, count}]` of the lists the session may see: index lists
+    first, then custom, by name."""
+    rows = list(session.scalars(select(ScreenerList)))
+    owner = session_owner(session)
+    rows = [r for r in rows if owner is None or r.owner_id in (None, owner)]
     counts: dict[str, int] = {}
-    for lid in session.scalars(select(ScreenerListMember.list_id)):
-        counts[lid] = counts.get(lid, 0) + 1
-    rows = session.scalars(select(ScreenerList)).all()
+    if rows:
+        ids = [r.id for r in rows]
+        grouped = session.execute(
+            select(ScreenerListMember.list_id, func.count())
+            .where(ScreenerListMember.list_id.in_(ids))
+            .group_by(ScreenerListMember.list_id)
+        )
+        counts = {lid: int(n) for lid, n in grouped}
     rows = sorted(rows, key=lambda r: (r.kind != "index", r.name.lower(), r.id))
     return [_summary(r, counts.get(r.id, 0)) for r in rows]
 
 
 def list_symbols(session: Session, list_id: str) -> list[str] | None:
-    """Members of a list (sorted); None if the list does not exist."""
-    if session.get(ScreenerList, list_id) is None:
+    """Members of a list (sorted); None if the list does not exist or the session may not see
+    it."""
+    if find_list(session, list_id) is None:
         return None
     return sorted(
         session.scalars(
@@ -435,7 +485,7 @@ def put_list(
         if not SYMBOL_RE.match(sym):
             raise ListError("bad_symbol", f"invalid symbol: {raw!r}")
         clean.append(sym)
-    existing = session.get(ScreenerList, list_id)
+    existing = find_list(session, list_id)
     kind = (
         existing.kind
         if existing is not None
@@ -451,9 +501,9 @@ def delete_list(session: Session, list_id: str, *, now: datetime | None = None) 
     """'reverted': an overridden bundled list is back to the bundle content; 'removed': a
     custom list was deleted; 'unchanged': a bundled list that was not overridden (nothing to
     do); 'missing': no such list. The caller commits."""
-    row = session.get(ScreenerList, list_id)
-    if row is None:
-        return "missing"
+    row = find_list(session, list_id)
+    if row is None or row.owner_id != session_owner(session):
+        return "missing"  # none, someone else's, or shared while deleting as a user
     bl = bundle().lists.get(list_id)
     if bl is not None:
         if row.source == "bundled":

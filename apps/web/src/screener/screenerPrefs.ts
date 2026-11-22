@@ -46,6 +46,9 @@ export const SCREENER_ALL_COLUMNS = [
   'extChangePercent',
   'cap',
   'liveCap',
+  'pe',
+  'fwdPe',
+  'eps',
   'group',
   'exchange',
   'trend',
@@ -63,6 +66,10 @@ export type Density = 'compact' | 'cozy';
 /** Rows of the table (and tiles of the heatmap) are grouped by sector or by the universe's group. */
 export type ScreenerGroupBy = 'none' | 'sector' | 'group';
 export const SCREENER_GROUP_BYS: readonly ScreenerGroupBy[] = ['none', 'sector', 'group'];
+
+/** Narrowest / widest a dragged column may get, in px. */
+export const MIN_COL_WIDTH = 44;
+export const MAX_COL_WIDTH = 600;
 
 /** Row height in px per density (shared by the table, virtualizer and CSS). */
 export const ROW_H: Record<Density, number> = { compact: 28, cozy: 36 };
@@ -100,9 +107,25 @@ export interface ScreenerPrefs {
   view: ViewMode;
   /** Grouping of the table's rows and the heatmap's tiles. */
   groupBy: ScreenerGroupBy;
+  /** Dragged column widths in px by column id (`symbol` included); absent = default fluid width. */
+  columnWidths: Record<string, number>;
 }
 
 const DEFAULT_COLUMNS: ScreenerColumnId[] = [
+  'name',
+  'group',
+  'last',
+  'changePercent',
+  'volume',
+  'relVolume',
+  'liveCap',
+  'pe',
+  'week52Range',
+  'trend',
+];
+
+/** The columns shipped before the data-rich default; a user who never customised gets the new set. */
+const LEGACY_DEFAULT_COLUMNS: readonly ScreenerColumnId[] = [
   'name',
   'last',
   'change',
@@ -133,6 +156,7 @@ export const DEFAULT_SCREENER_PREFS: ScreenerPrefs = {
   formulaLabels: {},
   view: 'table',
   groupBy: 'none',
+  columnWidths: {},
 };
 
 const NUM_BOUNDS: readonly (keyof ScreenerFilters)[] = [
@@ -202,7 +226,11 @@ export function parseScreenerPrefs(v: unknown): Partial<ScreenerPrefs> {
     out.universeSize = v.universeSize;
   if (Array.isArray(v.columns)) {
     const set = new Set(v.columns);
-    out.columns = SCREENER_ALL_COLUMNS.filter((c) => set.has(c));
+    const picked = SCREENER_ALL_COLUMNS.filter((c) => set.has(c));
+    const untouched =
+      picked.length === LEGACY_DEFAULT_COLUMNS.length &&
+      LEGACY_DEFAULT_COLUMNS.every((c) => set.has(c));
+    out.columns = untouched ? DEFAULT_COLUMNS : picked;
   }
   if (v.density === 'compact' || v.density === 'cozy') out.density = v.density;
   if (typeof v.detailOpen === 'boolean') out.detailOpen = v.detailOpen;
@@ -225,7 +253,18 @@ export function parseScreenerPrefs(v: unknown): Partial<ScreenerPrefs> {
     (SCREENER_GROUP_BYS as readonly string[]).includes(v.groupBy)
   )
     out.groupBy = v.groupBy as ScreenerGroupBy;
+  if (isObj(v.columnWidths)) {
+    const widths: Record<string, number> = {};
+    for (const [id, w] of Object.entries(v.columnWidths))
+      if (typeof w === 'number' && Number.isFinite(w)) widths[id] = clampColWidth(w);
+    out.columnWidths = widths;
+  }
   return out;
+}
+
+/** Keep a dragged width inside the allowed range (whole px). */
+export function clampColWidth(w: number): number {
+  return Math.round(Math.max(MIN_COL_WIDTH, Math.min(MAX_COL_WIDTH, w)));
 }
 
 interface ScreenerPrefsState extends ScreenerPrefs {
@@ -253,6 +292,8 @@ interface ScreenerPrefsState extends ScreenerPrefs {
   removeFormulaColumn: (id: FormulaColumnId) => void;
   setView: (view: ViewMode) => void;
   setGroupBy: (groupBy: ScreenerGroupBy) => void;
+  /** Pin a column to `width` px; `null` returns it to its default width. */
+  setColumnWidth: (id: string, width: number | null) => void;
 }
 
 /**
@@ -366,6 +407,11 @@ export const useScreenerPrefs = create<ScreenerPrefsState>()(
         }),
       setView: (view) => set({ view }),
       setGroupBy: (groupBy) => set({ groupBy }),
+      setColumnWidth: (id, width) =>
+        set((s) => {
+          const { [id]: _old, ...rest } = s.columnWidths;
+          return { columnWidths: width === null ? rest : { ...rest, [id]: clampColWidth(width) } };
+        }),
     }),
     {
       name: 'tickerglass-screener-prefs',
@@ -386,6 +432,7 @@ export const useScreenerPrefs = create<ScreenerPrefsState>()(
         formulaLabels: s.formulaLabels,
         view: s.view,
         groupBy: s.groupBy,
+        columnWidths: s.columnWidths,
       }),
       merge: (persisted, current) => ({ ...current, ...parseScreenerPrefs(persisted) }),
     },

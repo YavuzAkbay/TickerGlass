@@ -27,6 +27,11 @@ describe('config', () => {
     expect(() => loadConfig({ ALERTS_LOG_LEVEL: 'loud' })).toThrow(ConfigError);
     expect(() => loadConfig({ API_URL: 'not a url' })).toThrow(ConfigError);
   });
+  it('keeps the token out of the socket URL', () => {
+    const c = loadConfig({ ALERTS_INTERNAL_TOKEN: 'secret-token-value' });
+    expect(c.token).toBe('secret-token-value');
+    expect(c.wsUrl).toBe('ws://localhost:8000/ws');
+  });
   it('derives wss for https', () => {
     expect(deriveWsUrl('https://x.example/base')).toBe('wss://x.example/ws');
   });
@@ -115,13 +120,30 @@ describe('api client', () => {
     expect((err as ApiError).current?.id).toBe('a1');
     expect(n).toBe(4); // not retried
   });
-  it('does not send the token on read routes', async () => {
+  it('sends the token on every GET when configured (API auth would 401 them otherwise)', async () => {
+    const seen: (string | null)[] = [];
+    const fetchImpl = (async (_u: string, init: RequestInit) => {
+      seen.push(new Headers(init.headers).get('x-alerts-token'));
+      const body = _u.endsWith('/api/providers') ? '{"active":"demo"}' : '[]';
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+    const api = new ApiClient({ baseUrl: 'http://x', token: 'tok', fetchImpl });
+    await api.listAlerts();
+    await api.listStates();
+    await api.listUserScripts();
+    await api.activeProvider();
+    await api.health();
+    expect(seen).toEqual(['tok', 'tok', 'tok', 'tok', 'tok']);
+  });
+  it('sends no token header when none is configured', async () => {
     const seen: (string | null)[] = [];
     const fetchImpl = (async (_u: string, init: RequestInit) => {
       seen.push(new Headers(init.headers).get('x-alerts-token'));
       return new Response('[]', { status: 200 });
     }) as unknown as typeof fetch;
-    await new ApiClient({ baseUrl: 'http://x', token: 'tok', fetchImpl }).listAlerts();
-    expect(seen).toEqual([null]);
+    const api = new ApiClient({ baseUrl: 'http://x', fetchImpl });
+    await api.listAlerts();
+    await api.heartbeat({} as never);
+    expect(seen).toEqual([null, null]);
   });
 });

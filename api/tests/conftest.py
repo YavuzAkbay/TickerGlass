@@ -5,7 +5,10 @@ import ipaddress
 from collections.abc import Iterator
 
 import pytest
+from multiuser import multi, multi_no_token  # noqa: F401
 from test_alerts import make_client  # noqa: F401
+from test_auth_oidc import idp, make_oidc  # noqa: F401
+from test_backups import env, fake_s3, template_db  # noqa: F401
 from test_userdata import client, race_client  # noqa: F401
 
 from tickerglass_api.notifications import webhook

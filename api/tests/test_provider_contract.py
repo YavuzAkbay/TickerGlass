@@ -18,10 +18,17 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
+from alpaca_fake import FakeAlpaca
+from crypto_fake import FakeBinance, FakeCoinbase, FakeExchange, FakeKraken
+from massive_fake import FakeMassive
 from pydantic import SecretStr
+from stooq_fake import FakeStooq
 from td_fake import FakeTD
+from tiingo_fake import FakeTiingo
 
 from tickerglass_api.intervals import INTERVALS
+from tickerglass_api.providers.alpaca import AlpacaConfig, AlpacaProvider
+from tickerglass_api.providers.alpaca import capabilities_for as alpaca_capabilities
 from tickerglass_api.providers.base import (
     BAR_COLUMNS,
     FUNDAMENTALS_INFO_KEYS,
@@ -37,8 +44,17 @@ from tickerglass_api.providers.base import (
     SymbolInfo,
     SymbolNotFound,
 )
+from tickerglass_api.providers.crypto import CryptoConfig, CryptoProvider
+from tickerglass_api.providers.crypto import capabilities_for as crypto_capabilities
 from tickerglass_api.providers.demo import DemoProvider
 from tickerglass_api.providers.guard import GuardedProvider, UpstreamGuard
+from tickerglass_api.providers.massive import PLAN_PROFILES as MASSIVE_PLANS
+from tickerglass_api.providers.massive import MassiveConfig, MassiveProvider
+from tickerglass_api.providers.massive import capabilities_for as massive_capabilities
+from tickerglass_api.providers.stooq import StooqConfig, StooqProvider
+from tickerglass_api.providers.stooq import capabilities as stooq_capabilities
+from tickerglass_api.providers.tiingo import TiingoConfig, TiingoProvider
+from tickerglass_api.providers.tiingo import capabilities_for as tiingo_capabilities
 from tickerglass_api.providers.twelvedata import (
     TwelveDataConfig,
     TwelveDataProvider,
@@ -108,7 +124,165 @@ TWELVEDATA = ContractCase(
         "3mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
     },
 )
-CONTRACT_PROVIDERS: list[ContractCase] = [DEMO, TWELVEDATA]
+
+
+def _stooq() -> MarketDataProvider:
+    config = StooqConfig(api_key=SecretStr("stooq-test-key-0123456789"), _env_file=None)  # type: ignore[call-arg]
+    return StooqProvider(config, send=FakeStooq())
+
+
+# Canned data: six daily bars (2026-10-20..27), five weekly and ten monthly ones, in the
+# range of the queries below.
+STOOQ = ContractCase(
+    name="stooq",
+    make=_stooq,
+    capabilities=stooq_capabilities(),
+    symbol="AAPL",
+    query="AAPL",
+    now=datetime(2026, 10, 28, tzinfo=UTC),
+    unknown_symbol="ZZZZNOTREAL",
+    ranges={
+        "1d": (datetime(2026, 10, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1wk": (datetime(2026, 9, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+    },
+)
+
+
+def _alpaca() -> MarketDataProvider:
+    config = AlpacaConfig(
+        key_id=SecretStr("alpaca-key-id"),
+        secret_key=SecretStr("alpaca-secret"),
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    return AlpacaProvider(config, send=FakeAlpaca())
+
+
+# Canned data (hand-built from the documented shapes): 1-minute bars of 2026-10-26/27 stand in
+# for every intraday interval; six daily, six weekly, ten monthly and four quarterly bars.
+ALPACA = ContractCase(
+    name="alpaca",
+    make=_alpaca,
+    capabilities=alpaca_capabilities(None),
+    symbol="AAPL",
+    query="AAPL",
+    now=datetime(2026, 10, 28, tzinfo=UTC),
+    unknown_symbol="ZZZZ",  # a valid ticker shape (Alpaca tickers are at most 5 letters)
+    ranges={
+        **{
+            i: (datetime(2026, 10, 26, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC))
+            for i in INTRADAY
+        },
+        "1d": (datetime(2026, 10, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1wk": (datetime(2026, 9, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+        "3mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+    },
+)
+
+
+def _massive() -> MarketDataProvider:
+    config = MassiveConfig(
+        api_key=SecretStr("massive-contract-key"),
+        plan="starter",
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    return MassiveProvider(
+        config, send=FakeMassive(), clock=lambda: datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
+    )
+
+
+# Canned data (hand-built from the documented shapes): minute bars of 2026-10-26/27 stand in for
+# every intraday interval; six daily and weekly bars, ten monthly ones. The starter plan serves
+# every interval.
+MASSIVE = ContractCase(
+    name="massive",
+    make=_massive,
+    capabilities=massive_capabilities(MASSIVE_PLANS["starter"]),
+    symbol="AAPL",
+    query="AAPL",
+    now=datetime(2026, 10, 28, tzinfo=UTC),
+    unknown_symbol="ZZZZNOTREAL",
+    ranges={
+        **{
+            i: (datetime(2026, 10, 26, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC))
+            for i in INTRADAY
+        },
+        "1d": (datetime(2026, 10, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1wk": (datetime(2026, 9, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+        "3mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+    },
+)
+
+
+def _tiingo() -> MarketDataProvider:
+    config = TiingoConfig(api_key=SecretStr("tiingo-contract-key"), _env_file=None)  # type: ignore[call-arg]
+    return TiingoProvider(
+        config, send=FakeTiingo(), clock=lambda: datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
+    )
+
+
+# Canned data (hand-built from the documented shapes): 5-minute bars of 2026-10-26/27 stand in
+# for every intraday interval (1m and 2m are not offered); weekday daily bars from 2025 on build
+# the daily, weekly, monthly and quarterly ones.
+TIINGO = ContractCase(
+    name="tiingo",
+    make=_tiingo,
+    capabilities=tiingo_capabilities(None),
+    symbol="AAPL",
+    query="AAPL",
+    now=datetime(2026, 10, 28, tzinfo=UTC),
+    unknown_symbol="ZZZZ",  # a valid ticker shape the fake answers 404 for
+    ranges={
+        **{
+            i: (datetime(2026, 10, 26, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC))
+            for i in INTRADAY
+        },
+        "1d": (datetime(2026, 10, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1wk": (datetime(2026, 9, 20, tzinfo=UTC), datetime(2026, 10, 28, tzinfo=UTC)),
+        "1mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+        "3mo": (datetime(2025, 12, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)),
+    },
+)
+
+
+def _crypto(exchange: str, fake: type[FakeExchange]) -> Callable[[], MarketDataProvider]:
+    def make() -> MarketDataProvider:
+        now = datetime(2026, 10, 28, tzinfo=UTC)
+        config = CryptoConfig(exchange=exchange, _env_file=None)  # type: ignore[call-arg,arg-type]
+        return CryptoProvider(config, send=fake(now), clock=lambda: now)
+
+    return make
+
+
+# Generated bars (crypto_fake) of every interval up to 2026-10-28; markets, quotes and errors
+# from live recordings. Kraken serves its latest 720 bars only.
+CRYPTO_CASES = [
+    ContractCase(
+        name=f"crypto-{exchange}",
+        make=_crypto(exchange, fake),
+        capabilities=crypto_capabilities(None),
+        symbol=symbol,
+        query="BTC",
+        now=datetime(2026, 10, 28, tzinfo=UTC),
+        unknown_symbol="ZZZZ-USD",
+    )
+    for exchange, fake, symbol in (
+        ("kraken", FakeKraken, "BTC-USD"),
+        ("coinbase", FakeCoinbase, "BTC-USD"),
+        ("binance", FakeBinance, "BTC-USDT"),
+    )
+]
+CONTRACT_PROVIDERS: list[ContractCase] = [
+    DEMO,
+    TWELVEDATA,
+    STOOQ,
+    ALPACA,
+    MASSIVE,
+    TIINGO,
+    *CRYPTO_CASES,
+]
 
 
 def ids(cases: list[ContractCase]) -> list[str]:

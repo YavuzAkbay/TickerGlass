@@ -1,12 +1,12 @@
-/* ---- right-edge drawing tool rail ---- */
+/* ---- drawing tool dock (glass island over the chart's left edge; phones: right-edge strip) ---- */
 .tool-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: var(--rail-w);
   flex: 0 0 var(--rail-w);
-  padding: 4px 0;
-  background: var(--panel);
+  padding: 2px 0;
+  background: transparent;
   user-select: none;
 }
 
@@ -19,12 +19,12 @@
 }
 
 .io-icon-btn.lt-btn {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   margin: 1px 0;
   padding: 0;
-  border-radius: var(--radius-control);
+  border-radius: 10px;
   color: var(--text-muted);
 }
 .io-icon-btn.lt-btn:hover {
@@ -42,17 +42,17 @@
   background: var(--hover);
 }
 
-/* corner arrow that opens the group's flyout */
+/* corner arrow that opens the group's flyout (towards the chart: bottom-right on desktop) */
 .lt-arrow {
   position: absolute;
-  left: 0;
+  right: 0;
   bottom: 0;
   width: 8px;
   height: 14px;
   display: flex;
   align-items: flex-end;
-  justify-content: flex-start;
-  padding: 0 0 3px 1px;
+  justify-content: flex-end;
+  padding: 0 1px 3px 0;
   border: 0;
   border-radius: 2px;
   background: transparent;
@@ -66,8 +66,16 @@
 .lt-arrow:focus-visible {
   opacity: 1;
 }
-.lt-arrow svg {
-  transform: scaleX(-1);
+@media (max-width: 768px) {
+  .lt-arrow {
+    right: auto;
+    left: 0;
+    justify-content: flex-start;
+    padding: 0 0 3px 1px;
+  }
+  .lt-arrow svg {
+    transform: scaleX(-1);
+  }
 }
 .lt-arrow:hover {
   color: var(--text-strong);
@@ -79,10 +87,10 @@
 
 .lt-sep {
   flex: 0 0 auto;
-  width: calc(var(--rail-w) - 16px);
+  width: calc(var(--rail-w) - 20px);
   height: 1px;
   margin: 4px 0;
-  background: var(--border);
+  background: var(--glass-edge);
 }
 .lt-spacer {
   flex: 1 1 0;
@@ -119,8 +127,6 @@
   padding: 8px 14px 4px;
   color: var(--text-muted);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .lt-fly-row {
   margin: 0 4px;
@@ -348,8 +354,6 @@
 .lt-opt-label {
   color: var(--text-muted);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .lt-opt-seg {
   display: flex;

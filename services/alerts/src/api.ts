@@ -6,6 +6,7 @@ import type {
   AlertLogEntry,
   AlertRuntimeState,
 } from '@tickerglass/alerts';
+import type { StoredScript } from './scripts/catalog';
 
 /** HTTP failure. `status` 0 = network error. 409 carries `current`. */
 export class ApiError extends Error {
@@ -25,6 +26,8 @@ export class ApiError extends Error {
 
 export interface StoredDrawing {
   id: string;
+  /** The user the drawing belongs to (absent on servers without multi-user). */
+  ownerId?: string;
   symbol: string | null;
   data: {
     id?: string;
@@ -38,6 +41,8 @@ export interface StoredDrawing {
 
 export interface StateRow {
   alertId: string;
+  /** Owner of the alert (read from the API; never sent back). */
+  ownerId?: string;
   revision: number;
   state: AlertRuntimeState;
 }
@@ -72,15 +77,12 @@ export class ApiClient {
     this.timeoutMs = opts.timeoutMs ?? 15_000;
   }
 
-  private async once(
-    method: string,
-    path: string,
-    body: unknown,
-    service: boolean,
-  ): Promise<unknown> {
+  private async once(method: string, path: string, body: unknown): Promise<unknown> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    if (service && this.token) headers['X-Alerts-Token'] = this.token;
+    // Every call carries the token: the API accepts it on any GET (the service reads all owners'
+    // alerts, states, scripts, providers) and on its write routes only, so it cannot unlock more.
+    if (this.token) headers['X-Alerts-Token'] = this.token;
     const f = this.fetchImpl ?? globalThis.fetch;
     let res: Response;
     try {
@@ -112,16 +114,11 @@ export class ApiClient {
     throw new ApiError(message, res.status, current);
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    service = false,
-  ): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let last: ApiError | null = null;
     for (let i = 0; i < this.attempts; i++) {
       try {
-        return (await this.once(method, path, body, service)) as T;
+        return (await this.once(method, path, body)) as T;
       } catch (err) {
         if (!(err instanceof ApiError) || !err.transient) throw err;
         last = err;
@@ -149,19 +146,24 @@ export class ApiClient {
     return this.request('GET', '/api/alerts/states');
   }
   putStates(states: StateRow[]): Promise<{ written: string[]; ignored: string[] }> {
-    return this.request('PUT', '/api/alerts/states', { states }, true);
+    const body = states.map(({ alertId, revision, state }) => ({ alertId, revision, state }));
+    return this.request('PUT', '/api/alerts/states', { states: body });
   }
   fire(id: string, body: FireIn): Promise<AlertLogEntry> {
-    return this.request('POST', `/api/alerts/${encodeURIComponent(id)}/fire`, body, true);
+    return this.request('POST', `/api/alerts/${encodeURIComponent(id)}/fire`, body);
   }
   setStatus(
     id: string,
     body: { revision: number; status: 'expired' | 'error'; reason: string },
   ): Promise<Alert> {
-    return this.request('POST', `/api/alerts/${encodeURIComponent(id)}/status`, body, true);
+    return this.request('POST', `/api/alerts/${encodeURIComponent(id)}/status`, body);
   }
   async heartbeat(hb: ServiceHeartbeat): Promise<void> {
-    await this.request('POST', '/api/alerts/service/heartbeat', hb, true);
+    await this.request('POST', '/api/alerts/service/heartbeat', hb);
+  }
+  /** Every user script with its source and last saved manifest (null when it did not compile). */
+  listUserScripts(): Promise<StoredScript[]> {
+    return this.request('GET', '/api/user-scripts');
   }
   /** Drawings of a symbol (plus synced ones); all drawings when `symbol` is null or too long. */
   async getDrawings(symbol: string | null): Promise<StoredDrawing[]> {

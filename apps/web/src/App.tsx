@@ -23,7 +23,7 @@ import { Navigator } from './navigator/Navigator';
 import { useAppStore } from './store/app';
 import { useUiStore } from './store/ui';
 import { QuickTools, ToolRail } from './toolbar/ToolRail';
-import { TopBar } from './topbar/TopBar';
+import { ChartIsland, TopBar } from './topbar/TopBar';
 import { ContextMenuHost } from './ui/ContextMenu';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { retryableLazy } from './ui/lazyRetry';
@@ -169,14 +169,15 @@ function Shell() {
       <header className="app-top">
         <TopBar />
       </header>
-      <Navigator />
       <main className="center">
         <div className="chart-pane">
           <div className="chart-area">
             <ChartGrid />
           </div>
         </div>
+        {mobile ? null : <ChartIsland />}
       </main>
+      <Navigator />
       <Inspector />
       <aside className={`app-rail${railHidden ? ' collapsed' : ''}`} inert={railHidden}>
         <ToolRail />

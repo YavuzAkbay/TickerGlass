@@ -6,21 +6,24 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import select, update
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import OwnedSessionDep
+from ..ownership import owned_get
 from ..userdata import schemas as s
 from ..userdata import store
 
 router = APIRouter(prefix="/layouts", tags=["layouts"])
 
 
-def _get(session: SessionDep, layout_id: str) -> m.Layout:
-    row = session.get(m.Layout, layout_id)
+def _get(session: OwnedSessionDep, layout_id: str) -> m.Layout:
+    row = owned_get(session, m.Layout, layout_id)
     if row is None:
         raise HTTPException(404, f"layout not found: {layout_id}")
     return row
 
 
-def _create(session: SessionDep, name: str, state: dict[str, object], version: int) -> m.Layout:
+def _create(
+    session: OwnedSessionDep, name: str, state: dict[str, object], version: int
+) -> m.Layout:
     t = s.now()
     row = m.Layout(
         id=s.new_id(),
@@ -38,27 +41,27 @@ def _create(session: SessionDep, name: str, state: dict[str, object], version: i
 
 
 @router.get("", response_model=list[s.LayoutSummary])
-def list_layouts(session: SessionDep) -> list[s.LayoutSummary]:
+def list_layouts(session: OwnedSessionDep) -> list[s.LayoutSummary]:
     """Summaries (no state), most recently updated first."""
     rows = session.scalars(select(m.Layout).order_by(m.Layout.updated_at.desc(), m.Layout.id))
     return [store.layout_summary(r) for r in rows]
 
 
 @router.post("", response_model=s.Layout, status_code=201)
-def create_layout(session: SessionDep, body: s.LayoutCreate) -> s.Layout:
+def create_layout(session: OwnedSessionDep, body: s.LayoutCreate) -> s.Layout:
     """Create (also "save as": post the current state under a new name)."""
     return store.layout(_create(session, body.name, body.state, body.schema_version))
 
 
 @router.get("/last-used", response_model=s.Layout | None)
-def get_last_used(session: SessionDep) -> s.Layout | None:
+def get_last_used(session: OwnedSessionDep) -> s.Layout | None:
     """The layout to restore on startup, or null."""
     row = session.scalar(select(m.Layout).where(m.Layout.is_last_used.is_(True)))
     return None if row is None else store.layout(row)
 
 
 @router.put("/last-used", status_code=204)
-def set_last_used(session: SessionDep, body: s.LastUsed) -> Response:
+def set_last_used(session: OwnedSessionDep, body: s.LastUsed) -> Response:
     _get(session, body.id)
     store.set_last_used(session, body.id)
     session.commit()
@@ -67,7 +70,7 @@ def set_last_used(session: SessionDep, body: s.LastUsed) -> Response:
 
 @router.post("/import", response_model=s.Layout, status_code=201)
 def import_layout(
-    session: SessionDep,
+    session: OwnedSessionDep,
     body: s.LayoutExport,
     name: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
 ) -> s.Layout:
@@ -79,12 +82,12 @@ def import_layout(
 
 
 @router.get("/{layout_id}", response_model=s.Layout)
-def get_layout(session: SessionDep, layout_id: str) -> s.Layout:
+def get_layout(session: OwnedSessionDep, layout_id: str) -> s.Layout:
     return store.layout(_get(session, layout_id))
 
 
 @router.put("/{layout_id}", response_model=s.Layout)
-def save_layout(session: SessionDep, layout_id: str, body: s.LayoutSave) -> s.Layout:
+def save_layout(session: OwnedSessionDep, layout_id: str, body: s.LayoutSave) -> s.Layout:
     """Overwrite the state. 409 (with the stored layout) unless `revision` is current.
 
     The revision check and the write are one conditional UPDATE, so two writers
@@ -118,7 +121,9 @@ def save_layout(session: SessionDep, layout_id: str, body: s.LayoutSave) -> s.La
 
 
 @router.patch("/{layout_id}", response_model=s.LayoutSummary)
-def rename_layout(session: SessionDep, layout_id: str, body: s.LayoutRename) -> s.LayoutSummary:
+def rename_layout(
+    session: OwnedSessionDep, layout_id: str, body: s.LayoutRename
+) -> s.LayoutSummary:
     """Rename. Does not bump `revision` (it guards the state only)."""
     row = _get(session, layout_id)
     row.name = body.name
@@ -128,21 +133,21 @@ def rename_layout(session: SessionDep, layout_id: str, body: s.LayoutRename) -> 
 
 
 @router.post("/{layout_id}/duplicate", response_model=s.Layout, status_code=201)
-def duplicate_layout(session: SessionDep, layout_id: str, body: s.LayoutRename) -> s.Layout:
+def duplicate_layout(session: OwnedSessionDep, layout_id: str, body: s.LayoutRename) -> s.Layout:
     """Copy the stored state under a new name."""
     src = _get(session, layout_id)
     return store.layout(_create(session, body.name, src.state, src.schema_version))
 
 
 @router.delete("/{layout_id}", status_code=204)
-def delete_layout(session: SessionDep, layout_id: str) -> Response:
+def delete_layout(session: OwnedSessionDep, layout_id: str) -> Response:
     session.delete(_get(session, layout_id))
     session.commit()
     return Response(status_code=204)
 
 
 @router.get("/{layout_id}/export", response_model=s.LayoutExport)
-def export_layout(session: SessionDep, layout_id: str) -> s.LayoutExport:
+def export_layout(session: OwnedSessionDep, layout_id: str) -> s.LayoutExport:
     row = _get(session, layout_id)
     return s.LayoutExport(
         exported_at=s.now(),

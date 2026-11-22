@@ -98,8 +98,6 @@
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .dlg-list {
@@ -406,8 +404,6 @@
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 .dlg-side-item {
   display: flex;
@@ -485,8 +481,6 @@
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 .dlg-row {
   display: flex;
@@ -1218,4 +1212,156 @@
 .srv-inline-icon {
   vertical-align: -2px;
   margin-right: 4px;
+}
+
+/* ======== Settings > Account / Users ======== */
+.usr-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.usr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.usr-row:last-child {
+  border-bottom: 0;
+}
+.usr-row.disabled .usr-main {
+  opacity: 0.6;
+}
+.usr-main {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.usr-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.usr-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.usr-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.usr-tag-off {
+  color: var(--down);
+}
+.usr-role {
+  min-width: 0;
+  width: 110px;
+}
+.usr-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.usr-inline {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.usr-inline .io-input {
+  flex: 1 1 200px;
+}
+.usr-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+}
+.usr-value {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+.usr-error {
+  flex: 1 0 100%;
+  margin: 4px 0 0;
+  color: var(--down);
+  font-size: 13px;
+}
+
+/* ======== Settings > Server > Backups ======== */
+.bak-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-strong);
+}
+.bak-banner p {
+  flex: 1 1 240px;
+  margin: 0;
+}
+.bak-actions {
+  margin-top: 8px;
+}
+.bak-subhead {
+  margin: 16px 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.bak-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.bak-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.bak-row:last-child {
+  border-bottom: 0;
+}
+.bak-main {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.bak-date {
+  color: var(--text-strong);
+}
+.bak-lock {
+  margin-left: 6px;
+  color: var(--text-muted);
+  vertical-align: -1px;
+}
+.bak-meta {
+  color: var(--text-muted);
+  font-size: 12px;
 }

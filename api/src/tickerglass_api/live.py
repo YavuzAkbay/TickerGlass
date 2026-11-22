@@ -7,6 +7,7 @@ without a source (providers with no stream) only polls, and reports status "poll
 """
 
 import asyncio
+import functools
 import logging
 import math
 import time
@@ -34,6 +35,8 @@ OPEN_MARKET_HOURS = frozenset({1})
 HOURS_REFRESH_S = 300.0
 # Topics a client may subscribe to with `{"op": "events", "topics": [...]}`.
 EVENT_TOPICS = frozenset({"alerts", "drawings"})
+# Queued on a user's sockets to make the writer close them (the user was disabled or deleted).
+KICK_FRAME: dict[str, Any] = {"type": "_close"}
 # Longest wait for an upstream's `close()` before giving up on it.
 SOURCE_CLOSE_TIMEOUT_S = 5.0
 
@@ -112,6 +115,8 @@ def _poll_result(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "change": row.get("change"),
             "changePercent": row.get("changePercent"),
             "dayVolume": row.get("volume"),
+            "dayHigh": row.get("dayHigh"),
+            "dayLow": row.get("dayLow"),
         }
         for row in rows
         if row.get("symbol")
@@ -151,9 +156,13 @@ def market_poller(market: MarketService, guard: UpstreamGuard) -> Poller:
 
 
 class LiveClient:
-    """One downstream connection: its symbol set and a bounded outbound queue."""
+    """One downstream connection: its symbol set and a bounded outbound queue. `user_id` is
+    the signed-in user, `system` the alerts service (sees every owner's events); a client with
+    neither receives no user-data events."""
 
-    def __init__(self, maxsize: int) -> None:
+    def __init__(self, maxsize: int, user_id: str | None = None, system: bool = False) -> None:
+        self.user_id = user_id
+        self.system = system
         self.symbols: set[str] = set()
         #: Event topics (`op: events`); they do not count toward the symbol cap.
         self.topics: set[str] = set()
@@ -265,28 +274,46 @@ class LiveHub:
                 raise ValueError(f"unknown topic {topic!r}")
         client.topics = set(topics)
 
-    def publish(self, topic: str, frame: dict[str, Any]) -> None:
-        """Fan a frame out to the clients holding `topic`. Event-loop thread only."""
+    def publish(self, topic: str, frame: dict[str, Any], *, owner_id: str | None) -> None:
+        """Fan a user-data frame out to the clients holding `topic` that belong to `owner_id`,
+        plus system clients. `owner_id=None` reaches system clients only (fail closed).
+        Event-loop thread only."""
         out = {**frame, "topic": topic}
         for client in tuple(self._clients):
-            if topic in client.topics:
+            if topic not in client.topics:
+                continue
+            if client.system or (owner_id is not None and client.user_id == owner_id):
                 client.send(out)
 
-    def publish_threadsafe(self, topic: str, frame: dict[str, Any]) -> None:
+    def publish_threadsafe(
+        self, topic: str, frame: dict[str, Any], *, owner_id: str | None
+    ) -> None:
         """`publish` from any thread (sync routes run in the threadpool). Call after commit."""
+        self._call_soon(f"{topic} frame", self.publish, topic, frame, owner_id=owner_id)
+
+    def kick(self, user_id: str) -> None:
+        """Close the sockets of a user (disabled or deleted). Event-loop thread only."""
+        for client in tuple(self._clients):
+            if client.user_id == user_id:
+                client.send(KICK_FRAME)
+
+    def kick_threadsafe(self, user_id: str) -> None:
+        self._call_soon("kick", self.kick, user_id)
+
+    def _call_soon(self, what: str, fn: Callable[..., None], *args: Any, **kwargs: Any) -> None:
         loop = self._loop
         if loop is None or loop.is_closed():
-            log.debug("dropping %s frame: event loop not available", topic)
+            log.debug("dropping %s: event loop not available", what)
             return
         try:
-            loop.call_soon_threadsafe(self.publish, topic, frame)
+            loop.call_soon_threadsafe(functools.partial(fn, *args, **kwargs))
         except RuntimeError:
-            log.debug("dropping %s frame: event loop closed", topic)
+            log.debug("dropping %s: event loop closed", what)
 
     # -- client management -------------------------------------------------
 
-    def register(self) -> LiveClient:
-        client = LiveClient(self._queue_size)
+    def register(self, *, user_id: str | None = None, system: bool = False) -> LiveClient:
+        client = LiveClient(self._queue_size, user_id, system)
         self._clients.add(client)
         if self._status is not None:
             client.send({"type": "status", "upstream": self._status})

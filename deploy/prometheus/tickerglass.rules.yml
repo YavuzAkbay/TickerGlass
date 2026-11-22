@@ -1,0 +1,93 @@
+# Starter alert rules for TickerGlass (docs/metrics.md). Load them with rule_files in prometheus.yml
+# (see prometheus.example.yml) and route the alerts with your Alertmanager. Thresholds are
+# deliberately loose; tune them to your setup. Checked by deploy/check.py: every metric used here
+# is in deploy/metrics_catalogue.txt.
+groups:
+  - name: tickerglass
+    rules:
+      - alert: TickerGlassDown
+        expr: up{job="tickerglass"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: TickerGlass is not scrapeable
+          description: Prometheus has not been able to scrape /metrics for 5 minutes (server down, wrong token or metrics disabled).
+
+      - alert: TickerGlassAlertsServiceDown
+        expr: tickerglass_alerts_service_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: The TickerGlass alerts service is offline
+          description: No heartbeat from the alerts service for 5 minutes. Server-side alerts are not being evaluated.
+
+      - alert: TickerGlassScreenerSnapshotStale
+        expr: tickerglass_screener_snapshot_age_seconds > 36 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The screener snapshot is older than 36 hours
+          description: The nightly screener run has not produced a new snapshot. Check the screener status in Settings > Server.
+
+      - alert: TickerGlassBackupMissing
+        expr: |
+          (tickerglass_backup_enabled == 1)
+          and on() (time() - tickerglass_backup_last_success_timestamp_seconds > 2 * 24 * 3600)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: No successful TickerGlass backup in 2 days
+          description: Scheduled backups are enabled but the last success is older than 2 days. Check the backup status in Settings > Server.
+
+      - alert: TickerGlassBackupNeverSucceeded
+        expr: |
+          (tickerglass_backup_enabled == 1)
+          unless on() tickerglass_backup_last_success_timestamp_seconds
+        for: 2d
+        labels:
+          severity: warning
+        annotations:
+          summary: TickerGlass backups are enabled but none has ever succeeded
+          description: A schedule is configured and two days passed without one successful backup.
+
+      - alert: TickerGlassNotificationFailures
+        expr: sum(increase(tickerglass_notifications_deliveries_total{outcome="failed"}[30m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: TickerGlass notifications are failing
+          description: At least one notification delivery was given up on in the last 30 minutes. Check the channel settings and the outbox.
+
+      - alert: TickerGlassNotificationBacklog
+        expr: tickerglass_notifications_oldest_pending_age_seconds > 900
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: A TickerGlass notification has been pending for over 15 minutes
+          description: The outbox is not draining; a channel is probably unreachable.
+
+      - alert: TickerGlassProviderBreakerOpen
+        expr: max by (provider) (tickerglass_provider_breaker_open) == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The {{ $labels.provider }} market data circuit breaker has been open for 15 minutes
+          description: TickerGlass keeps skipping this provider after repeated failures. Prices may be stale.
+
+      - alert: TickerGlassHighErrorRate
+        expr: |
+          sum(rate(tickerglass_http_requests_total{status="5xx"}[10m]))
+            / sum(rate(tickerglass_http_requests_total[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 5 percent of TickerGlass requests fail with a server error
+          description: Check the API logs.

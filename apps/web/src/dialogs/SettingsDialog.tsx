@@ -9,6 +9,8 @@ import {
   PanelTop,
   Ruler,
   Server,
+  UserRound,
+  Users,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import {
@@ -27,6 +29,7 @@ import {
 import { AlertsSettingsTab } from '../alerts/SettingsTab';
 import { EventsTab } from '../events/EventsTab';
 import { errorMessage } from '../api/client';
+import type { AuthState } from '../api/auth';
 import { useCapabilities, useProviderName } from '../api/provider';
 import { changeScale } from '../commands/scaleActions';
 import {
@@ -41,7 +44,10 @@ import { toast } from '../ui/Toast';
 import { useAppStore, type Theme } from '../store/app';
 import { DEFAULT_STATUS_LINE, useChartView, type StatusLineSettings } from '../store/chartView';
 import { TradingTab } from '../replay/TradingTab';
+import { AccountTab } from '../settings/AccountTab';
 import { ServerTab } from '../settings/ServerTab';
+import { UsersTab } from '../settings/UsersTab';
+import { useAuthStore } from '../store/auth';
 import { DataSourcePicker } from '../setup/ProviderPicker';
 import { chartTypeDef } from '../topbar/chartTypes';
 import { getChart } from '../store/chart';
@@ -60,7 +66,9 @@ type TabId =
   | 'alerts'
   | 'events'
   | 'dataSource'
-  | 'server';
+  | 'server'
+  | 'account'
+  | 'users';
 
 const TABS: {
   id: TabId;
@@ -77,7 +85,17 @@ const TABS: {
   { id: 'alerts', label: 'settings.tab.alerts', icon: AlarmClock },
   { id: 'dataSource', label: 'settings.tab.dataSource', icon: Database },
   { id: 'server', label: 'settings.tab.server', icon: Server },
+  { id: 'account', label: 'settings.tab.account', icon: UserRound },
+  { id: 'users', label: 'settings.tab.users', icon: Users },
 ];
+
+/** Account needs a signed-in user the server knows by id; Users needs admin rights. */
+export function visibleTabs(info: AuthState | null): typeof TABS {
+  return TABS.filter(
+    (def) =>
+      (def.id !== 'account' || !!info?.user?.id) && (def.id !== 'users' || !!info?.canManageUsers),
+  );
+}
 
 const TIMEZONES = [
   'America/New_York',
@@ -177,6 +195,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   const provider = useProviderName();
   const [initial] = useState(readDraft);
   const [draft, setDraft] = useState(initial);
+  const authInfo = useAuthStore((s) => s.info);
+  const tabs = visibleTabs(authInfo);
   const [tab, setTab] = useState<TabId>('symbol');
   const chartType = useChartView((st) => st.chartType);
   const [templateBtn, setTemplateBtn] = useState<HTMLButtonElement | null>(null);
@@ -582,6 +602,10 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     );
   } else if (tab === 'server') {
     content = <ServerTab />;
+  } else if (tab === 'account') {
+    content = <AccountTab />;
+  } else if (tab === 'users') {
+    content = <UsersTab />;
   } else {
     content = <TradingTab />;
   }
@@ -595,7 +619,7 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
           aria-orientation="vertical"
           aria-label="Settings sections"
         >
-          {TABS.map((def) => {
+          {tabs.map((def) => {
             const Icon = def.icon;
             return (
               <button

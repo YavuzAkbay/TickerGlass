@@ -52,8 +52,6 @@
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .hl-list {
   margin: 0;

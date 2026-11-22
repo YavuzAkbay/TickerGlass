@@ -1,0 +1,103 @@
+name: Deploy templates
+
+# Checks deploy/ (app-store templates, Helm chart) against docker-compose.yml and builds + smoke
+# tests the all-in-one image. Separate from ci.yml so it only runs when these files can be affected.
+on:
+  # The all-in-one image is built from the API, the web app and the alerts service, so changes to
+  # any of them (and to the lockfile / workspace config the Dockerfiles copy) run it too.
+  push:
+    branches: [main]
+    paths:
+      - deploy/**
+      - docker/**
+      - api/**
+      - apps/**
+      - services/**
+      - packages/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - tsconfig.base.json
+      - docker-compose.yml
+      - VERSION
+      - .github/workflows/deploy.yml
+      - .github/workflows/release.yml
+  pull_request:
+    paths:
+      - deploy/**
+      - docker/**
+      - api/**
+      - apps/**
+      - services/**
+      - packages/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - tsconfig.base.json
+      - docker-compose.yml
+      - VERSION
+      - .github/workflows/deploy.yml
+      - .github/workflows/release.yml
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Templates match docker-compose.yml and VERSION
+        run: uv run --with pyyaml python deploy/check.py
+      - name: Shell scripts
+        run: shellcheck -S warning deploy/smoke-aio.sh docker/aio/entrypoint.sh deploy/umbrel/*/exports.sh
+      - name: Compose files are valid
+        env:
+          APP_DATA_DIR: /tmp/umbrel-data
+          AppID: tickerglass
+          TZ: Etc/UTC
+        run: |
+          # Umbrel sources exports.sh with its derive_entropy helper; stand in for both.
+          derive_entropy() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+          app_entropy_identifier=app-ci-seed
+          . deploy/umbrel/tickerglass-store-tickerglass/exports.sh
+          [ "${#APP_TICKERGLASS_ALERTS_TOKEN}" -ge 32 ] && [ "$APP_TICKERGLASS_ALERTS_TOKEN" != "$APP_TICKERGLASS_AUTH_SECRET" ]
+          # Umbrel injects app_proxy itself; give it an image so `config` accepts the file.
+          printf 'services:\n  app_proxy:\n    image: busybox\n' > "$RUNNER_TEMP/app-proxy.yml"
+          docker compose -f deploy/umbrel/tickerglass-store-tickerglass/docker-compose.yml -f "$RUNNER_TEMP/app-proxy.yml" config -q
+          docker compose -f deploy/truenas/docker-compose.yaml config -q
+          docker compose -f deploy/casaos/docker-compose.yml config -q
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/tickerglass
+      - name: Render with defaults and with every optional feature
+        run: |
+          helm template t deploy/helm/tickerglass > /dev/null
+          helm template t deploy/helm/tickerglass \
+            --set ingress.enabled=true --set 'ingress.tls[0].secretName=tls' \
+            --set existingSecret=my-secret --set api.persistence.enabled=false \
+            --set publicUrl=https://tickerglass.example.com \
+            --set api.extraEnv.AUTH_PASSWORD=pw --set alerts.enabled=false \
+            --set api.trustedProxies=10.0.0.0/8 --set keepResources=false > /dev/null
+
+  aio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/aio.Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: tickerglass:smoke
+          cache-from: type=gha,scope=aio-smoke
+          cache-to: type=gha,scope=aio-smoke,mode=max
+      - name: Smoke test (default user)
+        run: deploy/smoke-aio.sh tickerglass:smoke
+      - name: Smoke test (Unraid user, PUID=99 PGID=100)
+        run: deploy/smoke-aio.sh tickerglass:smoke 99 100

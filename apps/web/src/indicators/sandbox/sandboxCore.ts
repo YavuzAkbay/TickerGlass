@@ -1,28 +1,22 @@
 import {
+  DEFAULT_CHECK_LIVE_BARS,
   IndicatorRegistry,
-  IndicatorRuntime,
   USER_SCRIPT_API_VERSION,
+  checkScript,
   compileUserScript,
+  sameValue,
   type AnyIndicatorDefinition,
-  type BarInput,
-  type IndicatorResult,
   type InputValueMap,
   type RuntimeContext,
 } from '@tickerglass/indicators/core';
 import type { BarColumns } from '@tickerglass/engine';
 import { WorkerCore } from '../workerCore';
-import type {
-  CheckMismatch,
-  FromSandbox,
-  ProbeResult,
-  SandboxMessage,
-  ToSandbox,
-} from './protocol';
+import type { FromSandbox, ProbeResult, SandboxMessage, ToSandbox } from './protocol';
 
 export type SandboxPost = (msg: FromSandbox, transfer: Transferable[]) => void;
 
-/** Live bars a `check` feeds as ticks when the request names no valid count. */
-export const DEFAULT_CHECK_LIVE_BARS = 50;
+// The check itself lives in @tickerglass/indicators (shared with the alerts service).
+export { DEFAULT_CHECK_LIVE_BARS, sameValue };
 
 const WORKER_TYPES = new Set<string>([
   'context',
@@ -38,7 +32,6 @@ const SCRIPT_PARAMS = ['defineIndicator', 'NO_COLOR', 'PRICE_SOURCES', 'calendar
 const STACK_POSITION = /user-script\.js:(\d+):(\d+)/;
 /** Location suffix `annotateError` appends. */
 const LOCATION_SUFFIX = / \(line (\d+):(\d+)\)$/;
-const CHECK_ID = 'check';
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -230,44 +223,22 @@ export class SandboxCore {
       this.post({ type: 'error', message: 'Check: no script loaded' }, []);
       return;
     }
-    const n = bars.time.length;
-    const k = Math.min(
-      n,
-      Number.isInteger(liveBars) && liveBars > 0 ? liveBars : DEFAULT_CHECK_LIVE_BARS,
-    );
-    const runtime = () => {
-      const rt = new IndicatorRuntime({ registry: this.registry, context });
-      rt.add({ id: CHECK_ID, type: def.id, inputs });
-      return rt;
-    };
-
-    const full = runtime();
-    full.setBars(bars);
-    const live = runtime();
-    live.setBars(sliceColumns(bars, n - k));
-    for (let i = n - k; i < n; i++) {
-      const bar = barAt(bars, i);
-      live.updateBar(i, firstTick(bar));
-      live.updateBar(i, bar);
-    }
-
-    const a = full.result(CHECK_ID);
-    const b = live.result(CHECK_ID);
-    if (!a || !b) throw new Error('check instance missing');
-    for (const [r, what] of [
-      [a, 'full'],
-      [b, 'live'],
-    ] as const) {
-      if (r.status.state === 'error') {
-        this.post({ type: 'error', message: `Check (${what}): ${r.status.message}` }, []);
-        return;
-      }
-    }
-    const mismatch = firstMismatch(a, b, n);
-    this.post(
-      mismatch ? { type: 'checkResult', ok: false, mismatch } : { type: 'checkResult', ok: true },
-      [],
-    );
+    const outcome = checkScript({
+      registry: this.registry,
+      type: def.id,
+      bars,
+      context,
+      inputs,
+      liveBars,
+    });
+    if ('error' in outcome) this.post({ type: 'error', message: outcome.error }, []);
+    else
+      this.post(
+        outcome.ok
+          ? { type: 'checkResult', ok: true }
+          : { type: 'checkResult', ok: false, mismatch: outcome.mismatch },
+        [],
+      );
   }
 
   /** Runs `code` as a script body (no `defineIndicator`); dev/e2e probe. */
@@ -289,70 +260,6 @@ export class SandboxCore {
       return { ok: false, error: describe(err), ...at };
     }
   }
-}
-
-/** |a−b| <= 1e-9·max(1,|b|); NaN equals NaN. */
-export function sameValue(a: number, b: number): boolean {
-  if (a === b) return true;
-  if (Number.isNaN(a) || Number.isNaN(b)) return Number.isNaN(a) && Number.isNaN(b);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return false; // unequal infinities
-  return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b));
-}
-
-/** Earliest bar index at which any output (value or palette index) of `live` differs from `full`. */
-function firstMismatch(
-  full: IndicatorResult,
-  live: IndicatorResult,
-  n: number,
-): CheckMismatch | null {
-  const columns: [string, ArrayLike<number>, ArrayLike<number> | undefined][] = [
-    ...Object.entries(full.values).map(
-      ([id, arr]) =>
-        [id, arr, live.values[id]] as [string, ArrayLike<number>, ArrayLike<number> | undefined],
-    ),
-    ...Object.entries(full.colors).map(
-      ([id, arr]) =>
-        [id, arr, live.colors[id]] as [string, ArrayLike<number>, ArrayLike<number> | undefined],
-    ),
-  ];
-  const at = (arr: ArrayLike<number> | undefined, i: number) =>
-    arr && i < arr.length ? arr[i]! : NaN;
-  for (let i = 0; i < n; i++) {
-    for (const [outputId, f, l] of columns) {
-      const x = at(f, i);
-      const y = at(l, i);
-      if (!sameValue(y, x)) return { outputId, index: i, full: x, live: y };
-    }
-  }
-  return null;
-}
-
-function barAt(cols: BarColumns, i: number): BarInput {
-  return {
-    time: cols.time[i]!,
-    open: cols.open[i]!,
-    high: cols.high[i]!,
-    low: cols.low[i]!,
-    close: cols.close[i]!,
-    volume: cols.volume[i]!,
-  };
-}
-
-/** The opening tick of a live bar: every price at the open, a tenth of the volume. */
-function firstTick(bar: BarInput): BarInput {
-  const o = bar.open;
-  return { ...bar, high: o, low: o, close: o, volume: bar.volume * 0.1 };
-}
-
-function sliceColumns(cols: BarColumns, to: number): BarColumns {
-  return {
-    time: cols.time.subarray(0, to),
-    open: cols.open.subarray(0, to),
-    high: cols.high.subarray(0, to),
-    low: cols.low.subarray(0, to),
-    close: cols.close.subarray(0, to),
-    volume: cols.volume.subarray(0, to),
-  };
 }
 
 /** Engine line/column of the user-script frame in `err`'s stack, if any. */
