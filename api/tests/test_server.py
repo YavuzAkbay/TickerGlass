@@ -21,7 +21,7 @@ def test_status_shape(make_client: Callable[..., TestClient]) -> None:
     for key in ("watchlists", "layouts", "drawings", "notes", "userScripts", "alerts", "bars"):
         assert isinstance(body["counts"][key], int)
     assert body["alertsService"] == {"online": False}
-    assert body["auth"] == {"enabled": True}
+    assert body["auth"] == {"enabled": True, "methods": ["password"]}
 
 
 def test_cache_clear_empties_bars(make_client: Callable[..., TestClient]) -> None:

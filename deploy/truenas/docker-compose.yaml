@@ -1,0 +1,60 @@
+# TickerGlass for TrueNAS SCALE 24.10+ (Electric Eel and later): Apps -> Discover Apps ->
+# three-dot menu -> "Install via YAML". Name the app `tickerglass`, paste this file.
+#
+# Before installing, create a dataset for the database (for example /mnt/tank/apps/tickerglass)
+# and replace /mnt/tank/apps/tickerglass below with its path; the API container runs as root, so
+# any dataset permissions work. Replace CHANGE-ME-long-random-string (twice) with the same long
+# random string, e.g. the output of `openssl rand -hex 32` (at least 32 characters). The API
+# refuses to start while the token is short or still contains CHANGE-ME.
+# The web UI is on http://<truenas-ip>:30080. Official catalog submission is a follow-up.
+# Checked against docker-compose.yml by deploy/check.py.
+services:
+  api:
+    image: ghcr.io/yavuzakbay/tickerglass-api:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////data/tickerglass.db
+      MARKET_PROVIDER: yahoo
+      ALERTS_INTERNAL_TOKEN: CHANGE-ME-long-random-string
+      AUTH_PASSWORD: ''
+      AUTH_SECRET: ''
+      PUBLIC_URL: ''
+      # Prometheus /metrics (docs/metrics.md), off by default. With a login set, also set a token
+      # (16+ characters).
+      METRICS_ENABLED: 'false'
+      METRICS_TOKEN: ''
+    volumes:
+      - /mnt/tank/apps/tickerglass:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/ready')"
+      interval: 30s
+      start_period: 20s
+      start_interval: 1s
+      timeout: 5s
+      retries: 3
+
+  web:
+    image: ghcr.io/yavuzakbay/tickerglass-web:latest
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      TG_API_UPSTREAM: api:8000
+    ports:
+      - '30080:80'
+
+  alerts:
+    image: ghcr.io/yavuzakbay/tickerglass-alerts:latest
+    restart: unless-stopped
+    mem_limit: 1280m
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:8000
+      ALERTS_INTERNAL_TOKEN: CHANGE-ME-long-random-string
+      ALERTS_SCRIPT_PROCESS_MB: '768'

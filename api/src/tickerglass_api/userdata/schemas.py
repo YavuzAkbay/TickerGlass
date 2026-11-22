@@ -12,6 +12,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 from pydantic.alias_generators import to_camel
 
 from .alerts import BundleAlert
+from .portfolio import BundleJournalEntry, BundlePortfolio, BundleTx
 from .screens import BundleScreen
 
 #: Version of the import/export bundle format (`Bundle.version`).
@@ -177,6 +178,8 @@ class LayoutExport(ApiModel):
 
 class Drawing(ApiModel):
     id: str
+    #: The user the drawing belongs to (the alerts service keys drawings by (ownerId, id)).
+    owner_id: str
     #: null = synced across all symbols (scope 'all').
     symbol: str | None
     pane_id: str
@@ -286,15 +289,20 @@ class SettingIn(ApiModel):
 # -------------------------------------------------------------------- notes
 
 
+NoteKind = Literal["note", "journal"]
+
+
 class NoteIn(ApiModel):
     symbol: Symbol = None
     text: NoteText
+    #: 'journal' notes belong to a journal entry and are not listed by default.
+    kind: NoteKind = "note"
 
 
 class NoteUpdate(ApiModel):
     symbol: Symbol = None
     text: NoteText
-    #: When given, 409 unless it matches the stored revision.
+    #: When given, 409 unless it matches the stored revision. (`kind` is fixed at creation.)
     revision: Revision | None = None
 
 
@@ -302,6 +310,7 @@ class Note(ApiModel):
     id: str
     symbol: str | None
     text: str
+    kind: NoteKind
     revision: int
     created_at: datetime
     updated_at: datetime
@@ -331,6 +340,8 @@ class UserScriptUpdate(ApiModel):
 
 class UserScript(ApiModel):
     id: str
+    #: The user the script belongs to (the alerts service keys scripts by (ownerId, id)).
+    owner_id: str
     name: str
     source: str
     manifest: dict[str, Any] | None
@@ -485,6 +496,8 @@ class BundleNote(ApiModel):
     id: Id
     symbol: Symbol = None
     text: NoteText
+    #: Absent (older bundles): 'note' for a new note, unchanged for an existing one.
+    kind: NoteKind | None = None
     revision: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -550,6 +563,15 @@ class Bundle(ApiModel):
     user_scripts: list[BundleUserScript] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
     #: Saved screener screens without their alert state; additive, BUNDLE_VERSION stays 1.
     screens: list[BundleScreen] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    #: Portfolios, their transactions and journal entries (screenshots inline as base64);
+    #: additive, BUNDLE_VERSION stays 1.
+    portfolios: list[BundlePortfolio] = Field(default_factory=list, max_length=MAX_BUNDLE_ITEMS)
+    portfolio_transactions: list[BundleTx] = Field(
+        default_factory=list, max_length=MAX_BUNDLE_ITEMS
+    )
+    journal_entries: list[BundleJournalEntry] = Field(
+        default_factory=list, max_length=MAX_BUNDLE_ITEMS
+    )
 
 
 class ImportCounts(ApiModel):
@@ -573,3 +595,6 @@ class ImportSummary(ApiModel):
     alerts: ImportCounts = Field(default_factory=ImportCounts)
     user_scripts: ImportCounts = Field(default_factory=ImportCounts)
     screens: ImportCounts = Field(default_factory=ImportCounts)
+    portfolios: ImportCounts = Field(default_factory=ImportCounts)
+    portfolio_transactions: ImportCounts = Field(default_factory=ImportCounts)
+    journal_entries: ImportCounts = Field(default_factory=ImportCounts)

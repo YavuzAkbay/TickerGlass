@@ -1,5 +1,5 @@
 import { ArrowLeft, Download, MoreHorizontal, PanelRight } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ViewToggle } from '../../heatmap/ViewToggle';
 import type { ViewMode } from '../../heatmap/viewMode';
 import { useT } from '../../i18n';
@@ -19,6 +19,8 @@ interface Props {
   onViewChange?: (view: ViewMode) => void;
   /** Replaces the bundled-universe date chip (server mode shows the snapshot date). */
   stamp?: { text: string; title: string };
+  /** Snapshot status pill, shown beside the title. */
+  status?: ReactNode;
 }
 
 /** Top bar of the screener screen: back, title, universe stamp, page actions. */
@@ -31,6 +33,7 @@ export function ScreenerHeader({
   view,
   onViewChange,
   stamp,
+  status,
 }: Props) {
   const t = useT();
   const [menuBtn, setMenuBtn] = useState<HTMLButtonElement | null>(null);
@@ -59,6 +62,7 @@ export function ScreenerHeader({
       >
         {stamp?.text ?? UNIVERSE_AS_OF}
       </span>
+      {status}
       <span className="scr-header-spacer" />
       {view && onViewChange ? (
         <ViewToggle value={view} onChange={onViewChange} testId="scr-view" />

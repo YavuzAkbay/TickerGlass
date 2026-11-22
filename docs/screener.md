@@ -164,7 +164,7 @@ Built-in presets: oversold large caps (`rsi14 < 30` and `mcap > 10B`), golden cr
   revision / conflict rules as watchlists, so they sync between devices).
 - **Screen alerts**: turn on the alert of a saved screen and, after each nightly run, the API compares the
   matching symbols with the previous run. Symbols that newly match are delivered through the usual alert
-  channels (in-app, webhook, Telegram, email; see [alerts](alerts.md)) and appear in the alert log. The first
+  channels (in-app, webhook, Telegram, email, ntfy, Gotify, Apprise; see [alerts](alerts.md)) and appear in the alert log. The first
   run of a screen only records its members.
 
 ## Universes

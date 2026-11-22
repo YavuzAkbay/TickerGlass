@@ -18,6 +18,13 @@ from pydantic_settings import BaseSettings
 
 from ..live import LiveSource
 from ..settings import Settings
+from . import crypto, massive, tiingo
+from .alpaca import AlpacaConfig, AlpacaLiveSource, AlpacaProvider
+from .alpaca import capabilities_for as alpaca_capabilities
+from .alpaca import costs_for as alpaca_costs
+from .alpaca import effective_feed as alpaca_feed
+from .alpaca import plan_of as alpaca_plan
+from .alpaca import setting_defaults_for as alpaca_defaults
 from .base import (
     Budget,
     Capabilities,
@@ -26,6 +33,12 @@ from .base import (
     MarketDataProvider,
     ProviderNotConfigured,
 )
+from .http import overridden_host
+from .stooq import BASE_URL as STOOQ_BASE_URL
+from .stooq import StooqConfig, StooqProvider
+from .stooq import capabilities as stooq_capabilities
+from .stooq import costs as stooq_costs
+from .stooq import setting_defaults as stooq_setting_defaults
 
 # Light module (HTTP over the standard library, pandas is loaded anyway): imported eagerly.
 from .twelvedata import (
@@ -52,6 +65,26 @@ def _no_defaults(_: BaseSettings | None) -> Mapping[str, Any]:
 
 def _no_plan(_: BaseSettings | None) -> str | None:
     return None
+
+
+def _no_identity(_: BaseSettings | None) -> str | None:
+    return None
+
+
+def _host_identity(default_url: str) -> Callable[[BaseSettings | None], str | None]:
+    """A cache identity for a provider whose only variant is the host of its `base_url`: none
+    on the default host, so existing caches keep their marker."""
+
+    def identity(config: BaseSettings | None) -> str | None:
+        url = getattr(config, "base_url", None)
+        return overridden_host(url, default_url) if isinstance(url, str) else None
+
+    return identity
+
+
+def _alpaca_identity(config: BaseSettings | None) -> str | None:
+    # IEX and SIP volumes differ: bars of one are not the other's.
+    return alpaca_feed(config) if isinstance(config, AlpacaConfig) else None
 
 
 @dataclass(frozen=True)
@@ -85,6 +118,29 @@ class ProviderSpec:
     #: `history` pages through long ranges itself (one call per backfill window): the bar
     #: service then does not split them in Yahoo-sized chunks.
     self_paging: bool = False
+    #: What, besides the provider, decides the data it serves (the exchange of a crypto
+    #: provider, a data feed): bars cached under one identity are not another's. None (also
+    #: when the config is missing) means the provider alone; see `cache_source`.
+    cache_identity: Callable[[BaseSettings | None], str | None] = _no_identity
+
+
+def cache_source(spec: ProviderSpec, config: BaseSettings | None) -> str:
+    """The marker the market data cache is filled under (`services.cache_source`): the provider
+    id, or `<id>:<identity>` when `spec.cache_identity` names one. A provider without an
+    identity keeps its plain id, so caches written before identities existed stay valid."""
+    identity = spec.cache_identity(config)
+    return spec.id if identity is None else f"{spec.id}:{identity}"
+
+
+def env_cache_source(spec: ProviderSpec) -> str | None:
+    """`cache_source` under the config the environment holds now. None when that config is
+    missing or invalid: nothing is fetched then (the stack reports why), and the cache keeps
+    its marker, so a key removed for a while does not cost a wipe and a full re-backfill."""
+    try:
+        config = load_config(spec)
+    except (ProviderNotConfigured, ValidationError):
+        return None
+    return cache_source(spec, config)
 
 
 class UnconfiguredProvider:
@@ -292,6 +348,22 @@ def _twelvedata_plan(config: BaseSettings | None) -> str | None:
     return config.plan if isinstance(config, TwelveDataConfig) else "basic"
 
 
+def _stooq(_: Settings, config: BaseSettings | None) -> MarketDataProvider:
+    assert isinstance(config, StooqConfig)
+    return StooqProvider(config)
+
+
+def _alpaca(settings: Settings, config: BaseSettings | None) -> MarketDataProvider:
+    assert isinstance(config, AlpacaConfig)
+    # A deep history call may page as far as the burst pays for, keeping one request of it.
+    return AlpacaProvider(config, max_pages=max(1, settings.upstream_burst - 1))
+
+
+def _alpaca_live(_: MarketDataProvider, config: BaseSettings | None) -> LiveSource | None:
+    assert isinstance(config, AlpacaConfig)
+    return AlpacaLiveSource(config)
+
+
 PROVIDERS: dict[str, ProviderSpec] = {
     "yahoo": ProviderSpec(
         id="yahoo",
@@ -333,5 +405,124 @@ PROVIDERS: dict[str, ProviderSpec] = {
         setting_defaults=_twelvedata_defaults,
         plan=_twelvedata_plan,
         self_paging=True,
+    ),
+    "massive": ProviderSpec(
+        id="massive",
+        name="Massive (formerly Polygon.io)",
+        description=(
+            "US stocks and ETFs (plus crypto and forex where the key allows) from the Massive "
+            "API, formerly Polygon.io. Needs an API key; the free plan is end-of-day only."
+        ),
+        network=True,
+        terms=(
+            "Needs a Massive API key (MASSIVE_API_KEY) and follows your plan (Basic: end-of-day "
+            "data, 2 years, 5 calls per minute; paid plans: minute bars, 15-minute delayed on "
+            "Starter and Developer). Check the plan's terms before sharing data."
+        ),
+        probe_symbol="AAPL",
+        make=massive.make_provider,
+        config=massive.MassiveConfig,
+        capabilities=massive.spec_capabilities,
+        costs=massive.spec_costs,
+        setting_defaults=massive.spec_setting_defaults,
+        plan=massive.spec_plan,
+        self_paging=True,
+        cache_identity=_host_identity(massive.BASE_URL),
+    ),
+    "alpaca": ProviderSpec(
+        id="alpaca",
+        name="Alpaca",
+        description=(
+            "US stocks, ETFs and crypto from Alpaca Market Data with live trade updates. "
+            "Needs a free API key pair; the free plan serves the IEX feed."
+        ),
+        network=True,
+        terms=(
+            "Needs Alpaca API keys (ALPACA_KEY_ID, ALPACA_SECRET_KEY). Free plan: IEX prices "
+            "only (not the full consolidated tape), 200 requests per minute, live updates "
+            "for 30 symbols at a time (the rest are polled). Check Alpaca's data terms "
+            "before sharing data."
+        ),
+        probe_symbol="AAPL",
+        make=_alpaca,
+        make_live=_alpaca_live,
+        config=AlpacaConfig,
+        capabilities=alpaca_capabilities,
+        costs=alpaca_costs,
+        setting_defaults=alpaca_defaults,
+        plan=alpaca_plan,
+        self_paging=True,
+        cache_identity=_alpaca_identity,
+    ),
+    "tiingo": ProviderSpec(
+        id="tiingo",
+        name="Tiingo",
+        description=(
+            "US stocks and ETFs (end-of-day history, IEX intraday bars and quotes) and crypto "
+            "from the Tiingo API. Needs an API key; the free plan allows 50 requests per hour."
+        ),
+        network=True,
+        terms=(
+            "Needs a Tiingo API key (TIINGO_API_KEY). Free plan: 50 requests per hour, 1000 per "
+            "day and 500 unique symbols per month; prices are IEX-based, with 5-minute and "
+            "longer bars. Live updates are opt-in (TIINGO_STREAM). Check Tiingo's terms "
+            "before sharing data."
+        ),
+        probe_symbol="AAPL",
+        make=tiingo.make_provider,
+        make_live=tiingo.make_live,
+        config=tiingo.TiingoConfig,
+        capabilities=tiingo.spec_capabilities,
+        costs=tiingo.spec_costs,
+        setting_defaults=tiingo.spec_setting_defaults,
+        plan=tiingo.spec_plan,
+        self_paging=True,
+        cache_identity=_host_identity(tiingo.BASE_URL),
+    ),
+    "stooq": ProviderSpec(
+        id="stooq",
+        name="Stooq",
+        description=(
+            "Daily, weekly and monthly history for US, UK, German and Japanese stocks, "
+            "indices, FX and crypto from stooq.com. Free, needs a manually obtained key."
+        ),
+        network=True,
+        terms=(
+            "Unofficial, personal use, may break without notice. Needs a key from "
+            "https://stooq.com/q/d/?s=aapl.us&get_apikey (STOOQ_API_KEY); daily bars only, "
+            "no search, events or fundamentals."
+        ),
+        probe_symbol="AAPL",
+        make=_stooq,
+        config=StooqConfig,
+        capabilities=lambda _: stooq_capabilities(),
+        costs=lambda _: stooq_costs(),
+        setting_defaults=lambda _: stooq_setting_defaults(),
+        cache_identity=_host_identity(STOOQ_BASE_URL),
+    ),
+    "crypto": ProviderSpec(
+        id="crypto",
+        name="Crypto exchange",
+        description=(
+            "Crypto spot pairs straight from Kraken, Coinbase or Binance (CRYPTO_EXCHANGE) with "
+            "live ticks. Public data, no API key."
+        ),
+        network=True,
+        terms=(
+            "Reads the public market data of one exchange (CRYPTO_EXCHANGE: kraken, coinbase or "
+            "binance; default kraken), no account or key. Crypto pairs only (BTC-USD, ETH-USDT); "
+            "quotes cover a rolling 24 hours, Kraken keeps only its latest 720 bars per "
+            "interval. Check the exchange's API terms before sharing data."
+        ),
+        probe_symbol="BTC-USD",
+        make=crypto.make_provider,
+        make_live=crypto.make_live,
+        config=crypto.CryptoConfig,
+        capabilities=crypto.capabilities_for,
+        costs=crypto.costs_for,
+        setting_defaults=crypto.setting_defaults_for,
+        plan=crypto.plan_of,
+        self_paging=True,
+        cache_identity=crypto.cache_identity,
     ),
 }

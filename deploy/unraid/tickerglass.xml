@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!--
+  Unraid Community Applications template for the all-in-one TickerGlass image.
+  Install from the repo for now: Docker tab -> Add Container -> Template -> paste the raw URL
+  (see docs/self-hosting.md). Checked against docker-compose.yml by deploy/check.py.
+-->
+<Container version="2">
+  <Name>TickerGlass</Name>
+  <Repository>ghcr.io/yavuzakbay/tickerglass:latest</Repository>
+  <Registry>https://github.com/YavuzAkbay/TickerGlass/pkgs/container/tickerglass</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/YavuzAkbay/TickerGlass/issues</Support>
+  <Project>https://github.com/YavuzAkbay/TickerGlass</Project>
+  <ReadMe>https://github.com/YavuzAkbay/TickerGlass/blob/main/docs/self-hosting.md</ReadMe>
+  <TemplateURL>https://raw.githubusercontent.com/YavuzAkbay/TickerGlass/main/deploy/unraid/tickerglass.xml</TemplateURL>
+  <Overview>Self-hosted charting and market workstation: multi-chart layouts, drawings, 100+ indicators, scripting, server-side alerts (Telegram, ntfy, Gotify, email, webhooks), watchlists, screener, portfolio and backtests. Runs on your server, keeps your data in appdata, and works without an account. Needs about 1.5 GB of RAM because alerts can run scripts. Leave the password empty to run open on a trusted LAN, or set one before exposing it.</Overview>
+  <Category>Tools: Productivity: Other:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplatePath/>
+  <Icon>https://raw.githubusercontent.com/YavuzAkbay/TickerGlass/main/apps/web/public/icons/icon-512.png</Icon>
+  <ExtraParams>--memory=1536m</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI port" Target="8080" Default="8080" Mode="tcp" Description="Port of the web interface." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/tickerglass" Mode="rw" Description="SQLite database, cached market data and the generated alerts token." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tickerglass</Config>
+  <Config Name="Password" Target="AUTH_PASSWORD" Default="" Mode="" Description="Optional login password. Empty = no login (only on a trusted network)." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Market data provider" Target="MARKET_PROVIDER" Default="yahoo|twelvedata|alpaca|tiingo|massive|stooq|crypto|demo" Mode="" Description="Where prices come from: yahoo (no key), twelvedata, alpaca, tiingo, massive or stooq (each needs its own API key variables, see docs/providers.md), crypto (exchange feed, no key) or demo (offline sample data)." Type="Variable" Display="always" Required="false" Mask="false">yahoo</Config>
+  <Config Name="Twelve Data API key" Target="TWELVEDATA_API_KEY" Default="" Mode="" Description="Only for MARKET_PROVIDER=twelvedata." Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Public URL" Target="PUBLIC_URL" Default="" Mode="" Description="External address (https://tickerglass.example.com) when behind a reverse proxy. Needed for OIDC sign-in and links in notifications." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="User ID (PUID)" Target="PUID" Default="99" Mode="" Description="User the app runs as. 99 = nobody (Unraid default)." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="Group ID (PGID)" Target="PGID" Default="100" Mode="" Description="Group the app runs as. 100 = users (Unraid default)." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
+  <Config Name="Timezone" Target="TZ" Default="Etc/UTC" Mode="" Description="Container timezone, e.g. Europe/Berlin." Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>
+  <Config Name="Alerts token" Target="ALERTS_INTERNAL_TOKEN" Default="" Mode="" Description="Shared secret between the API and the alerts service. Empty = generated once and kept in appdata (.alerts_token)." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Telegram bot token" Target="TELEGRAM_BOT_TOKEN" Default="" Mode="" Description="Alert notifications through Telegram." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Telegram chat ID" Target="TELEGRAM_CHAT_ID" Default="" Mode="" Description="Chat that receives Telegram alert notifications." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="ntfy URL" Target="NTFY_URL" Default="" Mode="" Description="ntfy topic URL, e.g. https://ntfy.sh/my-topic." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="ntfy token" Target="NTFY_TOKEN" Default="" Mode="" Description="Access token for a protected ntfy topic." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Gotify URL" Target="GOTIFY_URL" Default="" Mode="" Description="Gotify server URL." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Gotify token" Target="GOTIFY_TOKEN" Default="" Mode="" Description="Gotify application token." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Apprise URLs" Target="APPRISE_URLS" Default="" Mode="" Description="Comma separated apprise:// URLs." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Webhook URL" Target="ALERTS_WEBHOOK_URL" Default="" Mode="" Description="Generic webhook for alert notifications." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Webhook secret" Target="ALERTS_WEBHOOK_SECRET" Default="" Mode="" Description="Signs webhook payloads (HMAC)." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="SMTP host" Target="SMTP_HOST" Default="" Mode="" Description="Email alerts: SMTP server. See docs/alerts.md for the other SMTP_* variables." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Backup folder" Target="BACKUP_DIR" Default="" Mode="" Description="Scheduled nightly backups of the whole database: a folder inside the container, e.g. /data/backups (appdata, same disk) or a path you added for a share on another disk. Empty = no local backups. Restore in Settings > Server." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Backup time" Target="BACKUP_AT" Default="03:30" Mode="" Description="Daily backup time (HH:MM, 24 hours) in BACKUP_TZ (default UTC)." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Backup passphrase" Target="BACKUP_PASSPHRASE" Default="" Mode="" Description="Encrypts every backup (12+ characters). If you lose it the backups cannot be read." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Backup S3 endpoint" Target="BACKUP_S3_ENDPOINT" Default="" Mode="" Description="S3-compatible store for backups (AWS S3, MinIO, Backblaze B2, Wasabi, R2), e.g. http://192.168.1.10:9000. Needs the bucket and both keys below." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Backup S3 bucket" Target="BACKUP_S3_BUCKET" Default="" Mode="" Description="Bucket that receives the backups." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Backup S3 access key ID" Target="BACKUP_S3_ACCESS_KEY_ID" Default="" Mode="" Description="Access key ID of the backup bucket." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Backup S3 secret key" Target="BACKUP_S3_SECRET_ACCESS_KEY" Default="" Mode="" Description="Secret access key of the backup bucket." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Backup S3 region" Target="BACKUP_S3_REGION" Default="us-east-1" Mode="" Description="Region of the bucket (MinIO: leave the default)." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Metrics enabled" Target="METRICS_ENABLED" Default="false" Mode="" Description="true serves Prometheus metrics at /metrics on the web port (see docs/metrics.md). Set Metrics token as well when sign-in is on." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="Metrics token" Target="METRICS_TOKEN" Default="" Mode="" Description="Bearer token (16+ characters) Prometheus sends to /metrics. Needed when METRICS_ENABLED is true and sign-in is on." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="OIDC issuer" Target="OIDC_ISSUER" Default="" Mode="" Description="Single sign-on (Authentik, Authelia, Keycloak, Pocket ID): issuer URL. Needs PUBLIC_URL." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="OIDC client ID" Target="OIDC_CLIENT_ID" Default="" Mode="" Description="Client ID registered at the identity provider." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="OIDC client secret" Target="OIDC_CLIENT_SECRET" Default="" Mode="" Description="Client secret registered at the identity provider." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>

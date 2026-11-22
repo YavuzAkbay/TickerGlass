@@ -1,0 +1,24 @@
+{
+  "note": "hand-built from the documented ticker list shape (not recorded): a stock, an ETF, a crypto pair, a forex pair, an index and an OTC row",
+  "request": {
+    "path": "/v3/reference/tickers",
+    "params": { "search": "AAPL", "active": "true", "limit": "15" }
+  },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "results": [
+      { "ticker": "AAPLX", "name": "Some Apple Fund", "market": "stocks", "locale": "us", "primary_exchange": "XNAS", "type": "FUND", "active": true, "currency_name": "usd" },
+      { "ticker": "AAPL", "name": "Apple Inc.", "market": "stocks", "locale": "us", "primary_exchange": "XNAS", "type": "CS", "active": true, "currency_name": "usd" },
+      { "ticker": "AAPD", "name": "Direxion Daily AAPL Bear 1X Shares", "market": "stocks", "locale": "us", "primary_exchange": "XNAS", "type": "ETF", "active": true, "currency_name": "usd" },
+      { "ticker": "X:AAPLUSD", "name": "Apple Token - United States Dollar", "market": "crypto", "locale": "global", "active": true, "currency_symbol": "USD", "base_currency_symbol": "AAPL" },
+      { "ticker": "C:AAPEUR", "name": "Not a real pair", "market": "fx", "locale": "global", "active": true },
+      { "ticker": "I:AAPLX", "name": "An index", "market": "indices", "locale": "us", "active": true },
+      { "ticker": "AAPLF", "name": "An OTC row", "market": "otc", "locale": "us", "type": "CS", "active": true },
+      { "ticker": "AAPL.L", "name": "A global row", "market": "stocks", "locale": "gb", "type": "CS", "active": true }
+    ],
+    "status": "OK",
+    "request_id": "6f708192a3b4c5d6e7f8011223344556",
+    "count": 8
+  }
+}

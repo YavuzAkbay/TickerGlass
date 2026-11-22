@@ -6,6 +6,7 @@ TypeScript validator additionally checks indicator types, outputs and cycles).
 """
 
 import json
+import math
 import re
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -22,8 +23,10 @@ from pydantic import (
     model_validator,
 )
 from pydantic.alias_generators import to_camel
+from sqlalchemy.orm import Session
 
 from .. import models as m
+from ..ownership import owned_get
 
 ALERT_SCHEMA_VERSION = 1
 MAX_ALERTS = 1000
@@ -316,6 +319,9 @@ class AlertNotify(AlertModel):
     webhook_raw: bool = False
     telegram: bool = False
     email: bool = False
+    ntfy: bool = False
+    gotify: bool = False
+    apprise: bool = False
 
 
 def dump_notify(notify: AlertNotify) -> dict[str, Any]:
@@ -400,13 +406,74 @@ class ChannelTest(AlertModel):
     )
 
 
+class WaitingAlert(AlertModel):
+    """An alert the service keeps off its series for now (its user script is out for a while)."""
+
+    alert_id: AlertId
+    reason: Annotated[str, StringConstraints(max_length=500)]
+    resume_at: datetime
+
+
+MAX_LAG_BUCKETS = 20
+#: Largest counter value: 2**53 is exact as a float, and a larger int (10**400) would make the
+#: exposition raise on every scrape.
+MAX_COUNTER = 2**53
+Counter = Annotated[int, Field(strict=True, ge=0, le=MAX_COUNTER)]
+
+
+class LagHistogram(AlertModel):
+    """Evaluation lag as a cumulative histogram (docs/design/metrics.md §6)."""
+
+    #: Upper bounds in seconds, strictly ascending.
+    buckets: list[float] = Field(max_length=MAX_LAG_BUCKETS)
+    #: `counts[i]` = observations <= `buckets[i]`.
+    counts: list[Counter] = Field(max_length=MAX_LAG_BUCKETS)
+    #: Total observations (the +Inf bucket).
+    count: Counter
+    sum: Annotated[float, Field(ge=0, le=MAX_COUNTER)]
+
+    @model_validator(mode="after")
+    def _check_histogram(self) -> "LagHistogram":
+        if not all(math.isfinite(b) for b in self.buckets):
+            raise ValueError("buckets must be finite")
+        if any(b >= c for b, c in zip(self.buckets, self.buckets[1:], strict=False)):
+            raise ValueError("buckets must be strictly ascending")
+        if len(self.counts) != len(self.buckets):
+            raise ValueError("counts and buckets differ in length")
+        if any(a > b for a, b in zip(self.counts, self.counts[1:], strict=False)):
+            raise ValueError("counts must not decrease")
+        if self.counts and self.counts[-1] > self.count:
+            raise ValueError("a bucket count exceeds count")
+        if not math.isfinite(self.sum):
+            raise ValueError("sum must be finite")
+        return self
+
+
+class HeartbeatMetrics(AlertModel):
+    """The service's counters since it started (docs/design/metrics.md §6)."""
+
+    evaluations: Counter
+    evaluation_failures: Counter
+    fires_queued: Counter
+    fire_retries: Counter
+    fires_dropped: Counter
+    fire_queue_depth: Counter
+    status_post_failures: Counter
+    script_faults: Counter
+    lag: LagHistogram
+
+
 class ServiceHeartbeat(AlertModel):
     version: Annotated[str, StringConstraints(max_length=64)]
     started_at: datetime
-    series: Annotated[int, Field(ge=0)]
-    live_symbols: Annotated[int, Field(ge=0)]
-    polled_series: Annotated[int, Field(ge=0)]
+    series: Annotated[int, Field(ge=0, le=MAX_COUNTER)]
+    live_symbols: Annotated[int, Field(ge=0, le=MAX_COUNTER)]
+    polled_series: Annotated[int, Field(ge=0, le=MAX_COUNTER)]
     last_error: Annotated[str, StringConstraints(max_length=1000)] | None = None
+    waiting: Annotated[list[WaitingAlert], Field(max_length=500)] = Field(default_factory=list)
+    #: Raw `metrics` object, checked against `HeartbeatMetrics` by the route: an invalid one is
+    #: dropped (the rest of the heartbeat is kept), so it must not fail this model.
+    metrics: Any = Field(default=None, exclude=True)
 
 
 # ---------------------------------------------------------------- responses
@@ -414,6 +481,8 @@ class ServiceHeartbeat(AlertModel):
 
 class Alert(AlertModel):
     id: str
+    #: The user the alert belongs to. The alerts service resolves scripts and drawings per owner.
+    owner_id: str
     name: str
     symbol: str
     interval: str
@@ -433,7 +502,7 @@ class Alert(AlertModel):
 
 
 class Delivery(AlertModel):
-    channel: Literal["webhook", "telegram", "email"]
+    channel: Literal["webhook", "telegram", "email", "ntfy", "gotify", "apprise"]
     status: Literal["pending", "sent", "failed"]
     attempts: int
     last_error: str | None
@@ -463,6 +532,7 @@ class LogPage(AlertModel):
 
 class StateOut(AlertModel):
     alert_id: str
+    owner_id: str
     revision: int
     state: dict[str, Any]
 
@@ -481,10 +551,20 @@ class EmailChannel(AlertModel):
     to: str | None
 
 
+class PushChannel(AlertModel):
+    """ntfy / gotify / apprise: `url` is masked (scheme + host only), never a token."""
+
+    configured: bool
+    url: str | None
+
+
 class Channels(AlertModel):
     webhook: WebhookChannel
     telegram: TelegramChannel
     email: EmailChannel
+    ntfy: PushChannel
+    gotify: PushChannel
+    apprise: PushChannel
 
 
 # ------------------------------------------------------------------- bundle
@@ -509,6 +589,7 @@ class BundleAlert(AlertFields):
 def alert_out(row: m.Alert) -> Alert:
     return Alert(
         id=row.id,
+        owner_id=row.owner_id,
         name=row.name,
         symbol=row.symbol,
         interval=row.interval,
@@ -552,3 +633,11 @@ def log_entry(row: m.AlertLog, deliveries: list[m.AlertDelivery]) -> AlertLogEnt
             for d in deliveries
         ],
     )
+
+
+def reload_alert(session: Session, alert_id: str) -> m.Alert:
+    """Re-select an alert this transaction just wrote with a Core statement (owner-checked)."""
+    row = owned_get(session, m.Alert, alert_id, populate_existing=True)
+    if row is None:
+        raise LookupError(f"Alert {alert_id} vanished inside its own transaction")
+    return row

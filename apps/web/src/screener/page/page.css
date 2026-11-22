@@ -63,30 +63,26 @@
   height: 30px;
 }
 
-/* ---- class tabs ---- */
+/* ---- class switch: one segmented control inside the command bar ---- */
 .scr-tabs {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: 4px;
-  padding: 6px 10px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.scr-tabs::-webkit-scrollbar {
-  display: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text) 4%, var(--bg));
 }
 .scr-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  height: 28px;
-  padding: 0 12px;
+  height: 26px;
+  padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -104,52 +100,50 @@
   outline-offset: 1px;
 }
 .scr-tab.on {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--panel);
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
   color: var(--accent-text);
   font-weight: 650;
 }
 .scr-tab-count {
-  padding: 0 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--muted);
   font-size: 11px;
+  font-weight: 500;
 }
 .scr-tab.on .scr-tab-count {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  color: var(--accent-text);
+  color: color-mix(in srgb, var(--accent-text) 70%, var(--muted));
 }
 
 /* ---- toolbar ---- */
 .scr-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 0 0 auto;
-  height: 40px;
-  padding: 0 8px;
+  height: 46px;
+  padding: 0 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
+}
+.scr-toolbar-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
 }
 .scr-toolbar-spacer {
   flex: 1;
 }
 
-/* One-click screens (Finviz-style signals): a chip sets the sort, click again unsets. */
+/* One-click screens (Finviz-style signals): a chip sets the sort, click again unsets.
+   They sit at the start of the context row (see .scr-strip). */
 .scr-presets {
   display: flex;
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
-  padding: 5px 10px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.scr-presets::-webkit-scrollbar {
-  display: none;
 }
 .scr-presets-label {
   flex: 0 0 auto;
@@ -189,7 +183,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  width: min(240px, 44%);
+  width: min(280px, 32%);
   height: 28px;
   padding: 0 8px;
   border: 1px solid var(--border);
@@ -247,6 +241,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+}
+.scr-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .scr-drop:hover {
   border-color: var(--border-strong);
@@ -345,8 +344,9 @@
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
-  min-height: 30px;
-  padding: 3px 14px;
+  min-height: 38px;
+  padding: 4px 12px;
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
@@ -380,6 +380,28 @@
 }
 .scr-ov-avg {
   color: var(--text);
+}
+/* Breadth meter: share of advancers (green) and decliners (red) in the scanned slice. */
+.scr-breadth-bar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  overflow: hidden;
+}
+.scr-breadth-bar > span:first-child {
+  background: var(--up);
+}
+.scr-breadth-bar > span:last-child {
+  margin-left: auto;
+  background: var(--down);
+}
+@media (max-width: 1500px) {
+  .scr-ov-mover {
+    display: none;
+  }
 }
 .scr-ov-mover b {
   color: var(--text-strong);
@@ -490,11 +512,10 @@
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   user-select: none;
 }
 .scr-th {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -509,6 +530,31 @@
 .scr-th:hover,
 .scr-th.sorted {
   color: var(--text-strong);
+}
+/* Drag the right edge of a header cell to resize; double-click resets. */
+.scr-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.scr-resize::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 3px;
+  width: 1px;
+  background: var(--border);
+}
+.scr-resize:hover::after,
+.scr-resize.dragging::after {
+  width: 2px;
+  right: 2px;
+  background: var(--accent);
 }
 .scr-th-gutter {
   justify-content: center;
@@ -857,8 +903,6 @@
   background: var(--panel-2);
   color: var(--muted);
   font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .scr-detail-close {
   width: 24px;
@@ -885,8 +929,6 @@
   background: var(--panel-2);
   color: var(--muted);
   font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .scr-detail-range {
   display: flex;
@@ -1218,11 +1260,52 @@
   outline-offset: 1px;
 }
 
-.scr-tabs-spacer {
-  flex: 1;
-}
 .scr-uni-btn {
   gap: 4px;
+}
+
+/* Too narrow for the table plus a preview pane: the table keeps the room. */
+@media (max-width: 1250px) {
+  .scr-detail {
+    display: none;
+  }
+}
+
+/* In the header the snapshot banner is a compact status pill, not a row of its own. */
+.scr-header .scr-banner {
+  flex-wrap: nowrap;
+  min-width: 0;
+  min-height: 0;
+  margin-left: 6px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  overflow: hidden;
+}
+.scr-header .scr-banner-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-header .scr-banner-spacer {
+  display: none;
+}
+.scr-header .scr-banner-bar {
+  flex: 0 0 auto;
+  width: 56px;
+}
+.scr-header .scr-banner-btn {
+  flex: 0 0 auto;
+  height: 20px;
+  border-radius: 999px;
+}
+.scr-header .scr-banner-note {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .scr-header .scr-banner-run {
+    display: none;
+  }
 }
 
 .scr-rules-btn {
@@ -1282,8 +1365,6 @@
   margin-top: 4px;
   color: var(--muted);
   font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 .scr-screens-empty {
   color: var(--muted);
@@ -1430,4 +1511,15 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+/* Text columns read in the interface face; only figures use the numeric face. */
+.scr-cell.scr-name,
+.scr-cell.scr-static,
+.scr-sym {
+  font-family: var(--font);
+  letter-spacing: normal;
+}
+.scr-sym {
+  font-weight: 600;
 }

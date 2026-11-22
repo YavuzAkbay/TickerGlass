@@ -9,8 +9,9 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from .. import models as m
-from ..deps import SessionDep, SettingsDep
+from ..deps import OwnedSessionDep, SessionDep, SettingsDep
 from ..notifications import DeliveryError, webhook, webhook_allow_private
+from ..ownership import id_taken_by_other, owned_get
 from ..services.screener.presets import PRESETS
 from ..settings import Settings
 from ..userdata import schemas as s
@@ -21,9 +22,17 @@ router = APIRouter(prefix="/screener", tags=["screener"])
 
 
 def _get(session: SessionDep, screen_id: str) -> m.Screen:
-    row = session.get(m.Screen, screen_id)
+    row = owned_get(session, m.Screen, screen_id)
     if row is None:
         raise HTTPException(404, f"screen not found: {screen_id}")
+    return row
+
+
+def _reload(session: SessionDep, screen_id: str) -> m.Screen:
+    """Re-select a screen this transaction just wrote with a Core statement (owner-checked)."""
+    row = owned_get(session, m.Screen, screen_id, populate_existing=True)
+    if row is None:
+        raise LookupError(f"Screen {screen_id} vanished inside its own transaction")
     return row
 
 
@@ -67,13 +76,16 @@ def list_screens(session: SessionDep) -> list[sc.Screen]:
 
 
 @router.post("/screens", response_model=sc.Screen, status_code=201)
-def create_screen(session: SessionDep, settings: SettingsDep, body: sc.ScreenIn) -> sc.Screen:
-    """409 (with the stored screen) if a client-chosen `id` already exists."""
+def create_screen(session: OwnedSessionDep, settings: SettingsDep, body: sc.ScreenIn) -> sc.Screen:
+    """409 (with the stored screen) if a client-chosen `id` already exists; 409 `id in use` (and
+    nothing else) when it belongs to another user."""
     _check_webhook(settings, body.alert)
     sid = body.id or s.new_id()
-    existing = session.get(m.Screen, sid)
+    existing = owned_get(session, m.Screen, sid)
     if existing is not None:
         raise _conflict(existing)
+    if id_taken_by_other(session, m.Screen, sid):
+        raise HTTPException(409, "id in use")
     if (session.scalar(select(func.count()).select_from(m.Screen)) or 0) >= sc.MAX_SCREENS:
         raise HTTPException(422, f"at most {sc.MAX_SCREENS} screens")
     t = s.now()
@@ -93,9 +105,9 @@ def create_screen(session: SessionDep, settings: SettingsDep, body: sc.ScreenIn)
     except IntegrityError:
         # A concurrent POST claimed this id between our check and insert.
         session.rollback()
-        winner = session.get(m.Screen, sid)
+        winner = owned_get(session, m.Screen, sid)
         if winner is None:
-            raise
+            raise HTTPException(409, "id in use") from None
         raise _conflict(winner) from None
     return sc.screen_out(row)
 
@@ -128,7 +140,7 @@ def _write(
         raise _conflict(_get(session, screen_id))
     if reset:
         _reset_state(session, screen_id)
-    row = store.reload(session, m.Screen, screen_id)
+    row = _reload(session, screen_id)
     session.commit()
     return sc.screen_out(row)
 
@@ -140,7 +152,7 @@ def _needs_baseline(old: m.Screen, spec: dict[str, Any], alert: dict[str, Any] |
 
 @router.put("/screens/{screen_id}", response_model=sc.Screen)
 def update_screen(
-    session: SessionDep, settings: SettingsDep, screen_id: str, body: sc.ScreenUpdate
+    session: OwnedSessionDep, settings: SettingsDep, screen_id: str, body: sc.ScreenUpdate
 ) -> sc.Screen:
     """409 (with the stored screen) if `revision` is given and stale."""
     _check_webhook(settings, body.alert)
@@ -163,7 +175,7 @@ def update_screen(
 
 @router.patch("/screens/{screen_id}", response_model=sc.Screen)
 def patch_screen(
-    session: SessionDep, settings: SettingsDep, screen_id: str, body: sc.ScreenPatch
+    session: OwnedSessionDep, settings: SettingsDep, screen_id: str, body: sc.ScreenPatch
 ) -> sc.Screen:
     """Change only the given keys (`alert: null` removes the alert); 409 if `revision` is stale."""
     given = body.model_fields_set
@@ -191,7 +203,7 @@ def patch_screen(
 
 
 @router.delete("/screens/{screen_id}", status_code=204)
-def delete_screen(session: SessionDep, screen_id: str) -> Response:
+def delete_screen(session: OwnedSessionDep, screen_id: str) -> Response:
     row = _get(session, screen_id)
     _reset_state(session, screen_id)
     session.delete(row)

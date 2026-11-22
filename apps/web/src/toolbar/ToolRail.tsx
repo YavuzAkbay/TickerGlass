@@ -5,7 +5,7 @@ import { useAppStore } from '../store/app';
 import { useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
 import { Popover } from '../ui/Popover';
-import { useIsCoarsePointer } from '../ui/useMediaQuery';
+import { useIsCoarsePointer, useIsMobile } from '../ui/useMediaQuery';
 import {
   HIDE_MODES,
   toHideMode,
@@ -40,6 +40,15 @@ import {
 } from './tools';
 import './toolbar.css';
 
+/** Desktop docks the tools on the chart's left edge (flyouts open rightwards); phones show
+ * them as a strip on the right edge (flyouts open leftwards). */
+function useDockSide() {
+  const mobile = useIsMobile();
+  return mobile
+    ? ({ tip: 'left', placement: 'left-start' } as const)
+    : ({ tip: 'right', placement: 'right-start' } as const);
+}
+
 interface SplitProps {
   label: string;
   shortcut?: string | undefined;
@@ -64,6 +73,7 @@ function SplitButton({
   flyoutLabel,
   unavailable,
 }: SplitProps) {
+  const dockSide = useDockSide();
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
@@ -72,7 +82,7 @@ function SplitButton({
       <IconButton
         label={unavailable ? `${label} (${UNAVAILABLE_HINT.toLowerCase()})` : label}
         {...(shortcut && !unavailable ? { shortcut } : {})}
-        tipSide="left"
+        tipSide={dockSide.tip}
         active={active}
         className={`lt-btn${unavailable ? ' unavailable' : ''}`}
         onClick={() => {
@@ -102,7 +112,7 @@ function SplitButton({
         anchor={wrap}
         open={open}
         onClose={close}
-        placement="left-start"
+        placement={dockSide.placement}
         ignore={[wrap]}
         className="lt-popover"
       >
@@ -503,6 +513,7 @@ function DrawingOptions({ onClose }: { onClose: () => void }) {
 
 function OptionsButton() {
   const t = useT();
+  const dockSide = useDockSide();
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const magnet = useAppStore((s) => s.magnet);
@@ -514,7 +525,7 @@ function OptionsButton() {
     <div ref={setWrap} className={`lt-group${open ? ' open' : ''}`}>
       <IconButton
         label={t('rail.options')}
-        tipSide="left"
+        tipSide={dockSide.tip}
         aria-haspopup="dialog"
         aria-expanded={open}
         className={`lt-btn${busy ? ' lt-busy' : ''}`}
@@ -526,7 +537,7 @@ function OptionsButton() {
         anchor={wrap}
         open={open}
         onClose={() => setOpen(false)}
-        placement="left-start"
+        placement={dockSide.placement}
         ignore={[wrap]}
         className="lt-popover"
       >
@@ -607,7 +618,7 @@ function QuickToolsMenu({ at }: { at: { x: number; y: number } }) {
   );
 }
 
-/** Drawing dock on the right edge: cursor, five tool categories and the options panel.
+/** Drawing dock floating over the chart's left edge (phones: a strip on the right edge): cursor, five tool categories and the options panel.
  * Each category button arms its last-used (or default) tool in one click; the
  * hover corner arrow opens the searchable flyout. Tools without a registered
  * drawing definition are dimmed and only show a hint (drawings/attach syncs

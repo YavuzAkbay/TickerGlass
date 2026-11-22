@@ -10,6 +10,7 @@ import {
   type Alert,
   type AlertNotify,
   type ConditionOp,
+  type DeliveryChannel,
   type DrawingInfo,
   type DrawingLineOperand,
   type SeriesOperand,
@@ -25,6 +26,7 @@ import { initialForm } from '../alerts/dialog/defaults';
 import {
   emptyValue,
   formToAlert,
+  formUsesScript,
   numberText,
   type ChannelForm,
   type FormState,
@@ -120,8 +122,8 @@ function groupedOptions<T>(options: SourceOption<T>[]): ReactNode {
       {options
         .filter((o) => o.group === g)
         .map((o) => (
-          <option key={o.key} value={o.key}>
-            {o.label}
+          <option key={o.key} value={o.key} disabled={!!o.disabled}>
+            {o.disabled ? `${o.label} (${o.disabled})` : o.label}
           </option>
         ))}
     </optgroup>
@@ -308,7 +310,13 @@ export default function AlertDialog({ onClose, arg }: { onClose: () => void; arg
       : null;
   };
   const names = { drawing: (id: string) => drawingName(ctx, id), precision: ctx.decimals };
-  const result = formToAlert(form, { drawing: drawingInfo, names });
+  // Built-ins plus the script stubs: the same definitions the legend and the sources list use.
+  const checkOpts = {
+    drawing: drawingInfo,
+    names,
+    ...(ctx.registry ? { registry: ctx.registry } : {}),
+  };
+  const result = formToAlert(form, checkOpts);
   const errors: ValidationError[] = result.ok ? [] : result.errors;
   const symbol = form.symbol.trim();
 
@@ -316,7 +324,9 @@ export default function AlertDialog({ onClose, arg }: { onClose: () => void; arg
     setForm((f) => {
       if (!f) return f;
       const valid = new Set([
-        ...targetOptions(ctx, f.symbol.trim(), left).map((o) => o.key),
+        ...targetOptions(ctx, f.symbol.trim(), left)
+          .filter((o) => !o.disabled)
+          .map((o) => o.key),
         'value',
       ]);
       const chanOk = channelDrawings(ctx, f.symbol.trim(), left).map((c) => c.drawing.id);
@@ -349,7 +359,7 @@ export default function AlertDialog({ onClose, arg }: { onClose: () => void; arg
     setBusy(true);
     try {
       if (usesDrawing(form) || ctx.drawings.length) await getPersistence()?.drawings.flush();
-      const res = formToAlert(form, { drawing: drawingInfo, names });
+      const res = formToAlert(form, checkOpts);
       if (!res.ok) {
         setTab('settings');
         return;
@@ -700,6 +710,11 @@ function SettingsTab({
             this alert.
           </p>
         ) : null}
+        {formUsesScript(form) ? (
+          <p className="dlg-note">
+            Uses the script&apos;s latest saved version. Editing the script restarts the alert.
+          </p>
+        ) : null}
         {usesDrawing(form) ? (
           <p className="dlg-note">
             The alert follows the drawing when you move it. The price-scale mode (linear or log) is
@@ -801,7 +816,7 @@ function NotificationsTab({
     setN({ browser: true });
   };
 
-  const test = async (channel: 'webhook' | 'telegram' | 'email') => {
+  const test = async (channel: DeliveryChannel) => {
     setTesting(channel);
     try {
       await alertsApi.testAlertChannel(
@@ -816,7 +831,7 @@ function NotificationsTab({
     }
   };
 
-  const testLink = (channel: 'webhook' | 'telegram' | 'email') => (
+  const testLink = (channel: DeliveryChannel) => (
     <button
       type="button"
       className="io-btn"
@@ -896,7 +911,22 @@ function NotificationsTab({
         <div className="dlg-row">
           <Check checked={n.email} label="Email" onChange={(email) => setN({ email })} />
           {testLink('email')}
-          {hint(channels?.email.configured, 'Not configured (set the ALERTS_SMTP_… variables)')}
+          {hint(channels?.email.configured, 'Not configured (set the SMTP_… variables)')}
+        </div>
+        <div className="dlg-row">
+          <Check checked={n.ntfy} label="ntfy" onChange={(ntfy) => setN({ ntfy })} />
+          {testLink('ntfy')}
+          {hint(channels?.ntfy?.configured, 'Not configured (set NTFY_URL)')}
+        </div>
+        <div className="dlg-row">
+          <Check checked={n.gotify} label="Gotify" onChange={(gotify) => setN({ gotify })} />
+          {testLink('gotify')}
+          {hint(channels?.gotify?.configured, 'Not configured (set GOTIFY_URL and GOTIFY_TOKEN)')}
+        </div>
+        <div className="dlg-row">
+          <Check checked={n.apprise} label="Apprise" onChange={(apprise) => setN({ apprise })} />
+          {testLink('apprise')}
+          {hint(channels?.apprise?.configured, 'Not configured (set APPRISE_URL)')}
         </div>
       </Section>
     </>

@@ -1,0 +1,37 @@
+TickerGlass {{ .Chart.AppVersion }} is installed as release "{{ .Release.Name }}".
+
+{{- if .Values.ingress.enabled }}
+Open it at:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ .path | default "/" }}
+{{- end }}
+{{- else if contains "NodePort" .Values.web.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "tickerglass.fullname" . }}-web)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else }}
+Reach it from your machine with:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "tickerglass.fullname" . }}-web 8080:{{ .Values.web.service.port }}
+and open http://localhost:8080
+{{- end }}
+
+Nothing is protected by default. Set api.env.AUTH_PASSWORD (or OIDC_*) before exposing it, and
+publicUrl when it sits behind an ingress. Alerts need about 1.5 GB of memory; the API keeps its
+data (SQLite) on the volume {{ include "tickerglass.fullname" . }}-data.
+
+{{- if not .Values.api.trustedProxies }}
+
+Hint: with sign-in enabled, set api.trustedProxies to your pod network CIDR (for example
+10.42.0.0/16): without it the API sees every client as the web pod, so the failed-sign-in lockout
+is shared and X-Forwarded-Proto is ignored (set publicUrl=https://... for Secure cookies).
+{{- end }}
+{{- if .Values.metrics.enabled }}
+
+Metrics are on: Prometheus scrapes /metrics on the API service ({{ include "tickerglass.fullname" . }}-api:{{ .Values.api.service.port }}) with the
+Bearer token in the Secret {{ include "tickerglass.metricsSecretName" . }} (key METRICS_TOKEN). See docs/metrics.md.
+{{- end }}
+{{- if .Values.keepResources }}
+
+The data volume and the generated Secret survive `helm uninstall` (keepResources); delete them
+with kubectl when you want everything gone.
+{{- end }}

@@ -1,0 +1,29 @@
+manifestVersion: 1
+id: tickerglass-store-tickerglass
+category: finance
+name: TickerGlass
+version: '0.2.0'
+icon: https://raw.githubusercontent.com/YavuzAkbay/TickerGlass/main/apps/web/public/icons/icon-512.png
+tagline: Self-hosted charts, alerts, screener and portfolio
+description: >-
+  Self-hosted charting and market workstation: multi-chart layouts, drawings, more than 100
+  indicators, scripting, server-side alerts with Telegram, ntfy, Gotify, email and webhook delivery,
+  watchlists, a screener, a portfolio and backtests.
+
+
+  Prices come from Yahoo by default (no account or key). Pick Twelve Data or the offline demo data
+  source in Settings. Your data stays on your Umbrel, and Umbrel's own login protects the app. The
+  alerts service can run scripts, so plan for about 1.5 GB of free memory.
+developer: TickerGlass
+website: https://github.com/YavuzAkbay/TickerGlass
+dependencies: []
+repo: https://github.com/YavuzAkbay/TickerGlass
+support: https://github.com/YavuzAkbay/TickerGlass/issues
+port: 8734
+gallery: []
+path: ''
+defaultUsername: ''
+defaultPassword: ''
+releaseNotes: ''
+submitter: YavuzAkbay
+submission: ''

@@ -20,6 +20,10 @@ export interface Quote {
   fiftyTwoWeekLow?: number | null;
   marketCap?: number | null;
   averageVolume?: number | null;
+  /** Valuation extras (Yahoo v7): trailing / forward P/E and trailing 12-month EPS. */
+  trailingPE?: number | null;
+  forwardPE?: number | null;
+  eps?: number | null;
 }
 
 export interface SymbolMeta {
@@ -252,10 +256,14 @@ export interface Note {
   /** null = general note. */
   symbol: string | null;
   text: string;
+  /** 'journal' notes belong to a journal entry; the Notes panel never shows them. */
+  kind: NoteKind;
   revision: number;
   createdAt: string;
   updatedAt: string;
 }
+
+export type NoteKind = 'note' | 'journal';
 
 /** All user data (`GET /api/export`, `POST /api/import`). */
 export interface Bundle {
@@ -268,7 +276,7 @@ export interface Bundle {
   drawingTemplates: DrawingTemplateIn[];
   chartTemplates: ChartTemplateIn[];
   settings: Settings;
-  notes: { id: string; symbol?: string | null; text: string }[];
+  notes: { id: string; symbol?: string | null; text: string; kind?: NoteKind }[];
   watchlists: { id: string; name: string; items: WatchlistItem[] }[];
   flags: { symbol: string; color: FlagColor }[];
 }

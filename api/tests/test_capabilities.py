@@ -204,7 +204,7 @@ def test_gate_names_feature_and_provider() -> None:
         prov.news("A", 1)
     assert exc.value.feature == "news"
     assert exc.value.provider is None
-    assert str(ProviderUnsupported("news", "twelvedata")) == "news is not supported by twelvedata"
+    assert str(ProviderUnsupported("news", "twelvedata")) == "twelvedata does not support news"
 
 
 def test_partial_events_and_one_fundamentals_half_pass_the_gate() -> None:
@@ -292,7 +292,7 @@ def test_unsupported_features_answer_501(specs: dict[str, ProviderSpec], tmp_pat
         r = client.get("/api/bars", params={"symbol": "GLSS", "interval": "5m"})
         assert r.status_code == 501
         assert r.json() == {
-            "detail": "5m bars is not supported by minimal",
+            "detail": "minimal does not support 5m bars",
             "code": "unsupported",
             "feature": "5m bars",
             "provider": "minimal",

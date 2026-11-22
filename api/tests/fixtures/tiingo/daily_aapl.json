@@ -1,0 +1,19 @@
+{
+  "synthetic": "hand-built from the documented GET /tiingo/daily/<ticker>/prices shape (not recorded); daily dates are midnight UTC of the trading date; close is raw, adjClose split and dividend adjusted",
+  "request": {
+    "path": "/tiingo/daily/aapl/prices",
+    "params": {"startDate": "2026-10-20"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {"date": "2026-10-20T00:00:00.000Z", "close": 340.2, "high": 341.0, "low": 337.5, "open": 338.0, "volume": 36000000, "adjClose": 339.2, "adjHigh": 340.0, "adjLow": 336.5, "adjOpen": 337.0, "adjVolume": 36000000, "divCash": 0.0, "splitFactor": 1.0},
+    {"date": "2026-10-21T00:00:00.000Z", "close": 342.5, "high": 343.0, "low": 339.8, "open": 340.2, "volume": 33000000, "adjClose": 341.5, "adjHigh": 342.0, "adjLow": 338.8, "adjOpen": 339.2, "adjVolume": 33000000, "divCash": 0.0, "splitFactor": 1.0},
+    {"date": "2026-10-22T00:00:00.000Z", "close": 341.9, "high": 344.1, "low": 341.0, "open": 342.5, "volume": 31000000, "adjClose": 340.9, "adjHigh": 343.1, "adjLow": 340.0, "adjOpen": 341.5, "adjVolume": 31000000, "divCash": 0.0, "splitFactor": 1.0},
+    {"date": "2026-10-23T00:00:00.000Z", "close": 344.6, "high": 345.0, "low": 341.2, "open": 341.9, "volume": 35000000, "adjClose": 343.6, "adjHigh": 344.0, "adjLow": 340.2, "adjOpen": 340.9, "adjVolume": 35000000, "divCash": 0.0, "splitFactor": 1.0},
+    {"date": "2026-10-26T00:00:00.000Z", "close": 343.91, "high": 345.2, "low": 342.0, "open": 344.6, "volume": 29000000, "adjClose": 342.91, "adjHigh": 344.2, "adjLow": 341.0, "adjOpen": 343.6, "adjVolume": 29000000, "divCash": 0.0, "splitFactor": 1.0},
+    {"date": "2026-10-27T00:00:00.000Z", "close": 347.25, "high": 347.77, "low": 342.4, "open": 343.165, "volume": 391880, "adjClose": 347.25, "adjHigh": 347.77, "adjLow": 342.4, "adjOpen": 343.165, "adjVolume": 391880, "divCash": 0.0, "splitFactor": 1.0}
+  ]
+}

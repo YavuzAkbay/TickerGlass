@@ -1,0 +1,19 @@
+{
+  "synthetic": "hand-built from the documented GET /tiingo/utilities/search shape (not recorded); includes a non-US listing, an inactive ticker and a symbol this provider cannot name",
+  "request": {
+    "path": "/tiingo/utilities/search",
+    "params": {"query": "AAPL"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": [
+    {"ticker": "aapl", "name": "Apple Inc", "assetType": "Stock", "isActive": true, "permaTicker": "US000000000038", "openFIGI": "BBG000B9XRY4", "countryCode": "US"},
+    {"ticker": "aaplw", "name": "Apple Warrants", "assetType": "Stock", "isActive": false, "permaTicker": "US000000000039", "openFIGI": null, "countryCode": "US"},
+    {"ticker": "aapu", "name": "Direxion Daily AAPL Bull 2X Shares", "assetType": "ETF", "isActive": true, "permaTicker": "US000000012345", "openFIGI": null, "countryCode": "US"},
+    {"ticker": "aaplf", "name": "Apple Frankfurt", "assetType": "Stock", "isActive": true, "permaTicker": "DE000000000001", "openFIGI": null, "countryCode": "DE"},
+    {"ticker": "aapl.l", "name": "Apple London", "assetType": "Stock", "isActive": true, "permaTicker": "GB000000000002", "openFIGI": null, "countryCode": "US"},
+    {"ticker": "aaplx", "name": "Apple Growth Fund", "assetType": "Mutual Fund", "isActive": true, "permaTicker": "US000000099999", "openFIGI": null, "countryCode": "US"}
+  ]
+}

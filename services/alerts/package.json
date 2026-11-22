@@ -5,18 +5,19 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json --noEmit && esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --define:__VERSION__=\"\\\"${TICKERGLASS_VERSION:-dev}\\\"\" --outfile=dist/index.js",
-    "start": "node dist/index.js",
+    "dev": "tsx watch --no-node-snapshot src/index.ts",
+    "build": "tsc -p tsconfig.json --noEmit && esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --external:isolated-vm --external:esbuild --define:__VERSION__=\"\\\"${TICKERGLASS_VERSION:-dev}\\\"\" --outfile=dist/index.js && esbuild src/scripts/isolate-entry.ts --bundle --platform=neutral --format=iife --target=es2022 --legal-comments=none --outfile=dist/isolate.js && esbuild src/scripts/child.ts --bundle --platform=node --format=esm --target=node24 --external:isolated-vm --external:esbuild --outfile=dist/scripthost.js",
+    "start": "node --no-node-snapshot dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tickerglass/alerts": "workspace:*",
-    "@tickerglass/engine": "workspace:*",
-    "@tickerglass/indicators": "workspace:*"
+    "isolated-vm": "^7.0.2"
   },
   "devDependencies": {
+    "@tickerglass/alerts": "workspace:*",
+    "@tickerglass/engine": "workspace:*",
+    "@tickerglass/indicators": "workspace:*",
     "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15"

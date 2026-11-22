@@ -38,15 +38,21 @@ def log_entry(session: Session, row: m.AlertLog) -> al.AlertLogEntry:
     return al.log_entry(row, dels)
 
 
-def prune_log(session: Session, keep: int) -> None:
-    """Keep the newest `keep` log entries (deliveries go with them)."""
+def prune_log(session: Session, keep: int, owner_id: str) -> None:
+    """Keep the newest `keep` log entries of one owner (deliveries go with them)."""
+    mine = m.AlertLog.owner_id == owner_id
     cutoff = session.scalar(
-        select(m.AlertLog.id).order_by(m.AlertLog.id.desc()).offset(max(keep, 1)).limit(1)
+        select(m.AlertLog.id)
+        .where(mine)
+        .order_by(m.AlertLog.id.desc())
+        .offset(max(keep, 1))
+        .limit(1)
     )
     if cutoff is None:
         return
-    session.execute(delete(m.AlertDelivery).where(m.AlertDelivery.log_id <= cutoff))
-    session.execute(delete(m.AlertLog).where(m.AlertLog.id <= cutoff))
+    old = select(m.AlertLog.id).where(mine, m.AlertLog.id <= cutoff)
+    session.execute(delete(m.AlertDelivery).where(m.AlertDelivery.log_id.in_(old)))
+    session.execute(delete(m.AlertLog).where(mine, m.AlertLog.id <= cutoff))
 
 
 def record_log_entry(
@@ -55,6 +61,7 @@ def record_log_entry(
     hub: LiveHub,
     dispatcher: Dispatcher,
     *,
+    owner_id: str,
     fire_id: str,
     name: str,
     symbol: str,
@@ -77,14 +84,15 @@ def record_log_entry(
     rolls the whole transaction back) returns the stored entry with `created=False` and
     announces nothing. Otherwise adds one `AlertDelivery` per wanted channel (`failed`
     right away when the channel is not configured), runs `before_commit` (extra writes of
-    the same transaction), prunes the log, commits, publishes `alert.fired` (with
-    `alert_payload` as its `alert`, null for alert-less entries) and wakes the dispatcher.
+    the same transaction), prunes the owner's log, commits, publishes `alert.fired` to the owner
+    (with `alert_payload` as its `alert`, null for alert-less entries) and wakes the dispatcher.
     """
     prior = session.scalar(select(m.AlertLog).where(m.AlertLog.fire_id == fire_id))
     if prior is not None:
         return Recorded(prior, False)
     when = fired_at or s.now()
     log = m.AlertLog(
+        owner_id=owner_id,
         fire_id=fire_id,
         alert_id=alert_id,
         alert_name=name,
@@ -117,6 +125,12 @@ def record_log_entry(
         wanted.append(("telegram", None))
     if notify.email:
         wanted.append(("email", None))
+    if notify.ntfy:
+        wanted.append(("ntfy", None))
+    if notify.gotify:
+        wanted.append(("gotify", None))
+    if notify.apprise:
+        wanted.append(("apprise", None))
     t = s.now()
     for channel, target in wanted:
         ok = channel_configured(settings, channel, target)
@@ -134,7 +148,7 @@ def record_log_entry(
 
     if before_commit is not None:
         before_commit()
-    prune_log(session, settings.alerts_log_max)
+    prune_log(session, settings.alerts_log_max, owner_id)
     session.commit()
 
     entry = log_entry(session, log)
@@ -145,6 +159,7 @@ def record_log_entry(
             "entry": entry.model_dump(mode="json", by_alias=True),
             "alert": alert_payload,
         },
+        owner_id=owner_id,
     )
     dispatcher.wake()
     return Recorded(log, True)

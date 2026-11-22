@@ -149,12 +149,16 @@ def test_v7_to_quote_carries_optional_extras() -> None:
         "marketCap": 1.5e9,
         "averageDailyVolume3Month": 1_000_000,
         "averageDailyVolume10Day": 2_000_000,
+        "trailingPE": 24.5,
+        "forwardPE": 21.0,
+        "epsTrailingTwelveMonths": 3.2,
     }
     q = _v7_to_quote(row)
     assert q is not None
     assert q["dayHigh"] == 11.5 and q["dayLow"] == 9.5 and q["open"] == 10.1
     assert q["fiftyTwoWeekHigh"] == 20.0 and q["fiftyTwoWeekLow"] == 5.0
     assert q["marketCap"] == 1.5e9 and q["averageVolume"] == 1_000_000
+    assert q["trailingPE"] == 24.5 and q["forwardPE"] == 21.0 and q["eps"] == 3.2
     # The 10-day average is the fallback; non-finite or missing extras are omitted.
     q2 = _v7_to_quote(
         {
@@ -167,6 +171,7 @@ def test_v7_to_quote_carries_optional_extras() -> None:
     assert q2 is not None
     assert q2["averageVolume"] == 7
     assert "marketCap" not in q2 and "open" not in q2 and "dayHigh" not in q2
+    assert "trailingPE" not in q2 and "forwardPE" not in q2 and "eps" not in q2
 
 
 @pytest.fixture
@@ -805,7 +810,14 @@ def test_market_poller_shares_the_quote_cache(tmp_path: Path) -> None:
         poll = market_poller(app.state.market_service, app.state.upstream_guard)
         polled = poll_once(poll, ["AAPL", "MSFT", "NOPE"])
         assert polled == {
-            s: {"price": 101.0, "change": 1.0, "changePercent": 1.0, "dayVolume": 5}
+            s: {
+                "price": 101.0,
+                "change": 1.0,
+                "changePercent": 1.0,
+                "dayVolume": 5,
+                "dayHigh": None,
+                "dayLow": None,
+            }
             for s in ("AAPL", "MSFT")
         }
         res = client.get("/api/quotes", params={"symbols": "AAPL,MSFT"})

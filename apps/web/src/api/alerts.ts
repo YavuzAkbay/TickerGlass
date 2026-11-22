@@ -6,6 +6,7 @@ import {
   type AlertLogEntry,
   type AlertStatus,
   type DeliveryChannel,
+  type WaitingAlert,
 } from '@tickerglass/alerts';
 import { ApiError, requestJson, type RequestOptions } from './client';
 
@@ -31,6 +32,9 @@ export interface AlertChannels {
   webhook: { configured: boolean; url: string | null };
   telegram: { configured: boolean };
   email: { configured: boolean; to: string | null };
+  ntfy: { configured: boolean; url: string | null };
+  gotify: { configured: boolean; url: string | null };
+  apprise: { configured: boolean; url: string | null };
 }
 
 /** `GET /alerts/service`: `{online:false}` before any heartbeat. */
@@ -43,6 +47,8 @@ export interface ServiceStatus {
   liveSymbols?: number;
   polledSeries?: number;
   lastError?: string | null;
+  /** Alerts the service keeps off their series for now (a user script is held off). */
+  waiting?: WaitingAlert[];
 }
 
 export type AlertUpdate = AlertIn & { revision?: number };

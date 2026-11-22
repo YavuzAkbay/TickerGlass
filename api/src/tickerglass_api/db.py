@@ -74,3 +74,19 @@ def run_migrations(url: str) -> None:
     cfg.set_main_option("script_location", str(here / "migrations"))
     cfg.set_main_option("sqlalchemy.url", url)
     command.upgrade(cfg, "head")
+
+
+def migration_chain() -> list[str]:
+    """Every migration revision id this code knows, oldest first (the head is last)."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
+    return [rev.revision for rev in reversed(list(script.walk_revisions()))]
+
+
+def migration_revisions() -> set[str]:
+    """Every migration revision id this code knows (the head and all its ancestors)."""
+    return set(migration_chain())

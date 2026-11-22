@@ -40,6 +40,7 @@ from .providers.registry import (
     UnconfiguredProvider,
     apply_setting_defaults,
     budget_of,
+    cache_source,
     is_configured,
     load_config,
     missing_config,
@@ -402,7 +403,12 @@ class ProviderSwitcher:
             # the event loop.)
             generation = await asyncio.to_thread(self._gate.advance)
             try:
-                await asyncio.to_thread(self._record, provider_id, current.runtime.user_settings)
+                await asyncio.to_thread(
+                    self._record,
+                    provider_id,
+                    cache_source(spec, runtime.config),
+                    current.runtime.user_settings,
+                )
             except Exception as exc:
                 log.exception("could not switch the cache to provider %s", provider_id)
                 # The wipe is one transaction: the cache still holds the old provider's data.
@@ -465,13 +471,14 @@ class ProviderSwitcher:
             )
         return spec
 
-    def _record(self, provider_id: str, settings: Settings) -> None:
-        """Wipe the cache for `provider_id` (a no-op when it already holds its data) and
-        remember the choice for the next start. Blocking: runs on a worker thread.
+    def _record(self, provider_id: str, source: str, settings: Settings) -> None:
+        """Wipe the cache for `source`, the cache marker of `provider_id` (a no-op when it
+        already holds its data), and remember the choice for the next start. Blocking: runs on
+        a worker thread.
 
         A choice that cannot be stored does not undo the switch (the cache already belongs
         to `provider_id`): the app runs on it until restart, then on `MARKET_PROVIDER`."""
-        ensure_cache_source(self._engine, provider_id)
+        ensure_cache_source(self._engine, source)
         try:
             save_provider_choice(
                 self._engine, ProviderChoice(id=provider_id, env=settings.market_provider)
@@ -524,13 +531,20 @@ class ProviderSwitcher:
         # Queued refreshes are dropped; a running one finishes on its own thread.
         stack.refresher.shutdown(wait=False, cancel_futures=True)
 
+    def _count_screen_alerts(self, fired: int) -> None:
+        metrics = getattr(self._app.state, "metrics", None)
+        if metrics is not None:
+            metrics.fired("screener", fired)
+
     def _start(self, stack: MarketStack, *, seed: bool = True) -> None:
         """Start the background work of `stack`: cache maintenance, the screener job, and
         (`seed`) calibrating the guard from a metered upstream's own credit count."""
         if stack.runtime.settings.cache_maintenance_enabled:
             stack.maintenance.start()
         stack.screener.bind(
-            hub=self._hub, dispatcher=lambda: getattr(self._app.state, "dispatcher", None)
+            hub=self._hub,
+            dispatcher=lambda: getattr(self._app.state, "dispatcher", None),
+            on_fired=self._count_screen_alerts,
         )
         stack.screener.start()
         if seed and as_metered(stack.runtime.provider.inner) is not None:

@@ -1,0 +1,11 @@
+{
+  "note": "hand-built (UNVERIFIED wording): the free plan's 5 calls per minute exceeded",
+  "request": { "path": "/v2/aggs/ticker/AAPL/range/1/day/2026-10-20/2026-10-28", "params": {} },
+  "status": 429,
+  "headers": { "content-type": "application/json", "retry-after": "23" },
+  "body": {
+    "status": "ERROR",
+    "request_id": "b4c5d6e7f8011223344556677889aabb",
+    "error": "You've exceeded the maximum requests per minute, please wait or upgrade your subscription to continue."
+  }
+}

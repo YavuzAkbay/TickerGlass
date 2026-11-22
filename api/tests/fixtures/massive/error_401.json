@@ -1,0 +1,11 @@
+{
+  "note": "hand-built (UNVERIFIED wording): a key the API does not know",
+  "request": { "path": "/v2/aggs/ticker/AAPL/range/1/day/2026-10-20/2026-10-28", "params": {} },
+  "status": 401,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "status": "ERROR",
+    "request_id": "92a3b4c5d6e7f8011223344556677889",
+    "error": "Unknown API Key"
+  }
+}

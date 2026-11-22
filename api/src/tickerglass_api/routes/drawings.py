@@ -7,7 +7,8 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from .. import models as m
-from ..deps import HubDep, SessionDep
+from ..deps import HubDep, OwnedSessionDep, SessionDep
+from ..ownership import id_taken_by_other, session_owner
 from ..userdata import schemas as s
 from ..userdata import store
 
@@ -20,7 +21,9 @@ def list_drawings(
     symbol: Annotated[str | None, Query(max_length=32)] = None,
     synced: bool = True,
 ) -> s.DrawingList:
-    """All drawings, or those of `symbol` plus (unless `synced=false`) the synced ones."""
+    """All drawings, or those of `symbol` plus (unless `synced=false`) the synced ones. Each
+    carries its `ownerId`. A signed-in user gets their own; the alerts service (system token)
+    gets every owner's."""
     q = select(m.DrawingRow).order_by(m.DrawingRow.z, m.DrawingRow.id)
     if symbol is not None:
         sym = symbol.strip().upper()
@@ -51,7 +54,7 @@ def _conflict(did: str, row: m.DrawingRow | None) -> s.DrawingConflict:
 
 
 def _apply(
-    session: SessionDep, body: s.DrawingBatch, parsed: Parsed, rows: dict[str, m.DrawingRow]
+    session: OwnedSessionDep, body: s.DrawingBatch, parsed: Parsed, rows: dict[str, m.DrawingRow]
 ) -> tuple[list[str], list[str]]:
     """Write the batch with conditional statements. Returns (deleted ids, lost ids):
     a lost id is one whose stored copy changed after the pre-check (a concurrent
@@ -100,13 +103,15 @@ def _apply(
         dstmt = delete(m.DrawingRow).where(*cond).execution_options(synchronize_session=False)
         if store.rowcount(session.execute(dstmt)) == 1:
             deleted.append(d.id)
-        elif checked and session.scalar(select(func.count()).where(m.DrawingRow.id == d.id)):
+        elif checked and session.scalar(
+            select(func.count()).select_from(m.DrawingRow).where(m.DrawingRow.id == d.id)
+        ):
             lost.append(d.id)
     return deleted, lost
 
 
 @router.post("/batch", response_model=s.DrawingBatchResult)
-def batch(session: SessionDep, hub: HubDep, body: s.DrawingBatch) -> s.DrawingBatchResult:
+def batch(session: OwnedSessionDep, hub: HubDep, body: s.DrawingBatch) -> s.DrawingBatchResult:
     """Upsert and delete in one transaction; all-or-nothing.
 
     Each upsert carries the revision it was based on (null = new); each delete
@@ -126,6 +131,10 @@ def batch(session: SessionDep, hub: HubDep, body: s.DrawingBatch) -> s.DrawingBa
         raise HTTPException(422, "a drawing id appears more than once in the batch")
 
     rows = {r.id: r for r in session.scalars(select(m.DrawingRow).where(m.DrawingRow.id.in_(ids)))}
+    for f in (f for _, f in parsed):
+        # Ids are global: one that belongs to another user is theirs, whatever the revision.
+        if f[0] not in rows and id_taken_by_other(session, m.DrawingRow, f[0]):
+            raise HTTPException(409, "id in use")
     if not body.force:
         conflicts: list[s.DrawingConflict] = []
         checks = [(f[0], up.base_revision, True) for up, f in parsed] + [
@@ -160,6 +169,8 @@ def batch(session: SessionDep, hub: HubDep, body: s.DrawingBatch) -> s.DrawingBa
     session.commit()
     if written or deleted:
         hub.publish_threadsafe(
-            "drawings", {"type": "drawings.changed", "ids": written, "deleted": deleted}
+            "drawings",
+            {"type": "drawings.changed", "ids": written, "deleted": deleted},
+            owner_id=session_owner(session),
         )
     return s.DrawingBatchResult(drawings=[store.drawing(r) for r in out], deleted=deleted)

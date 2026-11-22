@@ -1,0 +1,17 @@
+{
+  "synthetic": "hand-built from the documented GET /v2/assets?asset_class=crypto shape (not recorded)",
+  "request": {
+    "path": "/v2/assets",
+    "params": {"status": "active", "asset_class": "crypto"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": [
+    {"id": "64bbff51-59d6-4b3c-9351-13ad85e3c752", "class": "crypto", "exchange": "CRYPTO", "symbol": "BTC/USD", "name": "Bitcoin / US Dollar", "status": "active", "tradable": true},
+    {"id": "a1111111-59d6-4b3c-9351-13ad85e3c752", "class": "crypto", "exchange": "CRYPTO", "symbol": "ETH/USD", "name": "Ethereum / US Dollar", "status": "active", "tradable": true},
+    {"id": "a2222222-59d6-4b3c-9351-13ad85e3c752", "class": "crypto", "exchange": "CRYPTO", "symbol": "BTC/USDT", "name": "Bitcoin / USD Tether", "status": "active", "tradable": true},
+    {"id": "a3333333-59d6-4b3c-9351-13ad85e3c752", "class": "crypto", "exchange": "CRYPTO", "symbol": "ETH/BTC", "name": "Ethereum / Bitcoin", "status": "active", "tradable": true}
+  ]
+}

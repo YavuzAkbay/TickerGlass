@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import owner_id, system_session
 from sqlalchemy import Engine, delete, event, update
 from sqlalchemy.orm import Session
 from test_screener_query import NOW, TARGET, add_fund, add_run, add_snap, add_symbol
@@ -75,7 +76,7 @@ def engine_of(client: TestClient) -> Engine:
 
 
 def session_of(client: TestClient) -> Session:
-    return Session(engine_of(client))
+    return system_session(engine_of(client))
 
 
 def make_client(tmp_path: Path, provider: CountingProvider) -> TestClient:
@@ -301,6 +302,7 @@ def test_scan_etag_changes_when_a_watchlist_or_list_member_is_deleted(client: Te
         for wid in ("w1", "w2"):
             s.add(
                 Watchlist(
+                    owner_id=owner_id(engine_of(client)),
                     id=wid,
                     name=wid,
                     items=[{"type": "symbol", "symbol": "AAA"}],
@@ -421,6 +423,7 @@ def test_scan_universes_by_http(client: TestClient) -> None:
     with session_of(client) as s:
         s.add(
             Watchlist(
+                owner_id=owner_id(engine_of(client)),
                 id="w1",
                 name="W",
                 items=[{"type": "symbol", "symbol": "BBB"}],

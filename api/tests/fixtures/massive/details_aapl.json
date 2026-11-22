@@ -1,0 +1,30 @@
+{
+  "note": "hand-built from the documented ticker overview shape (not recorded)",
+  "request": { "path": "/v3/reference/tickers/AAPL", "params": {} },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "request_id": "3c4d5e6f708192a3b4c5d6e7f8011223",
+    "results": {
+      "ticker": "AAPL",
+      "name": "Apple Inc.",
+      "market": "stocks",
+      "locale": "us",
+      "primary_exchange": "XNAS",
+      "type": "CS",
+      "active": true,
+      "currency_name": "usd",
+      "cik": "0000320193",
+      "market_cap": 3900000000000,
+      "description": "Apple designs, manufactures and markets smartphones, personal computers, tablets, wearables and accessories worldwide.",
+      "homepage_url": "https://www.apple.com",
+      "total_employees": 164000,
+      "list_date": "1980-12-12",
+      "sic_code": "3571",
+      "sic_description": "ELECTRONIC COMPUTERS",
+      "share_class_shares_outstanding": 14800000000,
+      "weighted_shares_outstanding": 14750000000
+    },
+    "status": "OK"
+  }
+}

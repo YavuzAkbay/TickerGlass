@@ -5,7 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..live import LiveClient, LiveHub
+from ..accounts import CurrentUser
+from ..live import KICK_FRAME, LiveClient, LiveHub
 
 router = APIRouter(tags=["live"])
 
@@ -65,14 +66,21 @@ async def _reader(ws: WebSocket, hub: LiveHub, client: LiveClient) -> None:
 async def _writer(ws: WebSocket, client: LiveClient) -> None:
     while True:
         frame = await client.queue.get()
+        if frame is KICK_FRAME:
+            await ws.close(code=4401)
+            return
         await ws.send_json(frame)
 
 
 @router.websocket("/ws")
 async def live_ws(ws: WebSocket) -> None:
     hub: LiveHub = ws.app.state.live_hub
+    who: CurrentUser | None = ws.scope.get("state", {}).get("user")
+    if who is None:  # the auth middleware always sets it; never serve user events without it
+        await ws.close(code=4401)
+        return
     await ws.accept()
-    client = hub.register()
+    client = hub.register(user_id=None if who.is_system else who.id, system=who.is_system)
     try:
         # The reader ends with WebSocketDisconnect; the group then cancels the writer.
         async with asyncio.TaskGroup() as tg:

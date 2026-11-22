@@ -1,6 +1,7 @@
-/* Inspector: detail panel left of the tool rail; the 1px app grid gap is its hairline. No shadow. */
+/* Inspector: detail panel between the chart and the navigator; the 1px app grid gap is its
+   hairline. No shadow. */
 .inspector {
-  grid-area: 2 / 3 / 3 / 4;
+  grid-area: 2 / 2 / 3 / 3;
   position: relative;
   animation: insp-in 160ms ease-out;
   display: flex;

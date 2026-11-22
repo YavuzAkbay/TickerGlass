@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from starlette.testclient import WebSocketTestSession
 
 from tickerglass_api.app import create_app
-from tickerglass_api.live import LiveHub, MessageHandler, normalize_message
+from tickerglass_api.live import LiveHub, MessageHandler, normalize_message, provider_poller
 from tickerglass_api.providers.base import BAR_COLUMNS
 from tickerglass_api.settings import get_settings
 
@@ -284,6 +284,37 @@ def test_polling_fallback_and_resume(
         calls = poller.calls
         time.sleep(0.1)
         assert poller.calls == calls
+
+
+def test_polled_ticks_carry_the_days_range() -> None:
+    class Quoting(FakeProvider):
+        def quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "BTC-USDT",
+                    "last": 64000.5,
+                    "change": -10.0,
+                    "changePercent": -0.01,
+                    "volume": 28000,
+                    "dayHigh": 65534.94,
+                    "dayLow": 63336.0,
+                }
+            ]
+
+    async def scenario() -> None:
+        poll = provider_poller(Quoting())  # type: ignore[arg-type]
+        assert await poll(["BTC-USDT"]) == {
+            "BTC-USDT": {
+                "price": 64000.5,
+                "change": -10.0,
+                "changePercent": -0.01,
+                "dayVolume": 28000,
+                "dayHigh": 65534.94,
+                "dayLow": 63336.0,
+            }
+        }
+
+    asyncio.run(scenario())
 
 
 def test_poll_batches_due_symbols() -> None:

@@ -262,8 +262,6 @@
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 11px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   user-select: none;
 }
 .wlp-th {
@@ -559,8 +557,6 @@
   background: var(--panel-2);
   color: var(--muted);
   font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .wlp-detail-close {
   width: 24px;
@@ -613,8 +609,6 @@
   background: var(--panel-2);
   color: var(--muted);
   font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 .wlp-detail-ext {
   display: flex;
@@ -628,8 +622,6 @@
 .wlp-detail-ext-label {
   color: var(--muted);
   font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .wlp-detail-range {
   display: flex;

@@ -68,7 +68,7 @@ class ProviderUnsupported(ProviderError):
 
     def __init__(self, feature: str, provider: str | None = None) -> None:
         by = provider if provider else "this data provider"
-        super().__init__(f"{feature} is not supported by {by}")
+        super().__init__(f"{by} does not support {feature}")
         self.feature = feature
         self.provider = provider
 
@@ -467,6 +467,10 @@ class Quote(TypedDict, total=False):
     fiftyTwoWeekLow: float | None
     marketCap: float | None
     averageVolume: float | None
+    #: Valuation extras (Yahoo v7): trailing / forward price-earnings and trailing 12-month EPS.
+    trailingPE: float | None
+    forwardPE: float | None
+    eps: float | None
 
 
 class ExtendedQuote(TypedDict, total=False):

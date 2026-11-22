@@ -1,7 +1,8 @@
-/* Navigator: icon rail plus a resizable section panel on the left of the chart.
-   Docked chrome: hairline borders, no shadow. */
+/* Navigator: icon rail plus a resizable section panel on the right of the chart (the rail is
+   the outermost column). Docked chrome: hairline borders, no shadow. */
 .navigator {
   display: flex;
+  flex-direction: row-reverse;
   min-width: 0;
   min-height: 0;
   background: var(--panel);
@@ -11,7 +12,7 @@
   flex: 0 0 var(--rail-w);
   flex-direction: column;
   width: var(--rail-w);
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 /* The desk switcher sits above the section tabs, split off by a hairline. */
 .nav-desk-slot {
@@ -49,8 +50,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 0;
   border-radius: var(--radius-control);
@@ -69,7 +70,7 @@
 .nav-tab.active::before {
   content: '';
   position: absolute;
-  left: -4px;
+  right: -8px;
   top: 6px;
   bottom: 6px;
   width: 2px;
@@ -97,7 +98,6 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--border);
 }
 .nav-head {
   display: flex;
@@ -133,7 +133,7 @@
   z-index: 5;
   top: 0;
   bottom: 0;
-  right: -3px;
+  left: -3px;
   width: 6px;
   cursor: col-resize;
   touch-action: none;
@@ -175,6 +175,7 @@
     min-width: 0;
     height: var(--tabbar-h);
     border-right: 0;
+    border-left: 0;
     background: var(--panel);
   }
   .nav-desk-slot {
@@ -294,8 +295,6 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .tl-list {
   margin: 0;

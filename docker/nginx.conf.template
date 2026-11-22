@@ -1,21 +1,47 @@
+# Template, rendered by envsubst for the two variables TG_LISTEN_PORT and TG_API_UPSTREAM only:
+#  - web image: the official nginx entrypoint renders /etc/nginx/templates/*.template
+#    (defaults set in docker/node.Dockerfile; Helm overrides TG_API_UPSTREAM);
+#  - all-in-one image: docker/aio/entrypoint.sh (listen 8080, upstream 127.0.0.1:8000).
+#
+# This file is included in the http context of both images, so the map below sits at top level.
+# Only the TG_ variables are substituted: every other $name is nginx's.
+
+# Behind a TLS-terminating proxy the browser's scheme is the proxy's X-Forwarded-Proto (the API
+# honours it only from TRUSTED_PROXIES); without one, this server's own scheme.
+map $http_x_forwarded_proto $tg_forwarded_proto {
+    default $http_x_forwarded_proto;
+    "" $scheme;
+}
+
 server {
-    listen 80;
+    listen ${TG_LISTEN_PORT};
     root /usr/share/nginx/html;
 
     location /api/ {
-        proxy_pass http://api:8000;
+        proxy_pass http://${TG_API_UPSTREAM};
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $tg_forwarded_proto;
+    }
+
+    # Prometheus metrics (docs/metrics.md): the API serves them at the root, not under /api. Off
+    # unless the API has METRICS_ENABLED=true (404 otherwise); the API checks the Bearer token.
+    location = /metrics {
+        proxy_pass http://${TG_API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $tg_forwarded_proto;
+        # Authorization is passed through to the API by default.
     }
 
     location /ws {
-        proxy_pass http://api:8000;
+        proxy_pass http://${TG_API_UPSTREAM};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $tg_forwarded_proto;
         proxy_read_timeout 1h;
     }
 

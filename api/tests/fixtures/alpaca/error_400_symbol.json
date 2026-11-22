@@ -1,0 +1,15 @@
+{
+  "synthetic": "text unverified: an invalid symbol in a multi-symbol request",
+  "request": {
+    "path": "/v2/stocks/snapshots",
+    "params": {"symbols": "AAPL,BAD!SYM", "feed": "iex"}
+  },
+  "status": 400,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "code": 40010001,
+    "message": "invalid symbol: BAD!SYM"
+  }
+}

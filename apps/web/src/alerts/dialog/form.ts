@@ -27,6 +27,7 @@ import {
   type ValueOperand,
 } from '@tickerglass/alerts';
 import type { IndicatorRegistry } from '@tickerglass/indicators';
+import { isScriptOperand } from './sources';
 
 /** One side of a condition: a typed number or a source (price, indicator, drawing line). */
 export type TargetForm =
@@ -60,6 +61,16 @@ export interface FormState {
   message: string;
   notify: AlertNotify;
   status: 'active' | 'paused';
+}
+
+/** Whether any operand of the form reads a user script (the dialog then notes the saved-version rule). */
+export function formUsesScript(f: FormState): boolean {
+  const t = (x: TargetForm) => x.kind === 'source' && isScriptOperand(x.operand);
+  return (
+    isScriptOperand(f.left) ||
+    (isCrossOp(f.op) && t(f.right)) ||
+    (isChannelOp(f.op) && f.channel.kind === 'bounds' && (t(f.channel.upper) || t(f.channel.lower)))
+  );
 }
 
 export const emptyValue = (): TargetForm => ({ kind: 'value', text: '' });

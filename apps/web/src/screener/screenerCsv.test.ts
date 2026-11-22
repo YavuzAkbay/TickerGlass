@@ -33,10 +33,12 @@ describe('screenerCsv', () => {
     );
     const [head, a, b] = csv.split('\n');
     expect(head).toBe(
-      'Symbol,Name,Last,Change,Change %,Prev Close,Volume,Rel Volume,Turnover,Day Low,Day High,52W Low,52W High,Pre/Post Change %,Market Cap (approx $B),Market Cap (live $B),Sector,Exchange',
+      'Symbol,Name,Last,Change,Change %,Prev Close,Volume,Rel Volume,Turnover,Day Low,Day High,52W Low,52W High,Pre/Post Change %,Market Cap (approx $B),Market Cap (live $B),P/E,Forward P/E,EPS (TTM),Sector,Exchange',
     );
-    expect(a).toBe('AAA,"Alpha, Inc.",250,5,2,,1000,2,250000,245,252,100,300,,900,900,Tech,NASDAQ');
-    expect(b).toBe("BBB,'-Weird,,,,,,,,,,,,,,,Tech,NYSE"); // formula-guarded name, empty quote cells
+    expect(a).toBe(
+      'AAA,"Alpha, Inc.",250,5,2,,1000,2,250000,245,252,100,300,,900,900,,,,Tech,NASDAQ',
+    );
+    expect(b).toBe("BBB,'-Weird,,,,,,,,,,,,,,,,,,Tech,NYSE"); // formula-guarded name, empty quote cells
   });
 
   it('writes only the visible columns, in the given column order', () => {

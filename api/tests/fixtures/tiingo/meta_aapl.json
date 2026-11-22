@@ -1,0 +1,19 @@
+{
+  "synthetic": "hand-built from the documented GET /tiingo/daily/<ticker> shape (not recorded)",
+  "request": {
+    "path": "/tiingo/daily/aapl",
+    "params": {}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "ticker": "AAPL",
+    "name": "Apple Inc",
+    "description": "Apple Inc. designs, manufactures, and markets smartphones and personal computers.",
+    "startDate": "1980-12-12",
+    "endDate": "2026-10-27",
+    "exchangeCode": "NASDAQ"
+  }
+}

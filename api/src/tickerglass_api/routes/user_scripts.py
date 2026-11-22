@@ -5,15 +5,16 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import OwnedSessionDep, SessionDep
+from ..ownership import id_taken_by_other, owned_get
 from ..userdata import schemas as s
 from ..userdata import store
 
 router = APIRouter(prefix="/user-scripts", tags=["user-scripts"])
 
 
-def _get(session: SessionDep, script_id: str) -> m.UserScript:
-    row = session.get(m.UserScript, script_id)
+def _get(session: OwnedSessionDep, script_id: str) -> m.UserScript:
+    row = owned_get(session, m.UserScript, script_id)
     if row is None:
         raise HTTPException(404, f"user script not found: {script_id}")
     return row
@@ -31,18 +32,22 @@ def _conflict(row: m.UserScript) -> HTTPException:
 
 @router.get("", response_model=list[s.UserScript])
 def list_user_scripts(session: SessionDep) -> list[s.UserScript]:
-    """All scripts including sources (oldest first)."""
+    """All scripts including sources (oldest first), each with its `ownerId`. A signed-in user
+    gets their own; the alerts service (system token) gets every owner's."""
     q = select(m.UserScript).order_by(m.UserScript.created_at, m.UserScript.id)
     return [store.user_script(r) for r in session.scalars(q)]
 
 
 @router.post("", response_model=s.UserScript, status_code=201)
-def create_user_script(session: SessionDep, body: s.UserScriptIn) -> s.UserScript:
-    """409 (with the stored script) if a client-chosen `id` already exists."""
+def create_user_script(session: OwnedSessionDep, body: s.UserScriptIn) -> s.UserScript:
+    """409 (with the stored script) if a client-chosen `id` already exists; 409 "id in use"
+    (nothing more) if it belongs to another user."""
     sid = body.id or s.new_id()
-    existing = session.get(m.UserScript, sid)
+    existing = owned_get(session, m.UserScript, sid)
     if existing is not None:
         raise _conflict(existing)
+    if id_taken_by_other(session, m.UserScript, sid):
+        raise HTTPException(409, "id in use")
     t = s.now()
     row = m.UserScript(
         id=sid,
@@ -60,21 +65,24 @@ def create_user_script(session: SessionDep, body: s.UserScriptIn) -> s.UserScrip
     except IntegrityError:
         # A concurrent POST claimed this id between our check and insert.
         session.rollback()
-        winner = session.get(m.UserScript, sid)
+        winner = owned_get(session, m.UserScript, sid)
         if winner is None:
+            # Not ours: a concurrent POST of another user took the id.
+            if id_taken_by_other(session, m.UserScript, sid):
+                raise HTTPException(409, "id in use") from None
             raise
         raise _conflict(winner) from None
     return store.user_script(row)
 
 
 @router.get("/{script_id}", response_model=s.UserScript)
-def get_user_script(session: SessionDep, script_id: str) -> s.UserScript:
+def get_user_script(session: OwnedSessionDep, script_id: str) -> s.UserScript:
     return store.user_script(_get(session, script_id))
 
 
 @router.put("/{script_id}", response_model=s.UserScript)
 def update_user_script(
-    session: SessionDep, script_id: str, body: s.UserScriptUpdate
+    session: OwnedSessionDep, script_id: str, body: s.UserScriptUpdate
 ) -> s.UserScript:
     """409 (with the stored script) if `revision` is given and stale.
 
@@ -105,7 +113,7 @@ def update_user_script(
 
 
 @router.delete("/{script_id}", status_code=204)
-def delete_user_script(session: SessionDep, script_id: str) -> Response:
+def delete_user_script(session: OwnedSessionDep, script_id: str) -> Response:
     session.delete(_get(session, script_id))
     session.commit()
     return Response(status_code=204)

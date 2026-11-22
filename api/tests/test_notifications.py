@@ -2,11 +2,17 @@
 retry schedule and restart behavior, and the channel test endpoint (docs/alerts.md §4)."""
 
 import asyncio
+import base64
 import hashlib
 import hmac
+import http.client
+import http.server
 import io
 import json
+import logging
 import smtplib
+import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -18,13 +24,15 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import owner_id, system_maker
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from test_alerts import body, create, fire
 
 from tickerglass_api import models as m
 from tickerglass_api.db import make_engine, run_migrations
-from tickerglass_api.notifications import DeliveryError, webhook
+from tickerglass_api.notifications import DeliveryError, mask_url, ntfy, webhook
 from tickerglass_api.notifications.dispatcher import MAX_ATTEMPTS, Dispatcher
 from tickerglass_api.settings import Settings
 from tickerglass_api.userdata.alerts import utc
@@ -46,9 +54,11 @@ class FakeResponse:
         return None
 
 
-def http_error(code: int, body: dict[str, Any] | None = None) -> urllib.error.HTTPError:
+def http_error(
+    code: int, body: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+) -> urllib.error.HTTPError:
     data = json.dumps(body or {}).encode()
-    return urllib.error.HTTPError("http://x", code, "err", {}, io.BytesIO(data))  # type: ignore[arg-type]
+    return urllib.error.HTTPError("http://x", code, "err", headers or {}, io.BytesIO(data))  # type: ignore[arg-type]
 
 
 class FakeNet:
@@ -128,7 +138,7 @@ def maker(tmp_path: Path) -> Iterator[sessionmaker[Session]]:
     url = f"sqlite:///{tmp_path}/n.db"
     run_migrations(url)
     engine = make_engine(url)
-    yield sessionmaker(engine, expire_on_commit=False)
+    yield system_maker(engine)
     engine.dispose()
 
 
@@ -148,6 +158,7 @@ def seed(
         if alert:
             session.add(
                 m.Alert(
+                    owner_id=owner_id(session.get_bind()),  # type: ignore[arg-type]
                     id="a1",
                     name="Mine",
                     symbol="AAPL",
@@ -165,6 +176,7 @@ def seed(
                 )
             )
         log = m.AlertLog(
+            owner_id=owner_id(session.get_bind()),  # type: ignore[arg-type]
             fire_id="fid",
             alert_id="a1" if alert else None,
             alert_name="Mine",
@@ -576,3 +588,482 @@ def test_502_detail_is_generic(make_client: Callable[..., TestClient], net: Fake
     )
     assert res.status_code == 502
     assert "refused" not in res.text and "Errno" not in res.text
+
+
+# ------------------------------------------------------ ntfy / gotify / apprise
+
+PUSH = {
+    "ntfy": {"ntfy_url": "https://ntfy.example/alerts"},
+    "gotify": {"gotify_url": "https://gotify.example", "gotify_token": "GTOKEN"},
+    "apprise": {"apprise_url": "http://apprise:8000/notify"},
+}
+TITLE = "TickerGlass alert: Mine"
+
+
+def test_ntfy_request_shape(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("ntfy", None)])
+    cfg = settings(
+        ntfy_url="https://ntfy.example/alerts",
+        ntfy_token="tk_secret",
+        ntfy_priority="high",
+        ntfy_tags="warning, chart_with_upwards_trend",
+    )
+    run(Dispatcher(maker, cfg), T0)
+    req = net.last
+    assert req.full_url == "https://ntfy.example/" and req.get_method() == "POST"
+    assert req.get_header("Content-type") == "application/json"
+    assert req.get_header("Authorization") == "Bearer tk_secret"
+    assert net.timeouts == [10.0]
+    got = net.body()
+    assert got["topic"] == "alerts" and got["title"] == TITLE and got["priority"] == 4
+    assert got["tags"] == ["warning", "chart_with_upwards_trend"]
+    assert got["message"].startswith("AAPL Crossing 190.00\n\nSymbol: AAPL\nInterval: 1D\n")
+    assert deliveries(maker)[0].status == "sent"
+
+
+def test_ntfy_defaults_and_no_token_header(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("ntfy", None)])
+    run(Dispatcher(maker, settings(ntfy_url="http://ntfy:80/alerts")), T0)
+    assert net.last.full_url == "http://ntfy:80/"  # private/LAN hosts are allowed
+    assert net.last.get_header("Authorization") is None
+    assert net.body()["priority"] == 3 and net.body()["tags"] == ["chart_with_upwards_trend"]
+
+
+@pytest.mark.parametrize(
+    ("url", "base", "topic"),
+    [
+        ("https://ntfy.sh/my-alerts", "https://ntfy.sh/", "my-alerts"),
+        ("https://ntfy.sh/my-alerts/", "https://ntfy.sh/", "my-alerts"),
+        ("https://example.com/ntfy/team/alerts", "https://example.com/ntfy/team/", "alerts"),
+        ("http://ntfy:80/alerts", "http://ntfy:80/", "alerts"),
+        ("https://user:pw@ntfy.sh/a", "https://user:pw@ntfy.sh/", "a"),
+    ],
+)
+def test_ntfy_topic_base_split(url: str, base: str, topic: str) -> None:
+    assert ntfy.split_topic_url(url) == (base, topic)
+
+
+@pytest.mark.parametrize("url", ["https://ntfy.sh", "https://ntfy.sh/", "ftp://h/t", "/alerts"])
+def test_ntfy_rejects_url_without_topic_or_bad_scheme(url: str) -> None:
+    with pytest.raises(DeliveryError) as exc:
+        ntfy.split_topic_url(url)
+    assert exc.value.retryable is False
+
+
+def test_ntfy_path_prefix_is_posted_to(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("ntfy", None)])
+    run(Dispatcher(maker, settings(ntfy_url="https://example.com/ntfy/alerts")), T0)
+    assert net.last.full_url == "https://example.com/ntfy/"
+    assert net.body()["topic"] == "alerts"
+
+
+def test_gotify_request_shape(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("gotify", None)])
+    cfg = settings(gotify_url="http://gotify:8080/", gotify_token="GTOKEN", gotify_priority=8)
+    run(Dispatcher(maker, cfg), T0)
+    req = net.last
+    assert req.full_url == "http://gotify:8080/message" and req.get_method() == "POST"
+    assert req.get_header("X-gotify-key") == "GTOKEN"
+    assert "GTOKEN" not in req.full_url and "?" not in req.full_url
+    assert req.get_header("Content-type") == "application/json"
+    got = net.body()
+    assert got["title"] == TITLE and got["priority"] == 8
+    assert got["message"].startswith("AAPL Crossing 190.00\n\n")
+    assert deliveries(maker)[0].status == "sent"
+
+
+def test_apprise_request_shape_stateless(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("apprise", None)])
+    cfg = settings(
+        apprise_url="http://apprise:8000/notify",
+        apprise_urls="tgram://bot/chat, mailto://u:p@example.com  json://hook",
+        apprise_tag="alerts",
+    )
+    run(Dispatcher(maker, cfg), T0)
+    assert net.last.full_url == "http://apprise:8000/notify"
+    assert net.last.get_header("Content-type") == "application/json"
+    got = net.body()
+    assert got["title"] == TITLE and got["type"] == "info"
+    assert got["urls"] == "tgram://bot/chat,mailto://u:p@example.com,json://hook"
+    assert got["tag"] == "alerts"
+    assert got["body"].startswith("AAPL Crossing 190.00\n\n")
+
+
+def test_apprise_stateful_has_no_urls_or_tag(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("apprise", None)])
+    run(Dispatcher(maker, settings(apprise_url="http://apprise:8000/notify/main")), T0)
+    assert net.last.full_url == "http://apprise:8000/notify/main"
+    assert set(net.body()) == {"title", "body", "type"}
+
+
+@pytest.mark.parametrize("channel", ["ntfy", "gotify", "apprise"])
+def test_push_429_honors_retry_after(
+    maker: sessionmaker[Session], net: FakeNet, channel: str
+) -> None:
+    seed(maker, [(channel, None)])
+    net.script = [http_error(429, headers={"Retry-After": "120"})]
+    run(Dispatcher(maker, settings(**PUSH[channel])), T0)
+    [row] = deliveries(maker)
+    assert row.status == "pending" and row.attempts == 1 and row.last_error == "HTTP 429"
+    assert utc(row.next_attempt_at) == T0 + timedelta(seconds=120)  # not the usual +10 s
+
+
+def test_retry_after_parsing(net: FakeNet) -> None:
+    def retry_after(code: int, header: str | None) -> float | None:
+        net.script = [http_error(code, headers={"Retry-After": header} if header else None)]
+        with pytest.raises(DeliveryError) as exc:
+            webhook.post("https://h.example/x", b"{}", "application/json")
+        return exc.value.retry_after
+
+    assert retry_after(503, "45") == 45.0
+    assert retry_after(429, "0") == 0.0
+    assert retry_after(503, "Wed, 21 Oct 2026 07:28:00 GMT") is None  # HTTP-date form ignored
+    assert retry_after(503, "-5") is None and retry_after(503, "nan") is None
+    assert retry_after(429, "999999") == webhook.MAX_RETRY_AFTER_S
+    assert retry_after(500, "30") is None and retry_after(429, None) is None
+
+
+@pytest.mark.parametrize("channel", ["ntfy", "gotify", "apprise"])
+def test_push_4xx_is_permanent_and_never_leaks_secrets(
+    maker: sessionmaker[Session], net: FakeNet, channel: str
+) -> None:
+    seed(maker, [(channel, None)])
+    net.script = [http_error(401, {"error": "bad token tk_secret GTOKEN"})]
+    cfg = settings(**PUSH[channel], ntfy_token="tk_secret", apprise_urls="tgram://SECRETBOT/chat")
+    run(Dispatcher(maker, cfg), T0)
+    [row] = deliveries(maker)
+    assert row.status == "failed" and row.attempts == 1 and row.last_error == "HTTP 401"
+    for secret in ("tk_secret", "GTOKEN", "SECRETBOT"):
+        assert secret not in (row.last_error or "")
+
+
+@pytest.mark.parametrize("channel", ["ntfy", "gotify", "apprise"])
+def test_push_5xx_and_network_errors_are_retried(
+    maker: sessionmaker[Session], net: FakeNet, channel: str
+) -> None:
+    seed(maker, [(channel, None)])
+    net.script = [http_error(500), urllib.error.URLError("refused")]
+    d = Dispatcher(maker, settings(**PUSH[channel]))
+    run(d, T0)
+    [row] = deliveries(maker)
+    assert row.status == "pending" and row.last_error == "HTTP 500"
+    run(d, T0 + timedelta(seconds=10))
+    [row] = deliveries(maker)
+    assert row.status == "pending" and row.attempts == 2 and row.last_error == "delivery failed"
+
+
+def test_unconfigured_push_channels_fail_without_retry(
+    maker: sessionmaker[Session], net: FakeNet
+) -> None:
+    seed(maker, [("ntfy", None), ("gotify", None), ("apprise", None)])
+    # Gotify needs both URL and token.
+    cfg = settings(gotify_url="https://gotify.example")
+    assert run(Dispatcher(maker, cfg), T0) == 3
+    rows = deliveries(maker)
+    assert [r.status for r in rows] == ["failed"] * 3
+    assert {r.last_error for r in rows} == {"not configured"}
+    assert net.requests == []
+
+
+def test_push_transports_refuse_non_http_schemes(
+    maker: sessionmaker[Session], net: FakeNet
+) -> None:
+    seed(maker, [("gotify", None), ("apprise", None)])
+    cfg = settings(gotify_url="http://gotify", gotify_token="t", apprise_url="http://apprise")
+    # Settings validation rejects these; the transports must still refuse them on their own.
+    cfg.gotify_url, cfg.apprise_url = "ftp://gotify", "file:///etc/passwd"
+    run(Dispatcher(maker, cfg), T0)
+    rows = deliveries(maker)
+    assert [r.status for r in rows] == ["failed", "failed"]
+    assert {r.last_error for r in rows} == {"invalid URL"}
+    assert net.requests == []
+
+
+def test_webhook_post_extra_headers_and_send_unchanged(net: FakeNet) -> None:
+    webhook.post("https://h.example/x", b"{}", "application/json", headers={"X-A": "1"})
+    assert net.last.get_header("X-a") == "1" and net.last.get_header("User-agent")
+    webhook.send("https://h.example/x", b"{}", "application/json", secret="k")
+    assert net.last.get_header("X-tickerglass-signature", "").startswith("sha256=")
+    assert net.last.get_header("User-agent") == "TickerGlass-Alerts"
+
+
+# ----------------------------------------------------------- settings
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("min", 1), ("low", 2), ("default", 3), ("High", 4), ("max", 5), ("urgent", 5),
+        ("1", 1), ("5", 5), (2, 2), ("", 3),
+    ],
+)  # fmt: skip
+def test_ntfy_priority_valid(raw: str | int, want: int) -> None:
+    assert settings(ntfy_priority=raw).ntfy_priority == want
+
+
+@pytest.mark.parametrize("raw", ["0", "6", "loud", "-1", 0, 6, "3.5"])
+def test_ntfy_priority_invalid(raw: str | int) -> None:
+    with pytest.raises(ValidationError):
+        settings(ntfy_priority=raw)
+
+
+def test_gotify_priority_range() -> None:
+    assert settings().gotify_priority == 5 and settings().ntfy_priority == 3
+    assert settings(gotify_priority="0").gotify_priority == 0
+    assert settings(gotify_priority=10).gotify_priority == 10
+    for bad in (-1, 11, "x"):
+        with pytest.raises(ValidationError):
+            settings(gotify_priority=bad)
+
+
+def test_priority_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NTFY_PRIORITY", "urgent")
+    monkeypatch.setenv("GOTIFY_PRIORITY", "7")
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert (s.ntfy_priority, s.gotify_priority) == (5, 7)
+    monkeypatch.setenv("NTFY_PRIORITY", "9")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------- endpoints and masking
+
+
+def test_mask_url_strips_userinfo_query_and_path() -> None:
+    assert mask_url("https://user:pw@ntfy.example:8443/secret/topic?auth=TOKEN#x") == (
+        "https://ntfy.example:8443/…"
+    )
+    assert mask_url(None) is None and mask_url("") is None
+
+
+def test_channels_endpoint_shape_and_masking(make_client: Callable[..., TestClient]) -> None:
+    client = make_client(
+        ntfy_url="https://user:pw@ntfy.example/private-topic",
+        ntfy_token="tk_secret",
+        gotify_url="http://gotify:8080/base",
+        gotify_token="GTOKEN",
+        apprise_url="http://apprise:8000/notify/KEY",
+        apprise_urls="tgram://SECRETBOT/chat",
+        apprise_tag="t",
+    )
+    got = client.get("/api/alerts/channels").json()
+    assert got["ntfy"] == {"configured": True, "url": "https://ntfy.example/…"}
+    assert got["gotify"] == {"configured": True, "url": "http://gotify:8080/…"}
+    assert got["apprise"] == {"configured": True, "url": "http://apprise:8000/…"}
+    text = json.dumps(got)
+    for secret in ("tk_secret", "GTOKEN", "SECRETBOT", "private-topic", "KEY", "pw"):
+        assert secret not in text
+    # Gotify without its token is not configured, but still shows where it points.
+    half = make_client(gotify_url="http://gotify:8080").get("/api/alerts/channels").json()
+    assert half["gotify"] == {"configured": False, "url": "http://gotify:8080/…"}
+
+
+def test_channel_test_endpoint_push_channels(
+    make_client: Callable[..., TestClient], net: FakeNet
+) -> None:
+    client = make_client(
+        ntfy_url="https://ntfy.example/alerts",
+        gotify_url="http://gotify:8080",
+        gotify_token="GTOKEN",
+        apprise_url="http://apprise:8000/notify",
+    )
+    for channel, url in [
+        ("ntfy", "https://ntfy.example/"),
+        ("gotify", "http://gotify:8080/message"),
+        ("apprise", "http://apprise:8000/notify"),
+    ]:
+        res = client.post(f"/api/alerts/channels/{channel}/test")
+        assert res.status_code == 200 and res.json() == {"ok": True}
+        assert net.last.full_url == url
+        sent = net.body()
+        assert "Test alert" in sent.get("title", "") and "TickerGlass test notification" in str(
+            sent.get("message") or sent.get("body")
+        )
+    net.script = [http_error(500)]
+    bad = client.post("/api/alerts/channels/gotify/test")
+    assert bad.status_code == 502 and "GTOKEN" not in bad.text and "500" not in bad.text
+    other = make_client(ntfy_url="https://ntfy.example/alerts")
+    assert other.post("/api/alerts/channels/gotify/test").status_code == 400
+    assert client.get("/api/alerts/log").json()["entries"] == []
+
+
+def test_fire_enqueues_push_deliveries_for_configured_channels(
+    make_client: Callable[..., TestClient], net: FakeNet
+) -> None:
+    client = make_client(ntfy_url="https://ntfy.example/alerts", alerts_internal_token=None)
+    notify = {"ntfy": True, "gotify": True, "apprise": False}
+    a = create(client, id="a1", notify=notify)
+    by = {d["channel"]: d for d in fire(client, a).json()["deliveries"]}
+    assert set(by) == {"ntfy", "gotify"}
+    assert by["ntfy"]["status"] in ("pending", "sent")
+    assert by["gotify"]["status"] == "failed" and by["gotify"]["lastError"] == "not configured"
+
+
+# ------------------------------------------------- userinfo -> Basic auth (real opener)
+
+SECRET = "SECRETPW"
+
+
+class Hook:
+    """A local HTTP server (127.0.0.1) recording what the real opener sent it."""
+
+    def __init__(self) -> None:
+        self.seen: list[tuple[str, str | None, bytes]] = []
+        seen = self.seen
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                n = int(self.headers.get("Content-Length", 0))
+                seen.append((self.path, self.headers.get("Authorization"), self.rfile.read(n)))
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a: Any) -> None:
+                return None
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture
+def hook() -> Iterator[Hook]:
+    h = Hook()
+    yield h
+    h.close()
+
+
+def basic(user: str, password: str) -> str:
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+
+
+def test_userinfo_becomes_basic_auth_through_the_real_opener(
+    hook: Hook, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    url = f"http://us%40er:{SECRET}@127.0.0.1:{hook.port}/x"
+    webhook.post(url, b"{}", "application/json", allow_private=True)
+    assert hook.seen == [("/x", basic("us@er", SECRET), b"{}")]
+    assert SECRET not in caplog.text
+
+
+def test_userinfo_without_a_port_through_the_real_opener(
+    hook: Hook,
+    fake_dns: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    fake_dns["hook.example"] = ["127.0.0.1"]
+    real = socket.create_connection
+    monkeypatch.setattr(
+        socket,
+        "create_connection",
+        lambda addr, *a, **kw: real(("127.0.0.1", hook.port), *a, **kw),
+    )
+    webhook.post(f"http://u:{SECRET}@hook.example/x", b"{}", "text/plain", allow_private=True)
+    assert hook.seen == [("/x", basic("u", SECRET), b"{}")]
+    assert SECRET not in caplog.text
+
+
+def test_explicit_authorization_header_beats_userinfo(hook: Hook) -> None:
+    webhook.post(
+        f"http://u:{SECRET}@127.0.0.1:{hook.port}/x",
+        b"{}",
+        "application/json",
+        headers={"Authorization": "Bearer tk"},
+        allow_private=True,
+    )
+    assert hook.seen[0][1] == "Bearer tk"
+
+
+def test_userinfo_never_leaks_on_failure(
+    maker: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    with socket.socket() as s:  # a port with nothing listening
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    seed(maker, [("webhook", None)])
+    cfg = settings(alerts_webhook_url=f"http://u:{SECRET}@127.0.0.1:{port}/x")
+    run(Dispatcher(maker, cfg), T0)
+    (d,) = deliveries(maker)
+    assert d.attempts == 1 and d.last_error == "delivery failed"
+    assert SECRET not in caplog.text
+
+
+def test_http_client_exceptions_are_a_generic_retryable_failure(
+    net: FakeNet, caplog: pytest.LogCaptureFixture
+) -> None:
+    net.script = [http.client.InvalidURL("nonnumeric port: 'PW@host'")]
+    with pytest.raises(DeliveryError) as exc:
+        webhook.post("https://hook.example/x", b"{}", "application/json")
+    assert str(exc.value) == "delivery failed" and exc.value.retryable is True
+
+
+def test_ntfy_userinfo_becomes_basic_auth(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("ntfy", None)])
+    run(Dispatcher(maker, settings(ntfy_url=f"http://bob:{SECRET}@ntfy:80/alerts")), T0)
+    assert net.last.full_url == "http://ntfy:80/"
+    assert net.last.get_header("Authorization") == basic("bob", SECRET)
+    assert net.body()["topic"] == "alerts"
+
+
+def test_ntfy_token_overrides_userinfo(maker: sessionmaker[Session], net: FakeNet) -> None:
+    seed(maker, [("ntfy", None)])
+    cfg = settings(ntfy_url=f"http://bob:{SECRET}@ntfy:80/alerts", ntfy_token="tk_x")
+    run(Dispatcher(maker, cfg), T0)
+    assert net.last.get_header("Authorization") == "Bearer tk_x"
+
+
+def test_ntfy_url_with_query_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="NTFY_URL must not contain a query string"):
+        settings(ntfy_url="https://ntfy.sh/alerts?auth=abc")
+
+
+@pytest.mark.parametrize("field", ["ntfy_url", "gotify_url", "apprise_url"])
+@pytest.mark.parametrize("value", ["ntfy.sh/alerts", "ftp://h/t", "http:///x", "http://h:bad/x"])
+def test_channel_urls_must_be_http_with_a_host(field: str, value: str) -> None:
+    with pytest.raises(ValidationError):
+        settings(**{field: value})
+
+
+def test_channel_urls_empty_means_unset_and_tags_may_be_empty() -> None:
+    cfg = settings(ntfy_url="", gotify_url=" ", apprise_url="", ntfy_tags="")
+    assert cfg.ntfy_url is None and cfg.gotify_url is None and cfg.apprise_url is None
+    assert cfg.ntfy_tags == ""
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://u:pw@host:8080/a/b?k=v", "https://host:8080/…"),
+        ("https://host/secret", "https://host/…"),
+        ("http://[::1", "(invalid)"),
+        ("host/path", "(invalid)"),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_mask_url_handles_invalid_input(url: str | None, expected: str | None) -> None:
+    assert mask_url(url) == expected
+
+
+def test_dispatcher_catch_all_stores_only_the_exception_type(
+    maker: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*a: Any, **kw: Any) -> None:
+        raise http.client.InvalidURL(f"nonnumeric port: 'PW@{SECRET}'")
+
+    seed(maker, [("webhook", None)])
+    d = Dispatcher(maker, settings(alerts_webhook_url="https://hook.example/x"))
+    monkeypatch.setattr(d, "_send", boom)
+    run(d, T0)
+    (row,) = deliveries(maker)
+    assert row.last_error == "unexpected error: InvalidURL"

@@ -31,8 +31,15 @@ interface Props {
   onActive: (id: string | null) => void;
 }
 
-const DEFAULT_NOTIFY: ScreenNotify = { webhook: true, telegram: false, email: false };
-const CHANNELS = ['webhook', 'telegram', 'email'] as const;
+const DEFAULT_NOTIFY: ScreenNotify = {
+  webhook: true,
+  telegram: false,
+  email: false,
+  ntfy: false,
+  gotify: false,
+  apprise: false,
+};
+const CHANNELS = ['webhook', 'telegram', 'email', 'ntfy', 'gotify', 'apprise'] as const;
 
 /** Saved screens: save as, load, rename, delete, alert toggle; built-in presets below. */
 export function SavedScreensMenu({ draft, columns, activeId, presets, onLoad, onActive }: Props) {
@@ -298,7 +305,7 @@ export function SavedScreensMenu({ draft, columns, activeId, presets, onLoad, on
                 <label key={ch}>
                   <input
                     type="checkbox"
-                    checked={active.alert!.notify[ch]}
+                    checked={!!active.alert!.notify[ch]}
                     data-testid={`scr-alert-${ch}`}
                     onChange={(e) =>
                       setAlert(active, {

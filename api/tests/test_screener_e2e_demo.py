@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import system_session
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -76,7 +77,7 @@ def tracked_count(s: Session) -> int:
 
 
 def log_entries(client: TestClient) -> list[m.AlertLog]:
-    with Session(client.app.state.engine) as s:  # type: ignore[attr-defined]
+    with system_session(client.app.state.engine) as s:  # type: ignore[attr-defined]
         return list(s.scalars(select(m.AlertLog).order_by(m.AlertLog.id)))
 
 
@@ -110,7 +111,7 @@ def test_demo_snapshot_run_scan_status_and_screen_alert(client: TestClient) -> N
     assert status["coverage"]["fresh"] == TRACKED and status["coverage"]["failed"] == 0
     assert status["barsRows"] > 0
     assert status["budget"]["tokensLastRun"] is not None
-    with Session(client.app.state.engine) as s:  # type: ignore[attr-defined]
+    with system_session(client.app.state.engine) as s:  # type: ignore[attr-defined]
         run = s.get(m.ScreenerRun, first)
         assert run is not None and run.done == TRACKED and run.failed == 0
         state = s.get(m.ScreenState, "scr-hot")

@@ -24,6 +24,27 @@ services:
       TWELVEDATA_FUNDAMENTALS: ${TWELVEDATA_FUNDAMENTALS:-}
       TWELVEDATA_INTERNATIONAL: ${TWELVEDATA_INTERNATIONAL:-}
       TWELVEDATA_POLL_INTERVAL_S: ${TWELVEDATA_POLL_INTERVAL_S:-}
+      # Other providers (docs/providers.md); empty = unset (the default applies).
+      ALPACA_KEY_ID: ${ALPACA_KEY_ID:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      ALPACA_PLAN: ${ALPACA_PLAN:-basic}
+      ALPACA_FEED: ${ALPACA_FEED:-}
+      ALPACA_EXTENDED_HOURS: ${ALPACA_EXTENDED_HOURS:-}
+      ALPACA_CRYPTO_LOCATION: ${ALPACA_CRYPTO_LOCATION:-}
+      ALPACA_DATA_BASE_URL: ${ALPACA_DATA_BASE_URL:-}
+      ALPACA_TRADING_BASE_URL: ${ALPACA_TRADING_BASE_URL:-}
+      TIINGO_API_KEY: ${TIINGO_API_KEY:-}
+      TIINGO_PLAN: ${TIINGO_PLAN:-starter}
+      TIINGO_STREAM: ${TIINGO_STREAM:-}
+      TIINGO_BASE_URL: ${TIINGO_BASE_URL:-}
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      MASSIVE_PLAN: ${MASSIVE_PLAN:-basic}
+      MASSIVE_BASE_URL: ${MASSIVE_BASE_URL:-}
+      STOOQ_API_KEY: ${STOOQ_API_KEY:-}
+      STOOQ_BASE_URL: ${STOOQ_BASE_URL:-}
+      CRYPTO_EXCHANGE: ${CRYPTO_EXCHANGE:-kraken}
+      CRYPTO_BASE_URL: ${CRYPTO_BASE_URL:-}
+      CRYPTO_STREAM_URL: ${CRYPTO_STREAM_URL:-}
       # Alert notifications (docs/alerts.md section 4.1); all optional, empty = unset.
       ALERTS_WEBHOOK_URL: ${ALERTS_WEBHOOK_URL:-}
       ALERTS_WEBHOOK_SECRET: ${ALERTS_WEBHOOK_SECRET:-}
@@ -37,15 +58,77 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_TO: ${SMTP_TO:-}
       SMTP_TLS: ${SMTP_TLS:-starttls}
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
+      NTFY_PRIORITY: ${NTFY_PRIORITY:-default}
+      NTFY_TAGS: ${NTFY_TAGS-chart_with_upwards_trend}
+      GOTIFY_URL: ${GOTIFY_URL:-}
+      GOTIFY_TOKEN: ${GOTIFY_TOKEN:-}
+      GOTIFY_PRIORITY: ${GOTIFY_PRIORITY:-5}
+      APPRISE_URL: ${APPRISE_URL:-}
+      APPRISE_URLS: ${APPRISE_URLS:-}
+      APPRISE_TAG: ${APPRISE_TAG:-}
       ALERTS_LOG_MAX: ${ALERTS_LOG_MAX:-5000}
       ALERTS_INTERNAL_TOKEN: ${ALERTS_INTERNAL_TOKEN:-}
-      # Optional single-user password auth (docs/self-hosting.md): empty = off.
-      # When AUTH_PASSWORD is set, also set ALERTS_INTERNAL_TOKEN (any long random
-      # string) so the alerts service can reach the API.
+      # Scheduled backups (docs/self-hosting.md "Back up and restore"; SQLite only): a daily
+      # backup runs once BACKUP_DIR (a folder inside the container: mount a host folder or a
+      # second disk there, see the volumes below) and/or the S3 target is set.
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
+      BACKUP_DIR: ${BACKUP_DIR:-}
+      BACKUP_AT: ${BACKUP_AT:-03:30}
+      BACKUP_TZ: ${BACKUP_TZ:-}
+      BACKUP_INCLUDE_CACHE: ${BACKUP_INCLUDE_CACHE:-false}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-6}
+      BACKUP_UPLOAD_MAX_MB: ${BACKUP_UPLOAD_MAX_MB:-2048}
+      BACKUP_RESTORE_MAX_MB: ${BACKUP_RESTORE_MAX_MB:-8192}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-tickerglass/}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-us-east-1}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_S3_PATH_STYLE: ${BACKUP_S3_PATH_STYLE:-true}
+      # Optional auth (docs/self-hosting.md): password, OIDC single sign-on and/or a
+      # trusted proxy header; all empty = off. When any is set, also set
+      # ALERTS_INTERNAL_TOKEN (any long random string) so the alerts service can reach the API.
       AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_SESSION_DAYS: ${AUTH_SESSION_DAYS:-30}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      AUTH_ALLOWED_USERS: ${AUTH_ALLOWED_USERS:-}
+      AUTH_ALLOWED_GROUPS: ${AUTH_ALLOWED_GROUPS:-}
+      AUTH_ALLOW_ANY_USER: ${AUTH_ALLOW_ANY_USER:-false}
+      AUTH_ADMIN_USERS: ${AUTH_ADMIN_USERS:-}
+      AUTH_ADMIN_GROUPS: ${AUTH_ADMIN_GROUPS:-}
+      AUTH_AUTO_PROVISION: ${AUTH_AUTO_PROVISION:-true}
+      AUTH_LOGOUT_URL: ${AUTH_LOGOUT_URL:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_TOKEN_AUTH: ${OIDC_TOKEN_AUTH:-client_secret_basic}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email groups}
+      OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
+      OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-SSO}
+      OIDC_ALLOW_HTTP: ${OIDC_ALLOW_HTTP:-false}
+      AUTH_TRUSTED_HEADER: ${AUTH_TRUSTED_HEADER:-}
+      AUTH_HEADER_PROXIES: ${AUTH_HEADER_PROXIES:-}
+      AUTH_TRUSTED_EMAIL_HEADER: ${AUTH_TRUSTED_EMAIL_HEADER:-}
+      AUTH_TRUSTED_NAME_HEADER: ${AUTH_TRUSTED_NAME_HEADER:-}
+      AUTH_TRUSTED_GROUPS_HEADER: ${AUTH_TRUSTED_GROUPS_HEADER:-}
+      # Prometheus /metrics (docs/metrics.md); off unless METRICS_ENABLED=true. METRICS_TOKEN
+      # (16+ characters) is the scrape Bearer token; with sign-in enabled, /metrics needs the
+      # token or METRICS_PUBLIC=true (no token).
+      METRICS_ENABLED: ${METRICS_ENABLED:-false}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      METRICS_PUBLIC: ${METRICS_PUBLIC:-false}
     volumes:
       - api-data:/data
+      # Local backup target: a host folder, ideally on another disk, with BACKUP_DIR=/backups.
+      # - ${BACKUP_HOST_DIR:-./backups}:/backups
     ports:
       - '127.0.0.1:${API_PORT:-8000}:8000'
     healthcheck:
@@ -54,7 +137,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/ready')",
         ]
       interval: 30s
       start_period: 20s
@@ -84,6 +167,13 @@ services:
       args:
         TICKERGLASS_VERSION: ${TICKERGLASS_VERSION:-}
     restart: unless-stopped
+    # Hard cap for the whole container: the service (~150 MB) plus its script process, which runs
+    # the script isolates and is killed by the service when it passes ALERTS_SCRIPT_PROCESS_MB
+    # (so a script that makes V8 abort or leaks outside the heap limits ends that process, not the
+    # service). Keep mem_limit above ALERTS_SCRIPT_PROCESS_MB + about 300 MB, and size
+    # ALERTS_SCRIPT_PROCESS_MB at about 100 MB + 25 MB per script in use (an isolate with a 5000-bar
+    # series is roughly 18 MB); past 85 % of it new scripts wait with "too many scripts in use".
+    mem_limit: 1280m
     depends_on:
       api:
         condition: service_healthy
@@ -96,6 +186,12 @@ services:
       ALERTS_STATE_FLUSH_MS: ${ALERTS_STATE_FLUSH_MS:-5000}
       ALERTS_MAX_BARS: ${ALERTS_MAX_BARS:-5000}
       ALERTS_MAX_DRAWING_BARS: ${ALERTS_MAX_DRAWING_BARS:-20000}
+      ALERTS_SCRIPT_MEMORY_MB: ${ALERTS_SCRIPT_MEMORY_MB:-128}
+      ALERTS_SCRIPT_LOAD_MS: ${ALERTS_SCRIPT_LOAD_MS:-10000}
+      ALERTS_SCRIPT_TICK_MS: ${ALERTS_SCRIPT_TICK_MS:-250}
+      ALERTS_SCRIPT_CPU_PCT: ${ALERTS_SCRIPT_CPU_PCT:-20}
+      ALERTS_SCRIPT_CPU_TOTAL_PCT: ${ALERTS_SCRIPT_CPU_TOTAL_PCT:-50}
+      ALERTS_SCRIPT_PROCESS_MB: ${ALERTS_SCRIPT_PROCESS_MB:-768}
       ALERTS_LOG_LEVEL: ${ALERTS_LOG_LEVEL:-info}
 
   # Optional: `docker compose --profile postgres up` and set DATABASE_URL in .env.

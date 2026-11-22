@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from multiuser import system_session
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import func, select
@@ -120,7 +121,7 @@ def switch(client: TestClient, provider_id: str) -> MarketStack:
 
 
 def counts(client: TestClient) -> dict[str, int]:
-    with client.app.state.sessionmaker() as s:  # type: ignore[attr-defined]
+    with system_session(client.app.state.engine) as s:  # type: ignore[attr-defined]
         return {
             m.__tablename__: s.scalar(select(func.count()).select_from(m)) or 0
             for m in (Bar, SeriesMeta, SymbolMeta, Note)
@@ -177,6 +178,33 @@ def test_switch_swaps_the_stack_wipes_the_cache_and_keeps_user_data(
     # The new one serves and caches.
     assert client.get("/api/bars", params={"symbol": "AAPL", "interval": "1d"}).status_code == 200
     assert counts(client)["bars"] > 0
+
+
+def test_switch_marks_the_cache_with_the_providers_identity(
+    make_app: Callable[..., TestClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKEPAID_API_KEY", "k")
+    monkeypatch.setitem(
+        PROVIDERS,
+        "fakefeed",
+        _spec(
+            "fakefeed",
+            lambda *_: DemoProvider(),
+            config=FakePaidConfig,
+            cache_identity=lambda config: "sip" if config is not None else None,
+        ),
+    )
+    client = make_app()
+    fill(client)
+    assert marker(client) == "fakefree" and counts(client)["bars"] > 0
+
+    switch(client, "fakefeed")  # the runtime config is the one the identity reads
+
+    assert marker(client) == "fakefeed:sip"
+    assert counts(client)["bars"] == counts(client)["symbol_meta"] == 0
+    fill(client)
+    switch(client, "fakefree")
+    assert marker(client) == "fakefree" and counts(client)["bars"] == 0
 
 
 def test_switching_to_the_active_provider_changes_nothing(

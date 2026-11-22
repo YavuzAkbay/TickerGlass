@@ -1,0 +1,30 @@
+{
+  "synthetic": "hand-built from the documented GET /v2/stocks/snapshots shape (not recorded); answers keyed by symbol, unknown symbols absent",
+  "request": {
+    "path": "/v2/stocks/snapshots",
+    "params": {"symbols": "AAPL,BRK.B", "feed": "iex"}
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "200",
+    "x-ratelimit-remaining": "198",
+    "x-ratelimit-reset": "1793113980"
+  },
+  "body": {
+    "AAPL": {
+      "latestTrade": {"t": "2026-10-27T19:59:58.123456789Z", "x": "V", "p": 347.25, "s": 100, "c": ["@"], "i": 5821, "z": "C"},
+      "latestQuote": {"t": "2026-10-27T19:59:59.5Z", "ax": "V", "ap": 347.3, "as": 1, "bx": "V", "bp": 347.2, "bs": 2, "c": ["R"], "z": "C"},
+      "minuteBar": {"t": "2026-10-27T19:59:00Z", "o": 347.2, "h": 347.3, "l": 347.1, "c": 347.25, "v": 5200, "n": 40, "vw": 347.2},
+      "dailyBar": {"t": "2026-10-27T04:00:00Z", "o": 343.165, "h": 347.77, "l": 342.4, "c": 347.25, "v": 391880, "n": 4000, "vw": 345.1},
+      "prevDailyBar": {"t": "2026-10-26T04:00:00Z", "o": 344.6, "h": 345.2, "l": 342.0, "c": 343.91, "v": 29000000, "n": 350000, "vw": 343.8}
+    },
+    "BRK.B": {
+      "latestTrade": {"t": "2026-10-27T19:58:10Z", "x": "V", "p": 512.4, "s": 10, "c": ["@"], "i": 77, "z": "A"},
+      "latestQuote": {"t": "2026-10-27T19:59:00Z", "ax": "V", "ap": 512.6, "as": 1, "bx": "V", "bp": 512.2, "bs": 1, "c": ["R"], "z": "A"},
+      "minuteBar": {"t": "2026-10-27T19:58:00Z", "o": 512.4, "h": 512.4, "l": 512.4, "c": 512.4, "v": 10, "n": 1, "vw": 512.4},
+      "dailyBar": {"t": "2026-10-27T04:00:00Z", "o": 510.0, "h": 513.0, "l": 509.5, "c": 512.4, "v": 21000, "n": 300, "vw": 511.2},
+      "prevDailyBar": {"t": "2026-10-26T04:00:00Z", "o": 508.0, "h": 511.0, "l": 507.0, "c": 509.8, "v": 2400000, "n": 30000, "vw": 509.1}
+    }
+  }
+}

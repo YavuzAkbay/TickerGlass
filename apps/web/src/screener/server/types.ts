@@ -169,6 +169,9 @@ export interface ScreenNotify {
   webhook: boolean;
   telegram: boolean;
   email: boolean;
+  ntfy: boolean;
+  gotify: boolean;
+  apprise: boolean;
   webhookUrl?: string;
 }
 

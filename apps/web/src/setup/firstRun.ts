@@ -1,3 +1,5 @@
+import { isAdminInfo } from '../auth/access';
+import { useAuthStore } from '../store/auth';
 import { useUiStore } from '../store/ui';
 
 /** Set once the first-run data source step was seen (this browser). */
@@ -27,7 +29,8 @@ export function markSetupDone(): void {
   }
 }
 
-/** Show the data source step on the first visit. */
+/** Show the data source step on the first visit (admins only: choosing the provider is theirs). */
 export function startFirstRun(): void {
-  if (!setupDone()) useUiStore.getState().openDialog('dataSource', { firstRun: true });
+  if (!setupDone() && isAdminInfo(useAuthStore.getState().info))
+    useUiStore.getState().openDialog('dataSource', { firstRun: true });
 }

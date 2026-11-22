@@ -11,12 +11,20 @@ import { parseStoredDrawings, STORAGE_KEY as DRAWINGS_KEY } from '../drawings/st
 import { migrateNavigator, migrateToolIds } from '../store/ui';
 import { LAYOUT_SCHEMA_VERSION, type LayoutState } from './layoutState';
 import { DEFAULT_TEMPLATE_NAME } from './drawingTemplatesSync';
+import { CACHE_USER_KEY, ownerMatchesUser } from '../auth/cacheGuard';
 import { isNotFound, isObj, readJson, type SafeStorage } from './net';
 
 export const MIGRATION_SETTING = 'migration.localStorage';
-/** Fixed ids: re-running the import overwrites instead of duplicating. */
+/**
+ * Id prefixes of the migrated layout and note. Ids are global primary keys on the server
+ * (an id owned by another user is a 409), so each migration appends a random suffix; it is
+ * remembered in `MIGRATED_IDS_KEY` so a run interrupted before the marker was written
+ * overwrites its own rows when repeated instead of duplicating them.
+ */
 export const MIGRATED_LAYOUT_ID = 'migrated-default-layout';
 export const MIGRATED_NOTE_ID = 'migrated-general-note';
+/** localStorage key of the suffixed ids of this browser's migration. */
+export const MIGRATED_IDS_KEY = 'tickerglass-migration.ids';
 export const MIGRATED_LAYOUT_NAME = 'Default';
 
 export const LEGACY_KEYS = [
@@ -27,6 +35,23 @@ export const LEGACY_KEYS = [
   'tickerglass-drawing-templates',
   'tickerglass-ui',
 ] as const;
+
+const randomSuffix = (): string => {
+  const bytes = new Uint8Array(4);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+/** The ids this browser's migration uses (created and remembered on first use). */
+export function migratedIds(storage: SafeStorage): { layout: string; note: string } {
+  const saved = readJson<{ layout?: unknown; note?: unknown }>(storage.get(MIGRATED_IDS_KEY));
+  if (typeof saved?.layout === 'string' && typeof saved.note === 'string')
+    return { layout: saved.layout, note: saved.note };
+  const suffix = randomSuffix();
+  const ids = { layout: `${MIGRATED_LAYOUT_ID}-${suffix}`, note: `${MIGRATED_NOTE_ID}-${suffix}` };
+  storage.set(MIGRATED_IDS_KEY, JSON.stringify(ids));
+  return ids;
+}
 
 export const backupKeyOf = (key: string) => `${key}.premigration`;
 
@@ -53,6 +78,7 @@ export function buildMigrationBundle(
   layoutState: LayoutState,
 ): (Partial<Bundle> & Pick<Bundle, 'version' | 'app'>) | null {
   if (!LEGACY_KEYS.some((k) => storage.get(k) !== null)) return null;
+  const ids = migratedIds(storage);
   const bundle: Partial<Bundle> & Pick<Bundle, 'version' | 'app'> = {
     version: BUNDLE_VERSION,
     app: 'tickerglass',
@@ -77,7 +103,7 @@ export function buildMigrationBundle(
 
   if (storage.get('tickerglass-indicators') !== null || storage.get('tickerglass-app') !== null)
     bundle.layouts!.push({
-      id: MIGRATED_LAYOUT_ID,
+      id: ids.layout,
       name: MIGRATED_LAYOUT_NAME,
       state: layoutState as unknown as Record<string, unknown>,
       schemaVersion: LAYOUT_SCHEMA_VERSION,
@@ -150,13 +176,14 @@ export function buildMigrationBundle(
       ),
     );
     if (typeof ui.notes === 'string' && ui.notes)
-      bundle.notes!.push({ id: MIGRATED_NOTE_ID, symbol: null, text: ui.notes });
+      bundle.notes!.push({ id: ids.note, symbol: null, text: ui.notes });
   }
   return bundle;
 }
 
 /**
- * - `done`: already migrated (by this browser, or another one with no local data here)
+ * - `done`: already migrated (by this browser, or another one with no local data here), or
+ *   this browser's cache belongs to another user (never imported into this account)
  * - `migrated` / `empty`: this run imported this browser's data / found none
  * - `local-data`: the server was migrated from another browser, and this one
  *   has its own pre-API data (kept as a pending import, see `importLocalData`)
@@ -197,7 +224,12 @@ export async function runMigration(
   storage: SafeStorage,
   layoutState: () => LayoutState,
   now = Date.now(),
+  userId: string | null = null,
+  canClaim = true,
 ): Promise<MigrationResult> {
+  // Another user's cache, a legacy one this user may not claim (guard skipped while offline,
+  // then an account switch), or an unknown user (auth state unavailable): leave it alone.
+  if (!ownerMatchesUser(storage.get(CACHE_USER_KEY), userId, canClaim)) return 'done';
   // First contact on any browser: keep the pre-API data before the server's replaces it.
   backupLegacyKeys(storage);
   let marker = false;
@@ -352,13 +384,22 @@ export function migrateExclusive(
   api: MigrationApi,
   storage: SafeStorage,
   layoutState: () => LayoutState,
-  opts: Omit<LockOptions, 'storage' | 'signal'> & { signal?: AbortSignal } = {},
+  opts: Omit<LockOptions, 'storage' | 'signal'> & {
+    signal?: AbortSignal;
+    /** The signed-in user's id (`/auth/state`); the migration only runs for the cache's owner. */
+    userId?: string | null;
+    /** The user may claim an ownerless (pre-multi-user) cache: the Owner account, or open mode. */
+    canClaim?: boolean;
+  } = {},
 ): Promise<MigrationResult> {
-  const { signal, ...lockOpts } = opts;
-  inflight ??= withMigrationLock(() => runMigration(api, storage, layoutState), {
-    ...lockOpts,
-    storage,
-  }).finally(() => (inflight = null));
+  const { signal, userId, canClaim, ...lockOpts } = opts;
+  inflight ??= withMigrationLock(
+    () => runMigration(api, storage, layoutState, Date.now(), userId, canClaim),
+    {
+      ...lockOpts,
+      storage,
+    },
+  ).finally(() => (inflight = null));
   const run = inflight;
   if (!signal) return run;
   return new Promise((resolve, reject) => {

@@ -317,15 +317,17 @@ describe('user script isolation', () => {
     expect(forBuiltin.some((o) => typeof o.value !== 'string')).toBe(false);
   });
 
-  it('legend menu disables alerts and indicator-on for scripts', () => {
+  it('legend menu enables alerts for scripts (not repainting ones) and disables indicator-on', () => {
     const u = createInstance(getIndicator(UT)!, undefined);
     useIndicatorStore.setState({ instances: [u] });
-    const items = indicatorMenuItems(u.id);
-    for (const label of ['Add alert…', 'Add indicator on ISO…']) {
-      const it = items.find((i) => 'label' in i && i.label === label);
-      expect(it).toMatchObject({ disabled: true });
-      expect((it as { title?: string }).title).toBeTruthy();
-    }
+    const find = (label: string) =>
+      indicatorMenuItems(u.id).find((i) => 'label' in i && i.label === label);
+    expect(find('Add alert…')).toMatchObject({ disabled: false });
+    expect(find('Add indicator on ISO…')).toMatchObject({ disabled: true });
+    expect((find('Add indicator on ISO…') as { title?: string }).title).toBeTruthy();
+    defaultRegistry.unregister(UT);
+    defaultRegistry.register({ ...userDef(), repaints: true });
+    expect(find('Add alert…')).toMatchObject({ disabled: true, title: expect.any(String) });
   });
 
   it('legend menu offers "Edit script…" for scripts only, opening the editor on it', () => {
@@ -343,8 +345,8 @@ describe('user script isolation', () => {
     useUiStore.getState().closeDialog();
   });
 
-  it('alert sources skip scripts', () => {
-    expect(firstOutputId(UT)).toBeNull();
+  it('alert sources include scripts', () => {
+    expect(firstOutputId(UT)).toBe('v');
     expect(firstOutputId('sma')).toBe('ma');
   });
 });

@@ -1,0 +1,43 @@
+{
+  "synthetic": "hand-built error answers (not recorded); the texts follow what Tiingo's documentation and community reports show, the status codes of the limits are a guess",
+  "unauthorized": {
+    "status": 401,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Invalid token."}
+  },
+  "forbidden_plan": {
+    "status": 403,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "You do not have permission to access this endpoint."}
+  },
+  "not_found": {
+    "status": 404,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Not found."}
+  },
+  "hourly": {
+    "status": 429,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Error: Your request count (51) is over the allowed 50 requests per hour."}
+  },
+  "daily": {
+    "status": 429,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Error: Your request count (1001) is over the allowed 1000 requests per day."}
+  },
+  "monthly_symbols": {
+    "status": 429,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Error: You have run over your 500 symbol look up for this month. Contact us to upgrade your account."}
+  },
+  "monthly_symbols_400": {
+    "status": 400,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Error: You have run over your 500 symbol look up for this month. Contact us to upgrade your account."}
+  },
+  "bad_request": {
+    "status": 400,
+    "headers": {"content-type": "application/json"},
+    "body": {"detail": "Error: startDate is not a valid date"}
+  }
+}

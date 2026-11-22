@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 
 from .. import models as m
 from ..notifications import DeliveryError, webhook, webhook_allow_private
+from ..ownership import id_taken_by_other, owned_get, session_owner
 from ..settings import Settings
 from . import alerts as al
+from . import portfolio as pf
 from . import schemas as s
 from . import screens as sc
 
@@ -24,8 +26,13 @@ def rowcount(result: Result[Any]) -> int:
 
 
 def reload(session: Session, model: type[_T], key: str) -> _T:
-    """Re-select a row the current transaction just wrote with a Core statement."""
-    row = session.get(model, key, populate_existing=True)
+    """Re-select a row the current transaction just wrote with a Core statement. Owned models
+    go through `owned_get` (the owner filter is explicit, not left to the identity map);
+    children (transactions, journal entries) were reached through an owned parent already."""
+    if hasattr(model, "owner_id"):
+        row = owned_get(session, model, key, populate_existing=True)
+    else:
+        row = session.get(model, key, populate_existing=True)
     if row is None:
         raise LookupError(f"{model.__name__} {key} vanished inside its own transaction")
     return row
@@ -50,6 +57,7 @@ def layout(row: m.Layout) -> s.Layout:
 def drawing(row: m.DrawingRow) -> s.Drawing:
     return s.Drawing(
         id=row.id,
+        owner_id=row.owner_id,
         symbol=row.symbol,
         pane_id=row.pane_id,
         z=row.z,
@@ -100,6 +108,7 @@ def note(row: m.Note) -> s.Note:
         id=row.id,
         symbol=row.symbol,
         text=row.text,
+        kind="journal" if row.kind == "journal" else "note",
         revision=row.revision,
         created_at=s.aware(row.created_at),
         updated_at=s.aware(row.updated_at),
@@ -109,6 +118,7 @@ def note(row: m.Note) -> s.Note:
 def user_script(row: m.UserScript) -> s.UserScript:
     return s.UserScript(
         id=row.id,
+        owner_id=row.owner_id,
         name=row.name,
         source=row.source,
         manifest=row.manifest,
@@ -178,16 +188,32 @@ def drawing_fields(data: dict[str, Any]) -> tuple[str, str | None, str, int]:
     return did, symbol, pane, max(-(2**31), min(2**31 - 1, z))
 
 
+def _mine(model: Any, session: Session) -> list[Any]:
+    """WHERE terms limiting an UPDATE to the session owner's rows. The ownership hook adds the
+    same criteria; stating them here keeps the "only mine" rule readable where it matters."""
+    owner = session_owner(session)
+    return [] if owner is None else [model.owner_id == owner]
+
+
 def set_last_used(session: Session, layout_id: str | None) -> None:
-    session.execute(update(m.Layout).values(is_last_used=False))
+    """Flag one layout of the session owner as the last used (clears the owner's others)."""
+    session.execute(update(m.Layout).where(*_mine(m.Layout, session)).values(is_last_used=False))
     if layout_id is not None:
-        session.execute(update(m.Layout).where(m.Layout.id == layout_id).values(is_last_used=True))
+        session.execute(
+            update(m.Layout)
+            .where(m.Layout.id == layout_id, *_mine(m.Layout, session))
+            .values(is_last_used=True)
+        )
 
 
 def clear_other_defaults(session: Session, tool_type: str, keep_id: str) -> None:
     session.execute(
         update(m.DrawingTemplate)
-        .where(m.DrawingTemplate.tool_type == tool_type, m.DrawingTemplate.id != keep_id)
+        .where(
+            m.DrawingTemplate.tool_type == tool_type,
+            m.DrawingTemplate.id != keep_id,
+            *_mine(m.DrawingTemplate, session),
+        )
         .values(is_default=False)
     )
 
@@ -199,6 +225,7 @@ def export_bundle(session: Session) -> s.Bundle:
     def rows(model: Any, *order: Any) -> list[Any]:
         return list(session.scalars(select(model).order_by(*order)))
 
+    portfolios, portfolio_transactions, journal_entries = pf.export_rows(session)
     return s.Bundle(
         version=s.BUNDLE_VERSION,
         app="tickerglass",
@@ -208,7 +235,8 @@ def export_bundle(session: Session) -> s.Bundle:
             for r in rows(m.Layout, m.Layout.created_at, m.Layout.id)
         ],
         drawings=[
-            s.BundleDrawing(**drawing(r).model_dump()) for r in rows(m.DrawingRow, m.DrawingRow.id)
+            s.BundleDrawing(**drawing(r).model_dump(exclude={"owner_id"}))
+            for r in rows(m.DrawingRow, m.DrawingRow.id)
         ],
         indicator_templates=[
             s.BundleIndicatorTemplate(**indicator_template(r).model_dump())
@@ -235,17 +263,20 @@ def export_bundle(session: Session) -> s.Bundle:
             for r in rows(m.SymbolFlag, m.SymbolFlag.created_at, m.SymbolFlag.symbol)
         ],
         alerts=[
-            al.BundleAlert(**al.alert_out(r).model_dump(exclude={"drawing_id"}))
+            al.BundleAlert(**al.alert_out(r).model_dump(exclude={"drawing_id", "owner_id"}))
             for r in rows(m.Alert, m.Alert.created_at, m.Alert.id)
         ],
         user_scripts=[
-            s.BundleUserScript(**user_script(r).model_dump())
+            s.BundleUserScript(**user_script(r).model_dump(exclude={"owner_id"}))
             for r in rows(m.UserScript, m.UserScript.created_at, m.UserScript.id)
         ],
         screens=[
             sc.BundleScreen(**sc.screen_out(r).model_dump())
             for r in rows(m.Screen, m.Screen.created_at, m.Screen.id)
         ],
+        portfolios=portfolios,
+        portfolio_transactions=portfolio_transactions,
+        journal_entries=journal_entries,
     )
 
 
@@ -254,6 +285,10 @@ def export_bundle(session: Session) -> s.Bundle:
 
 class BundleError(ValueError):
     """The bundle is well-formed JSON but cannot be imported (422)."""
+
+
+class IdInUse(Exception):
+    """A client-chosen id of the bundle belongs to another user (409 "id in use")."""
 
 
 def _dupes(keys: list[Any], what: str) -> None:
@@ -278,7 +313,23 @@ SECTIONS: dict[str, Any] = {
     "alerts": m.Alert,
     "user_scripts": m.UserScript,
     "screens": m.Screen,
+    # Children before parents. Replacing `portfolios` also replaces the two sections below
+    # (their rows cannot outlive it), see `import_bundle`.
+    "journal_entries": m.JournalEntry,
+    "portfolio_transactions": m.PortfolioTransaction,
+    "portfolios": m.Portfolio,
 }
+#: Sections whose rows are removed together with `portfolios` (foreign key cascade).
+_PORTFOLIO_CHILDREN = ("journal_entries", "portfolio_transactions")
+
+
+def _own_children(model: type[Any]) -> list[Any]:
+    """The WHERE that limits a portfolio child table to the signed-in owner's portfolios (the
+    session's criteria scope the `portfolios` subquery); nothing for owned tables."""
+    if model in (m.JournalEntry, m.PortfolioTransaction):
+        return [model.portfolio_id.in_(select(m.Portfolio.id))]
+    return []
+
 
 _SAFE_LAYOUT_ID = re.compile(r"[A-Za-z0-9_-]{1,36}")
 
@@ -315,9 +366,10 @@ def import_bundle(
     merge: layouts, drawings, notes and user scripts match by id; templates by name
     (drawing templates by tool type + name); settings by key. Matches are
     overwritten (revision bumped), the rest is created (watchlists match by id,
-    flags by symbol). replace: the tables of
-    the sections present in the bundle are emptied first; absent sections are
-    left alone (so `{"version": 1, "app": "tickerglass"}` changes nothing).
+    flags by symbol; portfolios, their transactions and journal entries by id). replace: the
+    tables of the sections present in the bundle are emptied first (replacing `portfolios` also
+    empties transactions and journal entries); absent sections are left alone (so
+    `{"version": 1, "app": "tickerglass"}` changes nothing).
     """
     if not 1 <= bundle.version <= s.BUNDLE_VERSION:
         raise BundleError(
@@ -344,6 +396,9 @@ def import_bundle(
     _dupes([x.id for x in bundle.alerts], "alert id")
     _dupes([x.id for x in bundle.user_scripts], "user script id")
     _dupes([x.id for x in bundle.screens], "screen id")
+    _dupes([x.id for x in bundle.portfolios], "portfolio id")
+    _dupes([x.id for x in bundle.portfolio_transactions], "portfolio transaction id")
+    _dupes([x.id for x in bundle.journal_entries], "journal entry id")
     if settings is not None:
         _check_screen_webhooks(settings, bundle.screens)
 
@@ -351,25 +406,38 @@ def import_bundle(
     touched = touched if touched is not None else Touched()
     if mode == "replace":
         for section, model in SECTIONS.items():
-            if section not in bundle.model_fields_set:
+            if section not in bundle.model_fields_set and not (
+                section in _PORTFOLIO_CHILDREN and "portfolios" in bundle.model_fields_set
+            ):
                 continue
             c: s.ImportCounts = getattr(summary, section)
-            c.deleted = session.scalar(select(func.count()).select_from(model)) or 0
+            # Children have no owner of their own: only the rows under the owner's parents.
+            mine: list[Any] = _own_children(model)
+            c.deleted = session.scalar(select(func.count()).select_from(model).where(*mine)) or 0
             if section == "alerts":
                 touched.alerts_deleted.update(session.scalars(select(m.Alert.id)))
-                session.execute(delete(m.AlertState))
+                session.execute(
+                    delete(m.AlertState).where(m.AlertState.alert_id.in_(select(m.Alert.id)))
+                )
             elif section == "drawings":
                 touched.drawings_deleted.update(session.scalars(select(m.DrawingRow.id)))
             elif section == "screens":
-                session.execute(delete(m.ScreenState))
-            session.execute(delete(model))
+                session.execute(
+                    delete(m.ScreenState).where(m.ScreenState.screen_id.in_(select(m.Screen.id)))
+                )
+            elif section == "journal_entries":
+                session.execute(
+                    delete(m.JournalScreenshot).where(
+                        m.JournalScreenshot.entry_id.in_(select(m.JournalEntry.id).where(*mine))
+                    )
+                )
+            session.execute(delete(model).where(*mine))
         session.flush()
 
     t = s.now()
     last_used: str | None = None
     for x in bundle.layouts:
-        lid = _import_layout_id(x.id)
-        lrow = session.get(m.Layout, lid)
+        lid, lrow = _own_or_fresh(session, m.Layout, _import_layout_id(x.id))
         if lrow is None:
             session.add(
                 m.Layout(
@@ -392,12 +460,19 @@ def import_bundle(
         if x.is_last_used:
             last_used = lid
     session.flush()
-    has_last = session.scalar(select(func.count()).where(m.Layout.is_last_used.is_(True)))
+    has_last = session.scalar(
+        select(func.count()).select_from(m.Layout).where(m.Layout.is_last_used.is_(True))
+    )
     if last_used is not None and (mode == "replace" or not has_last):
         set_last_used(session, last_used)
 
-    for d, (did, symbol, pane, z) in drawings:
-        drow = session.get(m.DrawingRow, did)
+    drawing_ids: dict[str, str] = {}  # bundle id -> stored id, for the ids that had to change
+    for d, (bundle_id, symbol, pane, z) in drawings:
+        did, drow = _own_or_fresh(session, m.DrawingRow, bundle_id)
+        data = d.data
+        if did != bundle_id:
+            drawing_ids[bundle_id] = did
+            data = {**data, "id": did}  # the engine drawing carries its own id
         if drow is None:
             session.add(
                 m.DrawingRow(
@@ -405,7 +480,7 @@ def import_bundle(
                     symbol=symbol,
                     pane_id=pane,
                     z=z,
-                    data=d.data,
+                    data=data,
                     schema_version=d.schema_version,
                     revision=1,
                     updated_at=t,
@@ -413,7 +488,7 @@ def import_bundle(
             )
             summary.drawings.created += 1
         else:
-            drow.symbol, drow.pane_id, drow.z, drow.data = symbol, pane, z, d.data
+            drow.symbol, drow.pane_id, drow.z, drow.data = symbol, pane, z, data
             drow.schema_version = d.schema_version
             drow.revision += 1
             drow.updated_at = t
@@ -489,7 +564,7 @@ def import_bundle(
         session.flush()
 
     for key, value in bundle.settings.items():
-        srow = session.get(m.Setting, key)
+        srow = owned_get(session, m.Setting, key)
         if srow is None:
             session.add(m.Setting(key=key, value=value, updated_at=t))
             summary.settings.created += 1
@@ -497,14 +572,17 @@ def import_bundle(
             srow.value, srow.updated_at = value, t
             summary.settings.updated += 1
 
+    note_ids: dict[str, str] = {}  # bundle id -> stored id (journal entries link by note id)
     for n in bundle.notes:
-        nrow = session.get(m.Note, n.id)
+        nid, nrow = _own_or_fresh(session, m.Note, n.id)
+        note_ids[n.id] = nid
         if nrow is None:
             session.add(
                 m.Note(
-                    id=n.id,
+                    id=nid,
                     symbol=n.symbol,
                     text=n.text,
+                    kind=n.kind or "note",
                     revision=1,
                     created_at=n.created_at or t,
                     updated_at=t,
@@ -513,12 +591,15 @@ def import_bundle(
             summary.notes.created += 1
         else:
             nrow.symbol, nrow.text, nrow.updated_at = n.symbol, n.text, t
+            if n.kind is not None:
+                nrow.kind = n.kind
             nrow.revision += 1
             summary.notes.updated += 1
 
     for w in bundle.watchlists:
-        wid = w.id if _SAFE_LAYOUT_ID.fullmatch(w.id) else s.new_id()
-        wrow = session.get(m.Watchlist, wid)
+        wid, wrow = _own_or_fresh(
+            session, m.Watchlist, w.id if _SAFE_LAYOUT_ID.fullmatch(w.id) else s.new_id()
+        )
         if wrow is None:
             session.add(
                 m.Watchlist(
@@ -537,7 +618,7 @@ def import_bundle(
             summary.watchlists.updated += 1
 
     for f in bundle.flags:
-        frow = session.get(m.SymbolFlag, f.symbol)
+        frow = owned_get(session, m.SymbolFlag, f.symbol)
         if frow is None:
             session.add(
                 m.SymbolFlag(
@@ -552,7 +633,11 @@ def import_bundle(
             summary.flags.updated += 1
 
     for u in bundle.user_scripts:
-        urow = session.get(m.UserScript, u.id)
+        urow = owned_get(session, m.UserScript, u.id)
+        if urow is None and id_taken_by_other(session, m.UserScript, u.id):
+            # Layouts, templates and alerts name a script as `user:<id>`: a fresh id would
+            # leave those references dangling, so the import stops instead.
+            raise IdInUse(f"user script {u.id}")
         if urow is None:
             session.add(
                 m.UserScript(
@@ -573,8 +658,28 @@ def import_bundle(
             urow.revision += 1
             summary.user_scripts.updated += 1
 
+    try:
+        tally = pf.import_rows(
+            session,
+            bundle.portfolios,
+            bundle.portfolio_transactions,
+            bundle.journal_entries,
+            t,
+            note_ids,
+        )
+    except pf.PortfolioBundleError as exc:
+        raise BundleError(str(exc)) from exc
+    summary.portfolios.created, summary.portfolios.updated = (
+        tally.portfolios_created,
+        tally.portfolios_updated,
+    )
+    summary.portfolio_transactions.created = tally.transactions_created
+    summary.portfolio_transactions.updated = tally.transactions_updated
+    summary.journal_entries.created = tally.entries_created
+    summary.journal_entries.updated = tally.entries_updated
+
     for a in bundle.alerts:
-        _import_alert(session, a, t, summary, touched)
+        _import_alert(session, a, t, summary, touched, drawing_ids)
     for sx in bundle.screens:
         _import_screen(session, sx, t, summary)
     session.flush()
@@ -611,28 +716,35 @@ def _import_alert(
     t: Any,
     summary: s.ImportSummary,
     touched: Touched,
+    drawing_ids: dict[str, str],
 ) -> None:
-    """Merge one alert by id. Imported alerts keep their status; the state row is dropped."""
+    """Merge one alert by id. Imported alerts keep their status; the state row is dropped.
+    `drawing_ids`: drawings that were stored under a new id (their alerts follow)."""
     aid = a.id
     if not _SAFE_LAYOUT_ID.fullmatch(aid) or aid in al.RESERVED_ALERT_IDS:
         aid = s.new_id()
+    aid, row = _own_or_fresh(session, m.Alert, aid)
+    drawing_id = al.derive_drawing_id(a.spec)
+    spec = al.dump_spec(a.spec)
+    if drawing_ids:
+        spec = _remap_drawing_ids(spec, drawing_ids)
+        drawing_id = drawing_ids.get(drawing_id, drawing_id) if drawing_id else None
     fields: dict[str, Any] = {
         "name": a.name,
         "symbol": a.symbol,
         "interval": a.interval,
         "prepost": a.prepost,
-        "spec": al.dump_spec(a.spec),
+        "spec": spec,
         "schema_version": al.ALERT_SCHEMA_VERSION,
         "message": a.message,
         "notify": al.dump_notify(a.notify),
         "status": a.status,
         "status_reason": a.status_reason,
         "expires_at": None if a.expires_at is None else al.utc(a.expires_at),
-        "drawing_id": al.derive_drawing_id(a.spec),
+        "drawing_id": drawing_id,
         "fire_count": a.fire_count,
         "last_fired_at": None if a.last_fired_at is None else al.utc(a.last_fired_at),
     }
-    row = session.get(m.Alert, aid)
     if row is None:
         session.add(
             m.Alert(id=aid, revision=1, created_at=a.created_at or t, updated_at=t, **fields)
@@ -651,10 +763,11 @@ def _import_alert(
 def _import_screen(session: Session, x: sc.BundleScreen, t: Any, summary: s.ImportSummary) -> None:
     """Merge one screen by id (revision bumped on a match). Its alert state is dropped when the
     spec changed or the alert was switched on, so the next evaluation starts from a baseline."""
-    sid = x.id if _SAFE_LAYOUT_ID.fullmatch(x.id) else s.new_id()
+    sid, row = _own_or_fresh(
+        session, m.Screen, x.id if _SAFE_LAYOUT_ID.fullmatch(x.id) else s.new_id()
+    )
     spec = sc.dump_spec(x.spec)
     alert = sc.dump_alert(x.alert)
-    row = session.get(m.Screen, sid)
     if row is None:
         session.add(
             m.Screen(
@@ -680,6 +793,35 @@ def _import_screen(session: Session, x: sc.BundleScreen, t: Any, summary: s.Impo
 
 
 def _free_id(session: Session, model: Any, wanted: str | None) -> str:
-    if wanted is not None and session.get(model, wanted) is None:
+    """`wanted` if no row of anyone has it, else a fresh id."""
+    if (
+        wanted is not None
+        and owned_get(session, model, wanted) is None
+        and not id_taken_by_other(session, model, wanted)
+    ):
         return wanted
     return s.new_id()
+
+
+def _own_or_fresh(session: Session, model: Any, wanted: str) -> tuple[str, Any | None]:
+    """(id to store under, the owner's existing row with it). A client-chosen id that belongs
+    to another user cannot be used (ids are global): the row gets a fresh id and is created.
+    That is what lets a user import a bundle exported by someone else on the same server."""
+    row = owned_get(session, model, wanted)
+    if row is None and id_taken_by_other(session, model, wanted):
+        return s.new_id(), None
+    return wanted, row
+
+
+def _remap_drawing_ids(value: Any, mapping: dict[str, str]) -> Any:
+    """`value` (a dumped alert spec) with every `drawingId` found in `mapping` replaced."""
+    if isinstance(value, dict):
+        return {
+            k: mapping.get(v, v)
+            if k == "drawingId" and isinstance(v, str)
+            else _remap_drawing_ids(v, mapping)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_remap_drawing_ids(v, mapping) for v in value]
+    return value

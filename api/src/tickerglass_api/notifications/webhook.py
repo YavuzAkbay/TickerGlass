@@ -8,6 +8,7 @@ connect cannot slip through. Redirects are never followed. Error text handed bac
 generic; details go to the server log with the URL masked.
 """
 
+import base64
 import hashlib
 import hmac
 import http.client
@@ -129,6 +130,83 @@ def _build_opener(allow_private: bool) -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(H, S, _NoRedirect)
 
 
+MAX_RETRY_AFTER_S = 3600.0
+
+
+def _retry_after(exc: urllib.error.HTTPError) -> float | None:
+    """`Retry-After` in seconds on 429/503 (the HTTP-date form is ignored), capped."""
+    if exc.code not in (429, 503) or exc.headers is None:
+        return None
+    raw = exc.headers.get("Retry-After")
+    try:
+        seconds = float(raw) if raw is not None else None
+    except ValueError:
+        return None
+    if seconds is None or not 0 <= seconds < float("inf"):
+        return None
+    return min(seconds, MAX_RETRY_AFTER_S)
+
+
+def _split_userinfo(url: str) -> tuple[str, str | None]:
+    """`(url without userinfo, Basic Authorization value or None)`.
+
+    `http.client` cannot parse `user:pw@host` (and would echo it in errors), so credentials in
+    the URL are turned into a Basic `Authorization` header and never reach the connection.
+    """
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        raise DeliveryError("invalid URL", retryable=False) from None
+    userinfo, at, hostport = parts.netloc.rpartition("@")
+    if not at:
+        return url, None
+    user, _, password = userinfo.partition(":")
+    token = f"{urllib.parse.unquote(user)}:{urllib.parse.unquote(password)}"
+    basic = "Basic " + base64.b64encode(token.encode()).decode("ascii")
+    return urllib.parse.urlunsplit(parts._replace(netloc=hostport)), basic
+
+
+def post(
+    url: str,
+    body: bytes,
+    content_type: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: float = TIMEOUT_S,
+    allow_private: bool = False,
+) -> None:
+    """POST `body` with extra `headers`; raises `DeliveryError`.
+
+    4xx other than 408/429 is permanent; 5xx and network errors are retryable; 429/503 carry
+    `Retry-After` as `retry_after`. `allow_private=False` refuses non-public destinations (see
+    module docstring). Error text never includes the URL or header values.
+    """
+    check_url(url, allow_private)
+    url, basic = _split_userinfo(url)
+    all_headers = {
+        "Content-Type": content_type,
+        "User-Agent": "TickerGlass-Alerts",
+        **(headers or {}),
+    }
+    if basic and not any(k.lower() == "authorization" for k in all_headers):
+        all_headers["Authorization"] = basic
+    req = urllib.request.Request(url, data=body, headers=all_headers, method="POST")
+    try:
+        with _build_opener(allow_private).open(req, timeout=timeout) as resp:
+            resp.read()
+    except urllib.error.HTTPError as exc:
+        permanent = 400 <= exc.code < 500 and exc.code not in (408, 429)
+        raise DeliveryError(
+            f"HTTP {exc.code}", retryable=not permanent, retry_after=_retry_after(exc)
+        ) from exc
+    except DeliveryError:
+        raise
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+        log.warning("webhook %s failed: %s: %s", mask_url(url), type(exc).__name__, exc)
+        # Generic text only: the specific error would be a port-scan oracle for the caller.
+        raise DeliveryError("delivery failed") from None
+
+
 def send(
     url: str,
     body: bytes,
@@ -138,25 +216,9 @@ def send(
     timeout: float = TIMEOUT_S,
     allow_private: bool = False,
 ) -> None:
-    """POST `body`; raises `DeliveryError` (4xx other than 408/429 is permanent).
-
-    `allow_private=False` refuses non-public destinations (see module docstring).
-    """
-    check_url(url, allow_private)
-    headers = {"Content-Type": content_type, "User-Agent": "TickerGlass-Alerts"}
+    """`post` plus the optional `X-TickerGlass-Signature` HMAC header."""
+    headers: dict[str, str] = {}
     if secret:
         digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         headers["X-TickerGlass-Signature"] = f"sha256={digest}"
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with _build_opener(allow_private).open(req, timeout=timeout) as resp:
-            resp.read()
-    except urllib.error.HTTPError as exc:
-        permanent = 400 <= exc.code < 500 and exc.code not in (408, 429)
-        raise DeliveryError(f"HTTP {exc.code}", retryable=not permanent) from exc
-    except DeliveryError:
-        raise
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        log.warning("webhook %s failed: %s: %s", mask_url(url), type(exc).__name__, exc)
-        # Generic text only: the specific error would be a port-scan oracle for the caller.
-        raise DeliveryError("delivery failed") from None
+    post(url, body, content_type, headers=headers, timeout=timeout, allow_private=allow_private)

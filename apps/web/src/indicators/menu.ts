@@ -21,6 +21,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { openAlertDialog } from '../alerts/dialog/open';
+import { REASON_REPAINTS } from '../alerts/dialog/sources';
 import { useCompareStore } from '../compare/store';
 import { useUiStore } from '../store/ui';
 import type { MenuItem } from '../ui/Menu';
@@ -70,6 +71,9 @@ export function indicatorMenuItems(id: string): MenuItem[] {
   const plot = firstPlotId(inst.type);
   const isUser = isUserScriptType(inst.type);
   const userTip = isUser ? { title: 'Not available for scripts' } : {};
+  // Scripts can drive alerts, except repainting ones (the alert dialog lists the same reason).
+  const alertBlocked = isUser && def.repaints === true;
+  const alertTip = alertBlocked ? { title: REASON_REPAINTS } : {};
   const place = (p: Placement, label: string): MenuItem => ({
     label,
     checked: inst.placement === p,
@@ -89,8 +93,8 @@ export function indicatorMenuItems(id: string): MenuItem[] {
     {
       label: 'Add alert…',
       icon: Bell,
-      disabled: !plot || isUser,
-      ...userTip,
+      disabled: !plot || alertBlocked,
+      ...alertTip,
       onSelect: () => openAlertDialog({ indicatorId: id }),
     },
     { type: 'separator' },

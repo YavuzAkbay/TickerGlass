@@ -56,6 +56,9 @@ const CSV_COLUMNS: Partial<Record<ScreenerColumnId, CsvColumn>> = {
     head: (u) => [u.capKind === 'aum' ? 'AUM (approx $B)' : 'Market Cap (live $B)'],
     cells: (r, q, u) => [num(effectiveCap(r, q, u.capKind))],
   },
+  pe: { head: () => ['P/E'], cells: (_r, q) => [num(q?.trailingPE)] },
+  fwdPe: { head: () => ['Forward P/E'], cells: (_r, q) => [num(q?.forwardPE)] },
+  eps: { head: () => ['EPS (TTM)'], cells: (_r, q) => [num(q?.eps)] },
   group: {
     head: (u) => [
       u.groupLabel === 'sector' ? 'Sector' : u.groupLabel === 'category' ? 'Category' : 'Group',

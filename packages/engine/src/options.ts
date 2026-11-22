@@ -17,43 +17,45 @@ export interface ChartTheme {
   fontSize: number;
 }
 
-const CHROME_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
+const CHROME_FONT =
+  "'Instrument Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
 
 export const DARK_THEME: ChartTheme = {
-  background: '#14130F',
-  text: '#CFC9BA',
-  textMuted: '#9A9484',
-  grid: 'rgba(236, 231, 218, 0.05)',
-  border: '#34312A',
-  // Amber crosshair and axis labels: the app accent, not a neutral grey.
-  crosshair: '#E0A93B99',
-  crosshairLabelBg: '#E0A93B',
-  crosshairLabelText: '#14130F',
-  up: '#7FB069',
-  down: '#DE6A4F',
-  wickUp: '#7FB069',
-  wickDown: '#DE6A4F',
-  extendedHoursBg: '#E0A93B0F',
-  prevClose: '#A39E8F',
+  background: '#0F1214',
+  text: '#C9D0D6',
+  textMuted: '#8A949C',
+  grid: 'rgba(230, 234, 237, 0.045)',
+  border: '#262C32',
+  // Neutral crosshair with paper-coloured axis labels: the chart's colour is price direction.
+  crosshair: '#8A949C99',
+  crosshairLabelBg: '#E6EAED',
+  crosshairLabelText: '#0F1214',
+  up: '#34C38F',
+  down: '#F2626B',
+  wickUp: '#34C38F',
+  wickDown: '#F2626B',
+  extendedHoursBg: '#9AA8FF0D',
+  prevClose: '#8A949C',
   fontFamily: CHROME_FONT,
   fontSize: 11,
 };
 
 export const LIGHT_THEME: ChartTheme = {
   ...DARK_THEME,
-  background: '#F6F3EC',
-  text: '#1E1B16',
-  textMuted: '#6F6859',
-  grid: 'rgba(30, 27, 22, 0.06)',
-  border: '#DDD6C7',
-  crosshair: '#8A5D0EA6',
-  crosshairLabelBg: '#8A5D0E',
+  background: '#F4F6F8',
+  text: '#15191D',
+  textMuted: '#5F6B75',
+  grid: 'rgba(21, 25, 29, 0.05)',
+  border: '#E1E6EA',
+  crosshair: '#5F6B75A6',
+  crosshairLabelBg: '#15191D',
   crosshairLabelText: '#FFFFFF',
-  up: '#2F7D5B',
-  down: '#B5452F',
-  wickUp: '#2F7D5B',
-  wickDown: '#B5452F',
-  extendedHoursBg: '#8A5D0E0D',
+  up: '#138A5E',
+  down: '#D23F4A',
+  wickUp: '#138A5E',
+  wickDown: '#D23F4A',
+  extendedHoursBg: '#4C5BD40D',
+  prevClose: '#5F6B75',
 };
 
 export type CrosshairMode = 'cross' | 'dot' | 'arrow';

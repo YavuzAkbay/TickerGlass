@@ -1,0 +1,109 @@
+# CasaOS app: all-in-one TickerGlass image. Import with App Store -> Custom Install -> Import,
+# or drop the folder into a CasaOS app-store repo. Data lives in /DATA/AppData/$AppID.
+# Checked against docker-compose.yml by deploy/check.py.
+name: tickerglass
+services:
+  tickerglass:
+    image: ghcr.io/yavuzakbay/tickerglass:latest
+    container_name: tickerglass
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=$TZ
+      - MARKET_PROVIDER=yahoo
+      - TWELVEDATA_API_KEY=
+      - AUTH_PASSWORD=
+      - PUBLIC_URL=
+      - ALERTS_INTERNAL_TOKEN=
+      - BACKUP_DIR=
+      - BACKUP_PASSPHRASE=
+      - METRICS_ENABLED=false
+      - METRICS_TOKEN=
+    ports:
+      - target: 8080
+        published: '8080'
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/data
+        target: /data
+    x-casaos:
+      envs:
+        - container: PUID
+          description:
+            en_us: User ID the app runs as (files in the data folder are owned by it).
+        - container: PGID
+          description:
+            en_us: Group ID the app runs as.
+        - container: TZ
+          description:
+            en_us: Timezone, e.g. Europe/Berlin.
+        - container: MARKET_PROVIDER
+          description:
+            en_us: 'Price source: yahoo (no key), twelvedata (needs TWELVEDATA_API_KEY), alpaca, tiingo, massive or stooq (each needs its own API key variables, see docs/providers.md), crypto (exchange feed, no key) or demo (offline sample data).'
+        - container: TWELVEDATA_API_KEY
+          description:
+            en_us: Twelve Data API key; only used with MARKET_PROVIDER=twelvedata.
+        - container: AUTH_PASSWORD
+          description:
+            en_us: Optional login password. Empty means no login; set one before exposing the app beyond your LAN.
+        - container: PUBLIC_URL
+          description:
+            en_us: External address when behind a reverse proxy (needed for single sign-on and notification links).
+        - container: ALERTS_INTERNAL_TOKEN
+          description:
+            en_us: Shared secret between the API and the alerts service. Empty means generated once and kept in the data folder.
+        - container: BACKUP_DIR
+          description:
+            en_us: 'Nightly backups of the whole database: a folder inside the container, e.g. /data/backups (same disk as the data). Empty means no local backups. S3 targets and the schedule: see docs/self-hosting.md.'
+        - container: BACKUP_PASSPHRASE
+          description:
+            en_us: Encrypts the backups (12+ characters). If you lose it the backups cannot be read.
+        - container: METRICS_ENABLED
+          description:
+            en_us: Set to true to serve Prometheus metrics at /metrics on the web port (docs/metrics.md). Off by default.
+        - container: METRICS_TOKEN
+          description:
+            en_us: Bearer token (16+ characters) Prometheus sends to /metrics. Needed when metrics are on and a login password is set.
+      ports:
+        - container: '8080'
+          description:
+            en_us: Web interface port.
+      volumes:
+        - container: /data
+          description:
+            en_us: Database, cached market data and the generated alerts token.
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: tickerglass
+  author: TickerGlass
+  developer: YavuzAkbay
+  category: Finance
+  icon: https://raw.githubusercontent.com/YavuzAkbay/TickerGlass/main/apps/web/public/icons/icon-512.png
+  thumbnail: ''
+  screenshot_link: []
+  index: /
+  port_map: '8080'
+  scheme: http
+  title:
+    en_us: TickerGlass
+  tagline:
+    en_us: Self-hosted charts, alerts, screener and portfolio
+  description:
+    en_us: |
+      Self-hosted charting and market workstation: multi-chart layouts, drawings, 100+ indicators,
+      scripting, server-side alerts with Telegram, ntfy, Gotify, email and webhook delivery, watchlists,
+      a screener, a portfolio and backtests. Your data stays in the data folder. Give the container
+      at least 1.5 GB of RAM because alerts can run scripts.
+  tips:
+    before_install:
+      en_us: |
+        Prices come from Yahoo by default (no key). Set a password (AUTH_PASSWORD) before exposing
+        TickerGlass outside your home network. See https://github.com/YavuzAkbay/TickerGlass/blob/main/docs/self-hosting.md

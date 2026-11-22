@@ -1,6 +1,8 @@
 import {
   AlarmClock,
   ArrowUpDown,
+  Briefcase,
+  FlaskConical,
   Flame,
   History,
   ListTree,
@@ -9,7 +11,9 @@ import {
   TableProperties,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
+import { StrategyPanel } from '../backtest/StrategyPanel';
 import type { MessageKey } from '../i18n';
+import { PortfolioPanel } from '../portfolio/PortfolioPanel';
 import { ReplayTrading } from '../replay/ReplayTrading';
 import { Alerts } from '../sidebar/panels/Alerts';
 import { DataWindow } from '../sidebar/panels/DataWindow';
@@ -40,6 +44,18 @@ export const SECTIONS: SectionDef[] = [
     title: 'nav.dataWindow',
     icon: TableProperties,
     render: () => <DataWindow />,
+  },
+  {
+    id: 'strategy',
+    title: 'nav.strategy',
+    icon: FlaskConical,
+    render: () => <StrategyPanel />,
+  },
+  {
+    id: 'portfolio',
+    title: 'nav.portfolio',
+    icon: Briefcase,
+    render: () => <PortfolioPanel />,
   },
   {
     id: 'replayTrading',

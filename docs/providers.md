@@ -1,15 +1,25 @@
 # Market data providers
 
-The API fetches market data through one provider, chosen with `MARKET_PROVIDER` in `.env`
-(read at start-up; restart the API after changing it). The web app shows the active provider, its
-limits and a connection test on the first visit and under **More → Data source…**. There is no
-runtime switching and no key entry in the web app: keys and plans live in the server's environment.
+The API fetches market data through one provider at a time. `MARKET_PROVIDER` in `.env` picks the one
+used at start-up, and the web app can switch it at runtime (see "Switching in the app"; locked with
+`PROVIDER_SWITCHING=false`). The web app shows the active provider, its limits and a connection test on
+the first visit and under **More → Data source…**. There is no key entry in the web app: keys and
+plans live in the server's environment.
 
-| `MARKET_PROVIDER` | Provider      | Network | Notes                                                                                                                            |
-| ----------------- | ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `yahoo` (default) | Yahoo Finance | yes     | Through [yfinance](https://github.com/ranaroussi/yfinance). No key, everything supported. Yahoo's terms allow personal use only. |
-| `twelvedata`      | Twelve Data   | yes     | The [Twelve Data](https://twelvedata.com) REST API. Needs `TWELVEDATA_API_KEY`; paces itself to your plan's credits (below).     |
-| `demo`            | Demo data     | no      | A deterministic random walk per symbol (New York session hours). For trying the app, screenshots, tests. Everything supported.   |
+| `MARKET_PROVIDER` | Provider                | Key          | Free-plan limits                                                   | Markets                                          | Intervals         | Live         | Notes                                                                                                                      |
+| ----------------- | ----------------------- | ------------ | ------------------------------------------------------------------ | ------------------------------------------------ | ----------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `yahoo` (default) | Yahoo Finance           | no           | none declared (unofficial, may throttle)                           | everything, worldwide                            | 1m to 3mo         | yes          | Through [yfinance](https://github.com/ranaroussi/yfinance). Everything supported. Yahoo's terms allow personal use only.   |
+| `twelvedata`      | Twelve Data             | yes          | Basic: 8 credits/min, 800/day, US only                             | US stocks, FX, crypto (more on paid plans)       | 1m to 3mo         | polled       | The [Twelve Data](https://twelvedata.com) REST API; paces itself to your plan's credits (below).                           |
+| `alpaca`          | Alpaca                  | key pair     | 200 requests/min, IEX feed only, 30 streamed symbols               | US stocks, ETFs, crypto                          | 1m to 3mo         | yes (trades) | [Alpaca](https://alpaca.markets) Market Data. IEX volume is a small part of the market (below).                            |
+| `tiingo`          | Tiingo                  | yes          | 50 requests/hour, 1000/day, 500 symbols/month                      | US stocks, ETFs, crypto                          | 5m to 3mo         | opt-in (IEX) | [Tiingo](https://www.tiingo.com). Fetches whole ranges in one request to fit the hourly limit.                             |
+| `massive`         | Massive (ex Polygon.io) | yes          | Basic: 5 calls/min, end-of-day, 2 years                            | US stocks, ETFs; crypto and FX as the key allows | 1d to 3mo (Basic) | polled       | [Massive](https://massive.com), formerly Polygon.io. Paid plans add minute bars (15-minute delayed on Starter, Developer). |
+| `stooq`           | Stooq                   | yes (manual) | unknown quota (guessed: 10/min, 300/day)                           | US, UK, DE, JP stocks, indices, FX, crypto       | 1d, 1wk, 1mo      | polled       | Unofficial CSV downloads; the key comes from a captcha page. No search, no previous close in batch quotes.                 |
+| `crypto`          | Crypto exchange         | no           | Kraken 50/min, Coinbase and Binance 300/min (the app's own pacing) | crypto spot pairs only                           | 1m to 3mo         | yes (ticks)  | Public data of Kraken (default), Coinbase or Binance (`CRYPTO_EXCHANGE`). Rolling 24 h "day".                              |
+| `demo`            | Demo data               | no           | none (offline)                                                     | everything (synthetic)                           | 1m to 3mo         | yes          | A deterministic random walk per symbol (New York session hours). For trying the app, screenshots, tests.                   |
+
+"Live: polled" means the live feed polls quotes at the plan's interval; "yes" means a WebSocket feeds
+the live quotes (symbols the stream does not cover are polled). Finnhub is deferred to 3.3 (its free
+plan has no candle history).
 
 An unknown `MARKET_PROVIDER` stops the API at start-up and lists the valid ids. Symbols stay
 Yahoo-style everywhere in the app (`BRK-B`, `^GSPC`, `EURUSD=X`, `BTC-USD`, `VOD.L`); each provider maps
@@ -85,6 +95,11 @@ only whether a variable is set.
 | `yahoo`      | none            |
 | `demo`       | none            |
 | `twelvedata` | the table below |
+| `alpaca`     | see "Alpaca"    |
+| `tiingo`     | see "Tiingo"    |
+| `massive`    | see "Massive"   |
+| `stooq`      | see "Stooq"     |
+| `crypto`     | see "Crypto"    |
 
 | Variable                     | Default                      | Meaning                                                                                      |
 | ---------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------- |
@@ -184,6 +199,274 @@ The upstream guard (`providers/guard.py`) is what keeps the app inside the plan:
 Short waits of a few seconds are normal pacing and stay `ok`. The web app polls it once a minute for a
 metered provider and shows a top-bar chip while `throttled` or `exhausted`.
 
+## Alpaca
+
+US stocks, ETFs and crypto from [Alpaca](https://alpaca.markets) Market Data, with live trades over
+WebSocket. Module `providers/alpaca.py`.
+
+**Getting keys.** Create a free Alpaca account (a paper-trading account is enough, no funding), open
+the dashboard and generate an API key pair: a key ID and a secret. Set `MARKET_PROVIDER=alpaca`,
+`ALPACA_KEY_ID` and `ALPACA_SECRET_KEY`.
+
+| Variable                  | Default                            | Meaning                                                                                  |
+| ------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| `ALPACA_KEY_ID`           | required                           | API key ID. Without both keys every data call answers 503 `not_configured`.              |
+| `ALPACA_SECRET_KEY`       | required                           | API secret.                                                                              |
+| `ALPACA_PLAN`             | `basic`                            | `basic` (free) or `algo_trader_plus`.                                                    |
+| `ALPACA_FEED`             | the plan's (`iex` / `sip`)         | `iex` or `sip`. Basic always uses `iex`; the setting only matters on `algo_trader_plus`. |
+| `ALPACA_DATA_BASE_URL`    | `https://data.alpaca.markets`      | Market data base URL (https only, or http for localhost).                                |
+| `ALPACA_TRADING_BASE_URL` | `https://paper-api.alpaca.markets` | Only the active-assets list (search, symbol info) is read from it (https only).          |
+| `ALPACA_EXTENDED_HOURS`   | `true`                             | `true` / `false`: pre/post-market bars.                                                  |
+| `ALPACA_CRYPTO_LOCATION`  | `us`                               | `us`, `us-1` or `eu-1`: the crypto data location.                                        |
+
+**Plans.** `basic`: 200 calls a minute (burst 50), IEX feed, live trades for 30 symbols on one
+connection per stream (symbols past that are polled), quotes cached 15 s. `algo_trader_plus`: 10 000
+calls a minute, SIP feed, no stream symbol limit, quotes cached 5 s. Each request counts one call; further
+bar pages, the adjusted-close pass, the assets lists and extra quote chunks are charged too, and the
+`X-RateLimit-*` response headers are fed to the guard.
+
+**Caveats.**
+
+- The free IEX feed is one exchange: its volume is roughly 2.5% of the whole market, so volumes (and
+  sometimes high / low) are far lower than on Yahoo. Prices come from IEX trades only.
+- The free plan may not query recent SIP data (the last 15 minutes: such a request answers 403); the
+  app therefore always sends `feed=iex` on `basic`.
+- Indices, FX, futures and non-US symbols are not served (answered locally, no request). Crypto
+  symbols are `BTC-USD` style. Extended-hours quotes, events, news and fundamentals are not offered.
+- Daily and longer stock bars follow Yahoo's semantics (`close` split-adjusted, `adj_close` also
+  dividend-adjusted); intraday bars are raw. Alpaca has no "unknown symbol" answer for quotes, so a
+  missing symbol is simply absent.
+- Stock 60m bars without pre/post-market are built from 30m bars so the first one opens at 09:30
+  (Alpaca's native `1Hour` bars are clock-aligned: the 09:00 bar holds the half hour before the open).
+  With pre/post-market, and for crypto, the native hourly bars are used.
+- If the stock stream is refused for good (credentials, connection limit) while the crypto stream works,
+  only that connection stops and its symbols are polled; the live feed shows as down when no stream is
+  left or the stream could not be reached six times in a row.
+
+**Verified API facts.** None from a live account: the module is built from the documented shapes. Still
+unverified (the first real use may need a fix):
+
+- `/v2/stocks/snapshots` answering `{SYMBOL: snapshot}` (a `{"snapshots": {...}}` wrapper is accepted)
+  and omitting unknown symbols; an invalid symbol answering 400.
+- `sort=desc` plus `page_token` paging of the multi-symbol bars endpoint, and `bars: null` for no data.
+- Daily bar stamps (`T04:00Z` / `T05:00Z`), 1Hour and 3Month alignment, crypto daily bars on the UTC date.
+- The assets list with paper-trading keys on `paper-api.alpaca.markets`; `/v2/assets` having no ETF flag.
+- The 403 text of a plan-gated feed and the 429 `Retry-After`.
+- Stream: `connected` arriving first, the `subscription` acknowledgement, what a 405 leaves subscribed,
+  and the crypto stream on `wss://.../v1beta3/crypto/us`.
+
+## Tiingo
+
+US stocks and ETFs (end-of-day history, IEX intraday bars and quotes) and crypto from
+[Tiingo](https://www.tiingo.com). Module `providers/tiingo.py`.
+
+**Getting a key.** Create a free Tiingo account and copy the API token from the account page. Set
+`MARKET_PROVIDER=tiingo` and `TIINGO_API_KEY`.
+
+| Variable          | Default                  | Meaning                                                                           |
+| ----------------- | ------------------------ | --------------------------------------------------------------------------------- |
+| `TIINGO_API_KEY`  | required                 | API token. Without it every data call answers 503 `not_configured`.               |
+| `TIINGO_PLAN`     | `starter`                | `starter` (free) or `power`.                                                      |
+| `TIINGO_BASE_URL` | `https://api.tiingo.com` | API base URL (https only, or http for localhost).                                 |
+| `TIINGO_STREAM`   | `false`                  | `true` opts in to the IEX WebSocket for stocks (crypto and the rest stay polled). |
+
+**Plans.** `starter`: 50 requests an hour (burst 10), 1000 a day, 500 unique symbols a month; quotes
+cached 2 min. `power`: 10 000 an hour, 100 000 a day, 5000 symbols a month.
+
+**Caveats.**
+
+- 50 requests an hour is tight, so every operation is one request: a history call fetches its whole
+  range at once and a quote batch is one request for many symbols.
+- The monthly unique-symbol cap (500) cannot be enforced by the app (Tiingo counts every symbol the
+  key ever asked for). When it is hit, Tiingo's own error text surfaces as a plain upstream error;
+  symbols already fetched stay served from the cache.
+- Stock quotes use `tngoLast`: Tiingo's `last` is null without an IEX agreement (since 2025-02).
+- Intraday bars are IEX 5-minute bars; 15m, 30m, 60m and 90m are built from them. `1m` and `2m` are
+  not offered. Weekly, monthly and quarterly bars are built from daily ones. Intraday stock bars are
+  cut to the regular session.
+- Indices, FX, futures, non-US symbols and crypto pairs outside USD, USDT, USDC, EUR and BTC are not
+  served. Fundamentals, events and news are not offered.
+- Live updates are off by default: the free plan's request budget does not need the stream.
+
+**Verified API facts.** None from a live account (built from the documented shapes). Still
+unverified:
+
+- Time stamps: IEX `date` as the bar's open with an offset or `Z`; daily `date` as
+  `...T00:00:00.000Z` of the trading date; crypto `date` with `+00:00`; quote `timestamp` and
+  `lastSaleTimestamp` as ISO strings.
+- `startDate` without `endDate` running to the latest bar; a `startDate` after the last bar answering
+  `[]`; an unknown stock answering 404 `{"detail": "Not found."}`; `/iex/?tickers=` omitting unknown tickers.
+- `splitFactor` being the split ratio on the ex-date (the split-adjusted `close` depends on it).
+- 5-minute IEX bars stamping the bar open and reaching back far enough (the depth is not documented).
+- `/tiingo/crypto` meta and `/tiingo/crypto/prices` shapes, and the `/tiingo/utilities/search` rows.
+- The wording and status codes of the per-hour, per-day and monthly-symbol limit errors, and the Power
+  plan's numbers.
+- Stream: `wss://api.tiingo.com/iex`, the subscribe form with `thresholdLevel` 6, an update re-sending
+  the full ticker list (verify whether `eventName: "unsubscribe"` exists for removing tickers), the
+  trade row layout, and `messageType: "E"` with 401 / 403 for a rejected key.
+
+## Massive
+
+US stocks and ETFs (plus crypto and FX where the key allows) from [Massive](https://massive.com),
+formerly Polygon.io. Module `providers/massive.py`.
+
+**Getting a key.** Create a free account on massive.com and copy the API key from the dashboard. Set
+`MARKET_PROVIDER=massive` and `MASSIVE_API_KEY`. The id is `massive`; there is no `polygon` alias.
+
+| Variable           | Default                   | Meaning                                                                            |
+| ------------------ | ------------------------- | ---------------------------------------------------------------------------------- |
+| `MASSIVE_API_KEY`  | required                  | API key. Without it every data call answers 503 `not_configured`.                  |
+| `MASSIVE_PLAN`     | `basic`                   | `basic` (free), `starter`, `developer` or `advanced`.                              |
+| `MASSIVE_BASE_URL` | `https://api.massive.com` | API base URL (https only). `https://api.polygon.io` still works (pre-rename keys). |
+
+**Plans.**
+
+| Plan        | Calls / min | History   | Data                            | Quote cache / poll |
+| ----------- | ----------- | --------- | ------------------------------- | ------------------ |
+| `basic`     | 5           | 2 years   | end-of-day only (`1d` to `3mo`) | 1 h / 1 h          |
+| `starter`   | no limit    | 5 years   | minute bars, 15-minute delayed  | 60 s / 60 s        |
+| `developer` | no limit    | 10 years  | minute bars, 15-minute delayed  | 60 s / 60 s        |
+| `advanced`  | no limit    | unbounded | minute bars, real time          | 15 s / 15 s        |
+
+**Caveats.**
+
+- On `basic` only `1d`, `1wk`, `1mo` and `3mo` bars are offered, there is no batch snapshot, and a
+  quote costs one call per symbol (the last two daily bars give price and previous close). At 5 calls
+  a minute a long watchlist is slow to fill: the request guard sends at most 5 symbols at a time (its
+  burst), and when the budget runs out the quotes fetched so far are kept and the rest wait.
+- A plain-http base URL is refused (the key travels to it) unless the host is `localhost`,
+  `127.0.0.1` or `::1`; `next_url` pages are followed only on the same scheme, host and port.
+- Weekly bars that start on a Sunday are stamped on the Monday after, like the other providers'.
+- Prices are split-adjusted only: `adj_close` equals `close`. No streaming (Massive's WebSocket is
+  paid and per asset class; the live feed polls). No events, news or statements.
+- Stocks and ETFs are plain (`BRK-B` is `BRK.B`), crypto is `X:BTCUSD`, FX `C:EURUSD`. Indices
+  (a separate paid asset class), futures and non-US listings are not served.
+
+**Verified API facts.** None: no key was available when the module was written, and its fixtures are
+hand-built from the documentation. Still unverified (each degrades to a clear error, not wrong data):
+
+- Aggregates of an unknown ticker answering 200 without `results`, and one `/v3/reference/tickers/{T}`
+  call telling "unknown" from "no bars".
+- Daily, weekly and monthly `t` being midnight New York time of the bar's first day (a weekly bar
+  starting on a Sunday is moved to the Monday).
+- Native `{n}/minute` multipliers 1, 5, 15 and 30 aligning to the clock; minute aggregates including
+  pre/post-market bars.
+- The plan history depths and the refusal answers (403 `NOT_AUTHORIZED`, 401 bad key, 404 `NOT_FOUND`,
+  429 over the limit; a 200 with status `DELAYED` is data).
+- The snapshot shape `tickers: [{ticker, day, min, prevDay, lastTrade}]`, and whether the free key
+  serves crypto and FX end-of-day data (capabilities declare them on every plan).
+- The `X:` / `C:` prefixes and forex daily bars on the UTC day of `t`.
+
+## Stooq
+
+Daily, weekly and monthly history from [stooq.com](https://stooq.com) for US, UK, German and Japanese
+stocks, some indices, FX and crypto. Module `providers/stooq.py`.
+
+**Getting a key.** Stooq is unofficial and, since about March 2026, wants an `apikey` on every
+request. Open <https://stooq.com/q/d/?s=aapl.us&get_apikey> in a browser, solve the captcha, and copy
+the value after `apikey=` from the CSV download link on that page. Set `MARKET_PROVIDER=stooq` and
+`STOOQ_API_KEY`. When the key expires the API answers 503 `not_configured` with the same
+instructions; repeat the steps.
+
+| Variable         | Default             | Meaning                                                                |
+| ---------------- | ------------------- | ---------------------------------------------------------------------- |
+| `STOOQ_API_KEY`  | required            | The key from the captcha page. Without it every data call answers 503. |
+| `STOOQ_BASE_URL` | `https://stooq.com` | Base URL (https only, or http for localhost).                          |
+
+There is no plan setting. The request budget is a conservative guess (10 a minute, burst 5, 300 a day)
+because Stooq publishes no quota; set `UPSTREAM_RATE_PER_MIN`, `UPSTREAM_BURST` and
+`UPSTREAM_DAILY_LIMIT` to override it.
+
+**Caveats.**
+
+- Unofficial and personal use; it may break without notice. The key is in the URL, so the app redacts
+  it (`apikey=***`) from every message and log line.
+- Only `1d`, `1wk` and `1mo`. No intraday, search, news, events or fundamentals. `adj_close` equals
+  `close` (Stooq is believed to adjust for splits, not dividends). Streaming is not offered.
+- Batch quotes come from `/q/l/` and carry no previous close, so the change is not shown for them.
+  If `/q/l/` fails (unverified), quotes come from the last two daily bars, one request per symbol,
+  each charged to the request budget; `/q/l/` is not tried again for six hours.
+- No symbol search: type the symbol (`AAPL`, `VOD.L`, `^GSPC`, `EURUSD=X`, `BTC-USD`). Crypto pairs
+  other than `-USD`, `-EUR` and `-GBP` (`BTC-USDT`, `ETH-BTC`), and fiat pairs without `=X`
+  (`EURUSD`), are not served and never sent.
+- Weekly and monthly bars are stamped on the first day of their week (Monday) or month, not on the
+  last trading day Stooq dates them with. A plain-http base URL is refused unless the host is
+  `localhost`, `127.0.0.1` or `::1`.
+- Stooq answers 200 to everything, so the app judges the body: "Exceeded the daily hits limit" is a
+  daily rate limit, an HTML page means a missing or expired key, "No data" means an unknown symbol or
+  an empty range.
+
+**Verified API facts.** None from a live account. Still unverified:
+
+- The `apikey` parameter name on `/q/d/l/` and `/q/l/` (when `/q/l/` does not answer CSV, quotes fall
+  back to the last two daily bars per symbol).
+- The quote CSV (`Symbol,Date,Time,Open,High,Low,Close,Volume`, `N/D` for unknown symbols) and its
+  times being Europe/Warsaw.
+- The empty `h=` flag, `+` between symbols in `s=`, and the exact limit and key-missing texts (matched loosely).
+- "No data" being the whole body for an unknown symbol and for an empty range alike.
+- The daily limit resetting at 00:00 UTC; the free quota (the defaults are guesses).
+- Weekly and monthly bars being dated on the period's last trading day, `Volume` absent for some
+  indices (then 0).
+- Symbol names of class shares (`brk-b.us`), the index table, `usdjpy` for `JPY=X`, crypto pairs
+  `btcusd` / `btceur` / `btcgbp`, and UK prices being in pence (`GBp`).
+
+## Crypto
+
+Crypto spot pairs straight from the public API of Kraken, Coinbase or Binance, with live ticks. No key,
+no account, no CCXT. Module `providers/crypto/`.
+
+Set `MARKET_PROVIDER=crypto` and optionally `CRYPTO_EXCHANGE`.
+
+| Variable            | Default        | Meaning                                     |
+| ------------------- | -------------- | ------------------------------------------- |
+| `CRYPTO_EXCHANGE`   | `kraken`       | `kraken`, `coinbase` or `binance`.          |
+| `CRYPTO_BASE_URL`   | the exchange's | REST base URL override (a proxy or mirror). |
+| `CRYPTO_STREAM_URL` | the exchange's | WebSocket URL override.                     |
+
+Both overrides must be `https://` / `wss://` (plain `http://` / `ws://` only for localhost).
+
+Defaults per exchange: Kraken `api.kraken.com` and `wss://ws.kraken.com/v2`; Coinbase
+`api.coinbase.com` and `advanced-trade-ws.coinbase.com`; Binance `data-api.binance.vision` and
+`data-stream.binance.vision`, Binance's public market-data hosts, which serve spot data without the
+geo block (HTTP 451) that `api.binance.com` applies in some regions. binance.us is a different exchange
+and is not covered. The app paces itself well under the public limits: Kraken 50 a minute, Coinbase and
+Binance 300 (burst 10).
+
+**Caveats.**
+
+- Pairs only (`BTC-USD`, `ETH-USDT`, `ETH-BTC`); stocks, indices, FX and futures are not served.
+  Kraken's `XBT` and `XDG` are read as `BTC` and `DOGE`. A pair the chosen exchange lacks is not found.
+- Crypto has no session: the "day" of a quote is a **rolling 24 hours** (volume, high, low, and the
+  change from the price 24 hours ago). Kraken's REST ticker only has the 00:00 UTC open, so its quotes
+  measure from that, while its live ticks carry the rolling 24-hour change; the two differ a little.
+- **Kraken keeps only the latest 720 bars** of each interval (12 hours of 1m, 60 days of 1h, 720 days
+  of 1d), so deep ranges return what exists; synthesized weekly, monthly and quarterly bars reach back
+  about two years. Coinbase and Binance page back as far as the request allows.
+- Every interval is offered: native ones come from the exchange, `2m`, `90m`, weekly (Monday, UTC),
+  monthly and quarterly bars are built from finer ones. `prepost` is ignored; daily bars open at
+  00:00 UTC; volume is in the base asset and truncated to an integer in quotes.
+- No extended-hours quotes, events, news or fundamentals. The screener stays off by default (its
+  universe is equities).
+
+**Verified API facts.** The endpoints below were confirmed against the live APIs on 2026-11-17 (the
+test fixtures are trimmed recordings).
+
+- Kraken: `/0/public/AssetPairs`, `OHLC` (latest 720 bars, last row still forming; weekly bars open on
+  Thursdays, which is why weeks are built from daily bars) and `Ticker` (`c`, `o` = 00:00 UTC open, `h`,
+  `l`, `v`); errors arrive inside a 200 as `{"error": [...]}`. WebSocket v2 takes `BTC/USD`, not `XBT`,
+  refuses an unknown symbol alone, and its ticker frames carry the rolling 24-hour change.
+- Coinbase Advanced Trade: the `/market/` endpoints answer without credentials. `products?product_type=SPOT`
+  with repeated `product_ids=` is the batch quote; candles come newest first, a page is 300 (more than
+  349 is a 400); weekly and longer bars are built from daily ones; a bad product id is a 400. The
+  `ticker` WebSocket channel needs no authentication and drops unknown products silently.
+- Binance (`data-api.binance.vision`): `exchangeInfo`, `klines` (at most 1000, newest before `endTime`;
+  weekly bars open Mondays), `ticker/24hr` (one unknown symbol refuses the whole request, so only known
+  symbols are asked), unknown symbol is 400 `-1121`. The `miniTicker` stream acknowledges
+  `{"result": null}` and never streams an unknown symbol.
+
+**Still unverified:** the 429 answers and `Retry-After` on all three (Binance's 418 ban text), that
+Coinbase ONE_DAY candles start at 00:00 UTC, and Coinbase's 5-second rule for a first subscribe.
+
 ## What is supported
 
 Each provider declares `Capabilities` (intervals, extended history and quotes, adjusted close, search,
@@ -206,7 +489,7 @@ have is refused **before** any upstream request or token is spent, with HTTP **5
 ## Endpoints
 
 - `GET /api/providers`: `{ active, setting, switchable, selectedBy, providers: [...], activeCapabilities,
-  effectiveLimits }`. `switchable` is false with `PROVIDER_SWITCHING=false` and with a custom provider;
+effectiveLimits }`. `switchable` is false with `PROVIDER_SWITCHING=false` and with a custom provider;
   `selectedBy` is `"ui"` (picked in the app), `"env"` (`MARKET_PROVIDER` set) or `"default"`.
   Per provider: `id, name, description, network, terms, configured, capabilities, costs, budget, config,
 plan`. `config` lists each variable with `env, label, secret, required, set` and the value for
@@ -217,7 +500,7 @@ plan`. `config` lists each variable with `env, label, secret, required, set` and
   `GET /api/providers`. Refusals are `{ detail, code, ... }`: `403 switching_disabled`,
   `409 custom_provider`, `409 not_configured` (with `missing`: the variables to set), `422 unknown_provider`,
   `429 switch_cooldown` (with `Retry-After`), `500`/`503 switch_failed` (nothing changed), `503
-  shutting_down`.
+shutting_down`.
 - `GET /api/providers/usage`: the budget, see above.
 - `POST /api/providers/test`: asks the active provider for one quote of its probe symbol, through the
   upstream guard (it counts as one upstream request). `{ ok: true, symbol, price, latencyMs }` or
@@ -225,7 +508,8 @@ plan`. `config` lists each variable with `env, label, secret, required, set` and
 
 ## Adding a provider
 
-1. Write the module next to `yahoo.py` (`providers/<id>.py`) implementing `MarketDataProvider`
+1. Write the module next to `yahoo.py` (`providers/<id>.py`; a provider with several backends is a
+   package, as `providers/crypto/`) implementing `MarketDataProvider`
    (`providers/base.py`): `history`, `symbol_info`, `search`, `quotes`, `extended_quotes`, `events`,
    `news`, `fundamentals`. Raise `SymbolNotFound`, `RateLimited`, `UpstreamUnavailable` or
    `ProviderUnsupported` as the docstrings say; the guard and the caches depend on them. Return the
@@ -234,24 +518,37 @@ plan`. `config` lists each variable with `env, label, secret, required, set` and
 2. A symbol mapper `to_provider` / `from_provider` between Yahoo-style symbols and yours, using
    `providers/exchanges.py` (MIC, Yahoo suffix, time zone, session). Use `providers/http.py`
    (`JsonHttp`, stdlib `urllib`, injectable `send`) for REST and `providers/resample.py` for
-   intervals your API lacks. Do not add a dependency for HTTP.
+   intervals your API lacks. Do not add a dependency for HTTP. A CSV or other text API uses
+   `JsonHttp.get_text` (same error mapping and request counting; the query string, where a key may
+   travel, never appears in errors or logs), see `providers/stooq.py`.
 3. `Capabilities`: what you really serve; the guard enforces it. If you can tell locally which symbols
    you cannot serve, implement `SymbolRouting` (`billable`, `answers_locally`): the guard then charges
    nothing for them. If `history` pages through long ranges itself, set `ProviderSpec.self_paging`.
 4. `CostModel`: what each operation costs in your units (credits or requests), and `Budget` /
    `setting_defaults`: the request budget, daily limit and TTLs that suit the provider. They apply only
    to global settings the user did not set. A `plan` callable gives the plan name shown in the UI.
+   Providers with paid tiers keep a `PlanProfile` table (`PLAN_PROFILES`, a `plan` setting) that
+   drives capabilities, costs, budget and TTLs; `providers/alpaca.py`, `tiingo.py` and `massive.py`
+   follow the same shape as `twelvedata.py`. Describe what the configured plan really serves
+   (Massive Basic offers daily bars only).
 5. A config class, a `pydantic_settings.BaseSettings` with `env_prefix="<ID>_"` and `.env`; secrets are
    `SecretStr`. Required fields missing means "not configured" (503), not a crash. The callables
    of the spec must accept `None` (no config yet) and return the defaults.
 6. Import heavy dependencies lazily inside the factory: importing a provider module must stay cheap.
-7. Add a `ProviderSpec` to `PROVIDERS` in `providers/registry.py`. The id needs no other registration.
-8. Tests: append a `ContractCase` to `CONTRACT_PROVIDERS` in `tests/test_provider_contract.py`
+7. Live quotes: if the upstream has a WebSocket, return a `LiveSource` from `ProviderSpec.make_live`
+   and build it on `providers/stream.py` (`StreamClient`: reconnect with backoff and jitter,
+   `on_open` for auth and resubscribe, inline-awaited `on_message`, `StreamFatal` to give up,
+   `max_failures` so `listen` ends and the hub shows the stream down during an outage, no redirects,
+   `wss://` only; the `websockets` package is a declared dependency, imported lazily). Symbols the stream does not
+   cover stay polled by the hub. Without `make_live` the hub polls quotes. See `alpaca.py`,
+   `tiingo.py` and `crypto/live.py`.
+8. Add a `ProviderSpec` to `PROVIDERS` in `providers/registry.py`. The id needs no other registration.
+9. Tests: append a `ContractCase` to `CONTRACT_PROVIDERS` in `tests/test_provider_contract.py`
    (shapes, intervals, errors, capability gates), and write provider tests over recorded fixtures with
    a fake `send` (see `tests/test_twelvedata.py` and `tests/fixtures/twelvedata/`); nothing in the tests
-   may reach the network.
-9. List the variables in `docker-compose.yml` (empty default) and `.env.example`, and describe the
-   provider in the table at the top of this page and in the README.
+   may reach the network. A live source gets a fake-WebSocket test (a fake `connect` factory).
+10. List the variables in `docker-compose.yml` (empty default) and `.env.example`, and describe the
+    provider in the table at the top of this page and in the README.
 
 ## Twelve Data — verified API facts (recorded 2026-10-27)
 

@@ -1,26 +1,20 @@
 import { Download, LogOut, RefreshCw, Server, ShieldCheck, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { errorMessage } from '../api/client';
-import { logout } from '../api/auth';
+import { leaveAfterLogout, logout } from '../api/auth';
+import { useIsAdmin } from '../auth/access';
+import { clearUserCache } from '../auth/cacheGuard';
+import { getPersistence } from '../persist/bootstrap';
+import { useAuthStore } from '../store/auth';
 import { clearMarketCache, fetchServerStatus, type ServerStatus } from '../api/server';
 import { checkForUpdate, type UpdateCheck } from '../api/updates';
 import { useT } from '../i18n';
 import { confirmDialog } from '../ui/Prompt';
 import { toast } from '../ui/Toast';
 import { Section } from '../dialogs/controls';
-
-/** "1.2 GB" / "3.4 MB" for a byte count, or the raw number when small. */
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = n;
-  let unit = -1;
-  do {
-    value /= 1024;
-    unit++;
-  } while (value >= 1024 && unit < units.length - 1);
-  return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
-}
+import { BackupsSection } from './BackupsSection';
+import { formatBytes } from './serverFormat';
+import { StatusRow } from './StatusRow';
 
 /** "3d 4h" / "52m" for an uptime in seconds. */
 function formatUptime(seconds: number): string {
@@ -32,15 +26,6 @@ function formatUptime(seconds: number): string {
   return `${m}m`;
 }
 
-function StatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="srv-row">
-      <span className="srv-label">{label}</span>
-      <span className="srv-value">{value}</span>
-    </div>
-  );
-}
-
 /** Settings → Server: what the instance runs and holds, plus maintenance actions. */
 export function ServerTab() {
   const t = useT();
@@ -48,6 +33,8 @@ export function ServerTab() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'backup' | 'cache' | 'updates' | 'logout' | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  const authInfo = useAuthStore((s) => s.info);
+  const admin = useIsAdmin();
 
   const load = () =>
     fetchServerStatus()
@@ -105,8 +92,17 @@ export function ServerTab() {
 
   const signOut = () => {
     setBusy('logout');
-    logout()
-      .then(() => location.reload())
+    // Save what is pending, sign out, then stop syncing so no page-hide flush rewrites the
+    // cache after it is cleared: the next account on this browser must not see this one's
+    // offline copy.
+    const persistence = getPersistence();
+    (persistence ? persistence.flushAll().catch(() => undefined) : Promise.resolve())
+      .then(() => logout())
+      .then(async (redirect) => {
+        await persistence?.halt();
+        clearUserCache(undefined, undefined, true);
+        leaveAfterLogout(redirect);
+      })
       .catch((err) => {
         setBusy(null);
         toast(errorMessage(err), 'error');
@@ -127,6 +123,7 @@ export function ServerTab() {
     );
 
   const alerts = status.alertsService;
+  const counts = status.counts;
   const updateNote = update
     ? update.updateAvailable
       ? t('srv.updateAvailable', { version: update.latest ?? '' })
@@ -137,7 +134,7 @@ export function ServerTab() {
     <>
       <Section title={t('settings.tab.server')}>
         <StatusRow label={t('srv.version')} value={status.version} />
-        {status.uptimeSeconds !== null ? (
+        {status.uptimeSeconds != null ? (
           <StatusRow label={t('srv.uptime')} value={formatUptime(status.uptimeSeconds)} />
         ) : null}
         <StatusRow
@@ -148,31 +145,59 @@ export function ServerTab() {
               : '—'
           }
         />
-        <StatusRow
-          label={t('srv.alertsService')}
-          value={alerts.online ? t('srv.alertsOnline') : t('srv.alertsOffline')}
-        />
-        <StatusRow
-          label={t('srv.database')}
-          value={`${status.database.kind}${status.database.sizeBytes !== null ? ` · ${formatBytes(status.database.sizeBytes)}` : ''}`}
-        />
-        <StatusRow
-          label={t('srv.dbBars')}
-          value={`${status.counts.bars ?? 0} (${status.counts.series ?? 0} ${t('srv.dbSeries')})`}
-        />
+        {alerts ? (
+          <StatusRow
+            label={t('srv.alertsService')}
+            value={alerts.online ? t('srv.alertsOnline') : t('srv.alertsOffline')}
+          />
+        ) : null}
+        {status.database ? (
+          <StatusRow
+            label={t('srv.database')}
+            value={`${status.database.kind}${status.database.sizeBytes !== null ? ` · ${formatBytes(status.database.sizeBytes)}` : ''}`}
+          />
+        ) : null}
+        {counts ? (
+          <StatusRow
+            label={t('srv.dbBars')}
+            value={`${counts.bars ?? 0} (${counts.series ?? 0} ${t('srv.dbSeries')})`}
+          />
+        ) : null}
+        {status.auth.enabled && authInfo?.user ? (
+          <p className="dlg-note">
+            {t('srv.signedInAs', {
+              name: authInfo.user.name,
+              method: t(`srv.method.${authInfo.user.method}`),
+            })}
+          </p>
+        ) : null}
       </Section>
       <Section title={t('srv.maintenance')}>
         <div className="srv-actions">
           <button type="button" className="io-btn" disabled={busy !== null} onClick={checkUpdates}>
             <RefreshCw size={14} /> {t('srv.checkUpdates')}
           </button>
-          <button type="button" className="io-btn" disabled={busy !== null} onClick={downloadBackup}>
-            <Download size={14} /> {t('srv.backup')}
-          </button>
-          <button type="button" className="io-btn" disabled={busy !== null} onClick={() => void clearCache()}>
-            <Sparkles size={14} /> {t('srv.clearCache')}
-          </button>
-          {status.auth.enabled ? (
+          {admin ? (
+            <>
+              <button
+                type="button"
+                className="io-btn"
+                disabled={busy !== null}
+                onClick={downloadBackup}
+              >
+                <Download size={14} /> {t('srv.backup')}
+              </button>
+              <button
+                type="button"
+                className="io-btn"
+                disabled={busy !== null}
+                onClick={() => void clearCache()}
+              >
+                <Sparkles size={14} /> {t('srv.clearCache')}
+              </button>
+            </>
+          ) : null}
+          {status.auth.enabled && (authInfo?.logoutAvailable ?? true) ? (
             <button type="button" className="io-btn" disabled={busy !== null} onClick={signOut}>
               <LogOut size={14} /> {t('srv.logout')}
             </button>
@@ -191,18 +216,19 @@ export function ServerTab() {
             ) : null}
           </p>
         ) : null}
-        {alerts.online && alerts.version ? (
+        {alerts?.online && alerts.version ? (
           <p className="dlg-note">
             <Server size={12} className="srv-inline-icon" /> {t('srv.alertsOnline')} ·{' '}
             {alerts.version}
           </p>
         ) : null}
-        {!alerts.online ? (
+        {alerts && !alerts.online ? (
           <p className="dlg-note srv-warn">
             <ShieldCheck size={12} className="srv-inline-icon" /> {t('srv.alertsOffline')}
           </p>
         ) : null}
       </Section>
+      {admin ? <BackupsSection /> : null}
     </>
   );
 }

@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
 import { GroupSelect } from '../../heatmap/GroupSelect';
@@ -16,7 +17,13 @@ import { useChartView } from '../../store/chartView';
 import { DropdownMenu } from '../../ui/Menu';
 import { useVirtualRows } from '../../ui/virtualRows';
 import { clampPage, PAGE_SIZES, pageCount, pageResults, type ScreenerSortKey } from '../model';
-import { ROW_H, useScreenerPrefs, type Density, type ScreenerGroupBy } from '../screenerPrefs';
+import {
+  MIN_COL_WIDTH,
+  ROW_H,
+  useScreenerPrefs,
+  type Density,
+  type ScreenerGroupBy,
+} from '../screenerPrefs';
 import type { ServerColumnDef } from '../server/columnDefs';
 import type { ScanRow } from '../server/types';
 import type { Universe, UniverseSymbol } from '../universe/types';
@@ -222,7 +229,50 @@ export function ResultsTable({
   };
 
   const shownColumns = columns.filter((c) => columnDefs[c]);
-  const template = `minmax(76px, 1.2fr) ${shownColumns.map((c) => columnDefs[c]!.width).join(' ')} 24px`;
+  const widths = useScreenerPrefs((s) => s.columnWidths);
+  /** A dragged column is pinned to its px width; the rest keep their fluid default. */
+  const track = (id: string, fallback: string) =>
+    widths[id] !== undefined ? `${widths[id]}px` : fallback;
+  const template = `${track('symbol', 'minmax(76px, 1.2fr)')} ${shownColumns
+    .map((c) => track(c, columnDefs[c]!.width))
+    .join(' ')} 24px`;
+
+  /** Drag the right edge of a header cell to resize its column; double-click resets it. */
+  const resizeHandle = (id: string, label: string) => (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`${t('scr.resizeCol')} ${label}`}
+      data-testid={`scr-resize-${id}`}
+      className="scr-resize"
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        useScreenerPrefs.getState().setColumnWidth(id, null);
+      }}
+      onPointerDown={(e: ReactPointerEvent<HTMLSpanElement>) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const handle = e.currentTarget;
+        const startX = e.clientX;
+        const startW = handle.parentElement?.getBoundingClientRect().width ?? MIN_COL_WIDTH;
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add('dragging');
+        const move = (ev: PointerEvent) =>
+          useScreenerPrefs.getState().setColumnWidth(id, startW + ev.clientX - startX);
+        const end = () => {
+          handle.classList.remove('dragging');
+          handle.removeEventListener('pointermove', move);
+          handle.removeEventListener('pointerup', end);
+          handle.removeEventListener('pointercancel', end);
+        };
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', end);
+        handle.addEventListener('pointercancel', end);
+      }}
+    />
+  );
 
   const headCell = (
     key: string,
@@ -231,6 +281,7 @@ export function ResultsTable({
     align: 'left' | 'right',
     sortable: boolean,
     testKey: string = key,
+    colId: string = testKey,
   ) => {
     const activeSort = sort?.key === key;
     if (!sortable)
@@ -242,6 +293,7 @@ export function ResultsTable({
           title={title}
         >
           {label}
+          {resizeHandle(colId, label)}
         </span>
       );
     return (
@@ -256,6 +308,7 @@ export function ResultsTable({
       >
         {label}
         {activeSort ? sort!.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} /> : null}
+        {resizeHandle(colId, label)}
       </span>
     );
   };
@@ -288,7 +341,15 @@ export function ResultsTable({
         }}
       >
         <div role="row" className="scr-head">
-          {headCell('symbol', t('scr.colSymbol'), t('scr.colSymbol'), 'left', true)}
+          {headCell(
+            'symbol',
+            t('scr.colSymbol'),
+            t('scr.colSymbol'),
+            'left',
+            true,
+            'symbol',
+            'symbol',
+          )}
           {shownColumns.map((id) => {
             const def = columnDefs[id]!;
             if (server) {
@@ -302,6 +363,8 @@ export function ResultsTable({
               def.title,
               def.align,
               key !== 'rank' && SCR_SORT_KEYS.includes(key),
+              key,
+              id,
             );
           })}
           <span role="columnheader" className="scr-th scr-th-gutter" />

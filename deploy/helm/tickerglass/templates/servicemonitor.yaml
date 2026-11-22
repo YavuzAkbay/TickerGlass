@@ -1,0 +1,35 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- $env := merge (dict) (.Values.api.extraEnv | default dict) (.Values.api.env | default dict) }}
+{{- if hasKey $env "METRICS_TOKEN" }}
+{{- fail "metrics.serviceMonitor.enabled cannot be combined with api.env.METRICS_TOKEN (or api.extraEnv.METRICS_TOKEN): the ServiceMonitor authenticates with the chart's metrics Secret, so the scrape would get 401. Remove it and set metrics.token, or put the token in a Secret and set metrics.existingSecret (key METRICS_TOKEN)." }}
+{{- end }}
+{{- end }}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "tickerglass.fullname" . }}-api
+  labels:
+    {{- include "tickerglass.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "tickerglass.selectorLabels" (dict "ctx" . "component" "api") | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ include "tickerglass.metricsSecretName" . }}
+          key: METRICS_TOKEN
+{{- end }}

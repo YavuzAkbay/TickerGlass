@@ -7,7 +7,7 @@ from typing import Any
 from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, create_engine, insert, inspect, update
-from test_userdata import NullProvider, alembic_config, interleave, strip_volatile
+from test_userdata import NullProvider, alembic_config, interleave, owner_id_of, strip_volatile
 
 from tickerglass_api import models
 from tickerglass_api.app import create_app
@@ -297,6 +297,7 @@ def test_post_race_is_a_conflict(race_client: TestClient) -> None:
     def other(conn: Connection) -> None:
         conn.execute(
             insert(models.Watchlist).values(
+                owner_id=owner_id_of(client),
                 id="w1",
                 name="theirs",
                 items=[],
@@ -318,7 +319,11 @@ def test_flags_patch_race_is_not_a_500(race_client: TestClient) -> None:
     def other(conn: Connection) -> None:
         conn.execute(
             insert(models.SymbolFlag).values(
-                symbol="AAPL", color="blue", created_at=T, updated_at=T
+                owner_id=owner_id_of(client),
+                symbol="AAPL",
+                color="blue",
+                created_at=T,
+                updated_at=T,
             )
         )
 

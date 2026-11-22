@@ -1,0 +1,18 @@
+apiVersion: v2
+name: tickerglass
+description: Self-hosted charting, alerts, screener and portfolio (API, web and alerts service).
+type: application
+# Bumped together with the repository VERSION file by the release process (deploy/check.py
+# fails CI when they differ).
+version: 0.2.0
+appVersion: '0.2.0'
+kubeVersion: '>=1.25.0-0'
+home: https://github.com/YavuzAkbay/TickerGlass
+sources:
+  - https://github.com/YavuzAkbay/TickerGlass
+icon: https://raw.githubusercontent.com/YavuzAkbay/TickerGlass/main/apps/web/public/icons/icon-512.png
+keywords:
+  - charts
+  - trading
+  - alerts
+  - self-hosted

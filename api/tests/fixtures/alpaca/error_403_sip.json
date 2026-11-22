@@ -1,0 +1,15 @@
+{
+  "synthetic": "text unverified: documented as a 403 for recent SIP data on the free plan",
+  "request": {
+    "path": "/v2/stocks/bars",
+    "params": {"symbols": "AAPL", "timeframe": "1Min", "feed": "sip"}
+  },
+  "status": 403,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "code": 42210000,
+    "message": "subscription does not permit querying recent SIP data"
+  }
+}

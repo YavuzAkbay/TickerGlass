@@ -1,0 +1,17 @@
+{
+  "note": "hand-built (UNVERIFIED): aggregates of a ticker that does not exist, or of a range without bars, answer 200 with no results",
+  "request": {
+    "path": "/v2/aggs/ticker/ZZZZNOTREAL/range/1/day/2026-10-20/2026-10-28",
+    "params": { "adjusted": "true", "sort": "desc", "limit": "50000" }
+  },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "ticker": "ZZZZNOTREAL",
+    "queryCount": 0,
+    "resultsCount": 0,
+    "adjusted": true,
+    "status": "OK",
+    "request_id": "2b3c4d5e6f708192a3b4c5d6e7f80112"
+  }
+}

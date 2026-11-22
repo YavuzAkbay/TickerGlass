@@ -22,6 +22,9 @@ import { loadConfig, type Config } from './config';
 import type { ControlLike } from './control';
 import { createLogger } from './log';
 import { createService, type Service } from './service';
+import type { StoredScript } from './scripts/catalog';
+import { childEntry } from './scripts/childBundle';
+import { ScriptHost } from './scripts/host';
 
 // ----------------------------------------------------------------- clock
 
@@ -231,6 +234,9 @@ export class FakeApi {
   alerts: Alert[] = [];
   states: StateRow[] = [];
   drawings: StoredDrawing[] = [];
+  userScripts: StoredScript[] = [];
+  /** GET /api/user-scripts answers 503 while true. */
+  userScriptsDown = false;
   fires: { id: string; body: FireIn }[] = [];
   statuses: { id: string; body: { revision: number; status: string; reason: string } }[] = [];
   heartbeats: unknown[] = [];
@@ -238,6 +244,8 @@ export class FakeApi {
   /** Responses consumed (in order) by the next fire requests; default 200. */
   fireScript: FireResponse[] = [];
   healthFails = 0;
+  /** The next status posts answer 500 (not recorded). */
+  statusFails = 0;
   /** `active` of GET /api/providers; undefined = the route is missing (404). */
   activeProvider: string | null | undefined = 'yahoo';
   server!: Server;
@@ -284,6 +292,10 @@ export class FakeApi {
       return send(200, { active: this.activeProvider, providers: [] });
     }
     if (path === '/api/drawings') return send(200, { drawings: this.drawings });
+    if (path === '/api/user-scripts' && m === 'GET') {
+      if (this.userScriptsDown) return send(503, { detail: 'down' });
+      return send(200, this.userScripts);
+    }
     if (path === '/api/alerts/states' && m === 'GET') return send(200, this.states);
     if (path === '/api/alerts/states' && m === 'PUT') {
       const rows = (body as { states: StateRow[] }).states;
@@ -307,6 +319,10 @@ export class FakeApi {
       if (!alert) return send(404, { detail: `alert not found: ${id}` });
       if (!mm[2] && m === 'GET') return send(200, alert);
       if (mm[2] === 'status') {
+        if (this.statusFails > 0) {
+          this.statusFails--;
+          return send(500, { detail: 'scripted' });
+        }
         const b = body as { revision: number; status: string; reason: string };
         this.statuses.push({ id, body: b });
         if (alert.revision !== b.revision || alert.status !== 'active')
@@ -378,6 +394,7 @@ export interface Harness {
   control: FakeControl;
   cfg: Config;
   service: Service;
+  scripts: ScriptHost;
   /** Times the service asked the feeds to forget resolved symbols. */
   symbolCacheClears: number;
   start(): Promise<void>;
@@ -391,7 +408,13 @@ export const NOW_S = 1_792_074_600 + 30;
 export const BAR_T = 1_792_074_600; // open of the forming 1m bar (14:30:00Z)
 
 export async function harness(
-  opts: { env?: Record<string, string>; now?: number; silent?: boolean } = {},
+  opts: {
+    env?: Record<string, string>;
+    now?: number;
+    silent?: boolean;
+    /** Run the script isolates in a child process, as in production (default: in this process). */
+    scriptProcess?: boolean;
+  } = {},
 ): Promise<Harness> {
   const api = new FakeApi();
   await api.listen();
@@ -408,6 +431,26 @@ export async function harness(
     opts.silent === false ? 'debug' : 'error',
     opts.silent === false ? (l) => process.stderr.write(l + '\n') : () => {},
   );
+  const scriptOpts = {
+    memoryMb: cfg.scriptMemoryMb,
+    loadMs: cfg.scriptLoadMs,
+    tickMs: cfg.scriptTickMs,
+    cpuPct: cfg.scriptCpuPct,
+    cpuTotalPct: cfg.scriptCpuTotalPct,
+    clock,
+    log,
+  };
+  const scripts = opts.scriptProcess
+    ? await ScriptHost.createIsolated({
+        ...scriptOpts,
+        process: {
+          entry: childEntry,
+          processMb: cfg.scriptProcessMb,
+          restartMinMs: 50,
+          restartMaxMs: 400,
+        },
+      })
+    : await ScriptHost.create(scriptOpts);
   const make = (): Service =>
     createService({
       api: new ApiClient({ baseUrl: api.url, attempts: 1, sleep: async () => {} }),
@@ -417,6 +460,7 @@ export async function harness(
       config: cfg,
       log,
       live: feed,
+      scripts,
       clearSymbolCache: () => void h.symbolCacheClears++,
     });
   const h: Harness = {
@@ -426,6 +470,7 @@ export async function harness(
     control,
     cfg,
     service: make(),
+    scripts,
     symbolCacheClears: 0,
     async start() {
       await h.service.start();
@@ -435,10 +480,11 @@ export async function harness(
     },
     async stop() {
       await h.service.stop();
+      scripts.dispose();
     },
     async restart() {
       await h.service.stop();
-      h.service = make();
+      h.service = make(); // the script host outlives the service, like in index.ts
       await h.start();
     },
   };

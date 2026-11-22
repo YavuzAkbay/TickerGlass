@@ -15,6 +15,7 @@ import pandas as pd
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
+from ..metrics import upstream
 from .base import (
     BAR_COLUMNS,
     FUNDAMENTALS_INFO_KEYS,
@@ -73,6 +74,15 @@ class RateLimiter:
             time.sleep(delay)
 
 
+def _provider_error_outcome(exc: ProviderError) -> str:
+    """The `tickerglass_provider_requests_total` outcome of an error `fn` raised itself."""
+    if isinstance(exc, RateLimited):
+        return "rate_limited"
+    if isinstance(exc, UpstreamUnavailable):
+        return "unavailable"
+    return "ok" if isinstance(exc, SymbolNotFound) else "error"  # not found: Yahoo answered
+
+
 class YahooProvider:
     def __init__(
         self,
@@ -102,8 +112,11 @@ class YahooProvider:
         while True:
             self._limiter.wait()
             try:
-                return fn()
+                result = fn()
+                upstream.record("yahoo", "ok")
+                return result
             except YFRateLimitError as exc:
+                upstream.record("yahoo", "rate_limited")
                 if rate_limited >= self._rate_limit_retries or not _may_retry(cost):
                     raise RateLimited(
                         "Yahoo rate limit exceeded", 2**self._rate_limit_retries
@@ -112,16 +125,19 @@ class YahooProvider:
                 rate_limited += 1
                 log.warning("Yahoo rate limited, retrying in %ss", backoff)
                 time.sleep(backoff)
-            except ProviderError:
+            except ProviderError as exc:
+                upstream.record("yahoo", _provider_error_outcome(exc))
                 raise
             except _NETWORK_ERRORS as exc:
                 # Connection failures and timeouts (builtin and curl_cffi ones).
+                upstream.record("yahoo", "unavailable")
                 if unreachable >= self._retries or not _may_retry(cost):
                     raise UpstreamUnavailable(f"Yahoo unreachable: {exc}") from exc
                 time.sleep(0.5 * 2**unreachable)
                 unreachable += 1
             except Exception as exc:
                 # Usually a payload yfinance could not parse; repeating rarely helps.
+                upstream.record("yahoo", "error")
                 if failed >= min(self._retries, _OTHER_ERROR_RETRIES) or not _may_retry(cost):
                     raise ProviderError(f"Yahoo request failed: {exc}") from exc
                 time.sleep(0.5 * 2**failed)
@@ -635,6 +651,9 @@ def _v7_to_quote(raw: dict[str, Any]) -> dict[str, Any] | None:
         "fiftyTwoWeekLow": _num(raw.get("fiftyTwoWeekLow")),
         "marketCap": _num(raw.get("marketCap")),
         "averageVolume": avg_volume,
+        "trailingPE": _num(raw.get("trailingPE")),
+        "forwardPE": _num(raw.get("forwardPE")),
+        "eps": _num(raw.get("epsTrailingTwelveMonths")),
     }
     out.update({k: v for k, v in extras.items() if v is not None})
     return out

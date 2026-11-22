@@ -1,0 +1,26 @@
+{
+  "note": "hand-built from the documented aggregates shape (not recorded): newest first (sort=desc), t = midnight New York time in ms",
+  "request": {
+    "path": "/v2/aggs/ticker/AAPL/range/1/day/2026-10-20/2026-10-28",
+    "params": { "adjusted": "true", "sort": "desc", "limit": "50000" }
+  },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "ticker": "AAPL",
+    "queryCount": 6,
+    "resultsCount": 6,
+    "adjusted": true,
+    "results": [
+      { "v": 51234567, "vw": 263.41, "o": 262.1, "c": 264.0, "h": 265.2, "l": 261.5, "t": 1793073600000, "n": 612345 },
+      { "v": 48123456, "vw": 262.2, "o": 261.0, "c": 262.1, "h": 263.9, "l": 260.4, "t": 1792987200000, "n": 598765 },
+      { "v": 47000000, "vw": 261.0, "o": 260.2, "c": 261.0, "h": 262.0, "l": 259.1, "t": 1792728000000, "n": 570001 },
+      { "v": 46000000, "vw": 260.5, "o": 259.0, "c": 260.2, "h": 261.3, "l": 258.7, "t": 1792641600000, "n": 560002 },
+      { "v": 45000000, "vw": 259.4, "o": 258.5, "c": 259.0, "h": 260.0, "l": 257.9, "t": 1792555200000, "n": 550003 },
+      { "v": 44000000, "vw": 258.6, "o": 257.5, "c": 258.5, "h": 259.2, "l": 256.8, "t": 1792468800000, "n": 540004 }
+    ],
+    "status": "OK",
+    "request_id": "0f8e1c2d3b4a5968778695a4b3c2d1e0",
+    "count": 6
+  }
+}

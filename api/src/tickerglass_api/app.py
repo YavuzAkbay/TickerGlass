@@ -15,10 +15,24 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 
 from . import __version__
-from .auth import AuthMiddleware, LoginLimiter, session_secret
-from .db import make_engine, run_migrations
+from .accounts import Accounts
+from .auth import (
+    USERNAME_MAX_FAILURES,
+    Authenticator,
+    AuthMiddleware,
+    LoginLimiter,
+    session_secret,
+)
+from .auth_oidc import OidcClient
+from .backups.restore import ApplyResult, ServerLock, rollback_applied, startup_restore
+from .backups.runner import BackupService
+from .backups.scheduler import BackupScheduler
+from .db import make_engine, run_migrations, sqlite_path
 from .live import LiveHub, LiveSource, Poller
+from .logredact import install_log_redaction
+from .metrics import Metrics, MetricsMiddleware
 from .notifications.dispatcher import Dispatcher
+from .ownership import system_session
 from .providers.base import (
     MarketDataProvider,
     ProviderError,
@@ -28,10 +42,11 @@ from .providers.base import (
     SymbolNotFound,
     UpstreamUnavailable,
 )
-from .providers.registry import PROVIDERS, ProviderSpec, is_configured
+from .providers.registry import PROVIDERS, ProviderSpec, env_cache_source, is_configured
 from .routes import (
     alerts,
     auth,
+    backups,
     bars,
     cache,
     drawings,
@@ -40,6 +55,7 @@ from .routes import (
     live,
     market,
     notes,
+    portfolio,
     providers,
     screener,
     screens,
@@ -49,8 +65,11 @@ from .routes import (
     transfer,
     user_scripts,
     user_settings,
+    users,
     watchlists,
 )
+from .routes import health as health_routes
+from .routes import metrics as metrics_routes
 from .services.cache_gate import CacheGate, CacheRetired
 from .services.cache_source import ensure_cache_source
 from .services.provider_choice import SelectedBy, env_choice, resolve_startup_provider
@@ -90,6 +109,7 @@ def create_app(
     settings_override: Settings | None = None,
 ) -> FastAPI:
     settings = settings_override or get_settings()
+    install_log_redaction()  # also covers `uvicorn tickerglass_api.app:app` run directly
     db_url = database_url or settings.database_url
     if db_url != settings.database_url:
         # Keep settings coherent with the engine (auth's secret file and the server
@@ -103,11 +123,35 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.started_at = time.time()
-        run_migrations(db_url)
+        db_file = sqlite_path(db_url)
+        server_lock: ServerLock | None = None
+        applied: ApplyResult | None = None
+        if db_file is not None:
+            data_dir = db_file.resolve().parent
+            data_dir.mkdir(parents=True, exist_ok=True)
+            # Held for the server's lifetime: `tickerglass-api backup restore --apply-now` only
+            # proceeds when it can take it, i.e. when no server is running.
+            server_lock = ServerLock(data_dir)
+            # Cleaning the work folder and applying a staged restore (before the migrations,
+            # which then upgrade an older backup) only happen while holding the lock.
+            applied = startup_restore(db_file, server_lock)
+        try:
+            run_migrations(db_url)
+        except Exception as exc:
+            if applied is not None and applied.status == "applied" and db_file is not None:
+                rollback_applied(db_file, applied, exc)
+            if server_lock is not None:
+                server_lock.release()
+            raise
         engine = make_engine(db_url)
         app.state.engine = engine
         app.state.sessionmaker = sessionmaker(engine, expire_on_commit=False)
-        with app.state.sessionmaker() as seed_session, seed_session.begin():
+        accounts = Accounts(app.state.sessionmaker, settings)
+        accounts.startup()
+        app.state.accounts = accounts
+        if authenticator is not None:
+            authenticator.accounts = accounts
+        with system_session(app.state.sessionmaker) as seed_session, seed_session.begin():
             seed_bundle(seed_session, settings)
         stats = CacheStats()
         app.state.cache_stats = stats
@@ -119,8 +163,11 @@ def create_app(
             # MARKET_PROVIDER, or the provider last picked in the app (see provider_choice).
             provider_id, selected_by = resolve_startup_provider(engine, settings, is_configured)
             spec = PROVIDERS[provider_id]
-            # Cached bars and metadata belong to the provider that fetched them.
-            ensure_cache_source(engine, spec.id)
+            # Cached bars and metadata belong to the provider (and variant of it: the crypto
+            # exchange, a data feed) that fetched them.
+            source = env_cache_source(spec)
+            if source is not None:
+                ensure_cache_source(engine, source)
         stack = build_stack(
             spec,
             settings,
@@ -137,7 +184,12 @@ def create_app(
         app.state.live_hub = LiveHub(**live_config(stack, live_poller))
         app.state.live_hub.bind_loop(asyncio.get_running_loop())
         app.state.alerts_service = alerts.ServiceState()
-        dispatcher = Dispatcher(app.state.sessionmaker, stack.runtime.settings, app.state.live_hub)
+        dispatcher = Dispatcher(
+            app.state.sessionmaker,
+            stack.runtime.settings,
+            app.state.live_hub,
+            metrics=app.state.metrics,
+        )
         app.state.dispatcher = dispatcher
         dispatcher.start()
         switcher = ProviderSwitcher(
@@ -151,7 +203,16 @@ def create_app(
         )
         app.state.switcher = switcher
         await switcher.start_current()
+        backup_service = BackupService(engine, settings)
+        app.state.backups = backup_service
+        backup_scheduler = BackupScheduler(backup_service)
+        app.state.backup_scheduler = backup_scheduler
+        backup_scheduler.start()
+        app.state.ready = True  # `GET /api/health/ready`
         yield
+        app.state.ready = False
+        await backup_scheduler.stop()
+        await asyncio.to_thread(backup_service.join, 10)
         await dispatcher.stop()
         # First: waits for a switch in progress (it holds the switcher's lock) and refuses
         # later ones, so none can hand the hub a new upstream after the hub is closed.
@@ -160,6 +221,8 @@ def create_app(
         await switcher.close()
         await app.state.live_hub.close()
         engine.dispose()
+        if server_lock is not None:
+            server_lock.release()
 
     app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -169,16 +232,42 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # Optional single-user password auth (auth.py). Off unless AUTH_PASSWORD is set.
-    if settings.auth_password:
+    # Optional auth (auth.py): password, OIDC and/or trusted proxy header. Off unless one
+    # of them is configured. The middleware always runs: it names the request's user (the
+    # owner user in open mode).
+    authenticator: Authenticator | None = None
+    if settings.auth_methods:
         app.state.auth_secret = session_secret(settings)
+        authenticator = Authenticator(settings, app.state.auth_secret)
+        app.state.authenticator = authenticator
         app.state.login_limiter = LoginLimiter()
-        app.add_middleware(
-            AuthMiddleware,
-            secret=app.state.auth_secret,
-            password=settings.auth_password,
-            internal_token=settings.alerts_internal_token,
-        )
+        # (client IP, username) failures: a sign-in attempt never locks a name for others.
+        app.state.pair_limiter = LoginLimiter()
+        # Per signed-in user (password change): nobody else can burn it.
+        app.state.user_limiter = LoginLimiter(USERNAME_MAX_FAILURES)
+        if not settings.alerts_internal_token:
+            logging.getLogger("tickerglass.auth").warning(
+                "auth is enabled but ALERTS_INTERNAL_TOKEN is not set: the alerts service "
+                "cannot authenticate (its requests are refused with 401/403) and alerts will "
+                "not fire; set the same ALERTS_INTERNAL_TOKEN for the api and alerts containers"
+            )
+        if "oidc" in settings.auth_methods:
+            app.state.oidc = OidcClient(settings)
+        if {"oidc", "header"} & set(settings.auth_methods) and settings.auth_allow_any_user:
+            logging.getLogger("tickerglass.auth").warning(
+                "AUTH_ALLOW_ANY_USER=true: every account your identity provider accepts can sign in"
+            )
+    app.add_middleware(
+        AuthMiddleware,
+        authenticator=authenticator,
+        internal_token=settings.alerts_internal_token,
+    )
+    # Opt-in Prometheus metrics (docs/design/metrics.md). Outermost, so it also counts what
+    # the guards above refuse. The collector reads `app.state` lazily, at scrape time.
+    app.state.metrics = None
+    if settings.metrics_enabled:
+        app.state.metrics = Metrics(app)
+        app.add_middleware(MetricsMiddleware, metrics=app.state.metrics)
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -237,6 +326,7 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    api.include_router(health_routes.router)
     api.include_router(bars.router)
     api.include_router(cache.router)
     api.include_router(symbols.router)
@@ -254,11 +344,17 @@ def create_app(
     api.include_router(hotlists.router)
     api.include_router(screens.router)
     api.include_router(alerts.router)
+    api.include_router(portfolio.router)
     api.include_router(auth.router)
+    api.include_router(users.router)
+    api.include_router(users.me_router)
     api.include_router(server.router)
+    api.include_router(backups.router)
     api.include_router(transfer.router)
     app.include_router(api)
     app.include_router(live.router)
+    if settings.metrics_enabled:
+        app.include_router(metrics_routes.router)
     return app
 
 

@@ -24,6 +24,9 @@ export const emptyQuote = (symbol: string): LiveQuote => ({
   fiftyTwoWeekLow: null,
   marketCap: null,
   averageVolume: null,
+  trailingPE: null,
+  forwardPE: null,
+  eps: null,
   currency: null,
   marketState: null,
   ext: null,
@@ -70,6 +73,9 @@ export function mergeSnapshot(prev: LiveQuote | undefined, q: Quote, now: number
     fiftyTwoWeekLow: q.fiftyTwoWeekLow ?? base.fiftyTwoWeekLow ?? null,
     marketCap: q.marketCap ?? base.marketCap ?? null,
     averageVolume: q.averageVolume ?? base.averageVolume ?? null,
+    trailingPE: q.trailingPE ?? base.trailingPE ?? null,
+    forwardPE: q.forwardPE ?? base.forwardPE ?? null,
+    eps: q.eps ?? base.eps ?? null,
     snapshotMs: now,
     ...(fresh
       ? {}

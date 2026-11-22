@@ -34,15 +34,21 @@ import {
 import {
   getIndicator,
   IndicatorRuntime,
+  isUserScriptType,
   timeframeInputValue,
-  type BarArrays,
+  type IndicatorRegistry,
 } from '@tickerglass/indicators';
 import type { ApiClient } from './api';
 import { AlertRunner, type FireJob, type RunnerEnv } from './alert-runner';
 import { backoffMs, type Clock } from './clock';
 import type { Config } from './config';
 import { errText, type Logger } from './log';
+import type { ServiceMetrics } from './metrics';
 import { OperandCache } from './operands';
+import { ownerKey } from './owner';
+import type { ScriptHold, ScriptHost } from './scripts/host';
+import type { Columns } from './scripts/protocol';
+import { UserSeries } from './scripts/userSeries';
 
 const WS_SYMBOL_RE = /^[A-Za-z0-9.\-=^]{1,32}$/;
 const TRIM = 500;
@@ -53,6 +59,8 @@ const RETRY_MIN_MS = 5000;
 const RETRY_MAX_MS = 300_000;
 const DAY = 86_400;
 const MAX_FAILURES = 5;
+/** Past `scriptTickMs`, how long a series waits for the values of its script instances. */
+const SCRIPT_MARGIN_MS = 2000;
 
 export type SeriesState = 'idle' | 'loading' | 'ready' | 'retrying' | 'disposed';
 
@@ -63,6 +71,12 @@ export interface SeriesHost {
   clock: Clock;
   log: Logger;
   cfg: Config;
+  /** User-script isolates (shared by every series). */
+  scripts: ScriptHost;
+  /** Counters and the evaluation-lag histogram of the service. */
+  metrics: ServiceMetrics;
+  /** Built-ins plus the stored scripts' stubs (warm-up lengths, message precision). */
+  registry(): IndicatorRegistry;
   enqueueFire(job: FireJob): void;
   /** Mark the alert's state dirty (called after every sample). */
   markState(runner: AlertRunner): void;
@@ -70,6 +84,12 @@ export interface SeriesHost {
   savedState(runner: AlertRunner): AlertRuntimeState | null;
   /** Permanent problem (symbol, drawing, indicator): post `status: error`. */
   alertError(alert: Alert, reason: string): void;
+  /**
+   * The runner's script is out for now (fault hold, isolate replaced): take it off
+   * its series, keep its state, and attach it again once the script is back.
+   * The status stays as it is: the API has no transient alert status.
+   */
+  alertSuspended(runner: AlertRunner, reason: string): void;
   /** `expiresAt` reached: post `status: expired`. */
   alertExpired(alert: Alert): void;
   /** Live socket has been down long enough that the series must be polled. */
@@ -138,7 +158,7 @@ class Cols {
     for (const k of ['time', 'open', 'high', 'low', 'close', 'volume'] as const)
       this[k].splice(0, n);
   }
-  arrays(): BarArrays {
+  arrays(): Columns {
     return {
       time: Float64Array.from(this.time),
       open: Float64Array.from(this.open),
@@ -192,10 +212,14 @@ export class Series {
   private info: SymbolInfo | null = null;
   private cols = new Cols();
   private runtime: IndicatorRuntime | null = null;
+  /** User-script instances (they run in the script isolates, not in `runtime`). */
+  private readonly users: UserSeries;
   private tracker: CloseTracker | null = null;
   private calendar: TradingCalendar | null = null;
   private calendarDay = NaN;
-  private readonly cache = new OperandCache();
+  /** Operand memo per owner: a memoized drawing value must not reach another owner's alert. */
+  private readonly caches = new Map<string, OperandCache>();
+  /** Drawings by (ownerId, id): an alert only resolves drawings of its own owner. */
   private readonly drawings = new Map<string, DrawingLike>();
   private unsub: Unsubscribe | null = null;
   private readonly tfSeries = new Map<string, Unsubscribe | null>();
@@ -223,6 +247,16 @@ export class Series {
     this.createdAt = host.clock.now();
     const parsed = tryParseSymbolExpression(symbol);
     this.legs = parsed.ok ? parsed.value.symbols : [symbol];
+    this.users = new UserSeries(this.key, host.scripts, {
+      columns: () => this.cols.arrays(),
+      context: () => ({
+        timezone: this.info?.timezone ?? 'UTC',
+        session: this.info?.session ?? null,
+        intervalSeconds: this.ivSec,
+      }),
+      time: (i) => this.cols.time[i] ?? NaN,
+      length: () => this.cols.length,
+    });
   }
 
   get order(): number {
@@ -284,7 +318,8 @@ export class Series {
       users?.delete(r.id);
       if (users && users.size === 0) {
         this.instanceUsers.delete(h.hash);
-        rt?.remove(h.hash);
+        if (this.users.has(h.hash)) this.users.remove(h.hash);
+        else rt?.remove(h.hash);
       }
     }
     this.pruneTimeframes();
@@ -310,6 +345,7 @@ export class Series {
     for (const u of this.tfSeries.values()) u?.();
     this.tfSeries.clear();
     this.runtime = null;
+    this.users.reset();
     this.runners.clear();
   }
 
@@ -340,7 +376,11 @@ export class Series {
     for (const r of runners)
       w = Math.max(
         w,
-        alertBars(r.alert.spec, { maxBars: this.host.cfg.maxBars, intervalSeconds: this.ivSec }),
+        alertBars(r.alert.spec, {
+          maxBars: this.host.cfg.maxBars,
+          intervalSeconds: this.ivSec,
+          registry: this.host.registry(),
+        }),
       );
     return Math.min(this.host.cfg.maxBars, w);
   }
@@ -367,6 +407,7 @@ export class Series {
     for (const u of this.tfSeries.values()) u?.();
     this.tfSeries.clear();
     this.instanceUsers.clear();
+    this.users.reset();
     try {
       const info = await this.host.feed.resolveSymbol(this.symbol);
       if (gen !== this.gen) return;
@@ -379,7 +420,8 @@ export class Series {
       const cols = await this.loadHistory(w, minTime, gen);
       if (gen !== this.gen || !cols) return;
       this.cols = cols;
-      this.buildRuntime(info);
+      await this.buildRuntime(info);
+      if (gen !== this.gen) return;
       this.rebuildCalendar();
       this.resetTracker();
       await this.loadTimeframes(gen);
@@ -387,7 +429,7 @@ export class Series {
       this.state = 'ready';
       this.retryAttempt = 0;
       this.lastError = null;
-      this.cache.clear();
+      this.clearCache();
       await this.activate([...this.runners.values()]);
       if (gen !== this.gen) return;
       this.subscribeLive();
@@ -428,7 +470,7 @@ export class Series {
     for (const r of this.runners.values()) {
       if (r.since !== null) min = Math.min(min, r.since);
       for (const id of r.drawingIds) {
-        const d = this.drawings.get(id);
+        const d = this.drawings.get(ownerKey(r.alert.ownerId, id));
         for (const p of d?.points ?? []) min = Math.min(min, p.time);
       }
     }
@@ -467,7 +509,7 @@ export class Series {
     return cols;
   }
 
-  private buildRuntime(info: SymbolInfo): void {
+  private async buildRuntime(info: SymbolInfo): Promise<void> {
     const rt = new IndicatorRuntime({
       resolveTimeframe: (tf) => resolveTimeframe(tf, this.interval),
       context: {
@@ -477,17 +519,19 @@ export class Series {
       },
     });
     this.runtime = rt;
-    for (const r of [...this.runners.values()]) this.addInstances(r);
+    for (const r of [...this.runners.values()]) await this.addInstances(r);
     rt.setBars(this.cols.arrays());
   }
 
   /** Add the runner's indicator instances; a failure puts the alert into `error`. */
-  private addInstances(r: AlertRunner): boolean {
+  private async addInstances(r: AlertRunner): Promise<boolean> {
     const rt = this.runtime;
     if (!rt) return false;
     try {
+      const scriptInstances: AlertRunner['instances'] = [];
       const tfs: Record<string, number> = {};
       for (const h of r.instances) {
+        if (isUserScriptType(h.type)) continue; // computed in the script isolate, on chart bars
         const def = getIndicator(h.type);
         if (!def) throw new Error(`unknown indicator '${h.type}'`);
         const tf = resolveTimeframe(timeframeInputValue(def, h.inputs), this.interval);
@@ -497,12 +541,15 @@ export class Series {
       for (const h of r.instances) {
         let users = this.instanceUsers.get(h.hash);
         if (!users) {
-          rt.add({ id: h.hash, type: h.type, inputs: h.inputs });
+          if (isUserScriptType(h.type)) scriptInstances.push(h);
+          else rt.add({ id: h.hash, type: h.type, inputs: h.inputs });
           users = new Set();
           this.instanceUsers.set(h.hash, users);
         }
         users.add(r.id);
       }
+      // Computed in the script isolates (asynchronously); their errors land in `users`.
+      if (scriptInstances.length > 0) await this.users.add(scriptInstances);
       return true;
     } catch (err) {
       this.failRunner(r, errText(err).slice(0, 500));
@@ -611,7 +658,21 @@ export class Series {
 
   // ----------------------------------------------------------- env / ops
 
-  private makeEnv(): RunnerEnv {
+  private cacheFor(ownerId: string | undefined): OperandCache {
+    const key = ownerKey(ownerId, '');
+    let cache = this.caches.get(key);
+    if (!cache) {
+      cache = new OperandCache();
+      this.caches.set(key, cache);
+    }
+    return cache;
+  }
+
+  private clearCache(): void {
+    for (const cache of this.caches.values()) cache.clear();
+  }
+
+  private makeEnv(ownerId: string | undefined): RunnerEnv {
     const me = (): Series => this;
     const c = this.cols;
     return {
@@ -630,8 +691,13 @@ export class Series {
       low: (i) => c.low[i] ?? NaN,
       close: (i) => c.close[i] ?? NaN,
       volume: (i) => c.volume[i] ?? NaN,
-      indicator: (hash, out, i) => me().runtime?.result(hash)?.values[out]?.[i] ?? NaN,
-      drawing: (id) => me().drawings.get(id),
+      indicator: (hash, out, i) => {
+        const s = me();
+        // Script values were cached when the isolate returned them: no boundary crossing here.
+        if (s.users.has(hash)) return s.users.value(hash, out, i);
+        return s.runtime?.result(hash)?.values[out]?.[i] ?? NaN;
+      },
+      drawing: (id) => me().drawings.get(ownerKey(ownerId, id)),
       timeline: () => me().timeline(),
       closeAt: (i, grace) => me().closeAt(i, grace),
     };
@@ -660,6 +726,20 @@ export class Series {
     );
   }
 
+  /**
+   * A script's isolate was disposed (fault or counted timeout): its alerts on this
+   * series wait until the script is back, or end in `error` when the fault is final.
+   */
+  onScriptFault(scriptId: string, hold: ScriptHold): void {
+    this.serial(() => {
+      for (const r of [...this.runners.values()]) {
+        if (!r.scriptIds.includes(scriptId)) continue;
+        if (hold.final) this.failRunner(r, hold.reason);
+        else this.suspendRunner(r, hold.reason);
+      }
+    });
+  }
+
   // ------------------------------------------------------------- samples
 
   private failRunner(r: AlertRunner, reason: string): void {
@@ -667,28 +747,36 @@ export class Series {
     this.host.alertError(r.alert, reason);
   }
 
+  private suspendRunner(r: AlertRunner, reason: string): void {
+    this.removeAlert(r.id);
+    this.host.alertSuspended(r, reason);
+  }
+
   /** Seed runners (restoring state) and give tick modes their first sample. */
   private async activate(runners: AlertRunner[], addInstances = false): Promise<void> {
     const rt = this.runtime;
     if (!rt) return;
     const now = this.host.clock.now();
-    const env = this.makeEnv();
     if (addInstances) {
-      for (const r of runners) if (this.runners.has(r.id)) this.addInstances(r);
+      const gen = this.gen;
+      for (const r of runners) if (this.runners.has(r.id)) await this.addInstances(r);
+      if (gen !== this.gen) return;
       await this.loadTimeframes(this.gen);
     }
-    this.cache.clear();
+    this.clearCache();
     const n = this.cols.length;
     for (const r of runners) {
       if (!this.runners.has(r.id)) continue;
       if (this.instanceError(r)) continue;
+      this.host.metrics.evaluations++;
       try {
-        const job = r.seed(env, this.cache, this.host.savedState(r), now);
+        const env = this.makeEnv(r.alert.ownerId);
+        const job = r.seed(env, this.cacheFor(r.alert.ownerId), this.host.savedState(r), now);
         r.needsSeed = false;
         r.failures = 0;
         if (job) this.fire(r, job);
         else if (n > 0 && r.alert.spec.trigger !== 'oncePerBarClose' && !r.done)
-          this.sampleOne(r, env, 'tick', n - 1, now);
+          this.sampleOne(r, 'tick', n - 1, now);
       } catch (err) {
         r.needsSeed = true;
         this.runnerFailure(r, err);
@@ -701,6 +789,17 @@ export class Series {
     const rt = this.runtime;
     if (!rt) return false;
     for (const h of r.instances) {
+      const held = this.users.held(h.hash);
+      if (held !== null) {
+        this.suspendRunner(r, held);
+        return true;
+      }
+      const userError = this.users.error(h.hash);
+      if (userError !== null) {
+        this.failRunner(r, userError.slice(0, 500));
+        return true;
+      }
+      if (this.users.has(h.hash)) continue;
       const st = rt.status(h.hash);
       if (st?.state === 'error') {
         this.failRunner(r, st.message.slice(0, 500));
@@ -711,6 +810,7 @@ export class Series {
   }
 
   private runnerFailure(r: AlertRunner, err: unknown): void {
+    this.host.metrics.evaluationFailures++;
     if (err instanceof DrawingLevelError) this.failRunner(r, err.message);
     else {
       r.failures++;
@@ -738,15 +838,22 @@ export class Series {
 
   private sampleOne(
     r: AlertRunner,
-    env: RunnerEnv,
     kind: 'tick' | 'close',
     i: number,
     now: number,
     eventAt?: number,
   ): void {
     if (r.needsSeed || now < r.blockedUntil) return;
+    this.host.metrics.evaluations++;
     try {
-      const job = r.sample(env, this.cache, kind, i, now, eventAt);
+      const job = r.sample(
+        this.makeEnv(r.alert.ownerId),
+        this.cacheFor(r.alert.ownerId),
+        kind,
+        i,
+        now,
+        eventAt,
+      );
       r.failures = 0;
       if (job) this.fire(r, job);
     } catch (err) {
@@ -756,36 +863,88 @@ export class Series {
     if (!r.done) this.host.markState(r);
   }
 
-  private emit(kind: 'tick' | 'close', i: number, eventAt?: number): void {
+  /**
+   * Sample the runners (`plain`: those without script instances, `scripts`: those with, `all`).
+   * Script values come from another process and may be late: runners that do not need them
+   * are sampled at once (`sampleScripts` follows for the others).
+   */
+  private emit(
+    kind: 'tick' | 'close',
+    i: number,
+    eventAt?: number,
+    part: 'plain' | 'scripts' | 'all' = 'all',
+  ): void {
     if (i < 0 || i >= this.cols.length) return;
-    const env = this.makeEnv();
     const now = this.host.clock.now();
     for (const r of [...this.runners.values()]) {
       if (r.done) continue;
+      if (part === 'plain' && r.scriptIds.length > 0) continue;
+      if (part === 'scripts' && r.scriptIds.length === 0) continue;
       if (this.instanceError(r)) continue;
-      this.sampleOne(r, env, kind, i, now, eventAt);
+      this.sampleOne(r, kind, i, now, eventAt);
     }
   }
 
   // ---------------------------------------------------------------- bars
 
-  private append(b: Bar): void {
+  private async append(b: Bar): Promise<void> {
     this.cols.push(b);
     const n = this.cols.length;
     this.runtime?.updateBar(n - 1, b);
+    this.users.updateBar(n - 1, b);
     const day = this.localDay(b.time);
     if (day !== this.calendarDay) this.rebuildCalendar();
     const cap = (this.hasDrawings() ? this.host.cfg.maxDrawingBars : this.window) + TRIM;
     if (n > cap) {
       this.cols.drop(TRIM);
-      this.runtime?.setBars(this.cols.arrays());
+      await this.resetBars();
       this.rebuildCalendar();
     }
+  }
+
+  /**
+   * Sample the script runners once their values are in, but not past a deadline (tick limit
+   * plus the host's IPC margin): a runner whose values are late skips this sample, the others
+   * never wait for it. `index` is looked up after the wait (a trim can shift it).
+   */
+  private async sampleScripts(
+    gen: number,
+    kind: 'tick' | 'close',
+    index: () => number,
+    eventAt?: number,
+  ): Promise<void> {
+    if (this.users.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), this.host.cfg.scriptTickMs + SCRIPT_MARGIN_MS);
+    });
+    const arrived = await Promise.race([this.users.settled().then(() => true), late]);
+    clearTimeout(timer);
+    if (gen !== this.gen) return;
+    if (!arrived) {
+      this.host.log.warn('script values late, their alerts skip this sample', {
+        series: this.key,
+        kind,
+      });
+      return;
+    }
+    if (kind === 'tick' && this.tracker?.closed) return;
+    this.clearCache();
+    this.emit(kind, index(), eventAt, 'scripts');
+  }
+
+  /** The bars changed anywhere but the last one: every instance recomputes. */
+  private async resetBars(): Promise<void> {
+    const arrays = this.cols.arrays();
+    this.runtime?.setBars(arrays);
+    // Not awaited: the script values follow (`sampleScripts` waits for them, with a deadline).
+    void this.users.setBars(arrays);
   }
 
   private async processBar(b: Bar): Promise<void> {
     const tracker = this.tracker;
     if (this.state !== 'ready' || !tracker) return;
+    const gen = this.gen;
     const now = this.host.clock.now();
     const r = tracker.onBar(b.time, now);
     if (r.kind === 'old') return;
@@ -794,18 +953,25 @@ export class Series {
       if (n === 0 || this.cols.time[n - 1] !== b.time) return;
       this.cols.set(n - 1, b);
       this.runtime?.updateBar(n - 1, b);
-      this.cache.clear();
-      if (!tracker.closed) this.emit('tick', n - 1);
+      this.users.updateBar(n - 1, b);
+      this.clearCache();
+      if (tracker.closed) return;
+      this.emit('tick', n - 1, undefined, 'plain');
+      await this.sampleScripts(gen, 'tick', () => n - 1);
       return;
     }
     if (r.closed && n > 0) await this.closeBar(this.cols.time[n - 1]!, r.closed.at);
-    this.append(b);
-    this.cache.clear();
-    this.emit('tick', this.cols.length - 1);
+    if (gen !== this.gen) return;
+    await this.append(b);
+    if (gen !== this.gen) return;
+    this.clearCache();
+    this.emit('tick', this.cols.length - 1, undefined, 'plain');
+    await this.sampleScripts(gen, 'tick', () => this.cols.length - 1);
   }
 
   /** Refetch the newest 3 bars, take the final values of the bar opening at `barTime`, emit its close sample (§2.4). */
   private async closeBar(barTime: number, at: number): Promise<void> {
+    const gen = this.gen;
     let full = false;
     try {
       const res = await this.host.feed.getBars({
@@ -818,8 +984,10 @@ export class Series {
         const idx = this.indexOfTime(fb.time);
         if (idx < 0 || sameBar(this.cols.at(idx), fb)) continue;
         this.cols.set(idx, fb);
-        if (idx === this.cols.length - 1) this.runtime?.updateBar(idx, fb);
-        else full = true;
+        if (idx === this.cols.length - 1) {
+          this.runtime?.updateBar(idx, fb);
+          this.users.updateBar(idx, fb);
+        } else full = true;
       }
     } catch (err) {
       this.host.log.warn('close refetch failed, using tick values', {
@@ -827,11 +995,16 @@ export class Series {
         error: errText(err),
       });
     }
-    if (full) this.runtime?.setBars(this.cols.arrays());
-    this.cache.clear();
+    if (full) await this.resetBars();
+    if (gen !== this.gen) return;
+    this.clearCache();
     // Resolved by time: a trim during the refetch shifts indexes.
     const i = this.indexOfTime(barTime);
-    if (i >= 0) this.emit('close', i, at);
+    const due = i >= 0 ? this.closeAt(i, this.host.cfg.closeGraceS) : NaN;
+    if (i >= 0) this.emit('close', i, at, 'plain');
+    await this.sampleScripts(gen, 'close', () => this.indexOfTime(barTime), at);
+    // Lag of the close evaluation: bar end (grace included) to done; skipped when it never ran.
+    if (gen === this.gen && i >= 0) this.host.metrics.observeLagMs(due, this.host.clock.now());
   }
 
   private indexOfTime(t: number): number {
@@ -875,10 +1048,14 @@ export class Series {
     }
     if (!this.polling && now >= this.nextPollAt && this.needsPoll()) {
       this.polling = true;
-      this.nextPollAt = now + this.pollInterval(now);
+      const interval = this.pollInterval(now);
+      // A schedule older than one interval is from before the series needed polling (live was
+      // up): nothing was due then, so the lag counts from now.
+      const scheduledAt = now - this.nextPollAt > interval ? now : this.nextPollAt;
+      this.nextPollAt = now + interval;
       this.serial(async () => {
         try {
-          await this.pollOnce();
+          await this.pollOnce(scheduledAt);
         } finally {
           this.polling = false;
         }
@@ -911,7 +1088,8 @@ export class Series {
     return tod < start || tod >= end;
   }
 
-  private async pollOnce(): Promise<void> {
+  /** `scheduledAt`: when this poll was due (clock ms), for the evaluation lag. */
+  private async pollOnce(scheduledAt: number): Promise<void> {
     if (this.state !== 'ready') return;
     try {
       const res = await this.host.feed.getBars({
@@ -932,10 +1110,11 @@ export class Series {
         }
       }
       if (restated) {
-        this.runtime?.setBars(this.cols.arrays());
-        this.cache.clear();
+        await this.resetBars();
+        this.clearCache();
       }
       for (const b of bars) if (b.time >= lastT) await this.processBar(b);
+      this.host.metrics.observeLagMs(scheduledAt, this.host.clock.now());
     } catch (err) {
       const e = errText(err);
       this.lastError = e;
@@ -950,7 +1129,8 @@ export class Series {
   /** Refetch the symbol's drawings; referenced ones missing -> alerts error. */
   async refreshDrawings(): Promise<void> {
     const wanted = new Set<string>();
-    for (const r of this.runners.values()) for (const id of r.drawingIds) wanted.add(id);
+    for (const r of this.runners.values())
+      for (const id of r.drawingIds) wanted.add(ownerKey(r.alert.ownerId, id));
     if (wanted.size === 0) {
       this.drawings.clear();
       return;
@@ -958,16 +1138,16 @@ export class Series {
     const list = await this.host.api.getDrawings(this.symbol);
     this.drawings.clear();
     for (const d of list)
-      if (wanted.has(d.id))
-        this.drawings.set(d.id, {
+      if (wanted.has(ownerKey(d.ownerId, d.id)))
+        this.drawings.set(ownerKey(d.ownerId, d.id), {
           type: d.data.type,
           points: d.data.points ?? [],
           style: d.data.style ?? {},
         });
-    this.cache.clear();
+    this.clearCache();
     for (const r of [...this.runners.values()])
       for (const id of r.drawingIds)
-        if (!this.drawings.has(id)) {
+        if (!this.drawings.has(ownerKey(r.alert.ownerId, id))) {
           this.failRunner(r, 'drawing not found');
           break;
         }

@@ -10,6 +10,7 @@ import {
   defaultRegistry,
   isExternalRef,
   isOutputRef,
+  isUserScriptType,
   resolveInputs,
   usesEvents,
   usesFundamentals,
@@ -113,6 +114,9 @@ const NOTIFY_BOOLS = [
   'webhookRaw',
   'telegram',
   'email',
+  'ntfy',
+  'gotify',
+  'apprise',
 ] as const;
 const PARTS = ['line', 'upper', 'lower', 'middle'];
 const SCALES = ['linear', 'log'];
@@ -534,7 +538,8 @@ function checkRef(c: Checker, ref: unknown, path: string): void {
 
 /**
  * TS-only checks: definitions exist and are usable in alerts (no repainting,
- * no other-symbol inputs), inputs resolve, outputs are plots, no cycle.
+ * no other-symbol inputs, scripts are leaves), inputs resolve, outputs are
+ * plots, no cycle.
  */
 function checkRegistry(
   c: Checker,
@@ -591,6 +596,23 @@ function checkRegistry(
     } catch (e) {
       c.err(`${inst.path}.inputs`, 'invalid_inputs', e instanceof Error ? e.message : String(e));
       defsOk = false;
+    }
+  }
+  if (!defsOk) return;
+  // User scripts are leaves (docs/user-scripts.md): they read the series' own bars only, and no
+  // other indicator may read them (the alerts service runs scripts in a separate isolate).
+  for (const inst of ids.values()) {
+    for (const [key, val] of Object.entries(inst.inputs)) {
+      if (!isOutputRef(val)) continue;
+      const up = ids.get(val.instanceId);
+      if (isUserScriptType(inst.type) || (up && isUserScriptType(up.type))) {
+        c.err(
+          `${inst.path}.inputs.${key}`,
+          'unsupported_indicator',
+          "scripts can't feed other indicators or read them",
+        );
+        defsOk = false;
+      }
     }
   }
   if (!defsOk) return;

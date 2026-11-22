@@ -61,7 +61,7 @@ export function NavRail({ sections, active, orientation = 'vertical' }: Props) {
       tabIndex={0}
       data-testid="nav-open-screener"
       data-tip={orientation === 'vertical' ? screenerLabel : undefined}
-      data-tip-side="right"
+      data-tip-side="left"
       onClick={() => commands.execute('view.screener')}
     >
       <ScanSearch size={18} strokeWidth={1.6} />
@@ -92,7 +92,7 @@ export function NavRail({ sections, active, orientation = 'vertical' }: Props) {
             tabIndex={selected || (!active && i === 0) ? 0 : -1}
             data-panel={s.id}
             data-tip={orientation === 'vertical' ? label : undefined}
-            data-tip-side="right"
+            data-tip-side="left"
             onClick={() => toggleNav(s.id)}
             onKeyDown={(e) => onKeyDown(e, i)}
           >

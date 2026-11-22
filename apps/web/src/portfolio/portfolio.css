@@ -1,0 +1,510 @@
+/* Portfolio navigator section (docked panel: opaque, no glass). Jade = gain, coral = loss, iris = focus. */
+.pf-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.pf-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px 0;
+}
+.pf-bar .wl-seg {
+  flex: 1;
+  margin: 0;
+}
+.pf-bar .wl-seg button {
+  /* size to the label so four tabs fit the default navigator width */
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-pick {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  height: 26px;
+}
+.pf-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+.pf-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.pf-pad {
+  padding: 12px 14px;
+}
+.pf-note {
+  margin: 8px 14px 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.pf-sel {
+  min-width: 0;
+  max-width: 100%;
+  height: 26px;
+}
+.pf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.pf-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px 0;
+}
+.pf-toolbar .io-input {
+  flex: 1 1 80px;
+  min-width: 0;
+  height: 26px;
+  font-size: 12px;
+}
+.pf-up {
+  color: var(--up);
+}
+.pf-down {
+  color: var(--down);
+}
+
+/* ---- holdings ---- */
+.pf-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px 14px 4px;
+}
+.pf-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--panel-2);
+}
+.pf-total.wide {
+  grid-column: 1 / -1;
+}
+.pf-total-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.pf-total-value {
+  font-family: var(--font-num);
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pf-total.wide .pf-total-value {
+  font-size: 18px;
+}
+.pf-total-sub {
+  font-family: var(--font-num);
+  font-size: 11px;
+}
+.pf-alloc {
+  display: flex;
+  height: 8px;
+  margin: 10px 14px 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+.pf-alloc > span {
+  min-width: 2px;
+  border-right: 1px solid var(--panel);
+}
+.pf-alloc > span:last-child {
+  border-right: 0;
+}
+.pf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 6px 14px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pf-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+}
+.pf-section {
+  margin: 14px 14px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pf-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.pf-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 8px;
+  width: 100%;
+  padding: 7px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+button.pf-row {
+  cursor: pointer;
+}
+button.pf-row:hover {
+  background: var(--hover);
+}
+.pf-row-sym {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pf-row-r {
+  text-align: right;
+  font-family: var(--font-num);
+}
+.pf-row-sub {
+  color: var(--text-muted);
+  font-family: var(--font-num);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+/* A sub-line that takes the whole row instead of sharing it with the right-hand column. */
+.pf-row-wide {
+  grid-column: 1 / -1;
+}
+.pf-row-sub.pf-row-r {
+  font-family: var(--font-num);
+}
+.pf-warn {
+  margin: 8px 14px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--star);
+  border-radius: var(--radius-control);
+  background: var(--panel-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.pf-warn ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.pf-err {
+  margin: 8px 14px 0;
+}
+.pf-err-text {
+  margin: 4px 0 0;
+  color: var(--down);
+  font-size: 12px;
+}
+
+/* ---- activity ---- */
+.pf-kind {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.pf-kind.buy,
+.pf-kind.cashIn,
+.pf-kind.dividend,
+.pf-kind.interest {
+  background: var(--up-soft);
+  color: var(--up);
+}
+.pf-kind.sell,
+.pf-kind.cashOut,
+.pf-kind.fee {
+  background: var(--down-soft);
+  color: var(--down);
+}
+.pf-kind.split {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.pf-row-del {
+  grid-column: 2;
+  grid-row: 1;
+}
+.pf-batches {
+  margin: 8px 14px 0;
+  font-size: 12px;
+}
+.pf-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+
+/* ---- forms / dialogs ---- */
+/* Modal bodies are unpadded by default. */
+.pf-dlg .io-modal-body {
+  padding: 16px 20px;
+}
+.pf-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pf-field.wide {
+  grid-column: 1 / -1;
+}
+.pf-field > span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.pf-field .io-input {
+  width: 100%;
+  min-width: 0;
+}
+.pf-field textarea.io-input {
+  height: auto;
+  min-height: 64px;
+  padding: 6px 10px;
+  resize: vertical;
+  font: inherit;
+}
+.pf-field-err {
+  color: var(--down);
+  font-size: 11px;
+}
+.pf-field .io-input[aria-invalid='true'] {
+  border-color: var(--down);
+}
+.pf-dlg-err {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--down);
+  font-size: 12px;
+}
+.pf-import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.pf-import-table th,
+.pf-import-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.pf-import-table td.num,
+.pf-import-table th.num {
+  text-align: right;
+  font-family: var(--font-num);
+}
+.pf-import-scroll {
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.pf-import-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-import-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---- performance ---- */
+.pf-chart-wrap {
+  position: relative;
+  margin: 8px 14px 0;
+}
+.pf-chart {
+  display: block;
+  width: 100%;
+  height: 150px;
+  touch-action: none;
+}
+.pf-chart-zero {
+  stroke: var(--border-strong);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.pf-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+.pf-chart-line.bench {
+  stroke: var(--text-muted);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+.pf-chart-cursor {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.pf-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-height: 18px;
+  margin: 8px 14px 0;
+  font-size: 12px;
+}
+.pf-key {
+  display: inline-block;
+  width: 10px;
+  height: 0;
+  margin-right: 4px;
+  border-top: 2px solid var(--accent);
+  vertical-align: middle;
+}
+.pf-key.bench {
+  border-top: 2px dashed var(--text-muted);
+}
+
+/* ---- journal ---- */
+.pf-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.pf-entry:hover {
+  background: var(--hover);
+}
+.pf-entry-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  line-height: 18px;
+}
+.pf-chip button {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.pf-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.pf-editor .pf-form {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 380px) {
+  .pf-editor .pf-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.pf-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.pf-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.pf-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pf-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  cursor: zoom-in;
+  object-fit: contain;
+  background: var(--panel-2);
+}
+.pf-lightbox {
+  display: block;
+  max-width: 100%;
+  max-height: 78vh;
+  margin: 0 auto;
+}
+.pf-r {
+  font-family: var(--font-num);
+  font-weight: 600;
+}

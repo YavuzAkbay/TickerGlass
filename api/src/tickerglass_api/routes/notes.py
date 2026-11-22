@@ -1,20 +1,21 @@
 """Notes: general (symbol null) or per symbol."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import select, update
 
 from .. import models as m
-from ..deps import SessionDep
+from ..deps import OwnedSessionDep
+from ..ownership import owned_get
 from ..userdata import schemas as s
 from ..userdata import store
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
 
-def _get(session: SessionDep, note_id: str) -> m.Note:
-    row = session.get(m.Note, note_id)
+def _get(session: OwnedSessionDep, note_id: str) -> m.Note:
+    row = owned_get(session, m.Note, note_id)
     if row is None:
         raise HTTPException(404, f"note not found: {note_id}")
     return row
@@ -22,20 +23,31 @@ def _get(session: SessionDep, note_id: str) -> m.Note:
 
 @router.get("", response_model=list[s.Note])
 def list_notes(
-    session: SessionDep, symbol: Annotated[str | None, Query(max_length=32)] = None
+    session: OwnedSessionDep,
+    symbol: Annotated[str | None, Query(max_length=32)] = None,
+    kind: Annotated[Literal["note", "journal", "all"], Query()] = "note",
 ) -> list[s.Note]:
-    """All notes (oldest first), or only those of `symbol`."""
+    """Notes (oldest first), or only those of `symbol`. `kind` defaults to the Notes-panel
+    notes ('note'); 'journal' lists journal-entry notes, 'all' both."""
     q = select(m.Note).order_by(m.Note.created_at, m.Note.id)
+    if kind != "all":
+        q = q.where(m.Note.kind == kind)
     if symbol is not None:
         q = q.where(m.Note.symbol == symbol.strip().upper())
     return [store.note(r) for r in session.scalars(q)]
 
 
 @router.post("", response_model=s.Note, status_code=201)
-def create_note(session: SessionDep, body: s.NoteIn) -> s.Note:
+def create_note(session: OwnedSessionDep, body: s.NoteIn) -> s.Note:
     t = s.now()
     row = m.Note(
-        id=s.new_id(), symbol=body.symbol, text=body.text, revision=1, created_at=t, updated_at=t
+        id=s.new_id(),
+        symbol=body.symbol,
+        text=body.text,
+        kind=body.kind,
+        revision=1,
+        created_at=t,
+        updated_at=t,
     )
     session.add(row)
     session.commit()
@@ -43,12 +55,12 @@ def create_note(session: SessionDep, body: s.NoteIn) -> s.Note:
 
 
 @router.get("/{note_id}", response_model=s.Note)
-def get_note(session: SessionDep, note_id: str) -> s.Note:
+def get_note(session: OwnedSessionDep, note_id: str) -> s.Note:
     return store.note(_get(session, note_id))
 
 
 @router.put("/{note_id}", response_model=s.Note)
-def update_note(session: SessionDep, note_id: str, body: s.NoteUpdate) -> s.Note:
+def update_note(session: OwnedSessionDep, note_id: str, body: s.NoteUpdate) -> s.Note:
     """409 (with the stored note) if `revision` is given and stale.
 
     Check and write are one conditional UPDATE (no lost updates under concurrency).
@@ -80,7 +92,7 @@ def update_note(session: SessionDep, note_id: str, body: s.NoteUpdate) -> s.Note
 
 
 @router.delete("/{note_id}", status_code=204)
-def delete_note(session: SessionDep, note_id: str) -> Response:
+def delete_note(session: OwnedSessionDep, note_id: str) -> Response:
     session.delete(_get(session, note_id))
     session.commit()
     return Response(status_code=204)

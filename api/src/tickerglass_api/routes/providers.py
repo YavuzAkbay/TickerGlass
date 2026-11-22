@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 from pydantic_settings import BaseSettings
 
+from ..deps import AdminDep
 from ..providers.base import ProviderError, ProviderNotConfigured, as_metered
 from ..providers.registry import (
     PROVIDERS,
@@ -99,7 +100,9 @@ class ActiveProvider(BaseModel):
 
 
 @router.post("/active", response_model=None)
-async def set_active(body: ActiveProvider, request: Request) -> dict[str, Any] | JSONResponse:
+async def set_active(
+    _: AdminDep, body: ActiveProvider, request: Request
+) -> dict[str, Any] | JSONResponse:
     """Switch the app to another provider (clears the market data cache); answers like
     `GET /providers`. A refused switch answers `{detail, code, ...}` with its status."""
     try:
@@ -142,7 +145,7 @@ def usage(request: Request) -> dict[str, Any]:
 
 
 @router.post("/test")
-def test_connection(request: Request) -> dict[str, Any]:
+def test_connection(_: AdminDep, request: Request) -> dict[str, Any]:
     """Ask the active provider for one quote, through the upstream guard (counts as one request)."""
     spec: ProviderSpec | None = request.app.state.provider_spec
     symbol = spec.probe_symbol if spec else "SPY"

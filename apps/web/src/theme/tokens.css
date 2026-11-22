@@ -1,79 +1,96 @@
-/* Chrome design tokens (graphite + amber). Semantic names (--bg, --surface, --raised, ...) are
-   the source of truth; the older aliases (--panel, --panel-2, --popover, ...) point at them.
-   Docked chrome uses 1px borders only; --shadow is reserved for popovers, menus, the floating
-   drawing toolbar and modals. */
+/* Chrome design tokens ("Instrument Glass": smoke + iris, jade/coral for price direction).
+   Semantic names (--bg, --surface, --raised, ...) are the source of truth; the older aliases
+   (--panel, --panel-2, --popover, ...) point at them. Docked chrome is opaque with 1px borders;
+   things that float over the chart (tool dock, chart controls, palette, menus) use the glass
+   material (--glass*). Iris marks focus and selection only, never price direction. */
 :root,
 [data-theme='dark'] {
-  --bg: #14130f;
-  --surface: #1c1b16;
-  --raised: #25231d;
-  --input-bg: #100f0c;
-  --border: #34312a;
-  --border-strong: #4a4639;
-  --text: #ece7da;
-  --muted: #9a9484;
-  --accent: #e0a93b;
-  --accent-hover: #ebbb57;
-  --accent-soft: rgba(224, 169, 59, 0.14);
-  --accent-text: #e8b85a;
-  --on-accent: #14130f;
-  --hover: rgba(236, 231, 218, 0.06);
-  --up: #7fb069;
-  --up-soft: rgba(127, 176, 105, 0.14);
-  --down: #de6a4f;
-  --down-soft: rgba(222, 106, 79, 0.14);
-  --star: var(--accent);
-  --overlay: rgba(8, 7, 5, 0.6);
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  --grid-line: rgba(236, 231, 218, 0.05);
-  --tip-bg: #ece7da;
-  --tip-text: #14130f;
+  --bg: #0f1214;
+  --surface: #171b1f;
+  --raised: #1e2328;
+  --input-bg: #121518;
+  --border: #262c32;
+  --border-strong: #353d45;
+  --text: #e6eaed;
+  --muted: #8a949c;
+  --faint: #5d666e;
+  --accent: #9aa8ff;
+  --accent-hover: #b1bcff;
+  --accent-soft: rgba(154, 168, 255, 0.14);
+  --accent-text: #aab6ff;
+  --on-accent: #0f1214;
+  --hover: rgba(230, 234, 237, 0.06);
+  --up: #34c38f;
+  --up-soft: rgba(52, 195, 143, 0.14);
+  --down: #f2626b;
+  --down-soft: rgba(242, 98, 107, 0.14);
+  --star: #e6b450;
+  --overlay: rgba(5, 7, 9, 0.5);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --grid-line: rgba(230, 234, 237, 0.045);
+  --tip-bg: #e6eaed;
+  --tip-text: #0f1214;
+  --glass: rgba(26, 31, 36, 0.62);
+  --glass-strong: rgba(26, 31, 36, 0.86);
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --glass-hi: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   color-scheme: dark;
 }
 
 [data-theme='light'] {
-  --bg: #f6f3ec;
+  --bg: #f4f6f8;
   --surface: #ffffff;
-  --raised: #efebe1;
+  --raised: #eef1f4;
   --input-bg: #ffffff;
-  --border: #ddd6c7;
-  --border-strong: #c7beac;
-  --text: #1e1b16;
-  --muted: #6f6859;
-  --accent: #8a5d0e;
-  --accent-hover: #744e0b;
-  --accent-soft: rgba(138, 93, 14, 0.1);
-  --accent-text: #8a5d0e;
+  --border: #e1e6ea;
+  --border-strong: #cdd4da;
+  --text: #15191d;
+  --muted: #5f6b75;
+  --faint: #8d979f;
+  --accent: #4c5bd4;
+  --accent-hover: #3e4cc0;
+  --accent-soft: rgba(76, 91, 212, 0.1);
+  --accent-text: #4351c4;
   --on-accent: #ffffff;
-  --hover: rgba(30, 27, 22, 0.05);
-  --up: #2f7d5b;
-  --up-soft: rgba(47, 125, 91, 0.1);
-  --down: #b5452f;
-  --down-soft: rgba(181, 69, 47, 0.1);
-  --star: var(--accent);
-  --overlay: rgba(30, 27, 22, 0.32);
-  --shadow: 0 8px 24px rgba(30, 27, 22, 0.14);
-  --grid-line: rgba(30, 27, 22, 0.06);
-  --tip-bg: #1e1b16;
-  --tip-text: #f6f3ec;
+  --hover: rgba(21, 25, 29, 0.05);
+  --up: #138a5e;
+  --up-soft: rgba(19, 138, 94, 0.1);
+  --down: #d23f4a;
+  --down-soft: rgba(210, 63, 74, 0.1);
+  --star: #b7841f;
+  --overlay: rgba(21, 25, 29, 0.22);
+  --shadow: 0 10px 30px rgba(21, 25, 29, 0.12);
+  --grid-line: rgba(21, 25, 29, 0.05);
+  --tip-bg: #15191d;
+  --tip-text: #f4f6f8;
+  --glass: rgba(255, 255, 255, 0.66);
+  --glass-strong: rgba(255, 255, 255, 0.9);
+  --glass-edge: rgba(21, 25, 29, 0.08);
+  --glass-hi: rgba(255, 255, 255, 0.85);
+  --glass-shadow: 0 10px 30px rgba(21, 25, 29, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   color-scheme: light;
 }
 
 :root {
-  --radius-control: 6px;
-  --radius-float: 10px;
+  --radius-control: 8px;
+  --radius-float: 12px;
+  --radius-island: 14px;
   --row-h: 26px;
-  --bar-h: 36px;
+  --bar-h: 44px;
+  /* Top command bar (taller than panel heads). */
+  --top-h: 48px;
   --rail-w: 40px;
   /* Phone layout: the bottom tab bar (above the home indicator inset). */
   --tabbar-h: 48px;
   /* Keyboard focus ring (accent, readable on both themes). */
   --focus-ring: 2px solid var(--accent);
   --focus-ring-offset: 1px;
-  --font: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font:
+    'Instrument Sans Variable', 'Instrument Sans', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
   /* Prices and figures: monospaced so digits line up and do not jump as they tick. */
-  --font-num:
-    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-num: 'Geist Mono Variable', 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --font-size: 13px;
   --font-size-sm: 12px;
   --price-lg: 20px;
@@ -86,6 +103,41 @@
   --active-bg: var(--accent-soft);
   --text-strong: var(--text);
   --text-muted: var(--muted);
+}
+
+/* Brand mark (top bar, login): an iris-to-jade tile with a glass highlight. */
+.tb-brand-mark {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: linear-gradient(
+    140deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 30%, var(--up))
+  );
+}
+.tb-brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 55%);
+}
+
+/* Glass material: chrome that floats over the chart. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--glass-strong);
+  }
 }
 
 [data-theme='light'] {

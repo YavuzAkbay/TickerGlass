@@ -57,7 +57,7 @@ function firstIndicatorIn(
 ): { operand: SeriesOperand; instanceId: string; outputId: string } | null {
   for (const inst of ctx.indicators) {
     if (ctx.paneOf(inst.id) !== paneId) continue;
-    const outputId = firstOutputId(inst.type);
+    const outputId = firstOutputId(inst.type, ctx.registry);
     const operand = outputId ? indicatorOperand(ctx, inst.id, outputId) : null;
     if (operand && outputId) return { operand, instanceId: inst.id, outputId };
   }
@@ -98,7 +98,7 @@ export function defaultForm(args: CreateArgs, ctx: AlertContext): FormState {
 
   if (args.indicatorId && px) {
     const inst = ctx.indicators.find((i) => i.id === args.indicatorId);
-    const outputId = inst ? firstOutputId(inst.type) : null;
+    const outputId = inst ? firstOutputId(inst.type, ctx.registry) : null;
     const operand = inst && outputId ? indicatorOperand(ctx, inst.id, outputId) : null;
     if (inst && outputId && operand) {
       f.left = operand;

@@ -8,6 +8,15 @@ const HOUR = 3600;
 /** Offset cache granularity: every real DST transition falls on a 15-minute UTC boundary. */
 const SLOT = 900;
 
+/**
+ * Captured at module load: a host that runs user code (the alerts service's script
+ * isolates) removes the `Intl` global after loading, because ICU allocates outside the
+ * isolate's heap limit. Zone formatters are created through this reference only.
+ */
+const NativeDateTimeFormat = typeof Intl === 'undefined' ? undefined : Intl.DateTimeFormat;
+/** Zones kept at once (each holds an ICU formatter): a script can name any zone. */
+const MAX_ZONES = 64;
+
 /** Calendar unit of a period. 'session' = trading day (see `calendarPeriod`). */
 export type CalendarUnit = 'session' | 'week' | 'month' | 'quarter' | 'year' | 'decade' | 'century';
 
@@ -22,7 +31,8 @@ class ZoneOffsets {
   private readonly cache = new Map<number, number>();
 
   constructor(timeZone: string) {
-    this.fmt = new Intl.DateTimeFormat('en-US', {
+    if (!NativeDateTimeFormat) throw new RangeError('Intl is not available');
+    this.fmt = new NativeDateTimeFormat('en-US', {
       timeZone,
       hourCycle: 'h23',
       year: 'numeric',
@@ -78,6 +88,8 @@ export function tzOffset(t: number, tz: string): number {
       z = null;
     }
     zones.set(tz, z);
+    // Bounded: a caller that names many zones evicts the oldest formatter first.
+    if (zones.size > MAX_ZONES) zones.delete(zones.keys().next().value as string);
   }
   return z ? z.offset(t) : 0;
 }

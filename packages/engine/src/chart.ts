@@ -1160,6 +1160,11 @@ export class Chart implements StudyApi, DrawingApi {
     return this.store;
   }
 
+  /** Time bars as loaded, before any chart-type transform (Heikin Ashi, bricks). */
+  get rawStore(): SeriesStore {
+    return this.raw;
+  }
+
   get chartType(): ChartType {
     return this._chartType;
   }

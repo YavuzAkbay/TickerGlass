@@ -59,6 +59,9 @@ export interface LiveQuote {
   fiftyTwoWeekLow?: number | null;
   marketCap?: number | null;
   averageVolume?: number | null;
+  trailingPE?: number | null;
+  forwardPE?: number | null;
+  eps?: number | null;
   currency: string | null;
   marketState: string | null;
   ext: ExtQuote | null;

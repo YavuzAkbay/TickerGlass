@@ -13,31 +13,33 @@ interface Props {
   children?: ReactNode;
 }
 
-/** The asset-class tab strip of the screener screen. */
+/** The asset-class segmented control of the screener's command bar (extras follow it). */
 export function ClassTabs({ active, onPick, loaded, children }: Props) {
   const t = useT();
   return (
-    <div className="scr-tabs" role="tablist" aria-label={t('scr.title')} data-testid="scr-tabs">
-      {SCREENER_CLASSES.map((cls) => {
-        const count = loaded[cls]?.symbols.length;
-        return (
-          <button
-            key={cls}
-            type="button"
-            role="tab"
-            id={`scr-tab-${cls}`}
-            aria-selected={cls === active}
-            aria-controls="scr-panel"
-            data-testid={`scr-tab-${cls}`}
-            className={`scr-tab${cls === active ? ' on' : ''}`}
-            onClick={() => onPick(cls)}
-          >
-            {CLASS_LABEL[cls]}
-            {count !== undefined ? <span className="scr-tab-count rs-num">{count}</span> : null}
-          </button>
-        );
-      })}
+    <>
+      <div className="scr-tabs" role="tablist" aria-label={t('scr.title')} data-testid="scr-tabs">
+        {SCREENER_CLASSES.map((cls) => {
+          const count = loaded[cls]?.symbols.length;
+          return (
+            <button
+              key={cls}
+              type="button"
+              role="tab"
+              id={`scr-tab-${cls}`}
+              aria-selected={cls === active}
+              aria-controls="scr-panel"
+              data-testid={`scr-tab-${cls}`}
+              className={`scr-tab${cls === active ? ' on' : ''}`}
+              onClick={() => onPick(cls)}
+            >
+              {CLASS_LABEL[cls]}
+              {count !== undefined ? <span className="scr-tab-count rs-num">{count}</span> : null}
+            </button>
+          );
+        })}
+      </div>
       {children}
-    </div>
+    </>
   );
 }

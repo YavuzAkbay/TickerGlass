@@ -1,0 +1,26 @@
+{
+  "note": "hand-built from the documented crypto snapshot shape (not recorded; UNVERIFIED: lastTrade.t in milliseconds here)",
+  "request": {
+    "path": "/v2/snapshot/locale/global/markets/crypto/tickers",
+    "params": { "tickers": "X:BTCUSD" }
+  },
+  "status": 200,
+  "headers": { "content-type": "application/json" },
+  "body": {
+    "count": 1,
+    "status": "OK",
+    "request_id": "8192a3b4c5d6e7f80112233445566778",
+    "tickers": [
+      {
+        "ticker": "X:BTCUSD",
+        "day": { "o": 98000, "h": 101000, "l": 97500, "c": 100000, "v": 12345.5, "vw": 99500 },
+        "min": { "av": 12345, "t": 1793131140000, "n": 40, "o": 99990, "h": 100010, "l": 99980, "c": 100000, "v": 3.2, "vw": 99995 },
+        "prevDay": { "o": 97000, "h": 99000, "l": 96500, "c": 98000, "v": 11000, "vw": 97800 },
+        "lastTrade": { "c": [2], "i": "abc", "p": 100005, "s": 0.01, "t": 1793131190000, "x": 1 },
+        "todaysChange": 2005,
+        "todaysChangePerc": 2.05,
+        "updated": 1793131199000000000
+      }
+    ]
+  }
+}

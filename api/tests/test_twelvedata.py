@@ -1284,7 +1284,7 @@ def test_international_symbol_on_basic_is_501_and_free(served: FakeTD, tmp_path:
         r = client.get("/api/bars", params={"symbol": "VOD.L", "interval": "1d"})
         assert r.status_code == 501
         assert r.json() == {
-            "detail": "international symbols is not supported by Twelve Data",
+            "detail": "Twelve Data does not support international symbols",
             "code": "unsupported",
             "feature": "international symbols",
             "provider": "Twelve Data",

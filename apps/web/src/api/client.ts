@@ -28,7 +28,8 @@ export function onUnauthorized(handler: UnauthorizedHandler): () => void {
   };
 }
 
-function notifyUnauthorized(): void {
+/** Tell the listeners of `onUnauthorized` a response was 401 (for fetches outside `requestJson`). */
+export function notifyUnauthorized(): void {
   for (const h of [...unauthorizedHandlers]) h();
 }
 
@@ -97,6 +98,8 @@ export interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined>;
   /** Extra request headers (e.g. `X-TickerGlass-Priority`). */
   headers?: Record<string, string>;
+  /** Send this binary body as is (its type becomes the Content-Type) instead of a JSON body. */
+  rawBody?: Blob;
 }
 
 function withQuery(path: string, query: RequestOptions['query']): string {
@@ -120,9 +123,10 @@ export async function requestJson<T>(
 ): Promise<T> {
   let res: Response;
   const headers: Record<string, string> = { Accept: 'application/json', ...opts.headers };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (opts.rawBody) headers['Content-Type'] = opts.rawBody.type || 'application/octet-stream';
+  else if (body !== undefined) headers['Content-Type'] = 'application/json';
   // Stringify once; the size decides whether keepalive is allowed.
-  const text = body !== undefined ? JSON.stringify(body) : undefined;
+  const text = body !== undefined && !opts.rawBody ? JSON.stringify(body) : undefined;
   const size = opts.keepalive ? new TextEncoder().encode(text ?? '').length : 0;
   // Counted synchronously, so requests issued back to back share the budget.
   const keepalive = !!opts.keepalive && size < keepaliveBytesLeft();
@@ -131,7 +135,7 @@ export async function requestJson<T>(
     res = await fetch(`${BASE}${withQuery(path, opts.query)}`, {
       method,
       headers,
-      ...(text !== undefined ? { body: text } : {}),
+      ...(opts.rawBody ? { body: opts.rawBody } : text !== undefined ? { body: text } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
       ...(keepalive ? { keepalive: true } : {}),
     });
@@ -149,7 +153,11 @@ export async function requestJson<T>(
       parsed = await res.json();
       const d = (parsed as { detail?: unknown } | null)?.detail;
       if (typeof d === 'string') detail = d;
-      else if (d && typeof d === 'object' && typeof (d as { message?: unknown }).message === 'string')
+      else if (
+        d &&
+        typeof d === 'object' &&
+        typeof (d as { message?: unknown }).message === 'string'
+      )
         detail = (d as { message: string }).message;
       else if (d !== undefined) detail = JSON.stringify(d);
     } catch {
