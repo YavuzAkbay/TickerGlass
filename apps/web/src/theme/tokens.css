@@ -107,22 +107,13 @@
 
 /* Brand mark (top bar, login): an iris-to-jade tile with a glass highlight. */
 .tb-brand-mark {
-  position: relative;
   width: 20px;
   height: 20px;
-  overflow: hidden;
-  border-radius: 6px;
-  background: linear-gradient(
-    140deg,
-    var(--accent),
-    color-mix(in oklab, var(--accent) 30%, var(--up))
-  );
-}
-.tb-brand-mark::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 55%);
+  flex: none;
+  /* Favicon artwork used as a mask so the mark follows the app theme's accent. */
+  background: var(--accent);
+  -webkit-mask: url('/favicon.svg') center / contain no-repeat;
+  mask: url('/favicon.svg') center / contain no-repeat;
 }
 
 /* Glass material: chrome that floats over the chart. */
