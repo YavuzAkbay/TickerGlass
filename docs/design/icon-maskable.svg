@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Maskable PWA icon: platform crops to a circle/squircle, so background is full-bleed. -->
+  <rect width="512" height="512" fill="#0f1214"/>
+  <g transform="translate(256 256) scale(0.66) translate(-252 -256)"><defs>
+    <mask id="cut">
+      <rect x="0" y="0" width="512" height="512" fill="#fff"/>
+      <polyline points="200,184 288,272 400,160" fill="none" stroke="#000" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+    <clipPath id="l"><rect width="228" height="512"/></clipPath>
+  </defs>
+  <rect x="256" y="72" width="192" height="368" rx="56" fill="#7b8cff" mask="url(#cut)"/>
+  <polyline clip-path="url(#l)" points="72,336 168,240 280,352" fill="none" stroke="#7b8cff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>
