@@ -6,13 +6,14 @@ import {
   divideBy,
   requireSeries,
   series,
+  splitAdjusted,
   statementsOf,
   trailingTwelveMonths,
   valueAt,
 } from './common';
 
 /**
- * Diluted earnings per share as reported (the diluted EPS row, or net income
+ * Diluted earnings per share, split-adjusted like the bars (the diluted EPS row, or net income
  * over diluted average shares when the row is missing), plus the trailing
  * twelve months while on the quarterly basis.
  */
@@ -46,10 +47,16 @@ export const EPS = defineIndicator({
       ROW.netIncome,
       'net income',
     );
-    const shares = series(stmts?.income, ROW.dilutedShares);
+    const splits = env.fundamentals?.splits;
+    const raw = series(stmts?.income, ROW.dilutedShares);
+    const shares = raw && splitAdjusted(raw, raw, splits, 'count');
     // Diluted EPS row when the provider reports it; otherwise derived from the
     // income statement's own share count, so period ends line up exactly.
-    const eps = reported ?? (shares ? divideBy(netIncome, shares) : null);
+    const eps = reported
+      ? splitAdjusted(reported, raw, splits, 'perShare')
+      : shares
+        ? divideBy(netIncome, shares)
+        : null;
     if (!eps) throw new Error(`No ${inputs.period.toLowerCase()} diluted EPS data for this symbol`);
     const ttm = trailingTwelveMonths(eps, inputs.period);
     return (c) => {

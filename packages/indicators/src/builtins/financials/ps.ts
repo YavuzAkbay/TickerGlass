@@ -6,6 +6,7 @@ import {
   divideBy,
   requireSeries,
   series,
+  splitAdjusted,
   statementsOf,
   trailingTwelveMonths,
   valueAt,
@@ -46,8 +47,9 @@ export const PRICE_SALES = defineIndicator({
       ROW.revenue,
       'revenue',
     );
-    const shares = series(statementsOf(env.fundamentals, inputs.period)?.balance, ROW.shares);
-    if (!shares) throw new Error(`No ${inputs.period.toLowerCase()} shares data for this symbol`);
+    const raw = series(statementsOf(env.fundamentals, inputs.period)?.balance, ROW.shares);
+    if (!raw) throw new Error(`No ${inputs.period.toLowerCase()} shares data for this symbol`);
+    const shares = splitAdjusted(raw, raw, env.fundamentals?.splits, 'count');
     const trailingRevenue = trailingTwelveMonths(revenue, inputs.period);
     const revenuePerShare = divideBy(trailingRevenue, shares);
     return (c) => {

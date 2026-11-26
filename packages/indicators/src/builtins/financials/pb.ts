@@ -1,6 +1,6 @@
 import { defineIndicator } from '../../registry';
 import { COLOR } from '../common';
-import { PERIOD_INPUT, ROW, divideBy, requireSeries, valueAt } from './common';
+import { PERIOD_INPUT, ROW, divideBy, requireSeries, splitAdjusted, valueAt } from './common';
 
 /** Price to book: the bar's close over book value per share (equity / shares). */
 export const PRICE_BOOK = defineIndicator({
@@ -18,7 +18,8 @@ export const PRICE_BOOK = defineIndicator({
   outputs: [{ type: 'plot', id: 'pb', title: 'P/B', kind: 'line', color: COLOR.blue }],
   setup({ inputs, env }) {
     const equity = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.equity, 'equity');
-    const shares = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.shares, 'shares');
+    const raw = requireSeries(env.fundamentals, inputs.period, 'balance', ROW.shares, 'shares');
+    const shares = splitAdjusted(raw, raw, env.fundamentals?.splits, 'count');
     const bvps = divideBy(equity, shares);
     return (c) => {
       const v = valueAt(bvps, c.time[c.i]!);

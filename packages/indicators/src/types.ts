@@ -603,6 +603,18 @@ export interface StatementsByPeriod {
 export interface FundamentalsData {
   readonly quarterly?: StatementsByPeriod;
   readonly annual?: StatementsByPeriod;
+  /**
+   * Stock splits of the symbol (unix seconds, ascending). Bars are
+   * split-adjusted but statements report per-share rows (EPS, share counts) as
+   * filed, so per-share series are put on the bars' basis with these.
+   */
+  readonly splits?: readonly SplitData[];
+}
+
+/** One stock split: `ratio` new shares per old share (8 for 8:1, 0.5 for 1:2). */
+export interface SplitData {
+  readonly t: number;
+  readonly ratio: number;
 }
 
 export interface SetupContext<S extends InputsSchema> {

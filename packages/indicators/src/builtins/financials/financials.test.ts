@@ -9,7 +9,15 @@ import { EPS } from './eps';
 import { REVENUE } from './revenue';
 import { REVENUE_GROWTH } from './revenue-growth';
 import { PRICE_EARNINGS } from './pe';
-import { divideBy, series, trailingTwelveMonths, valueAt, yearOverYear } from './common';
+import { PRICE_BOOK } from './pb';
+import {
+  divideBy,
+  series,
+  splitAdjusted,
+  trailingTwelveMonths,
+  valueAt,
+  yearOverYear,
+} from './common';
 
 const DAY = 86_400;
 /** Fiscal period ends, ascending: one year of quarters. */
@@ -126,6 +134,41 @@ describe('financials helpers', () => {
   });
 });
 
+describe('splitAdjusted', () => {
+  const t = (d: number) => 1_700_000_000 + d * DAY;
+  const periods = [t(0), t(91), t(182), t(273)];
+
+  it('scales periods before the split, not after', () => {
+    const shares = { periods, values: [10, 10, 80, 80] };
+    const eps = { periods, values: [8, 8, 1, 1] };
+    const splits = [{ t: t(100), ratio: 8 }];
+    expect(splitAdjusted(eps, shares, splits, 'perShare').values).toEqual([1, 1, 1, 1]);
+    expect(splitAdjusted(shares, shares, splits, 'count').values).toEqual([80, 80, 80, 80]);
+  });
+
+  it('leaves periods the provider already restated', () => {
+    const shares = { periods, values: [79, 80, 80, 81] };
+    const eps = { periods, values: [1, 1, 1, 1] };
+    const splits = [{ t: t(100), ratio: 8 }];
+    expect(splitAdjusted(eps, shares, splits, 'perShare').values).toEqual([1, 1, 1, 1]);
+  });
+
+  it('compounds several splits and ignores unusable ratios', () => {
+    const shares = { periods, values: [1, 2, 8, 8] };
+    const splits = [
+      { t: t(50), ratio: 2 },
+      { t: t(150), ratio: 4 },
+      { t: t(200), ratio: 0 },
+    ];
+    expect(splitAdjusted(shares, shares, splits, 'count').values).toEqual([8, 8, 8, 8]);
+  });
+
+  it('returns the series unchanged without splits', () => {
+    const s = { periods, values: [1, 2, 3, 4] };
+    expect(splitAdjusted(s, null, undefined, 'count')).toBe(s);
+  });
+});
+
 describe('financials built-ins', () => {
   // Period k of the fixture ends at bar 4 + k * 13 (weekly bars, 91-day quarters).
   it('Revenue forward-fills from each period end and sums TTM', () => {
@@ -187,6 +230,22 @@ describe('financials built-ins', () => {
     const r = compute(PRICE_EARNINGS, {});
     // TTM EPS at period 3 = (10+20+30+40)/10 = 10; close 1000.
     expect(r.values.pe![43]).toBeCloseTo(100, 10);
+  });
+
+  it('P/E puts EPS filed before a split on the split-adjusted basis of the bars', () => {
+    // 8:1 split after the last period: statements still pre-split (as Yahoo
+    // reports SNDK right after its split), bars already divided by 8.
+    const fund = { ...fundamentals(), splits: [{ t: PERIODS[4]! + 10 * DAY, ratio: 8 }] };
+    const r = compute(PRICE_EARNINGS, {}, fund);
+    // TTM EPS 10 / 8 = 1.25; close 1000.
+    expect(r.values.pe![43]).toBeCloseTo(800, 10);
+  });
+
+  it('P/B scales the share count by splits after the period', () => {
+    const fund = { ...fundamentals(), splits: [{ t: PERIODS[4]! + 10 * DAY, ratio: 2 }] };
+    // Equity 1000 at period 4 over 10 * 2 shares = 50 per share (100 unadjusted).
+    const r = compute(PRICE_BOOK, {}, fund);
+    expect(r.values.pb![60]).toBeCloseTo(20, 10);
   });
 
   it('reports a clear error when the symbol has no statements of the basis', () => {

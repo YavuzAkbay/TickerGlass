@@ -1,7 +1,7 @@
 // Shared machinery of the Financials built-ins: reading the chart symbol's
 // financial statements out of `env.fundamentals` (see IndicatorDefinition.
 // usesFundamentals) and turning per-period line items into chart series.
-import type { FundamentalsData, StatementData, StatementsByPeriod } from '../../types';
+import type { FundamentalsData, SplitData, StatementData, StatementsByPeriod } from '../../types';
 
 /** Statement period basis chosen by the `period` input of every Financials built-in. */
 export type PeriodBasis = 'Quarterly' | 'Annual';
@@ -158,6 +158,47 @@ export function divideBy(s: Series, other: Series): Series {
     if (!Number.isFinite(v) || !Number.isFinite(d) || d === 0) return NaN;
     return v / d;
   });
+  return { periods: s.periods, values };
+}
+
+/**
+ * Puts per-share figures on the split-adjusted basis of the bars. Statements
+ * report EPS and share counts as filed, so a period that ended before a split
+ * is scaled by that split's ratio, unless the provider already restated it: a
+ * period counts as restated when its share count (`shares`, read at its end)
+ * is closer, in log terms, to the first count reported after the split than to
+ * that count divided by the ratio. Periods without a count follow the nearest
+ * earlier one; with no count after the split (or none at all) they are scaled.
+ * `kind`: 'count' multiplies (share counts), 'perShare' divides (EPS).
+ */
+export function splitAdjusted(
+  s: Series,
+  shares: Series | null,
+  splits: readonly SplitData[] | undefined,
+  kind: 'count' | 'perShare',
+): Series {
+  if (!splits?.length) return s;
+  const factors = s.periods.map(() => 1);
+  for (const split of splits) {
+    if (!Number.isFinite(split.ratio) || split.ratio <= 0 || split.ratio === 1) continue;
+    let after = NaN;
+    if (shares)
+      for (let k = 0; k < shares.periods.length; k++) {
+        const v = shares.values[k]!;
+        if (shares.periods[k]! >= split.t && Number.isFinite(v) && v > 0) {
+          after = v;
+          break;
+        }
+      }
+    let restated = false;
+    for (let k = 0; k < s.periods.length && s.periods[k]! < split.t; k++) {
+      const v = shares ? valueAt(shares, s.periods[k]!) : NaN;
+      if (Number.isFinite(after) && Number.isFinite(v) && v > 0)
+        restated = Math.abs(Math.log(after / v)) < Math.abs(Math.log(after / split.ratio / v));
+      if (!restated) factors[k] = factors[k]! * split.ratio;
+    }
+  }
+  const values = s.values.map((v, k) => (kind === 'count' ? v * factors[k]! : v / factors[k]!));
   return { periods: s.periods, values };
 }
 
