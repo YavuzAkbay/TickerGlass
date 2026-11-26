@@ -11,6 +11,7 @@ import type { Settings } from '../api/types';
 import { parseAlertPrefs, readAlertPrefs, useAlertPrefs } from '../alerts/prefs';
 import { readStrategies, useStrategies } from '../backtest/store';
 import { parseTradingPrefs, readTradingPrefs, useTradingPrefs } from '../replay/prefs';
+import { parseAiPrefs, readAiPrefs, useAiPrefs } from '../ai/store';
 import { parseEventPrefs, readEventPrefs, useEventPrefs } from '../events/prefs';
 import { migrateRenamedPrefs, useIndicatorPrefs } from '../indicators/store';
 import { useAppStore } from '../store/app';
@@ -209,6 +210,12 @@ export const SETTING_DEFS: SettingDef[] = [
     read: readTradingPrefs,
     write: (v) => useTradingPrefs.setState(parseTradingPrefs(v)),
     subscribe: (fn) => useTradingPrefs.subscribe(fn),
+  },
+  {
+    key: 'ai.prefs',
+    read: readAiPrefs,
+    write: (v) => useAiPrefs.setState(parseAiPrefs(v)),
+    subscribe: (fn) => useAiPrefs.subscribe(fn),
   },
   {
     key: 'backtest.strategies',

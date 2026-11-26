@@ -1,0 +1,260 @@
+/* Ask AI navigator section (docked panel: opaque, no glass). */
+.ai-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  font-size: 13px;
+}
+.ai-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px 6px;
+}
+.ai-model {
+  flex: 1;
+  min-width: 0;
+}
+.ai-pad {
+  padding: 12px 14px;
+}
+.ai-faint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-empty h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.ai-empty p {
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+.ai-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-suggest .io-btn {
+  text-align: left;
+  white-space: normal;
+  height: auto;
+  padding: 6px 10px;
+  line-height: 1.35;
+}
+.ai-notice {
+  margin: 0 14px 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ai-notice.ai-error {
+  border-color: var(--down-soft);
+}
+.ai-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+}
+.ai-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 12px;
+}
+.ai-msg {
+  margin-top: 12px;
+}
+.ai-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.ai-bubble {
+  max-width: 92%;
+  padding: 7px 10px;
+  border-radius: 10px 10px 2px 10px;
+  background: var(--accent-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.ai-context {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-context summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+  justify-content: flex-end;
+}
+.ai-context summary::-webkit-details-marker {
+  display: none;
+}
+.ai-context pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  font-family: 'Geist Mono Variable', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre;
+  text-align: left;
+}
+.ai-thinking {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-thinking summary {
+  cursor: pointer;
+}
+.ai-thinking div {
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  white-space: pre-wrap;
+}
+.ai-meta {
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.ai-meta.ai-error,
+.ai-error {
+  color: var(--down);
+}
+.ai-typing {
+  animation: ai-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ai-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-typing {
+    animation: none;
+  }
+}
+.ai-composer {
+  border-top: 1px solid var(--border);
+  padding: 8px 14px 10px;
+}
+.ai-scope {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.ai-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.ai-input {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  min-height: 38px;
+  max-height: 160px;
+  resize: vertical;
+  padding: 7px 9px;
+  line-height: 1.4;
+  font: inherit;
+}
+.ai-send {
+  flex: none;
+}
+.ai-disclaimer {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+/* Markdown answers */
+.ai-md {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ai-md > :first-child {
+  margin-top: 0;
+}
+.ai-md p,
+.ai-md ul,
+.ai-md ol,
+.ai-md pre,
+.ai-md blockquote {
+  margin: 0 0 8px;
+}
+.ai-md ul,
+.ai-md ol {
+  padding-left: 18px;
+}
+.ai-md li + li {
+  margin-top: 2px;
+}
+.ai-md h4,
+.ai-md h5 {
+  margin: 10px 0 4px;
+  font-size: 13px;
+}
+.ai-md h5 {
+  color: var(--muted);
+}
+.ai-md code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--raised);
+  font-family: 'Geist Mono Variable', ui-monospace, monospace;
+  font-size: 12px;
+}
+.ai-md pre {
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--raised);
+  overflow-x: auto;
+}
+.ai-md pre code {
+  padding: 0;
+  background: none;
+}
+.ai-md blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted);
+}
+.ai-md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+.ai-md-table {
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+.ai-md table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ai-md th,
+.ai-md td {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}

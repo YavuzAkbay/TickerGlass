@@ -42,6 +42,8 @@ export interface BriefInput {
   readonly studies?: readonly BriefStudy[];
   readonly drawings?: readonly BriefDrawing[];
   readonly focus: BriefFocus;
+  /** Extra header lines, e.g. that the bars are Heikin Ashi rather than real prices. */
+  readonly notes?: readonly string[];
 }
 
 export interface BriefOptions {

@@ -7,10 +7,12 @@ import {
   History,
   ListTree,
   NotebookPen,
+  Sparkles,
   Rows3,
   TableProperties,
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
+import { AiPanel } from '../ai/AiPanel';
 import { StrategyPanel } from '../backtest/StrategyPanel';
 import type { MessageKey } from '../i18n';
 import { PortfolioPanel } from '../portfolio/PortfolioPanel';
@@ -57,6 +59,7 @@ export const SECTIONS: SectionDef[] = [
     icon: Briefcase,
     render: () => <PortfolioPanel />,
   },
+  { id: 'ai', title: 'nav.ai', icon: Sparkles, render: () => <AiPanel /> },
   {
     id: 'replayTrading',
     title: 'nav.replayTrading',

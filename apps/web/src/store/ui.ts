@@ -18,6 +18,8 @@ export const NAV_SECTIONS = [
   'strategy',
   /** Portfolio: holdings, activity, performance and the trade journal. */
   'portfolio',
+  /** Ask AI: questions about the chart to a local model (only when the server has it on). */
+  'ai',
   /** Paper trades of the running replay (only while replaying; never saved). */
   'replayTrading',
 ] as const;

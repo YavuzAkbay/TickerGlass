@@ -2,6 +2,7 @@ import { ChevronsRight, Maximize2, PencilRuler, Plus, X } from 'lucide-react';
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
+import { selectAiEnabled, useAiStatus } from '../ai/store';
 import { useReplayStore } from '../replay/store';
 import { DEFAULT_NAV_WIDTH, MAX_NAV_WIDTH, MIN_NAV_WIDTH, useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
@@ -33,7 +34,15 @@ export function Navigator() {
   const replaying = useReplayStore((s) => s.status !== 'off');
   const drag = useRef<{ x: number; w: number } | null>(null);
 
-  const sections = SECTIONS.filter((s) => s.id !== 'replayTrading' || replaying);
+  const aiEnabled = useAiStatus(selectAiEnabled);
+  // Learn once whether the server has Ask AI on (the rail hides the section otherwise).
+  useEffect(() => {
+    void useAiStatus.getState().refresh();
+  }, []);
+
+  const sections = SECTIONS.filter(
+    (s) => (s.id !== 'replayTrading' || replaying) && (s.id !== 'ai' || aiEnabled),
+  );
   const def = sections.find((s) => s.id === navSection) ?? sections[0];
   const open = navOpen && !!def;
   const sheet = mobile && open;

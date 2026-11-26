@@ -67,6 +67,7 @@ export const en = {
   'nav.dataWindow': 'Values',
   'nav.strategy': 'Strategy tester',
   'nav.portfolio': 'Portfolio',
+  'nav.ai': 'Ask AI',
   'portfolio.tab.holdings': 'Holdings',
   'portfolio.tab.activity': 'Activity',
   'portfolio.tab.performance': 'Performance',

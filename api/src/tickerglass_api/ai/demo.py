@@ -41,7 +41,7 @@ def _reply(messages: list[dict[str, Any]]) -> str:
     convo = [m for m in messages if m["role"] != "system"]
     question = convo[-1]["content"] if convo else ""
     if "CHART CONTEXT" in question:
-        question = question.rsplit("END CHART CONTEXT", 1)[-1]
+        question = question.rsplit("END CHART CONTEXT", 1)[-1].strip().removeprefix("Question:")
     question = " ".join(question.split())[:200] or "(empty)"
     context = next((m["content"] for m in reversed(convo) if "CHART CONTEXT" in m["content"]), "")
     header = next(

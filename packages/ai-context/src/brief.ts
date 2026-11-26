@@ -169,6 +169,8 @@ function render(ctx: Ctx, stats: FocusStats, p: Params): { text: string; bucket:
       `(${bars.length} bars); latest close ${fmtPrice(at(bars.close, bars.length - 1), ctx.decimals)}`,
   );
 
+  for (const note of input.notes ?? []) out.push(`Note: ${note}`);
+
   out.push('', 'FOCUS STATS', ...statsLines(ctx, stats));
 
   const leadStart = Math.max(0, a - p.leadBars);

@@ -206,6 +206,11 @@ describe('buildChartBrief', () => {
     expect(brief.text).toContain('- brush: 2026-01-05 100.00 -> 2026-01-24 149.00 (50 points)');
   });
 
+  it('adds header notes', () => {
+    const brief = buildChartBrief(input(bars(ramp(5)), { notes: ['Heikin Ashi bars'] }));
+    expect(brief.text).toContain('Note: Heikin Ashi bars\n\nFOCUS STATS');
+  });
+
   it('handles an empty focus', () => {
     const b = bars(ramp(5));
     const brief = buildChartBrief(input(b, { focus: { kind: 'selection', from: 0, to: 1 } }));
