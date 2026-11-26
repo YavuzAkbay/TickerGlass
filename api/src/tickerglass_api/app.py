@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .accounts import Accounts
+from .ai import make_backend
 from .auth import (
     USERNAME_MAX_FAILURES,
     Authenticator,
@@ -44,6 +45,7 @@ from .providers.base import (
 )
 from .providers.registry import PROVIDERS, ProviderSpec, env_cache_source, is_configured
 from .routes import (
+    ai,
     alerts,
     auth,
     backups,
@@ -225,6 +227,8 @@ def create_app(
             server_lock.release()
 
     app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
+    app.state.ai = make_backend(settings)
+    app.state.ai_active = set()
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(
         CORSMiddleware,
@@ -345,6 +349,7 @@ def create_app(
     api.include_router(screens.router)
     api.include_router(alerts.router)
     api.include_router(portfolio.router)
+    api.include_router(ai.router)
     api.include_router(auth.router)
     api.include_router(users.router)
     api.include_router(users.me_router)

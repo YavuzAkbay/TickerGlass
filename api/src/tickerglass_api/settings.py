@@ -221,6 +221,31 @@ class Settings(BaseSettings):
     #: Allow `/metrics` without a token even though sign-in is configured.
     metrics_public: bool = False
 
+    # Ask AI about the chart (docs/design/local-ai.md). Off unless `OLLAMA_URL` is set or
+    # `AI_PROVIDER=demo`. The browser never talks to Ollama; the API proxies it.
+    #: Ollama base URL (`http://localhost:11434`; from Docker `http://host.docker.internal:11434`).
+    #: Operator-set and trusted, so loopback/private addresses are fine; redirects are refused.
+    ollama_url: str | None = None
+    #: `ollama` (needs `OLLAMA_URL`), `demo` (canned offline replies, for trying the UI and
+    #: tests); unset: `ollama` when `OLLAMA_URL` is set, else off.
+    ai_provider: Literal["ollama", "demo"] | None = None
+    #: Comma list of model names users may pick (`qwen2.5:7b,gemma3:12b`); empty = every
+    #: installed chat model.
+    ai_models: Annotated[list[str], NoDecode] = []
+    #: Preselected model; falls back to the first available one.
+    ai_default_model: str | None = None
+    #: Context window sent as `options.num_ctx` (Ollama's own default is small and silently
+    #: truncates the chart data).
+    ai_num_ctx: int = Field(default=8192, ge=1024, le=1_048_576)
+    #: Seconds to wait for Ollama to answer (covers loading a model) and between streamed chunks.
+    ai_timeout_s: float = Field(default=180, gt=0, le=3600)
+    #: How long Ollama keeps the model loaded after a request (`5m`, `1h`, `-1`); unset = Ollama's.
+    ai_keep_alive: str | None = None
+    #: Largest image attached to one message, decoded.
+    ai_max_image_mb: float = Field(default=4, gt=0, le=64)
+    #: Most text characters in one chat request (all messages).
+    ai_max_chars: int = Field(default=400_000, ge=1000, le=10_000_000)
+
     # Auth (auth.py, docs/self-hosting.md). Unset: the app is open (localhost-first,
     # protect with a reverse proxy). Set: a single password guards the API and /ws.
     auth_password: str | None = Field(default=None, repr=False)
@@ -377,7 +402,25 @@ class Settings(BaseSettings):
             raise ValueError(f"{(info.field_name or '').upper()} is not a valid header name")
         return value
 
-    @field_validator("public_url", "auth_logout_url", mode="after")
+    @field_validator("ai_models", mode="before")
+    @classmethod
+    def _split_ai_models(cls, value: Any) -> Any:
+        return _split_list(value)
+
+    @model_validator(mode="after")
+    def _ai_consistent(self) -> Self:
+        if self.ai_provider == "ollama" and not self.ollama_url:
+            raise ValueError("AI_PROVIDER=ollama needs OLLAMA_URL")
+        return self
+
+    @property
+    def ai_backend(self) -> Literal["ollama", "demo"] | None:
+        """Which AI backend runs: the explicit `AI_PROVIDER`, else ollama when a URL is set."""
+        if self.ai_provider is not None:
+            return self.ai_provider
+        return "ollama" if self.ollama_url else None
+
+    @field_validator("public_url", "auth_logout_url", "ollama_url", mode="after")
     @classmethod
     def _http_url(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is None:
@@ -393,6 +436,10 @@ class Settings(BaseSettings):
         if name == "PUBLIC_URL":
             if parts.query or parts.fragment or parts.username or parts.password:
                 raise ValueError("PUBLIC_URL must be a plain base URL")
+            return value.rstrip("/")
+        if name == "OLLAMA_URL":
+            if parts.query or parts.fragment:
+                raise ValueError("OLLAMA_URL must be a plain base URL")
             return value.rstrip("/")
         return value
 
