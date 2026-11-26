@@ -37,9 +37,11 @@ export function LoginView({
   authError,
   onOidc,
   lastAutoRedirectAt = null,
-  now = Date.now(),
+  now: nowProp,
 }: LoginViewProps) {
   const t = useT();
+  const [mountNow] = useState(() => Date.now());
+  const now = nowProp ?? mountNow;
   const inputRef = useRef<HTMLInputElement>(null);
   const userRef = useRef<HTMLInputElement>(null);
   const [username, setUsername] = useState('');
