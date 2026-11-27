@@ -279,7 +279,9 @@ function InputsTab({
     }
     // Inline inputs become a grid of labelled fields: each control keeps its own
     // label, and wide controls (source, symbol, time) take a full row.
-    const keys = [...r.keys].sort((a, b) => Number(isWide(def.inputs[a]!)) - Number(isWide(def.inputs[b]!)));
+    const keys = [...r.keys].sort(
+      (a, b) => Number(isWide(def.inputs[a]!)) - Number(isWide(def.inputs[b]!)),
+    );
     return (
       <div key={r.keys.join('|')} className="ind-fields">
         {keys.map((key) => {

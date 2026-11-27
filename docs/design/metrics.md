@@ -17,7 +17,7 @@ whether provider budget, cache, alerts, notifications, screener, and backups are
   (HTTP requests, notification delivery outcomes, fires received).
 - **Bounded, private labels.** No label ever carries a user, symbol, alert id, screen id, note,
   URL, raw path, or error text. Allowed label values come from small fixed sets: provider id,
-  cache name, channel kind, outcome/status enums, HTTP method, route *template*, status class.
+  cache name, channel kind, outcome/status enums, HTTP method, route _template_, status class.
   Multi-user servers must not leak one user's activity shape to anyone who can read metrics beyond
   aggregate totals.
 - **Single process.** The API runs one uvicorn worker (`__main__.py`). Use a private
@@ -27,11 +27,11 @@ whether provider budget, cache, alerts, notifications, screener, and backups are
 
 ## 2. Settings (api/settings.py)
 
-| Env | Type | Default | Meaning |
-|---|---|---|---|
-| `METRICS_ENABLED` | bool | `false` | Serve `/metrics`. When false the path returns 404. |
-| `METRICS_TOKEN` | secret str | none | If set, `/metrics` requires `Authorization: Bearer <token>` (constant-time compare via `hmac.compare_digest`). `repr=False`, same as other secrets. |
-| `METRICS_PUBLIC` | bool | `false` | Explicitly allow `/metrics` without a token. |
+| Env               | Type       | Default | Meaning                                                                                                                                             |
+| ----------------- | ---------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `METRICS_ENABLED` | bool       | `false` | Serve `/metrics`. When false the path returns 404.                                                                                                  |
+| `METRICS_TOKEN`   | secret str | none    | If set, `/metrics` requires `Authorization: Bearer <token>` (constant-time compare via `hmac.compare_digest`). `repr=False`, same as other secrets. |
+| `METRICS_PUBLIC`  | bool       | `false` | Explicitly allow `/metrics` without a token.                                                                                                        |
 
 Startup rule (same spirit as 2.1 allow-lists): if `METRICS_ENABLED=true` and no `METRICS_TOKEN`
 and `METRICS_PUBLIC` is not true, **and** auth is enabled (password/OIDC/header mode), refuse to
@@ -66,11 +66,11 @@ Prefix `tickerglass_`. `*_total` are counters, `_seconds` use seconds, timestamp
 
 ### 4.1 Process and HTTP (in-process)
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `tickerglass_build_info` | gauge=1 | `version` | `_version.py` |
-| `tickerglass_http_requests_total` | counter | `method`, `route`, `status` (`2xx`..`5xx`) | pure-ASGI middleware |
-| `tickerglass_http_request_duration_seconds` | histogram | `method`, `route` | same middleware; buckets 0.005…10 |
+| Metric                                      | Type      | Labels                                     | Source                            |
+| ------------------------------------------- | --------- | ------------------------------------------ | --------------------------------- |
+| `tickerglass_build_info`                    | gauge=1   | `version`                                  | `_version.py`                     |
+| `tickerglass_http_requests_total`           | counter   | `method`, `route`, `status` (`2xx`..`5xx`) | pure-ASGI middleware              |
+| `tickerglass_http_request_duration_seconds` | histogram | `method`, `route`                          | same middleware; buckets 0.005…10 |
 
 `route` = matched route template (`/api/alerts/{alert_id}`), `"websocket"` for WS scopes (counted
 on connect only, no duration), `"unmatched"` otherwise. Must be pure ASGI (not
@@ -79,21 +79,21 @@ on connect only, no duration), `"unmatched"` otherwise. Must be pure ASGI (not
 
 ### 4.2 Market provider (collector over existing state + one counter)
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `tickerglass_provider_requests_total` | counter | `provider`, `outcome` (`ok`,`rate_limited`,`unavailable`,`error`) | increment at the single upstream send points: `providers/http.py` `JsonHttp.get` and `providers/yahoo.py` `_call` (one count per upstream attempt, retries included) |
-| `tickerglass_provider_refused_total` | counter | `provider`, `reason` | `UpstreamGuard` refused counters (local budget / breaker), read at scrape |
-| `tickerglass_provider_budget_remaining` | gauge | `provider`, `window` | `UpstreamGuard.snapshot()` |
-| `tickerglass_provider_budget_limit` | gauge | `provider`, `window` | same |
-| `tickerglass_provider_breaker_open` | gauge 0/1 | `provider` | same, if snapshot exposes it |
+| Metric                                  | Type      | Labels                                                            | Source                                                                                                                                                               |
+| --------------------------------------- | --------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tickerglass_provider_requests_total`   | counter   | `provider`, `outcome` (`ok`,`rate_limited`,`unavailable`,`error`) | increment at the single upstream send points: `providers/http.py` `JsonHttp.get` and `providers/yahoo.py` `_call` (one count per upstream attempt, retries included) |
+| `tickerglass_provider_refused_total`    | counter   | `provider`, `reason`                                              | `UpstreamGuard` refused counters (local budget / breaker), read at scrape                                                                                            |
+| `tickerglass_provider_budget_remaining` | gauge     | `provider`, `window`                                              | `UpstreamGuard.snapshot()`                                                                                                                                           |
+| `tickerglass_provider_budget_limit`     | gauge     | `provider`, `window`                                              | same                                                                                                                                                                 |
+| `tickerglass_provider_breaker_open`     | gauge 0/1 | `provider`                                                        | same, if snapshot exposes it                                                                                                                                         |
 
 Exact field names follow whatever `UpstreamGuard.snapshot()` returns; do not invent state the guard
 does not keep. If a provider object has no guard, emit nothing for it.
 
 ### 4.3 Cache (collector)
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
+| Metric                             | Type    | Labels                           | Source                                               |
+| ---------------------------------- | ------- | -------------------------------- | ---------------------------------------------------- |
 | `tickerglass_cache_requests_total` | counter | `cache`, `result` (`hit`,`miss`) | `CacheStats.snapshot()` keys `cache.{name}.hit/miss` |
 
 Hit rate is computed in Grafana. Other numeric CacheStats gauges may be exported as
@@ -103,60 +103,61 @@ Hit rate is computed in Grafana. Other numeric CacheStats gauges may be exported
 
 API-side (authoritative for "fired", survives alerts-service restarts):
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `tickerglass_alerts_fired_total` | counter | `source` (`chart`,`screener`) | `POST /api/alerts/{id}/fire` success path; `services/screener/alerts.py` each screen match that logs an entry |
-| `tickerglass_alerts_active` | gauge | `kind` (fixed enum of alert kinds, e.g. `price`,`indicator`,`script`,`drawing`) | DB count of enabled alerts (scrape cache, §5) |
-| `tickerglass_alerts_service_up` | gauge 0/1 | – | heartbeat younger than `ONLINE_WITHIN` (90 s) |
-| `tickerglass_alerts_service_last_heartbeat_timestamp_seconds` | gauge | – | `ServiceState` |
-| `tickerglass_alerts_service_start_timestamp_seconds` | gauge | – | heartbeat `startedAt` |
-| `tickerglass_alerts_series` / `_live_symbols` / `_polled_series` / `_waiting` | gauge | – | heartbeat fields (`waiting` = len of list) |
+| Metric                                                                        | Type      | Labels                                                                          | Source                                                                                                        |
+| ----------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `tickerglass_alerts_fired_total`                                              | counter   | `source` (`chart`,`screener`)                                                   | `POST /api/alerts/{id}/fire` success path; `services/screener/alerts.py` each screen match that logs an entry |
+| `tickerglass_alerts_active`                                                   | gauge     | `kind` (fixed enum of alert kinds, e.g. `price`,`indicator`,`script`,`drawing`) | DB count of enabled alerts (scrape cache, §5)                                                                 |
+| `tickerglass_alerts_service_up`                                               | gauge 0/1 | –                                                                               | heartbeat younger than `ONLINE_WITHIN` (90 s)                                                                 |
+| `tickerglass_alerts_service_last_heartbeat_timestamp_seconds`                 | gauge     | –                                                                               | `ServiceState`                                                                                                |
+| `tickerglass_alerts_service_start_timestamp_seconds`                          | gauge     | –                                                                               | heartbeat `startedAt`                                                                                         |
+| `tickerglass_alerts_series` / `_live_symbols` / `_polled_series` / `_waiting` | gauge     | –                                                                               | heartbeat fields (`waiting` = len of list)                                                                    |
 
 From the heartbeat `metrics` object (§6), emitted **only while the service is up** so stale lag
 does not flatline on dashboards. Counters reset when the service restarts; Prometheus `rate()`
 handles that.
 
-| Metric | Type | Heartbeat field |
-|---|---|---|
-| `tickerglass_alerts_evaluations_total` | counter | `evaluations` |
-| `tickerglass_alerts_evaluation_failures_total` | counter | `evaluationFailures` |
-| `tickerglass_alerts_fires_queued_total` | counter | `firesQueued` |
-| `tickerglass_alerts_fire_retries_total` | counter | `fireRetries` |
-| `tickerglass_alerts_fires_dropped_total` | counter | `firesDropped` |
-| `tickerglass_alerts_fire_queue_depth` | gauge | `fireQueueDepth` |
-| `tickerglass_alerts_status_post_failures_total` | counter | `statusPostFailures` |
-| `tickerglass_alerts_script_faults_total` | counter | `scriptFaults` |
-| `tickerglass_alerts_evaluation_lag_seconds` | histogram | `lag` |
+| Metric                                          | Type      | Heartbeat field      |
+| ----------------------------------------------- | --------- | -------------------- |
+| `tickerglass_alerts_evaluations_total`          | counter   | `evaluations`        |
+| `tickerglass_alerts_evaluation_failures_total`  | counter   | `evaluationFailures` |
+| `tickerglass_alerts_fires_queued_total`         | counter   | `firesQueued`        |
+| `tickerglass_alerts_fire_retries_total`         | counter   | `fireRetries`        |
+| `tickerglass_alerts_fires_dropped_total`        | counter   | `firesDropped`       |
+| `tickerglass_alerts_fire_queue_depth`           | gauge     | `fireQueueDepth`     |
+| `tickerglass_alerts_status_post_failures_total` | counter   | `statusPostFailures` |
+| `tickerglass_alerts_script_faults_total`        | counter   | `scriptFaults`       |
+| `tickerglass_alerts_evaluation_lag_seconds`     | histogram | `lag`                |
 
 ### 4.5 Notifications
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `tickerglass_notifications_deliveries_total` | counter | `channel` (channel kind: `webhook`,`ntfy`,`gotify`,`apprise`,…; unknown → `other`), `outcome` (`sent`,`retry`,`failed`) | `notifications/dispatcher.py`: success at the `status="sent"` path; `_record_failure` → `failed` when terminal, else `retry` |
-| `tickerglass_notifications_outbox` | gauge | `status` (`pending`,`failed`) | DB count (scrape cache) |
-| `tickerglass_notifications_oldest_pending_age_seconds` | gauge | – | DB min(created) of pending rows; 0 when none |
+| Metric                                                 | Type    | Labels                                                                                                                  | Source                                                                                                                       |
+| ------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `tickerglass_notifications_deliveries_total`           | counter | `channel` (channel kind: `webhook`,`ntfy`,`gotify`,`apprise`,…; unknown → `other`), `outcome` (`sent`,`retry`,`failed`) | `notifications/dispatcher.py`: success at the `status="sent"` path; `_record_failure` → `failed` when terminal, else `retry` |
+| `tickerglass_notifications_outbox`                     | gauge   | `status` (`pending`,`failed`)                                                                                           | DB count (scrape cache)                                                                                                      |
+| `tickerglass_notifications_oldest_pending_age_seconds` | gauge   | –                                                                                                                       | DB min(created) of pending rows; 0 when none                                                                                 |
 
 ### 4.6 Screener
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `tickerglass_screener_snapshot_age_seconds` | gauge | – | now − `max(ScreenerSnapshot.computed_at)`; absent if table empty |
-| `tickerglass_screener_snapshot_rows` | gauge | – | row count |
-| `tickerglass_screener_last_run_timestamp_seconds` | gauge | `kind`, `status` | latest `ScreenerRun` per kind (finished time, or start if unfinished) |
-| `tickerglass_screener_enabled` | gauge 0/1 | – | effective setting |
+| Metric                                            | Type      | Labels           | Source                                                                |
+| ------------------------------------------------- | --------- | ---------------- | --------------------------------------------------------------------- |
+| `tickerglass_screener_snapshot_age_seconds`       | gauge     | –                | now − `max(ScreenerSnapshot.computed_at)`; absent if table empty      |
+| `tickerglass_screener_snapshot_rows`              | gauge     | –                | row count                                                             |
+| `tickerglass_screener_last_run_timestamp_seconds` | gauge     | `kind`, `status` | latest `ScreenerRun` per kind (finished time, or start if unfinished) |
+| `tickerglass_screener_enabled`                    | gauge 0/1 | –                | effective setting                                                     |
 
 ### 4.7 Backups
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `tickerglass_backup_last_success_timestamp_seconds` | gauge | – | `runner.last_ok_at` (absent if never) |
-| `tickerglass_backup_last_run_status` | gauge=1 | `status` (`ok`,`partial`,`failed`,`running`) | latest `BackupRun` |
-| `tickerglass_backup_last_size_bytes` | gauge | – | size of the latest run with status ok or partial |
-| `tickerglass_backup_enabled` | gauge 0/1 | – | schedule configured |
+| Metric                                              | Type      | Labels                                       | Source                                           |
+| --------------------------------------------------- | --------- | -------------------------------------------- | ------------------------------------------------ |
+| `tickerglass_backup_last_success_timestamp_seconds` | gauge     | –                                            | `runner.last_ok_at` (absent if never)            |
+| `tickerglass_backup_last_run_status`                | gauge=1   | `status` (`ok`,`partial`,`failed`,`running`) | latest `BackupRun`                               |
+| `tickerglass_backup_last_size_bytes`                | gauge     | –                                            | size of the latest run with status ok or partial |
+| `tickerglass_backup_enabled`                        | gauge 0/1 | –                                            | schedule configured                              |
 
 ## 5. DB-derived values
 
 All DB reads in the collector:
+
 - use a **system** session (`get_system_db` equivalent / ownership system session from 2.2), so
   the multi-user loader criteria don't hide rows; results are aggregates only;
 - are cached for 15 s (scrape interval is usually 15–60 s; avoids load if scraped by two
@@ -199,16 +200,17 @@ ascending, finite, `len <= 20`, `counts` same length, non-decreasing, each `<= c
 finite. Invalid `metrics` → 422 for the whole heartbeat is too harsh; instead drop the `metrics`
 part, keep the rest, log once at warning. Stored in memory on `ServiceState` only.
 
-**Evaluation lag** (alerts service): time between when an evaluation *should* happen and when it
+**Evaluation lag** (alerts service): time between when an evaluation _should_ happen and when it
 completes.
+
 - bar-close evaluation: `completedAt − closeEventTime`, where the close event is bar end plus the configured close grace (`closeGraceS`, default 60 s for the clock rule) — otherwise a healthy close would always read ≥ 60 s;
 - poll evaluation: `completedAt − scheduledNextPollAt`; if the schedule is older than one poll interval (live feed was up, schedule not advanced), the due time is `now`; failed/not-ready polls are not observed;
 - seed on attach: not observed (startup backlog would skew it).
-Clamp negatives to 0. Implementer confirms the exact hook points in `series.ts` (scout pointed at
-~773-780 seed, ~1036 poll, bar close via tracker `onClock` ~1032) and at `service.ts:209`
-(`enqueueFire`), `fires.ts` (retry / drop paths), `service.ts:251` (status post failure),
-`series.ts:730` (`onScriptFault`). Counters live in one small `metrics.ts` module owned by the
-service instance (not module globals, for test isolation) and are read by `stats()` / heartbeat.
+  Clamp negatives to 0. Implementer confirms the exact hook points in `series.ts` (scout pointed at
+  ~773-780 seed, ~1036 poll, bar close via tracker `onClock` ~1032) and at `service.ts:209`
+  (`enqueueFire`), `fires.ts` (retry / drop paths), `service.ts:251` (status post failure),
+  `series.ts:730` (`onScriptFault`). Counters live in one small `metrics.ts` module owned by the
+  service instance (not module globals, for test isolation) and are read by `stats()` / heartbeat.
 
 ## 7. Deploy artefacts
 
@@ -225,7 +227,7 @@ service instance (not module globals, for test isolation) and are read by `stats
   enabled), notification failures rising, provider breaker open 15 m.
 - Helm: `metrics.enabled`, `metrics.token` / `metrics.existingSecret`, optional
   `metrics.serviceMonitor.enabled` (template guarded by `.Capabilities.APIVersions.Has
-  "monitoring.coreos.com/v1"`); liveness → `/api/health/live`, readiness → `/api/health/ready`.
+"monitoring.coreos.com/v1"`); liveness → `/api/health/live`, readiness → `/api/health/ready`.
 - Dockerfiles / compose / AIO HEALTHCHECK: switch to `/api/health/ready` (API) — AIO keeps checking
   through nginx on 8080.
 - `deploy/check.py`: validate dashboard JSON parses, every `expr` metric name used in the dashboard

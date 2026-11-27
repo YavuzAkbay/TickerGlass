@@ -156,9 +156,7 @@ describe('toCsv', () => {
       })),
     });
     const lines = toCsv(table, () => 't').split('\n');
-    expect(lines[0]).toBe(
-      "time,open,high,low,close,volume,'=SUM(A1),'+1,'-2,'@cmd,'\tx,ok",
-    );
+    expect(lines[0]).toBe("time,open,high,low,close,volume,'=SUM(A1),'+1,'-2,'@cmd,'\tx,ok");
     expect(lines[1]).toBe('t,1,2,0,1.5,10,-1,-1,-1,-1,-1,-1');
   });
 });
@@ -199,7 +197,9 @@ describe('makeTimeFormatter', () => {
   });
 
   it("supports 'local' (browser zone) without throwing", () => {
-    expect(makeTimeFormatter('local', true)(1_705_209_000)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(makeTimeFormatter('local', true)(1_705_209_000)).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/,
+    );
   });
 });
 
@@ -213,8 +213,7 @@ describe('dataFilename', () => {
 
 describe('csvTextField', () => {
   it("prefixes ' before a leading = + - @ tab or CR, then applies CSV quoting", () => {
-    for (const c of ['=', '+', '-', '@', '\t'])
-      expect(csvTextField(`${c}x`)).toBe(`'${c}x`);
+    for (const c of ['=', '+', '-', '@', '\t']) expect(csvTextField(`${c}x`)).toBe(`'${c}x`);
     expect(csvTextField('\rx')).toBe(`"'\rx"`);
     expect(csvTextField('=a,b')).toBe(`"'=a,b"`);
   });

@@ -96,7 +96,11 @@ const stylesXml =
  * apostrophe, and not "History" (reserved). 'Data' when nothing usable is left.
  */
 export function sheetName(symbol: string): string {
-  const clean = (s: string) => s.trim().replace(/^'+|'+$/g, '').trim();
+  const clean = (s: string) =>
+    s
+      .trim()
+      .replace(/^'+|'+$/g, '')
+      .trim();
   // Cut to 31 first, then clean again: the cut can expose a trailing apostrophe.
   const name = clean(clean(symbol.replace(/[\\/*?:[\]]/g, '')).slice(0, 31));
   return !name || name.toLowerCase() === 'history' ? 'Data' : name;

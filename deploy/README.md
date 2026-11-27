@@ -41,12 +41,12 @@ template only if it deserves a field there.
 Optional Prometheus metrics ([docs/metrics.md](../docs/metrics.md), design in
 [docs/design/metrics.md](../docs/design/metrics.md)); off by default, no ports added.
 
-| Path                                  | What                                                                         |
-| ------------------------------------- | ---------------------------------------------------------------------------- |
-| `grafana/tickerglass.json`            | Grafana dashboard (Import asks for the Prometheus data source)               |
-| `prometheus/prometheus.example.yml`   | Scrape job with the Bearer token read from a file, and `rule_files`          |
-| `prometheus/tickerglass.rules.yml`    | Starter alert rules                                                          |
-| `metrics_catalogue.txt`               | Metric names from the design note; `check.py` checks the dashboard and rules against it |
+| Path                                | What                                                                                    |
+| ----------------------------------- | --------------------------------------------------------------------------------------- |
+| `grafana/tickerglass.json`          | Grafana dashboard (Import asks for the Prometheus data source)                          |
+| `prometheus/prometheus.example.yml` | Scrape job with the Bearer token read from a file, and `rule_files`                     |
+| `prometheus/tickerglass.rules.yml`  | Starter alert rules                                                                     |
+| `metrics_catalogue.txt`             | Metric names from the design note; `check.py` checks the dashboard and rules against it |
 
 - Every template accepts `METRICS_ENABLED` / `METRICS_TOKEN` (advanced, optional). Compose also has
   `METRICS_PUBLIC`.

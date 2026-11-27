@@ -143,7 +143,7 @@ field   = ( letter | "_" ) , { letter | digit | "_" } ;                         
   `bad_formula` (syntax, unknown function, non-numeric field), `unknown_field`, `field_unavailable` (a
   fundamental field with Twelve Data), `too_complex` (a limit) and `formula_overflow` (below).
 
-**Formula columns.** Options → Columns → *Add formula column…* shows up to three custom expressions as
+**Formula columns.** Options → Columns → _Add formula column…_ shows up to three custom expressions as
 table columns, with an optional name (else the formula is the header). They are saved with the screen
 (`columns` holds `"=<formula>"`; the names stay on this device) and are written to the CSV export. They are not
 sortable: the server sorts by field ids only, and sorting just the visible page would disagree with the pager.

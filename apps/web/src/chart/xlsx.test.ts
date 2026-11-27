@@ -59,10 +59,16 @@ describe('buildXlsx', () => {
         'xl/worksheets/sheet1.xml'
       ]!,
     );
-    expect(xml).toContain('<row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve">time</t></is></c>');
-    expect(xml).toContain('<c r="F1" t="inlineStr"><is><t xml:space="preserve">volume</t></is></c>');
+    expect(xml).toContain(
+      '<row r="1"><c r="A1" t="inlineStr"><is><t xml:space="preserve">time</t></is></c>',
+    );
+    expect(xml).toContain(
+      '<c r="F1" t="inlineStr"><is><t xml:space="preserve">volume</t></is></c>',
+    );
     // Time cell of the first bar.
-    expect(xml).toContain('<c r="A2" t="inlineStr"><is><t xml:space="preserve">2024-01-14 05:00</t></is></c>');
+    expect(xml).toContain(
+      '<c r="A2" t="inlineStr"><is><t xml:space="preserve">2024-01-14 05:00</t></is></c>',
+    );
     // Numeric cells of the first bar (open/high/low/close/volume).
     expect(xml).toContain('<c r="B2"><v>1</v></c>');
     expect(xml).toContain('<c r="E2"><v>1.5</v></c>');
@@ -84,7 +90,10 @@ describe('xmlText', () => {
   });
 
   it('keeps a study title with control characters out of the sheet XML', () => {
-    const table = buildTable({ ...input(), studies: [{ ...input().studies[0]!, title: 'bad\u0001\u0000' }] });
+    const table = buildTable({
+      ...input(),
+      studies: [{ ...input().studies[0]!, title: 'bad\u0001\u0000' }],
+    });
     const xml = decode(unzipSync(buildXlsx(table, () => 't', 'AAPL'))['xl/worksheets/sheet1.xml']!);
     expect(xml).toContain('>bad</t>');
     expect([...xml].filter((ch) => ch < ' ' && !'\t\n\r'.includes(ch))).toEqual([]);
