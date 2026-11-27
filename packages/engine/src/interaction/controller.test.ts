@@ -122,7 +122,8 @@ describe('InteractionController view change causes', () => {
     while (frames.length) frames.shift()!(0);
     const total = zoom.mock.calls.reduce((sum, _c, i) => sum + log(i), 0);
     expect(total).toBeCloseTo(0.15);
-    expect(zoom.mock.calls.every((c) => c[0] === 200)).toBe(true);
+    // Scroll zoom is anchored at the right edge (paneWidth), not the pointer.
+    expect(zoom.mock.calls.every((c) => c[0] === chart.paneWidth)).toBe(true);
     // Trackpad-sized deltas still zoom in one go.
     zoom.mockClear();
     fire('wheel', { ...wheel, deltaY: -8, preventDefault: vi.fn() });
