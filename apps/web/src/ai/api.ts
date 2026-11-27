@@ -25,6 +25,8 @@ export interface AiModel {
   /** Runs at a cloud provider: questions and chart data leave the server. */
   cloud?: boolean;
   connection?: string | null;
+  /** Context window when the provider owns it (cloud connections). */
+  contextTokens?: number | null;
 }
 
 export type AiStatus =
@@ -146,6 +148,68 @@ export interface AiConfig {
   numCtx: number;
   /** Tier set per model; others are automatic. */
   tiers: Record<string, AiTier>;
+  connections?: AiConnection[];
+  presets?: Record<string, AiPreset>;
+}
+
+export interface AiPreset {
+  name: string;
+  baseUrl: string;
+  local?: boolean;
+}
+
+export interface AiConnectionModel {
+  name: string;
+  vision: boolean;
+  tools: boolean;
+  context: number | null;
+}
+
+/** An OpenAI-compatible connection as admins see it (the key only as a hint). */
+export interface AiConnection {
+  id: string;
+  name: string;
+  preset: string;
+  baseUrl: string;
+  hasKey: boolean;
+  keyHint: string | null;
+  models: AiConnectionModel[];
+  context: number;
+  maxTokens: number | null;
+  /** Not on this machine or the private network: chat data leaves the server. */
+  cloud: boolean;
+}
+
+export interface AiConnectionBody {
+  name: string;
+  preset: string;
+  baseUrl: string;
+  /** undefined keeps the stored key. */
+  apiKey?: string;
+  models: AiConnectionModel[];
+  context: number;
+  maxTokens: number | null;
+  acknowledged: boolean;
+}
+
+export function saveConnection(id: string, body: AiConnectionBody): Promise<AiConfig> {
+  return requestJson<AiConfig>('PUT', `/ai/connections/${encodeURIComponent(id)}`, body);
+}
+
+export function deleteConnection(id: string): Promise<AiConfig> {
+  return requestJson<AiConfig>('DELETE', `/ai/connections/${encodeURIComponent(id)}`);
+}
+
+export type AiConnectionTest =
+  { ok: true; models: string[]; cloud: boolean } | { ok: false; error: string };
+
+/** List the models at `baseUrl` (with `apiKey`, or the stored key of connection `id`). */
+export function testConnection(body: {
+  baseUrl: string;
+  apiKey?: string;
+  id?: string;
+}): Promise<AiConnectionTest> {
+  return requestJson<AiConnectionTest>('POST', '/ai/connections/test', body);
 }
 
 export type AiTestResult =

@@ -19,7 +19,9 @@ from ..models import AppMeta
 from ..settings import Settings
 from .base import AiBackend, AiError, ModelInfo
 from .demo import DemoBackend
+from .multi import MultiBackend
 from .ollama import OllamaBackend
+from .openai_compat import CloudModel, OpenAICompatBackend
 from .tiers import is_tier
 
 log = logging.getLogger(__name__)
@@ -43,19 +45,119 @@ NUM_CTX_MAX = 131072
 
 Source = Literal["env", "app", "off"]
 
+#: OpenAI-compatible presets offered in Settings → AI (base URLs from the providers' docs,
+#: 2026-11; the admin can edit them). `local`: runs on the admin's own machine.
+PRESETS: dict[str, dict[str, Any]] = {
+    "openai": {"name": "OpenAI", "baseUrl": "https://api.openai.com/v1"},
+    "openrouter": {"name": "OpenRouter", "baseUrl": "https://openrouter.ai/api/v1"},
+    "zai": {"name": "Z.ai (GLM)", "baseUrl": "https://api.z.ai/api/paas/v4"},
+    "zai-coding": {"name": "Z.ai Coding Plan", "baseUrl": "https://api.z.ai/api/coding/paas/v4"},
+    "deepseek": {"name": "DeepSeek", "baseUrl": "https://api.deepseek.com"},
+    "opencode": {"name": "OpenCode Zen", "baseUrl": "https://opencode.ai/zen/v1"},
+    "groq": {"name": "Groq", "baseUrl": "https://api.groq.com/openai/v1"},
+    "mistral": {"name": "Mistral", "baseUrl": "https://api.mistral.ai/v1"},
+    "lmstudio": {"name": "LM Studio", "baseUrl": "http://localhost:1234/v1", "local": True},
+    "custom": {"name": "Custom (OpenAI-compatible)", "baseUrl": ""},
+}
+MAX_CONNECTIONS = 10
+#: Context window assumed for cloud models without one set (tokens).
+CLOUD_CONTEXT_DEFAULT = 128_000
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "host.docker.internal", "ollama")
+
+
+def is_local_url(url: str) -> bool:
+    """A URL on this machine or the private network: chat data stays in-house."""
+    host = (urlsplit(url).hostname or "").lower()
+    if host in _LOCAL_HOSTS or host.endswith((".local", ".lan", ".internal")):
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+@dataclass(frozen=True)
+class CloudConnection:
+    """An OpenAI-compatible endpoint an admin connected, with the models users may pick."""
+
+    id: str
+    name: str
+    preset: str
+    base_url: str
+    api_key: str | None
+    models: tuple[CloudModel, ...] = ()
+    context: int = CLOUD_CONTEXT_DEFAULT
+    max_tokens: int | None = None
+
+    @property
+    def cloud(self) -> bool:
+        return not is_local_url(self.base_url)
+
+    def as_json(self) -> dict[str, Any]:
+        """Stored form (with the key); never sent to the browser."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "preset": self.preset,
+            "baseUrl": self.base_url,
+            "apiKey": self.api_key,
+            "models": [m.as_json() for m in self.models],
+            "context": self.context,
+            "maxTokens": self.max_tokens,
+        }
+
+    def view(self) -> dict[str, Any]:
+        """What admins see: the key only as its last four characters."""
+        out = self.as_json()
+        key = out.pop("apiKey")
+        out["hasKey"] = bool(key)
+        out["keyHint"] = f"••••{key[-4:]}" if key and len(key) >= 8 else ("••••" if key else None)
+        out["cloud"] = self.cloud
+        return out
+
+
+def connection_from(value: Any) -> CloudConnection:
+    """A stored connection; ValueError/KeyError/TypeError when malformed."""
+    models = tuple(
+        CloudModel(
+            name=str(m["name"]),
+            vision=bool(m.get("vision")),
+            tools=bool(m.get("tools", True)),
+            context=int(m["context"]) if isinstance(m.get("context"), int) else None,
+        )
+        for m in value.get("models") or []
+    )[:MAX_MODELS]
+    ctx = value.get("context")
+    max_tokens = value.get("maxTokens")
+    return CloudConnection(
+        id=str(value["id"]),
+        name=str(value.get("name") or value["id"]),
+        preset=str(value.get("preset") or "custom"),
+        base_url=normalize_url(str(value["baseUrl"])),
+        api_key=str(value["apiKey"]) if value.get("apiKey") else None,
+        models=models,
+        context=int(ctx) if isinstance(ctx, int) and ctx > 0 else CLOUD_CONTEXT_DEFAULT,
+        max_tokens=int(max_tokens) if isinstance(max_tokens, int) and max_tokens > 0 else None,
+    )
+
 
 @dataclass(frozen=True)
 class AiConfig:
-    url: str
+    #: Ollama base URL; None = no Ollama (cloud connections only).
+    url: str | None
     models: tuple[str, ...] = field(default_factory=tuple)
     default_model: str | None = None
     #: Context window sent to Ollama; None = `AI_NUM_CTX`.
     num_ctx: int | None = None
     #: Capability tier an admin set per model name; others get the automatic one.
     tiers: dict[str, str] = field(default_factory=dict)
+    connections: tuple[CloudConnection, ...] = ()
 
     def as_json(self) -> dict[str, Any]:
         return {
+            "connections": [c.as_json() for c in self.connections],
             "url": self.url,
             "models": list(self.models),
             "defaultModel": self.default_model,
@@ -105,7 +207,7 @@ def load_config(engine: Engine) -> AiConfig | None:
     if value is None:
         return None
     try:
-        url = normalize_url(str(value["url"]))
+        url = normalize_url(str(value["url"])) if value.get("url") else None
         models = tuple(str(m) for m in value.get("models") or [])[:MAX_MODELS]
         default = value.get("defaultModel")
         ctx = value.get("numCtx")
@@ -116,7 +218,10 @@ def load_config(engine: Engine) -> AiConfig | None:
             for k, v in (raw_tiers.items() if isinstance(raw_tiers, dict) else [])
             if is_tier(v)
         }
-        return AiConfig(url, models, str(default) if default else None, num_ctx, tiers)
+        conns = tuple(connection_from(c) for c in value.get("connections") or [])[:MAX_CONNECTIONS]
+        if url is None and not conns:
+            return None
+        return AiConfig(url, models, str(default) if default else None, num_ctx, tiers, conns)
     except (KeyError, TypeError, ValueError, AttributeError):
         log.warning("ignoring the stored AI settings, they are malformed")
         return None
@@ -146,6 +251,20 @@ def ollama_backend(
         num_ctx=num_ctx or settings.ai_num_ctx,
         keep_alive=settings.ai_keep_alive,
         allow=allow,
+    )
+
+
+def cloud_backend(settings: Settings, c: CloudConnection) -> OpenAICompatBackend:
+    return OpenAICompatBackend(
+        c.id,
+        c.name,
+        c.base_url,
+        c.api_key,
+        c.models,
+        timeout_s=settings.ai_timeout_s,
+        context=c.context,
+        max_tokens=c.max_tokens,
+        cloud=c.cloud,
     )
 
 
@@ -179,8 +298,15 @@ def resolve(settings: Settings, stored: AiConfig | None) -> AiRuntime:
             return AiRuntime(backend, "env", settings.ai_default_model, num_ctx=settings.ai_num_ctx)
     if stored is not None:
         num_ctx = stored.num_ctx or settings.ai_num_ctx
-        backend = ollama_backend(settings, stored.url, list(stored.models), num_ctx)
-        return AiRuntime(backend, "app", stored.default_model, stored, num_ctx)
+        ollama = (
+            ollama_backend(settings, stored.url, list(stored.models), num_ctx)
+            if stored.url
+            else None
+        )
+        clouds = [cloud_backend(settings, c) for c in stored.connections]
+        chosen: AiBackend | None = MultiBackend(ollama, clouds) if clouds else ollama
+        if chosen is not None:
+            return AiRuntime(chosen, "app", stored.default_model, stored, num_ctx)
     return AiRuntime(None, "off", None, num_ctx=settings.ai_num_ctx)
 
 

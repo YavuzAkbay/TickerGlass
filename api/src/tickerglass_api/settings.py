@@ -245,6 +245,9 @@ class Settings(BaseSettings):
     ai_max_image_mb: float = Field(default=4, gt=0, le=64)
     #: Most text characters in one chat request (all messages).
     ai_max_chars: int = Field(default=400_000, ge=1000, le=10_000_000)
+    #: Requests per user per minute to cloud AI connections (each tool round is one; 0 = no
+    #: limit). Cloud providers bill per token: this caps runaway loops and shared-key abuse.
+    ai_cloud_rate_per_min: int = Field(default=30, ge=0, le=10_000)
 
     # Auth (auth.py, docs/self-hosting.md). Unset: the app is open (localhost-first,
     # protect with a reverse proxy). Set: a single password guards the API and /ws.

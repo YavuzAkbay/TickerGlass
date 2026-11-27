@@ -126,7 +126,8 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   const useTools = model.tools;
   const tools = schemasFor(tier, useAiPrefs.getState().allowActions);
   const userCtx = useAiPrefs.getState().numCtx;
-  const numCtx = userCtx || opts.status.numCtx;
+  // Cloud providers own their context window; Ollama's is the user's or the server's.
+  const numCtx = model.contextTokens ?? (userCtx || opts.status.numCtx);
   const brief = briefFromChart(chart, focus, briefBudget(numCtx, useTools, tools.length));
   if (!brief) throw new Error('The chart has no bars yet');
 
@@ -203,7 +204,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
           model: model.name,
           messages: apiMessages(history),
           ...(useTools ? { tools } : {}),
-          ...(userCtx ? { numCtx: userCtx } : {}),
+          ...(userCtx && !model.contextTokens ? { numCtx: userCtx } : {}),
         },
         (e) => {
           switch (e.t) {

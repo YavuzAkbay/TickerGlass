@@ -17,6 +17,7 @@ import {
   type AiTier,
 } from '../ai/api';
 import { useAiStatus } from '../ai/store';
+import { AiConnections } from './AiConnections';
 import { Row, Section } from '../dialogs/controls';
 import { toast } from '../ui/Toast';
 import { formatBytes } from './serverFormat';
@@ -125,7 +126,7 @@ export function AiTab() {
       adopt(next);
       if (off) setProbe({ state: 'idle' });
       await useAiStatus.getState().refresh();
-      toast(next.source === 'app' ? 'Ask AI connected' : 'Ask AI turned off', 'success');
+      toast(off ? 'Ollama disconnected' : 'Ollama saved', 'success');
     } catch (e) {
       toast(errorMessage(e), 'error');
     } finally {
@@ -191,7 +192,7 @@ export function AiTab() {
           {probe.state === 'idle' && (config.source === 'off' ? 'Not connected' : '')}
         </div>
         <div className="ai-set-actions">
-          {config.source === 'app' && (
+          {config.url && (
             <button
               type="button"
               className="io-btn"
@@ -207,7 +208,7 @@ export function AiTab() {
             disabled={saving || !trimmedUrl || !dirty || (!allModels && picked.length === 0)}
             onClick={() => void save()}
           >
-            {config.source === 'app' ? 'Save' : 'Connect'}
+            {config.url ? 'Save' : 'Connect'}
           </button>
         </div>
         {probe.state === 'error' && (
@@ -329,6 +330,7 @@ export function AiTab() {
           </p>
         </Section>
       )}
+      <AiConnections config={config} onChange={adopt} />
     </>
   );
 }

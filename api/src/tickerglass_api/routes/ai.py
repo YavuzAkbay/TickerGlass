@@ -7,6 +7,10 @@ import base64
 import binascii
 import json
 import logging
+import re
+import threading
+import time
+from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
@@ -17,13 +21,18 @@ from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from ..ai import AiBackend, AiError, ModelInfo
 from ..ai.config import (
+    MAX_CONNECTIONS,
     MAX_MODELS,
     NUM_CTX_MAX,
     NUM_CTX_MIN,
+    PRESETS,
     AiConfig,
     AiRuntime,
+    CloudConnection,
+    cloud_backend,
     detect,
     env_locked,
+    is_local_url,
     load_config,
     normalize_url,
     probe,
@@ -31,6 +40,8 @@ from ..ai.config import (
     resolve,
     save_config,
 )
+from ..ai.multi import MultiBackend
+from ..ai.openai_compat import CloudModel
 from ..ai.prompt import assemble
 from ..ai.tiers import TIER_TOOLS, Tier, tool_names, with_tiers
 from ..deps import AdminDep, SettingsDep, UserDep
@@ -72,6 +83,25 @@ class ChatRequest(BaseModel):
     numCtx: int | None = Field(default=None, ge=NUM_CTX_MIN, le=NUM_CTX_MAX)
 
 
+_cloud_calls: dict[Any, deque[float]] = defaultdict(deque)
+_cloud_lock = threading.Lock()
+
+
+def _cloud_allowed(user_id: Any, per_min: int) -> bool:
+    """Sliding one-minute window of cloud requests per user (each tool round counts)."""
+    if per_min <= 0:
+        return True
+    now = time.monotonic()
+    with _cloud_lock:
+        q = _cloud_calls[user_id]
+        while q and now - q[0] > 60:
+            q.popleft()
+        if len(q) >= per_min:
+            return False
+        q.append(now)
+        return True
+
+
 def _runtime(request: Request) -> AiRuntime:
     """The AI set-up in force, resolved from the environment and the database on first use."""
     state = request.app.state
@@ -104,13 +134,14 @@ def status(request: Request, who: UserDep, settings: SettingsDep) -> dict[str, A
         return {"enabled": False}
     try:
         models = with_tiers(backend.list_models(), runtime.tiers)
-        error = None
+        # Ollama down but cloud models listed: still usable, say why some are missing.
+        error = backend.last_error if isinstance(backend, MultiBackend) else None
     except AiError as exc:
         models, error = [], str(exc)
     return {
         "enabled": True,
         "provider": backend.id,
-        "reachable": error is None,
+        "reachable": bool(models) or error is None,
         "error": error,
         "models": [m.as_json() for m in models],
         "defaultModel": _default_model(models, runtime.default_model),
@@ -182,6 +213,8 @@ async def chat(
     if extra:
         raise HTTPException(400, f"not available to a {tier} model: {', '.join(extra)}")
 
+    if info.cloud and not _cloud_allowed(who.id, settings.ai_cloud_rate_per_min):
+        raise HTTPException(429, "too many cloud AI requests; wait a minute")
     active: set[str] = request.app.state.ai_active
     if who.id in active:
         raise HTTPException(429, "an answer is already being generated")
@@ -238,13 +271,31 @@ def _config_view(request: Request, settings: Any) -> dict[str, Any]:
     return {
         "source": runtime.source,
         "locked": False,
-        "provider": "ollama" if cfg else None,
+        "provider": "ollama" if cfg and cfg.url else None,
         "url": cfg.url if cfg else None,
         "models": list(cfg.models) if cfg else [],
         "defaultModel": cfg.default_model if cfg else None,
         "numCtx": runtime.num_ctx,
         "tiers": runtime.tiers,
+        "connections": [c.view() for c in cfg.connections] if cfg else [],
+        "presets": PRESETS,
     }
+
+
+def _store(request: Request, settings: Any, config: AiConfig | None) -> None:
+    if config is not None and not config.url and not config.connections:
+        config = None
+    save_config(request.app.state.engine, config)
+    request.app.state.ai_runtime = resolve(settings, config)
+
+
+def _stored(request: Request) -> AiConfig | None:
+    return _runtime(request).config
+
+
+def _locked(settings: Any) -> None:
+    if env_locked(settings):
+        raise HTTPException(409, "Ask AI is set by the server environment (OLLAMA_URL)")
 
 
 @router.get("/config")
@@ -268,21 +319,144 @@ class ConfigBody(BaseModel):
 def put_config(
     body: ConfigBody, request: Request, who: AdminDep, settings: SettingsDep
 ) -> dict[str, Any]:
-    if env_locked(settings):
-        raise HTTPException(409, "Ask AI is set by the server environment (OLLAMA_URL)")
-    config: AiConfig | None = None
+    _locked(settings)
+    current = _stored(request)
+    conns = current.connections if current else ()
+    url: str | None = None
     if body.url and body.url.strip():
         try:
             url = normalize_url(body.url)
         except ValueError as exc:
             raise HTTPException(422, f"Ollama URL {exc}") from None
-        models = tuple(dict.fromkeys(m.strip() for m in body.models if m.strip()))
-        default = (body.defaultModel or "").strip() or None
-        config = AiConfig(url, models, default, body.numCtx, dict(body.tiers))
-    save_config(request.app.state.engine, config)
-    request.app.state.ai_runtime = resolve(settings, config)
-    log.info("Ask AI %s in the app", "connected" if config else "turned off")
+    models = tuple(dict.fromkeys(m.strip() for m in body.models if m.strip())) if url else ()
+    default = (body.defaultModel or "").strip() or None
+    config = AiConfig(url, models, default, body.numCtx, dict(body.tiers), conns)
+    _store(request, settings, config)
+    log.info("Ask AI Ollama %s in the app", "connected" if url else "turned off")
     return _config_view(request, settings)
+
+
+# ------------------------------------------------------------ cloud connections
+
+
+class ConnectionModelBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    vision: bool = False
+    tools: bool = True
+    context: int | None = Field(default=None, ge=NUM_CTX_MIN, le=10_000_000)
+
+
+class ConnectionBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    preset: str = Field(default="custom", max_length=40)
+    baseUrl: str = Field(min_length=1, max_length=2000)
+    #: None keeps the stored key; "" removes it.
+    apiKey: str | None = Field(default=None, max_length=4000)
+    models: list[ConnectionModelBody] = Field(default_factory=list, max_length=MAX_MODELS)
+    context: int = Field(default=128_000, ge=NUM_CTX_MIN, le=10_000_000)
+    maxTokens: int | None = Field(default=None, ge=1, le=1_000_000)
+    #: The admin accepted that questions and chart data go to this provider (cloud URLs).
+    acknowledged: bool = False
+
+
+_CONN_ID = r"^[a-z0-9][a-z0-9-]{0,31}$"
+
+
+@router.put("/connections/{conn_id}")
+def put_connection(
+    conn_id: str, body: ConnectionBody, request: Request, who: AdminDep, settings: SettingsDep
+) -> dict[str, Any]:
+    _locked(settings)
+    if not re.match(_CONN_ID, conn_id):
+        raise HTTPException(422, "connection id: lower-case letters, digits and dashes")
+    try:
+        base_url = normalize_url(body.baseUrl)
+    except ValueError as exc:
+        raise HTTPException(422, f"Base URL {exc}") from None
+    if not is_local_url(base_url) and not body.acknowledged:
+        raise HTTPException(422, "confirm that questions and chart data are sent to this provider")
+    current = _stored(request)
+    conns = list(current.connections) if current else []
+    old = next((c for c in conns if c.id == conn_id), None)
+    if old is None and len(conns) >= MAX_CONNECTIONS:
+        raise HTTPException(409, f"at most {MAX_CONNECTIONS} connections")
+    key = (old.api_key if old else None) if body.apiKey is None else (body.apiKey.strip() or None)
+    conn = CloudConnection(
+        id=conn_id,
+        name=body.name.strip(),
+        preset=body.preset if body.preset in PRESETS else "custom",
+        base_url=base_url,
+        api_key=key,
+        models=tuple(
+            CloudModel(m.name.strip(), m.vision, m.tools, m.context)
+            for m in {m.name.strip(): m for m in body.models}.values()
+        ),
+        context=body.context,
+        max_tokens=body.maxTokens,
+    )
+    conns = [conn if c.id == conn_id else c for c in conns] if old else [*conns, conn]
+    base = current or AiConfig(None)
+    _store(
+        request,
+        settings,
+        AiConfig(base.url, base.models, base.default_model, base.num_ctx, base.tiers, tuple(conns)),
+    )
+    log.info("Ask AI connection %s %s", conn_id, "updated" if old else "added")
+    return _config_view(request, settings)
+
+
+@router.delete("/connections/{conn_id}")
+def delete_connection(
+    conn_id: str, request: Request, who: AdminDep, settings: SettingsDep
+) -> dict[str, Any]:
+    _locked(settings)
+    current = _stored(request)
+    if current is None or not any(c.id == conn_id for c in current.connections):
+        raise HTTPException(404, "no such connection")
+    conns = tuple(c for c in current.connections if c.id != conn_id)
+    _store(
+        request,
+        settings,
+        AiConfig(
+            current.url,
+            current.models,
+            current.default_model,
+            current.num_ctx,
+            current.tiers,
+            conns,
+        ),
+    )
+    log.info("Ask AI connection %s removed", conn_id)
+    return _config_view(request, settings)
+
+
+class ConnectionTestBody(BaseModel):
+    baseUrl: str = Field(min_length=1, max_length=2000)
+    #: None: use the stored key of connection `id`.
+    apiKey: str | None = Field(default=None, max_length=4000)
+    id: str | None = Field(default=None, max_length=32)
+
+
+@router.post("/connections/test")
+def test_cloud(
+    body: ConnectionTestBody, request: Request, who: AdminDep, settings: SettingsDep
+) -> dict[str, Any]:
+    """Reach an OpenAI-compatible server and list its models (`GET /models`)."""
+    try:
+        base_url = normalize_url(body.baseUrl)
+    except ValueError as exc:
+        raise HTTPException(422, f"Base URL {exc}") from None
+    key = body.apiKey
+    if key is None and body.id:
+        current = _stored(request)
+        old = next((c for c in current.connections if c.id == body.id), None) if current else None
+        key = old.api_key if old else None
+    probe_conn = CloudConnection("test", "This server", "custom", base_url, key or None)
+    try:
+        names = cloud_backend(settings, probe_conn).available_models()
+    except AiError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "models": names, "cloud": not is_local_url(base_url)}
 
 
 class TestBody(BaseModel):

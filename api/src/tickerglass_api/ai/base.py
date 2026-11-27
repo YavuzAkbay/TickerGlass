@@ -53,6 +53,8 @@ class ModelInfo:
     cloud: bool = False
     #: The connection serving it (`ollama` or a cloud connection id).
     connection: str | None = None
+    #: Context window in tokens when the provider owns it (cloud); None = the server's num_ctx.
+    context_tokens: int | None = None
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -64,6 +66,7 @@ class ModelInfo:
             "tier": self.tier,
             "cloud": self.cloud,
             "connection": self.connection,
+            "contextTokens": self.context_tokens,
         }
 
 

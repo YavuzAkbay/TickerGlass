@@ -315,7 +315,9 @@ def test_make_backend_demo() -> None:
 
 def test_config_off_by_default(tmp_path: Path) -> None:
     with make(tmp_path) as c:
-        assert c.get("/api/ai/config").json() == {
+        view = c.get("/api/ai/config").json()
+        assert view.pop("presets")["openai"]["baseUrl"] == "https://api.openai.com/v1"
+        assert view == {
             "source": "off",
             "locked": False,
             "provider": None,
@@ -324,6 +326,7 @@ def test_config_off_by_default(tmp_path: Path) -> None:
             "defaultModel": None,
             "numCtx": 16384,
             "tiers": {},
+            "connections": [],
         }
 
 
