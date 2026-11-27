@@ -361,3 +361,11 @@
   padding: 0 6px;
   font-size: 12px;
 }
+.ai-notice-legal {
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}

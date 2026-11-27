@@ -133,7 +133,7 @@ services:
       AI_MODELS: ${AI_MODELS:-}
       AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-}
       AI_NUM_CTX: ${AI_NUM_CTX:-16384}
-      AI_TIMEOUT_S: ${AI_TIMEOUT_S:-180}
+      AI_TIMEOUT_S: ${AI_TIMEOUT_S:-600}
       AI_KEEP_ALIVE: ${AI_KEEP_ALIVE:-}
       AI_MAX_IMAGE_MB: ${AI_MAX_IMAGE_MB:-4}
     # Lets OLLAMA_URL=http://host.docker.internal:11434 reach Ollama on the host (Linux too).

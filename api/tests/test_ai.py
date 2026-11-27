@@ -544,3 +544,10 @@ def test_per_request_context_window(tmp_path: Path, ollama: FakeOllama) -> None:
             c.post("/api/ai/chat", json={**ask(model="qwen2.5:7b"), "numCtx": 100}).status_code
             == 422
         )
+
+
+def test_slow_first_token_is_not_unreachable(ollama: FakeOllama) -> None:
+    ollama.header_delay_s = 1.5
+    backend = OllamaBackend(ollama.url, timeout_s=0.5, num_ctx=1024)
+    with pytest.raises(AiUnavailable, match="did not start answering within"):
+        list(backend.open_chat("qwen2.5:7b", []))

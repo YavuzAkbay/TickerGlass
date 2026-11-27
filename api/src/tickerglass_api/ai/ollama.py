@@ -204,16 +204,24 @@ class OllamaBackend:
         self, method: str, path: str, body: Any, timeout: float
     ) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse]:
         conn = self._connect(timeout)
+        connected = False
         try:
             conn.connect()
+            connected = True
             data = json.dumps(body).encode() if body is not None else None
             conn.request(method, self._prefix + path, body=data, headers=self._headers)
             return conn, conn.getresponse()
         except (OSError, http.client.HTTPException) as exc:
             conn.close()
             upstream.record(PROVIDER_ID, "unavailable")
-            if isinstance(exc, TimeoutError | socket.timeout) and conn.sock is not None:
-                raise AiUnavailable("Ollama did not answer in time") from None
+            if connected and isinstance(exc, TimeoutError | socket.timeout):
+                # Reached, but no first token in time: loading a big model or reading a long
+                # prompt (a larger context window makes Ollama reload the model).
+                raise AiUnavailable(
+                    f"Ollama did not start answering within {timeout:.0f} s (loading the model "
+                    "or reading a long prompt). Try again, pick a smaller context window or "
+                    "model, or raise AI_TIMEOUT_S."
+                ) from None
             raise AiUnavailable("Ollama is not reachable") from None
 
     def _json(self, method: str, path: str, body: Any = None) -> Any:

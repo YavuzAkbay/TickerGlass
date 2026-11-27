@@ -42,6 +42,8 @@ class FakeOllama:
         ]
         #: Seconds to sleep before each chat line.
         self.line_delay_s = 0.0
+        #: Seconds before the chat response starts (Ollama sends headers with the first token).
+        self.header_delay_s = 0.0
         self.requests: list[dict[str, Any]] = []
         self.disconnected = threading.Event()
         self.url = ""
@@ -92,6 +94,8 @@ def _handler(fake: FakeOllama) -> type[BaseHTTPRequestHandler]:
                 self._send_json(404, {"error": "not found"})
 
         def _chat(self) -> None:
+            if fake.header_delay_s:
+                time.sleep(fake.header_delay_s)
             if fake.chat_status != 200:
                 self._send_json(fake.chat_status, {"error": "model 'x' not found"})
                 return

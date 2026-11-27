@@ -11,11 +11,16 @@ export interface SwingOptions {
   /** Inclusive index range searched. Default: all bars. */
   from?: number;
   to?: number;
+  /** Also report the extreme of the last bars as an unconfirmed swing. Default false. */
+  includeLast?: boolean;
 }
 
 export interface Swing {
   index: number;
   value: number;
+  /** False for a swing in the making at the end of the data (fewer than `strength` bars after
+   * it, all of them less extreme). */
+  confirmed?: boolean;
 }
 
 /**
@@ -45,7 +50,27 @@ export function findSwings(
       // Ties go to the earlier bar: an equal value before `i` disqualifies it, one after does not.
       if (j < i ? !better(v, w) : better(w, v)) ok = false;
     }
-    if (ok) out.push({ index: i, value: v });
+    if (ok) out.push({ index: i, value: v, confirmed: true });
+  }
+  if (opts.includeLast) {
+    const end = Math.min(opts.to ?? n - 1, n - 1);
+    // The most extreme bar of the unconfirmed tail, if it beats the `k` bars before it.
+    let best = -1;
+    for (let i = Math.max(to + 1, end - k + 1); i <= end; i++) {
+      const v = at(values, i);
+      if (Number.isFinite(v) && (best < 0 || better(v, at(values, best)))) best = i;
+    }
+    if (best >= k) {
+      const v = at(values, best);
+      let ok = true;
+      for (let j = best - k; j <= end && ok; j++) {
+        if (j === best) continue;
+        const w = at(values, j);
+        if (Number.isFinite(w) && !better(v, w)) ok = false;
+      }
+      if (ok && !out.some((s) => s.index === best))
+        out.push({ index: best, value: v, confirmed: false });
+    }
   }
   return out;
 }
@@ -71,6 +96,8 @@ export interface Divergence {
   bars: number;
   priceChangePct: number;
   oscillatorChange: number;
+  /** False when the second swing is still forming (the latest bars). */
+  confirmed: boolean;
 }
 
 export interface DivergenceOptions extends SwingOptions {
@@ -83,6 +110,19 @@ export interface DivergenceOptions extends SwingOptions {
   tolerance?: number;
   /** Most results returned (most recent first). Default 10. */
   limit?: number;
+}
+
+/** Whether no swing strictly between `a` and `b` crosses the straight line from `a` to `b`
+ * (lows must stay above it, highs below): the pair is what a chartist would connect. */
+function clean(swings: Swing[], from: number, to: number, kind: 'high' | 'low'): boolean {
+  const a = swings[from]!;
+  const b = swings[to]!;
+  for (let s = from + 1; s < to; s++) {
+    const m = swings[s]!;
+    const line = a.value + ((b.value - a.value) * (m.index - a.index)) / (b.index - a.index);
+    if (kind === 'low' ? m.value < line : m.value > line) return false;
+  }
+  return true;
 }
 
 /** Extreme of `osc` within `tol` bars of `i`, or null without values. */
@@ -119,23 +159,36 @@ export function findDivergences(
 
   const scan = (kind: 'high' | 'low') => {
     const series = kind === 'high' ? bars.high : bars.low;
-    const swings = findSwings(series, kind, opts);
+    const swings = findSwings(series, kind, { includeLast: true, ...opts });
     for (let s = 1; s < swings.length; s++) {
-      const a = swings[s - 1]!;
       const b = swings[s]!;
+      // Pair `b` with the earliest swing that still makes a clean line to it (the widest
+      // divergence, as drawn by hand), falling back to nearer ones.
+      let best: {
+        a: Swing;
+        oa: { index: number; value: number };
+        ob: { index: number; value: number };
+        kindOf: DivergenceKind;
+      } | null = null;
+      for (let r = 0; r < s && !best; r++) {
+        const a = swings[r]!;
+        const gap = b.index - a.index;
+        if (gap < minBars || gap > maxBars || !clean(swings, r, s, kind)) continue;
+        const oa = oscAt(osc, a.index, tol, kind);
+        const ob = oscAt(osc, b.index, tol, kind);
+        if (!oa || !ob || oa.value === ob.value || a.value === b.value) continue;
+        const priceUp = b.value > a.value;
+        const oscUp = ob.value > oa.value;
+        if (priceUp === oscUp) continue;
+        // Highs: HH+LH regular bearish, LH+HH hidden bearish. Lows: LL+HL regular bullish,
+        // HL+LL hidden bullish.
+        const kindOf: DivergenceKind =
+          kind === 'high' ? (priceUp ? 'regular' : 'hidden') : priceUp ? 'hidden' : 'regular';
+        if (kinds.includes(kindOf)) best = { a, oa, ob, kindOf };
+      }
+      if (!best) continue;
+      const { a, oa, ob, kindOf } = best;
       const gap = b.index - a.index;
-      if (gap < minBars || gap > maxBars) continue;
-      const oa = oscAt(osc, a.index, tol, kind);
-      const ob = oscAt(osc, b.index, tol, kind);
-      if (!oa || !ob || oa.value === ob.value || a.value === b.value) continue;
-      const priceUp = b.value > a.value;
-      const oscUp = ob.value > oa.value;
-      if (priceUp === oscUp) continue;
-      // Highs: HH+LH regular bearish, LH+HH hidden bearish. Lows: LL+HL regular bullish,
-      // HL+LL hidden bullish.
-      const kindOf: DivergenceKind =
-        kind === 'high' ? (priceUp ? 'regular' : 'hidden') : priceUp ? 'hidden' : 'regular';
-      if (!kinds.includes(kindOf)) continue;
       const point = (index: number, value: number): DivergencePoint => ({
         index,
         time: at(bars.time, index),
@@ -149,6 +202,7 @@ export function findDivergences(
         bars: gap,
         priceChangePct: a.value !== 0 ? ((b.value - a.value) / a.value) * 100 : 0,
         oscillatorChange: ob.value - oa.value,
+        confirmed: b.confirmed !== false,
       });
     }
   };

@@ -33,7 +33,7 @@ describe('findSwings', () => {
 
   it('skips NaN values', () => {
     expect(findSwings([NaN, 1, 3, 1, NaN], 'high', { strength: 1 })).toEqual([
-      { index: 2, value: 3 },
+      { index: 2, value: 3, confirmed: true },
     ]);
   });
 });
@@ -88,5 +88,32 @@ describe('findDivergences', () => {
     const price = peaks(30, { 8: 20, 20: 25 });
     const osc = peaks(30, { 8: 80, 20: 65 }, 50);
     expect(findDivergences(bars(price), osc, { from: 10 })).toEqual([]);
+  });
+});
+
+describe('unconfirmed and wide divergences', () => {
+  it('reports a swing still forming at the end when asked', () => {
+    const v = [5, 4, 3, 4, 5, 6, 5, 4, 2];
+    expect(findSwings(v, 'low', { strength: 2 })).toEqual([
+      { index: 2, value: 3, confirmed: true },
+    ]);
+    expect(findSwings(v, 'low', { strength: 2, includeLast: true }).at(-1)).toEqual({
+      index: 8,
+      value: 2,
+      confirmed: false,
+    });
+  });
+
+  it('pairs the latest low with the widest clean earlier low', () => {
+    // Lows at 8 (10), 18 (9.5, a small dip above the 8->30 line), 30 (6, still forming).
+    const price = Array.from({ length: 31 }, (_, i) =>
+      i === 8 ? 10 : i === 18 ? 9.5 : i === 30 ? 6 : 15,
+    );
+    const osc = Array.from({ length: 31 }, (_, i) =>
+      i === 8 ? 20 : i === 18 ? 22 : i === 30 ? 25 : 50,
+    );
+    const [d] = findDivergences(bars(price), osc, { strength: 3 });
+    expect(d).toMatchObject({ kind: 'regular', direction: 'bullish', confirmed: false });
+    expect(d!.price.map((p) => p.index)).toEqual([8, 30]); // not 18 -> 30
   });
 });

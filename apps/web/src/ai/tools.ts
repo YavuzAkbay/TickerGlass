@@ -5,12 +5,17 @@
  */
 import {
   findDivergences,
+  findLevels,
   findSwings,
   isIntraday,
+  macdLine,
   rangeIndexes,
+  rsi,
   timeFormatter,
+  type BriefBars,
   type BriefFocus,
   type Divergence,
+  type Level,
 } from '@tickerglass/ai-context';
 import type { Chart, DrawingInput, DrawingStyle } from '@tickerglass/engine';
 import { bindToChart } from '../drawings/attach';
@@ -146,7 +151,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: 'find_divergences',
       description:
-        'Find regular and hidden, bullish and bearish divergences between price and an oscillator in the focus range. Adds the oscillator if it is not on the chart. Returns ids for draw_divergence.',
+        'Find regular and hidden, bullish and bearish divergences between price and an oscillator in the focus range, most recent first. Read-only: does not change the chart. Returns ids for draw_divergence.',
       parameters: {
         type: 'object',
         properties: {
@@ -162,10 +167,35 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: 'draw_divergence',
       description:
-        'Draw one divergence found by find_divergences: a line between the two price swings and one between the two oscillator values, labelled.',
+        'Draw one divergence found by find_divergences: a line between the two price swings and one between the two oscillator values (adds the oscillator to the chart if needed).',
       parameters: {
         type: 'object',
         properties: { id: { type: 'string', description: 'e.g. "d1"' } },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_levels',
+      description:
+        'Find horizontal support and resistance: prices where price turned at least twice, over all loaded history up to the focus end, nearest to the latest close on both sides. Read-only. Returns ids for draw_level.',
+      parameters: {
+        type: 'object',
+        properties: { max: { type: 'number', description: 'How many levels, default 5' } },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'draw_level',
+      description:
+        'Draw a level found by find_levels as a horizontal line starting where it formed (green support, red resistance).',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'e.g. "L2"' } },
         required: ['id'],
       },
     },
@@ -225,7 +255,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
 /** Divergences found per chart, by id, for draw_divergence. */
 const divergences = new Map<
   string,
-  Map<string, Divergence & { studyId: string; studyTitle: string }>
+  Map<string, Divergence & { osc: string; studyTitle: string }>
 >();
 /** Drawings the AI made per chart (clear_ai_drawings). */
 const aiDrawings = new Map<string, Set<string>>();
@@ -319,6 +349,19 @@ async function ensureIndicator(
     await waitForStudy(ctx.chart, id);
     return { id, added };
   });
+}
+
+function storeBars(ctx: ToolContext): BriefBars {
+  const s = ctx.chart.store;
+  return {
+    length: s.length,
+    time: s.time,
+    open: s.open,
+    high: s.high,
+    low: s.low,
+    close: s.close,
+    volume: s.volume,
+  };
 }
 
 function focusIndexes(ctx: ToolContext): [number, number] | null {
@@ -453,9 +496,13 @@ function findSwingsTool(ctx: ToolContext, args: Record<string, unknown>) {
     name = studyInfo(ctx.chart, source)?.title ?? source;
   }
   const pick = (vals: ArrayLike<number>, k: 'high' | 'low') =>
-    findSwings(vals, k, { strength, from, to })
+    findSwings(vals, k, { strength, from, to, includeLast: true })
       .slice(-12)
-      .map((p) => ({ time: fmt(s.time[p.index]!), value: round(p.value) }));
+      .map((p) => ({
+        time: fmt(s.time[p.index]!),
+        value: round(p.value),
+        ...(p.confirmed === false ? { stillForming: true } : {}),
+      }));
   const data = {
     source: name,
     ...(kind !== 'low' ? { highs: pick(highs, 'high') } : {}),
@@ -465,66 +512,93 @@ function findSwingsTool(ctx: ToolContext, args: Record<string, unknown>) {
   return result(data, `Found ${n} swing${n === 1 ? '' : 's'} on ${name}`);
 }
 
+/** Oscillator values for divergence search without touching the chart: the indicator's own
+ * values when it is on the chart, else RSI / MACD computed here. */
+function oscillatorValues(
+  ctx: ToolContext,
+  osc: string,
+): { values: ArrayLike<number>; studyId: string | null; title: string } | null {
+  const spec = OSCILLATORS[osc]!;
+  const s = ctx.chart.store;
+  const onChart = runInSession(ctx.chartId, () =>
+    useIndicatorStore.getState().instances.find((i) => i.type === osc),
+  );
+  if (onChart) {
+    const data = ctx.chart.getStudyData(onChart.id);
+    const values = data?.values[spec.output];
+    if (data?.current && values)
+      return {
+        values: values.subarray(0, data.length),
+        studyId: onChart.id,
+        title: studyInfo(ctx.chart, onChart.id)?.title ?? osc.toUpperCase(),
+      };
+  }
+  const close = s.close.subarray(0, s.length);
+  if (osc === 'rsi') return { values: rsi(close, 14), studyId: null, title: 'RSI 14' };
+  if (osc === 'macd') return { values: macdLine(close), studyId: null, title: 'MACD 12 26' };
+  return null;
+}
+
 async function findDivergencesTool(ctx: ToolContext, args: Record<string, unknown>) {
   const osc = str(args.oscillator, 'rsi').toLowerCase();
-  const spec = OSCILLATORS[osc];
-  if (!spec) return fail(`unsupported oscillator "${osc}"`);
-  const got = await ensureIndicator(ctx, osc, spec.inputs ?? {});
-  if (!got) return fail(`could not add ${osc}`);
-  const data = ctx.chart.getStudyData(got.id);
-  const values = data?.values[spec.output];
-  if (!data || !values) return fail(`${osc} has no values yet`);
+  if (!OSCILLATORS[osc]) return fail(`unsupported oscillator "${osc}"`);
+  let source = oscillatorValues(ctx, osc);
+  if (!source) {
+    // Stochastic, CCI, MFI, OBV: only from the chart's own indicator.
+    const got = await ensureIndicator(ctx, osc, OSCILLATORS[osc]!.inputs ?? {});
+    if (!got) return fail(`could not add ${osc}`);
+    source = oscillatorValues(ctx, osc);
+    if (!source) return fail(`${osc} has no values yet`);
+  }
   const range = focusIndexes(ctx);
   if (!range) return fail('no bars in the focus range');
-  const s = ctx.chart.store;
   const kinds = str(args.kinds, 'both');
-  const found = findDivergences(
-    {
-      length: s.length,
-      time: s.time,
-      open: s.open,
-      high: s.high,
-      low: s.low,
-      close: s.close,
-      volume: s.volume,
-    },
-    values.subarray(0, data.length),
-    {
-      from: range[0],
-      to: range[1],
-      kinds:
-        kinds === 'regular' ? ['regular'] : kinds === 'hidden' ? ['hidden'] : ['regular', 'hidden'],
-    },
-  );
-  const title = studyInfo(ctx.chart, got.id)?.title ?? osc.toUpperCase();
+  const found = findDivergences(storeBars(ctx), source.values, {
+    from: range[0],
+    to: range[1],
+    strength: 4,
+    kinds:
+      kinds === 'regular' ? ['regular'] : kinds === 'hidden' ? ['hidden'] : ['regular', 'hidden'],
+  });
   divergences.set(
     ctx.chartId,
-    new Map(found.map((d) => [d.id, { ...d, studyId: got.id, studyTitle: title }])),
+    new Map(found.map((d) => [d.id, { ...d, osc, studyTitle: source.title }])),
   );
   const fmt = fmtTime(ctx.chart);
   return result(
     {
-      oscillator: { id: got.id, title, addedNow: got.added },
+      oscillator: source.title,
+      onChart: source.studyId !== null,
+      note: 'Most recent first. confirmed=false: the second swing is still forming (latest bars).',
       divergences: found.map((d) => ({
         id: d.id,
         type: `${d.kind} ${d.direction}`,
         price: d.price.map((p) => ({ time: fmt(p.time), price: round(p.value) })),
         [osc]: d.oscillator.map((p) => ({ time: fmt(p.time), value: round(p.value) })),
         bars: d.bars,
+        confirmed: d.confirmed,
       })),
     },
-    `${got.added ? `Added ${title} · ` : ''}Found ${found.length} divergence${found.length === 1 ? '' : 's'} (${title})`,
+    `Found ${found.length} divergence${found.length === 1 ? '' : 's'} (${source.title})`,
   );
 }
 
-function drawDivergenceTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function drawDivergenceTool(ctx: ToolContext, args: Record<string, unknown>) {
   const d = divergences.get(ctx.chartId)?.get(str(args.id));
   if (!d) return fail(`unknown divergence id "${str(args.id)}"; call find_divergences first`);
-  const pane = studyInfo(ctx.chart, d.studyId);
-  if (!pane) return fail(`${d.studyTitle} is no longer on the chart`);
+  // The oscillator goes on the chart only now, when there is something to draw on it.
+  const got = await ensureIndicator(ctx, d.osc, OSCILLATORS[d.osc]!.inputs ?? {});
+  if (!got) return fail(`could not add ${d.osc}`);
+  const pane = studyInfo(ctx.chart, got.id);
+  if (!pane) return fail(`${d.osc} is not on the chart`);
+  // Anchor the oscillator line on the plotted values (they match the search to rounding).
+  const plotted = ctx.chart.getStudyData(got.id)?.values[OSCILLATORS[d.osc]!.output];
+  const oscPoint = (p: { index: number; time: number; value: number }) => {
+    const v = plotted?.[p.index];
+    return { time: p.time, price: v !== undefined && Number.isFinite(v) ? v : p.value };
+  };
   const tone: Tone = d.direction;
-  const name = `${d.kind === 'hidden' ? 'Hidden ' : ''}${d.direction} divergence`;
-  const label = name.charAt(0).toUpperCase() + name.slice(1);
+  const name = `${d.kind === 'hidden' ? 'hidden ' : ''}${d.direction} divergence`;
   addDrawings(
     ctx,
     [
@@ -538,16 +612,67 @@ function drawDivergenceTool(ctx: ToolContext, args: Record<string, unknown>) {
       {
         type: 'trend-line',
         paneId: pane.paneId,
-        points: d.oscillator.map((p) => ({ time: p.time, price: p.value })),
+        points: d.oscillator.map(oscPoint),
         style: lineStyle(tone),
       },
     ],
-    `AI: ${label}`,
+    `AI: ${name}`,
   );
   return result(
-    { drawn: d.id },
-    `Drew ${label.toLowerCase()} ${d.id} on price and ${d.studyTitle}`,
+    { drawn: d.id, indicatorAdded: got.added },
+    `${got.added ? `Added ${pane.title} · ` : ''}Drew ${name} ${d.id}`,
   );
+}
+
+/** Support/resistance per chart, by id, for draw_level. */
+const levelCache = new Map<string, Map<string, Level>>();
+
+function findLevelsTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const range = focusIndexes(ctx);
+  if (!range) return fail('no bars in the focus range');
+  const all = storeBars(ctx);
+  // All history up to the focus end: old levels still matter after a breakdown.
+  const upTo = { ...all, length: range[1] + 1 };
+  const limit = Number.isFinite(num(args.max)) ? Math.max(2, Math.min(10, num(args.max))) : 5;
+  const levels = findLevels(upTo, { limit });
+  levelCache.set(ctx.chartId, new Map(levels.map((l) => [l.id, l])));
+  const fmt = fmtTime(ctx.chart);
+  return result(
+    {
+      close: round(all.close[range[1]]!),
+      note: 'Prices where swings turned at least twice, nearest to the close on both sides.',
+      levels: levels.map((l) => ({
+        id: l.id,
+        price: round(l.price),
+        role: l.role,
+        touches: l.touches.length,
+        first: fmt(l.touches[0]!.time),
+        last: fmt(l.touches.at(-1)!.time),
+        flipped: l.flipped,
+        distancePct: Number(l.distancePct.toFixed(1)),
+      })),
+    },
+    `Found ${levels.length} support/resistance level${levels.length === 1 ? '' : 's'}`,
+  );
+}
+
+function drawLevelTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const l = levelCache.get(ctx.chartId)?.get(str(args.id));
+  if (!l) return fail(`unknown level id "${str(args.id)}"; call find_levels first`);
+  addDrawings(
+    ctx,
+    [
+      {
+        // A ray from where the level formed, like a hand-drawn one.
+        type: 'horizontal-ray',
+        paneId: 'main',
+        points: [{ time: l.touches[0]!.time, price: l.price }],
+        style: lineStyle(l.role === 'support' ? 'bullish' : 'bearish'),
+      },
+    ],
+    `AI: ${l.role}`,
+  );
+  return result({ drawn: l.id }, `Drew ${l.role} at ${round(l.price)}`);
 }
 
 function drawTrendLineTool(ctx: ToolContext, args: Record<string, unknown>) {
@@ -640,7 +765,11 @@ export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolRes
       case 'find_divergences':
         return await findDivergencesTool(ctx, args);
       case 'draw_divergence':
-        return drawDivergenceTool(ctx, args);
+        return await drawDivergenceTool(ctx, args);
+      case 'find_levels':
+        return findLevelsTool(ctx, args);
+      case 'draw_level':
+        return drawLevelTool(ctx, args);
       case 'draw_trend_line':
         return drawTrendLineTool(ctx, args);
       case 'draw_horizontal_line':

@@ -238,7 +238,7 @@ class Settings(BaseSettings):
     #: truncates the chart data).
     ai_num_ctx: int = Field(default=16384, ge=1024, le=1_048_576)
     #: Seconds to wait for Ollama to answer (covers loading a model) and between streamed chunks.
-    ai_timeout_s: float = Field(default=180, gt=0, le=3600)
+    ai_timeout_s: float = Field(default=600, gt=0, le=3600)
     #: How long Ollama keeps the model loaded after a request (`5m`, `1h`, `-1`); unset = Ollama's.
     ai_keep_alive: str | None = None
     #: Largest image attached to one message, decoded.

@@ -122,7 +122,7 @@ says so instead of stopping silently.
 | `AI_MODELS`        | all       | Comma list of the models users may pick, e.g. `qwen3.5:9b,qwen3.8:27b`.              |
 | `AI_DEFAULT_MODEL` | first one | Preselected model.                                                                   |
 | `AI_NUM_CTX`       | `16384`   | Context window sent to Ollama. The chart brief is sized to fit it.                   |
-| `AI_TIMEOUT_S`     | `180`     | Seconds to wait for the answer to start (loading a model counts) and between chunks. |
+| `AI_TIMEOUT_S`     | `600`     | Seconds to wait for the answer to start (loading a model counts) and between chunks. |
 | `AI_KEEP_ALIVE`    | Ollama's  | How long Ollama keeps the model loaded after a question: `5m`, `1h`, `-1` (forever). |
 | `AI_MAX_IMAGE_MB`  | `4`       | Largest chart picture accepted.                                                      |
 | `AI_MAX_CHARS`     | `400000`  | Largest conversation accepted, in characters.                                        |
@@ -159,22 +159,33 @@ Models with tool support (Settings → AI and the model picker mark them **chart
 - "Add a 20-day Bollinger Band and tell me if price is stretched."
 - "Mark the main support and resistance levels."
 
-The model can:
+The model only changes the chart when you ask it to (draw, mark, show, add, remove…); a question
+like "summarize the chart" is answered in words. Its tools:
 
-| Tool                   | What it does                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------- |
-| `list_indicators`      | Reads the indicators on the chart and their latest values.                                  |
-| `add_indicator`        | Adds RSI, MACD, Stochastic, CCI, MFI, OBV, SMA, EMA, Bollinger Bands, ATR or Volume.        |
-| `remove_indicator`     | Removes an indicator.                                                                       |
-| `find_swings`          | Lists confirmed swing highs and lows of price or an indicator in the range.                 |
-| `find_divergences`     | Finds regular and hidden, bullish and bearish divergences against an oscillator.            |
-| `draw_divergence`      | Draws a found divergence: a line on price and one on the oscillator, coloured and labelled. |
-| `draw_trend_line`      | Draws a line between two points on price or an indicator pane.                              |
-| `draw_horizontal_line` | Draws a level, e.g. support or resistance.                                                  |
-| `clear_ai_drawings`    | Removes the lines it drew earlier in the conversation.                                      |
+| Tool                   | What it does                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `list_indicators`      | Reads the indicators on the chart and their latest values. Read-only.                           |
+| `find_levels`          | Finds support and resistance: prices where swings turned at least twice. Read-only.             |
+| `find_swings`          | Lists swing highs and lows of price or an indicator, including one still forming. Read-only.    |
+| `find_divergences`     | Finds regular and hidden, bullish and bearish divergences against RSI, MACD, … Read-only.       |
+| `draw_level`           | Draws a found level as a line from where it formed (green support, red resistance).             |
+| `draw_divergence`      | Draws a found divergence on price and on the oscillator (adds the oscillator if it is missing). |
+| `add_indicator`        | Adds RSI, MACD, Stochastic, CCI, MFI, OBV, SMA, EMA, Bollinger Bands, ATR or Volume.            |
+| `remove_indicator`     | Removes an indicator.                                                                           |
+| `draw_trend_line`      | Draws a line between two points on price or an indicator pane.                                  |
+| `draw_horizontal_line` | Draws a level at a given price.                                                                 |
+| `clear_ai_drawings`    | Removes the lines it drew earlier in the conversation.                                          |
 
-Swings and divergences are **computed by TickerGlass**, not guessed by the model: two confirmed
-swing points 5–60 bars apart (3 bars on each side), compared with the oscillator at the same bars.
+Levels, swings and divergences are **computed by TickerGlass**, not guessed by the model:
+
+- **Levels:** swing highs and lows (3 bars on each side, plus a swing still forming at the end)
+  within 4% of each other form a level; at least two touches; ranked by touches, use as both
+  support and resistance, recency and distance from the price, over the price range of the last
+  250 bars. A level is drawn from its first touch.
+- **Divergences:** the latest swing (even one still forming) is compared with the earliest swing
+  5–60 bars before it that still makes a clean line to it, against RSI 14 or MACD computed
+  directly (the indicator is added only when a divergence is drawn). Most recent first.
+
 The model decides what to look for, draws what was found and explains it. Each action shows as a
 line under your question ("Added RSI 14 · Found 3 divergences"), and everything one answer changed
 is a single undo step; **Undo AI changes** under the answer removes it too. Untick **Let AI add
@@ -183,6 +194,16 @@ indicators and draw on the chart** in the panel to keep the model to words only.
 Small models usually ignore the tools and only talk: in our tests `qwen2.5:0.5b` wrote Python code
 instead of calling them, while a 26B model added RSI, found and drew the divergences and explained
 them. Use 7B or larger, ideally 9B+.
+
+## Not financial advice
+
+Ask AI describes what a chart shows. **Nothing it says or draws is financial advice, an investment
+recommendation or consultation.** Answers are generated automatically by a language model, can be
+wrong or invented, and nobody reviews them. The model is instructed never to recommend buying,
+selling or holding, and never to suggest entries, exits, stops, position sizes or targets; when
+asked, it says that it is not financial advice and only describes the chart. The project's authors
+are not licensed advisers and accept no liability for decisions made with it; see the
+[disclaimer in the README](../README.md#disclaimer).
 
 ## Good to know
 

@@ -9,6 +9,7 @@ import {
   timeFormatter,
   type TimeFormat,
 } from './format';
+import { findSwings } from './divergence';
 import { focusStats, rangeIndexes } from './stats';
 import type { BriefInput, BriefOptions, ChartBrief, FocusStats, PricePoint } from './types';
 
@@ -143,6 +144,20 @@ function statsLines(ctx: Ctx, s: FocusStats): string[] {
     pts.map((p) => `${t(p.time)} ${fmtPrice(p.price, d)}`).join(', ');
   if (s.swingHighs.length) lines.push(`Swing highs: ${sw(s.swingHighs)}`);
   if (s.swingLows.length) lines.push(`Swing lows: ${sw(s.swingLows)}`);
+  // The latest bars cannot be confirmed swings yet; a sell-off's low is often there.
+  const bars = ctx.input.bars;
+  for (const kind of ['low', 'high'] as const) {
+    const last = findSwings(kind === 'low' ? bars.low : bars.high, kind, {
+      strength: 3,
+      from: ctx.a,
+      to: ctx.b,
+      includeLast: true,
+    }).at(-1);
+    if (last && last.confirmed === false)
+      lines.push(
+        `Swing ${kind} still forming (latest bars, not confirmed): ${fmtPrice(last.value, d)} on ${t(at(bars.time, last.index))}`,
+      );
+  }
   if (s.priorChangePct !== null)
     lines.push(`Before the focus: ${fmtPct(s.priorChangePct)} over the preceding bars`);
   lines.push(
