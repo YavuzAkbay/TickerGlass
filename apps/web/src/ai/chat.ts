@@ -73,6 +73,27 @@ export function focusLabel(chart: Chart, focus: BriefFocus, brief: ChartBrief): 
   return `${kind} · ${shortDate(brief.stats.from, tz)} – ${shortDate(brief.stats.to, tz)} · ${brief.focusBars} bars`;
 }
 
+/** The calls of the assistant message at `at` that have a result right after it, and those results. */
+function answeredCalls(
+  messages: readonly UiMessage[],
+  at: number,
+  calls: readonly ToolCall[],
+): { calls: ToolCall[]; results: UiMessage[] } {
+  const results: UiMessage[] = [];
+  for (let j = at + 1; j < messages.length && messages[j]!.role === 'tool'; j++)
+    results.push(messages[j]!);
+  const free = [...results];
+  const kept: ToolCall[] = [];
+  const used = new Set<UiMessage>();
+  for (const call of calls) {
+    const k = free.findIndex((r) => (r.toolName ?? '') === call.name);
+    if (k < 0) continue;
+    used.add(free.splice(k, 1)[0]!);
+    kept.push(call);
+  }
+  return { calls: kept, results: results.filter((r) => used.has(r)) };
+}
+
 /** Messages for the API: only the latest chart context is sent in full. */
 export function apiMessages(messages: readonly UiMessage[]): AiChatMessage[] {
   let latestContext = -1;
@@ -82,16 +103,21 @@ export function apiMessages(messages: readonly UiMessage[]): AiChatMessage[] {
   const out: AiChatMessage[] = [];
   messages.forEach((m, i) => {
     if (m.role === 'assistant') {
-      if (m.toolCalls?.length)
-        out.push({ role: 'assistant', content: m.text, tool_calls: m.toolCalls });
+      // Providers reject `tool_calls` without a result for each, so a round that was stopped,
+      // cut off or never run sends only the calls that were answered (results follow the
+      // assistant message; each answers the oldest unanswered call of its name, like the server).
+      const answered = m.toolCalls?.length ? answeredCalls(messages, i, m.toolCalls) : null;
+      if (answered?.calls.length) {
+        out.push({ role: 'assistant', content: m.text, tool_calls: answered.calls });
+        for (const r of answered.results)
+          out.push({ role: 'tool', content: r.content, tool_name: r.toolName ?? '' });
+      }
       // Failed or empty answers are left out; the next question follows the last good one.
       else if (m.text) out.push({ role: 'assistant', content: m.text });
       return;
     }
-    if (m.role === 'tool') {
-      out.push({ role: 'tool', content: m.content, tool_name: m.toolName ?? '' });
-      return;
-    }
+    // Tool results are emitted with the assistant message they answer; any others are orphans.
+    if (m.role === 'tool') return;
     const content =
       m.context && i !== latestContext ? `${OMITTED_CONTEXT}\n\n${m.text}` : m.content;
     out.push({

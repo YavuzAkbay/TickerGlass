@@ -72,6 +72,87 @@ describe('apiMessages with tools', () => {
   });
 });
 
+describe('apiMessages with unanswered tool calls', () => {
+  const user: UiMessage = { id: '1', role: 'user', text: 'q', content: 'q' };
+  const call = (name: string) => ({ name, arguments: {} });
+  const result = (id: string, name: string): UiMessage => ({
+    id,
+    role: 'tool',
+    text: 's',
+    content: `{"r":"${name}"}`,
+    toolName: name,
+  });
+
+  it('sends no tool_calls when the round was stopped before any result', () => {
+    const msgs: UiMessage[] = [
+      user,
+      {
+        id: '2',
+        role: 'assistant',
+        text: 'Let me check.',
+        content: '',
+        status: 'stopped',
+        toolCalls: [call('a'), call('b')],
+      },
+      { id: '3', role: 'user', text: 'again', content: 'again' },
+    ];
+    expect(apiMessages(msgs)).toEqual([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'Let me check.' },
+      { role: 'user', content: 'again' },
+    ]);
+  });
+
+  it('skips an unanswered tool-call message with no text', () => {
+    const msgs: UiMessage[] = [
+      user,
+      {
+        id: '2',
+        role: 'assistant',
+        text: '',
+        content: '',
+        status: 'error',
+        toolCalls: [call('a')],
+      },
+    ];
+    expect(apiMessages(msgs)).toEqual([{ role: 'user', content: 'q' }]);
+  });
+
+  it('keeps only the answered calls and their results', () => {
+    const msgs: UiMessage[] = [
+      user,
+      {
+        id: '2',
+        role: 'assistant',
+        text: '',
+        content: '',
+        status: 'done',
+        toolCalls: [call('a'), call('b'), call('a')],
+      },
+      result('3', 'a'),
+      result('4', 'b'),
+    ];
+    expect(apiMessages(msgs)).toEqual([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: '', tool_calls: [call('a'), call('b')] },
+      { role: 'tool', content: '{"r":"a"}', tool_name: 'a' },
+      { role: 'tool', content: '{"r":"b"}', tool_name: 'b' },
+    ]);
+  });
+
+  it('drops a result that answers no call', () => {
+    const msgs: UiMessage[] = [
+      user,
+      { id: '2', role: 'assistant', text: 'hi', content: '', toolCalls: [call('a')] },
+      result('3', 'zzz'),
+    ];
+    expect(apiMessages(msgs)).toEqual([
+      { role: 'user', content: 'q' },
+      { role: 'assistant', content: 'hi' },
+    ]);
+  });
+});
+
 describe('resolveModel', () => {
   const status = {
     enabled: true as const,
