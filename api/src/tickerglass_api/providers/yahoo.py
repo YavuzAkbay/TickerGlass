@@ -446,10 +446,17 @@ class YahooProvider:
 
     def news(self, symbol: str, limit: int) -> list[dict[str, Any]]:
         def fetch() -> list[dict[str, Any]]:
-            items: list[dict[str, Any]] = yf.Ticker(symbol).get_news(count=limit) or []
+            items: list[dict[str, Any]] = []
+            try:
+                items = yf.Ticker(symbol).get_news(count=limit) or []
+            except YFRateLimitError:
+                raise
+            except Exception as exc:
+                # Yahoo's ncp endpoint used by get_news is flaky: it 404s (returns [])
+                # or serves a "FINANCE IS CURRENTLY DOWN" page (raises). Fall back.
+                log.info("Yahoo get_news failed for %s, using search: %s", symbol, exc)
             if not items:
-                # Yahoo's ncp endpoint used by get_news currently 404s (returns []);
-                # the search endpoint still serves the legacy flat news shape.
+                # The search endpoint still serves the legacy flat news shape.
                 charge_upstream(1)
                 s = yf.Search(symbol, max_results=1, news_count=limit, lists_count=0)
                 items = s.news or []
