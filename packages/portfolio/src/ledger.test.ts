@@ -214,7 +214,12 @@ describe('dividends and currencies', () => {
 
   it('a dividend in another currency than the open position is attributed, not flagged', () => {
     const l = computeLedger(
-      [buy(d(1), 'A', 1, 10), div(2, 'A', 3, 'EUR', 1), div(3, 'A', 2, 'EUR'), div(4, 'A', 1, 'USD')],
+      [
+        buy(d(1), 'A', 1, 10),
+        div(2, 'A', 3, 'EUR', 1),
+        div(3, 'A', 2, 'EUR'),
+        div(4, 'A', 1, 'USD'),
+      ],
       { costMethod: 'fifo' },
     );
     expect(l.issues).toEqual([]);
