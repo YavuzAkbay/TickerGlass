@@ -1,7 +1,8 @@
 /** Navigator section "Ask AI": chat with a local model about the active chart. */
-import { ArrowUp, BarChart3, RefreshCw, Square, Trash2 } from 'lucide-react';
+import { ArrowUp, BarChart3, RefreshCw, ScanSearch, Square, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { useChartStore } from '../store/chart';
+import { getActiveSession, useChartStore } from '../store/chart';
+import { clearRangeSelect, startRangeSelect } from './attach';
 import { ask, resolveModel, stopAsking } from './chat';
 import { Markdown } from './Markdown';
 import { EMPTY_CONVERSATION, useAiChat, useAiPrefs, useAiStatus, type UiMessage } from './store';
@@ -13,6 +14,24 @@ const SUGGESTIONS = [
   'What happened in this range, and how unusual was it?',
   'What do the indicators on the chart say right now?',
 ];
+
+/** "12 Mar – 4 Apr · 18 bars" for a selected range on the active chart. */
+function rangeLabel(r: { from: number; to: number }): string {
+  const chart = getActiveSession()?.chart;
+  const tz = chart?.timezone;
+  const fmt = (t: number) =>
+    new Date(t * 1000).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      ...(tz && tz !== 'local' ? { timeZone: tz } : {}),
+    });
+  let bars = 0;
+  if (chart) {
+    const time = chart.store.time;
+    for (let i = 0; i < chart.store.length; i++) if (time[i]! >= r.from && time[i]! <= r.to) bars++;
+  }
+  return `${fmt(r.from)} – ${fmt(r.to)} · ${bars} bars`;
+}
 
 function fmtSize(params: string | null): string {
   return params ? ` · ${params}` : '';
@@ -72,6 +91,8 @@ export function AiPanel() {
   const chartId = useChartStore((s) => s.activeId);
   const conv = useAiChat((s) => (chartId ? s.byChart[chartId] : undefined)) ?? EMPTY_CONVERSATION;
   const clear = useAiChat((s) => s.clear);
+  const selection = useAiChat((s) => (chartId ? s.selection[chartId] : undefined));
+  const focusTick = useAiChat((s) => s.focusTick);
   const wanted = useAiPrefs((s) => s.model);
   const setPrefs = useAiPrefs((s) => s.set);
   const [draft, setDraft] = useState('');
@@ -82,6 +103,11 @@ export function AiPanel() {
   useEffect(() => {
     if (!status && !loading) void refresh();
   }, [status, loading, refresh]);
+
+  // A new range selection (or "Ask AI") puts the cursor in the question box.
+  useEffect(() => {
+    if (focusTick) inputRef.current?.focus();
+  }, [focusTick]);
 
   const streaming = conv.messages.some((m) => m.status === 'streaming');
   const lastText = conv.messages.at(-1)?.text ?? '';
@@ -123,7 +149,10 @@ export function AiPanel() {
     if (!q || !model || streaming) return;
     setSendError(null);
     setDraft('');
-    ask(q, { status }).catch((e: unknown) => {
+    ask(q, {
+      status,
+      ...(selection ? { focus: { kind: 'selection', ...selection } } : {}),
+    }).catch((e: unknown) => {
       setSendError(e instanceof Error ? e.message : String(e));
       setDraft(q);
     });
@@ -196,8 +225,9 @@ export function AiPanel() {
         {conv.messages.length === 0 ? (
           <div className="ai-pad ai-empty">
             <p className="ai-faint">
-              Ask about the visible part of the chart. The bars, indicator values and drawings are
-              sent along with your question.
+              Ask about the visible part of the chart, or use <em>Select range</em> to drag across
+              the bars you mean. The bars, indicator values and drawings are sent along with your
+              question.
             </p>
             <div className="ai-suggest">
               {SUGGESTIONS.map((s) => (
@@ -220,8 +250,34 @@ export function AiPanel() {
 
       <div className="ai-composer">
         {sendError && <div className="ai-meta ai-error">{sendError}</div>}
-        <div className="ai-scope ai-faint">
-          <BarChart3 size={12} /> Visible range
+        <div className="ai-scope">
+          {selection ? (
+            <span className="ai-chip" title="Questions are about the selected bars">
+              <ScanSearch size={12} />
+              <span className="ai-chip-text">{rangeLabel(selection)}</span>
+              <button
+                type="button"
+                className="ai-chip-x"
+                aria-label="Clear selection"
+                onClick={() => chartId && clearRangeSelect(chartId)}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ) : (
+            <span className="ai-faint ai-scope-label">
+              <BarChart3 size={12} /> Visible range
+            </span>
+          )}
+          <button
+            type="button"
+            className="ai-link ai-select-btn"
+            disabled={!chartId}
+            onClick={() => startRangeSelect()}
+            data-tip="Drag across the chart to pick bars (Alt+Q)"
+          >
+            {selection ? 'Reselect' : 'Select range'}
+          </button>
         </div>
         <div className="ai-input-row">
           <textarea

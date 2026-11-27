@@ -258,3 +258,50 @@
   border: 1px solid var(--border);
   text-align: left;
 }
+
+/* Selection chip */
+.ai-scope {
+  justify-content: space-between;
+  font-size: 12px;
+}
+.ai-scope-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.ai-chip-x {
+  display: inline-flex;
+  border: 0;
+  padding: 2px;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.ai-chip-x:hover {
+  background: var(--hover);
+}
+.ai-select-btn {
+  flex: none;
+  font-size: 12px;
+}
+.ai-select-btn:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.ai-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

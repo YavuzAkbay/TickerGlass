@@ -49,7 +49,13 @@ export type { SyncTimeRef } from './sync/time-map';
 export { buildTradingCalendar } from './drawings/calendar';
 export type { TradingCalendar } from './drawings/calendar';
 export { isEmbeddedImage } from './drawings/tools/image';
-export { ERASER_TOOL, MEASURE_TOOL, PICK_TOOL, ZOOM_TOOL } from './drawings/interaction';
+export {
+  ERASER_TOOL,
+  MEASURE_TOOL,
+  PICK_TOOL,
+  RANGE_TOOL,
+  ZOOM_TOOL,
+} from './drawings/interaction';
 export { KEY_BINDINGS } from './interaction/controller';
 export type { KeyBinding } from './interaction/controller';
 export { PALETTE } from './palette';

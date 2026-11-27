@@ -33,6 +33,9 @@ export const ERASER_TOOL = 'eraser';
 export const ZOOM_TOOL = 'zoom-in';
 /** `setActiveTool(MEASURE_TOOL)`: a transient date and price range, never stored (no drawing events). */
 export const MEASURE_TOOL = 'measure';
+/** `setActiveTool(RANGE_TOOL)`: drag across bars to select a time range (shown as a band until
+ * cleared, never stored); reports `rangeSelected` and returns to the cursor. */
+export const RANGE_TOOL = 'range-select';
 /** `setActiveTool(PICK_TOOL)`: the next click reports `pointPicked` (bar time and price) and returns to the cursor. */
 export const PICK_TOOL = 'pick-point';
 
@@ -103,6 +106,8 @@ type Gesture =
   | { kind: 'box'; pane: DrawingPane; downX: number; downY: number; base: string[] }
   /** Zoom-in mode: dragging the zoom box (root px). */
   | { kind: 'zoom'; pane: DrawingPane; downX: number; downY: number }
+  /** Range-select mode: dragging across bars (root px). */
+  | { kind: 'range'; pane: DrawingPane; downX: number }
   | {
       kind: 'handle';
       pane: DrawingPane;
@@ -172,6 +177,7 @@ export class DrawingInteraction {
     this.gesture = null;
     this.layer.draft = null;
     this.layer.marquee = null;
+    this.layer.rangeDraft = null;
     this.layer.cutX = null;
     if (g?.kind === 'move' || g?.kind === 'handle') this.cancelDrag(g);
     else if (g?.kind === 'erase' && g.removed.length)
@@ -224,6 +230,12 @@ export class DrawingInteraction {
     }
     if (this.tool === ZOOM_TOOL) {
       this.gesture = { kind: 'zoom', pane: target.pane, downX: x, downY: y };
+      return true;
+    }
+    if (this.tool === RANGE_TOOL) {
+      this.gesture = { kind: 'range', pane: target.pane, downX: x };
+      this.layer.rangeDraft = this.rangeRect(x, x);
+      this.layer.host.invalidate();
       return true;
     }
     if (this.tool === MEASURE_TOOL)
@@ -289,7 +301,18 @@ export class DrawingInteraction {
         this.layer.marquee = this.boxRect(g, x, y);
         this.layer.host.invalidate();
         return true;
+      case 'range':
+        this.layer.rangeDraft = this.rangeRect(g.downX, x);
+        this.layer.host.invalidate();
+        return true;
     }
+  }
+
+  /** Horizontal span between two root x positions, clamped to the pane width. */
+  private rangeRect(a: number, b: number): { left: number; right: number } {
+    const w = this.layer.host.paneWidth;
+    const c = (v: number) => Math.min(Math.max(v, 0), w);
+    return { left: c(Math.min(a, b)), right: c(Math.max(a, b)) };
   }
 
   /** Pane-local box from the press to (x, y), clamped to the pane. */
@@ -390,7 +413,38 @@ export class DrawingInteraction {
       case 'zoom':
         this.endZoom(g, x, y);
         return true;
+      case 'range':
+        this.endRange(g, x);
+        return true;
     }
+  }
+
+  /** Range-select release: select the bars under the dragged span (a plain click keeps the mode). */
+  private endRange(g: Extract<Gesture, { kind: 'range' }>, x: number): void {
+    this.gesture = null;
+    this.layer.rangeDraft = null;
+    this.layer.host.invalidate();
+    if (Math.abs(x - g.downX) <= DRAG_SLOP) return;
+    const r = this.rangeRect(g.downX, x);
+    const tl = this.layer.host.timeline();
+    if (!tl.length) return;
+    const ts = this.layer.host.timeScale;
+    // Bars whose slot centre lies inside the span; at least the bar under each edge.
+    const first = Math.max(0, Math.ceil(ts.xToLogical(r.left) - 0.5));
+    const last = Math.min(tl.length - 1, Math.floor(ts.xToLogical(r.right) + 0.5));
+    if (last < first) return;
+    const range = { from: tl.time[first]!, to: tl.time[last]! };
+    this.layer.rangeSelection = range;
+    this.leaveTool();
+    this.layer.host.emit('rangeSelected', { range: { ...range } });
+    this.layer.host.emit('toolFinished', { type: RANGE_TOOL, drawingId: null, active: false });
+  }
+
+  /** Drop the range selection (Esc); reports it. */
+  private clearRange(): void {
+    this.layer.rangeSelection = null;
+    this.layer.host.invalidate();
+    this.layer.host.emit('rangeSelected', { range: null });
   }
 
   /** Zoom-in release: zoom to the dragged box (a plain click keeps the mode) and return to the cursor. */
@@ -479,7 +533,7 @@ export class DrawingInteraction {
     }
     if (key === 'Escape') {
       if (g?.kind === 'create') this.endMulti(g, true);
-      else if (g?.kind === 'box' || g?.kind === 'zoom') this.abort();
+      else if (g?.kind === 'box' || g?.kind === 'zoom' || g?.kind === 'range') this.abort();
       else if (g?.kind === 'move' || g?.kind === 'handle') {
         this.gesture = null;
         this.cancelDrag(g);
@@ -489,6 +543,7 @@ export class DrawingInteraction {
         this.leaveTool();
         this.layer.host.emit('toolFinished', { type, drawingId: null, active: false });
       } else if (this.layer.selection.size) this.layer.setSelection([]);
+      else if (this.layer.rangeSelection) this.clearRange();
       else return false;
       return true;
     }
@@ -548,8 +603,10 @@ export class DrawingInteraction {
     if (g?.kind === 'move') return 'grabbing';
     if (g?.kind === 'handle') return g.cursor;
     if (g?.kind === 'box' || g?.kind === 'zoom') return 'crosshair';
+    if (g?.kind === 'range') return 'col-resize';
     if (this.tool === PICK_TOOL && this.toolCursor) return target ? this.toolCursor : null;
     if (this.tool === ZOOM_TOOL || this.tool === PICK_TOOL) return target ? 'crosshair' : null;
+    if (this.tool === RANGE_TOOL) return target ? 'col-resize' : null;
     if (this.tool === ERASER_TOOL || g?.kind === 'erase')
       return target ? (target.drawing ? 'pointer' : 'crosshair') : null;
     if (this.tool || g?.kind === 'create') return target ? 'crosshair' : null;
@@ -1102,7 +1159,7 @@ interface Snapped {
   price?: number;
 }
 
-const MODES: readonly string[] = [ERASER_TOOL, ZOOM_TOOL, MEASURE_TOOL, PICK_TOOL];
+const MODES: readonly string[] = [ERASER_TOOL, ZOOM_TOOL, MEASURE_TOOL, PICK_TOOL, RANGE_TOOL];
 const NO_MODS: DrawingPointerMods = { shift: false, alt: false, mod: false };
 
 /** Arrow key -> [bars, px] direction. */

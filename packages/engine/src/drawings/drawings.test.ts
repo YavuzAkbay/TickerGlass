@@ -9,6 +9,7 @@ import {
   ERASER_TOOL,
   MEASURE_TOOL,
   PICK_TOOL,
+  RANGE_TOOL,
   ZOOM_TOOL,
   type DrawingPointerMods,
 } from './interaction';
@@ -739,6 +740,46 @@ describe('zoom-in mode', () => {
     expect(input.activeTool).toBe('zoom-in');
     expect(input.key('Escape')).toBe(true);
     expect(input.activeTool).toBeNull();
+  });
+});
+
+describe('range-select mode', () => {
+  it('selects the bars under the drag, keeps the band, returns to the cursor', () => {
+    input.setActiveTool(RANGE_TOOL);
+    expect(input.activeTool).toBe('range-select');
+    down(X(40) + 1, Y(50));
+    move(X(20) - 1, Y(10));
+    expect(layer.rangeDraft).toEqual({ left: X(20) - 1, right: X(40) + 1 });
+    up(X(20) - 1, Y(10));
+    expect(layer.rangeDraft).toBeNull();
+    const range = { from: START + 20 * D, to: START + 40 * D };
+    expect(layer.rangeSelection).toEqual(range);
+    expect(of('rangeSelected')).toEqual([{ range }]);
+    expect(of('toolFinished')[0]).toEqual({ type: 'range-select', drawingId: null, active: false });
+    expect(input.activeTool).toBeNull();
+    expect(layer.items.size).toBe(0);
+    // A later click elsewhere keeps the selection; Esc clears it and reports it.
+    click(X(60), Y(50));
+    expect(layer.rangeSelection).toEqual(range);
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.rangeSelection).toBeNull();
+    expect(of('rangeSelected')).toEqual([{ range }, { range: null }]);
+    expect(input.key('Escape')).toBe(false);
+  });
+
+  it('clamps to the bars and ignores a click or Esc mid-drag', () => {
+    input.setActiveTool(RANGE_TOOL);
+    click(X(30), Y(50));
+    expect(of('rangeSelected')).toHaveLength(0);
+    expect(input.activeTool).toBe('range-select');
+    down(X(95), Y(50));
+    move(X(N + 30), Y(50));
+    expect(input.key('Escape')).toBe(true);
+    expect(layer.rangeDraft).toBeNull();
+    expect(input.activeTool).toBe('range-select');
+    down(X(95), Y(50));
+    up(X(N + 30), Y(50));
+    expect(layer.rangeSelection).toEqual({ from: START + 95 * D, to: START + (N - 1) * D });
   });
 });
 

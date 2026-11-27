@@ -167,6 +167,23 @@ afterEach(() => {
   for (const c of charts.splice(0)) c.destroy();
 });
 
+describe('Chart range selection', () => {
+  it('sets silently, and a symbol change clears it with an event', async () => {
+    const { chart } = await load(30);
+    const seen: unknown[] = [];
+    chart.on('rangeSelected', (e) => seen.push(e.range));
+    expect(chart.getRangeSelection()).toBeNull();
+    chart.setRangeSelection({ from: START + 9 * DAY, to: START + 3 * DAY });
+    expect(chart.getRangeSelection()).toEqual({ from: START + 3 * DAY, to: START + 9 * DAY });
+    expect(seen).toEqual([]);
+    await chart.setSymbol('OTHER');
+    expect(chart.getRangeSelection()).toBeNull();
+    expect(seen).toEqual([null]);
+    await chart.setSymbol('TEST');
+    expect(seen).toEqual([null]); // nothing to clear
+  });
+});
+
 describe('Chart drawing API', () => {
   it('adds, updates, removes and replaces drawings without mutation events', async () => {
     const { chart } = await load(50);

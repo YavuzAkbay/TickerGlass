@@ -14,7 +14,7 @@ import {
 /** Extra handle reach (px) for touch; mouse uses 2. */
 export const TOUCH_EXTRA = 8;
 import { Geometry, isPaneCoords, type DrawingPane, type GeometryView } from './geometry';
-import type { AnchorTimeline } from './mapping';
+import { timeToLogical, type AnchorTimeline } from './mapping';
 import { getDrawingTool } from './registry';
 import type {
   AnyDrawingToolDefinition,
@@ -118,6 +118,10 @@ export class DrawingLayer {
   /** Pick-tool cut preview: pane-local x of the bar under the pointer, or null. */
   cutX: number | null = null;
   /** Box-select rectangle being dragged (pane-local CSS px). */
+  /** Range-select drag in progress (root px), drawn across every pane. */
+  rangeDraft: { left: number; right: number } | null = null;
+  /** Finished range selection (first and last bar times): a band until cleared, never stored. */
+  rangeSelection: { from: number; to: number } | null = null;
   marquee: { paneId: string; left: number; top: number; right: number; bottom: number } | null =
     null;
 
@@ -403,10 +407,16 @@ export class DrawingLayer {
   render(pane: DrawingPane, ctx: CanvasRenderingContext2D, dpr: number): void {
     if (
       pane.height <= 0 ||
-      (!this.items.size && !this.draft && !this.measure && this.cutX === null)
+      (!this.items.size &&
+        !this.draft &&
+        !this.measure &&
+        this.cutX === null &&
+        !this.rangeDraft &&
+        !this.rangeSelection)
     )
       return;
-    this.refreshView();
+    const view = this.refreshView();
+    this.renderRange(pane, ctx, view);
     const rc = this.rc;
     rc.ctx = ctx;
     rc.dpr = dpr;
@@ -440,6 +450,38 @@ export class DrawingLayer {
       ctx.strokeRect(m.left + 0.5, m.top + 0.5, m.right - m.left, m.bottom - m.top);
       ctx.restore();
     }
+  }
+
+  /** The range selection band (or the one being dragged), full pane height, under the drawings. */
+  private renderRange(pane: DrawingPane, ctx: CanvasRenderingContext2D, view: GeometryView): void {
+    let left: number;
+    let right: number;
+    const draft = this.rangeDraft;
+    const sel = this.rangeSelection;
+    if (draft) {
+      ({ left, right } = draft);
+    } else if (sel && view.timeline.length) {
+      const ts = view.timeScale;
+      const half = ts.barSpacing / 2;
+      left = ts.indexToX(timeToLogical(view.timeline, { time: sel.from })) - half;
+      right = ts.indexToX(timeToLogical(view.timeline, { time: sel.to })) + half;
+      if (!Number.isFinite(left) || !Number.isFinite(right)) return;
+      left = Math.max(left, 0);
+      right = Math.min(right, view.width);
+      if (right <= left) return;
+    } else return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(154, 168, 255, 0.12)';
+    ctx.fillRect(left, 0, right - left, pane.height);
+    ctx.strokeStyle = 'rgba(154, 168, 255, 0.75)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const x of [left, right]) {
+      ctx.moveTo(Math.round(x) + 0.5, 0);
+      ctx.lineTo(Math.round(x) + 0.5, pane.height);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
 
   /**

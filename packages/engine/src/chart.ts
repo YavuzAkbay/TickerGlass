@@ -842,6 +842,21 @@ export class Chart implements StudyApi, DrawingApi {
     return m ? m.points.map((p) => ({ ...p })) : null;
   }
 
+  /** The range selection (`RANGE_TOOL`): first and last selected bar times, or null. */
+  getRangeSelection(): { from: number; to: number } | null {
+    const r = this.drawingLayer.rangeSelection;
+    return r ? { ...r } : null;
+  }
+
+  /** Show (or with null clear) the range selection band. Silent: no `rangeSelected`. */
+  setRangeSelection(range: { from: number; to: number } | null): void {
+    this.drawingLayer.rangeSelection = range
+      ? { from: Math.min(range.from, range.to), to: Math.max(range.from, range.to) }
+      : null;
+    this.invalidate(INVALIDATE_OVERLAY);
+    if (!this.frame) this.frame = requestAnimationFrame(() => this.flush());
+  }
+
   setDrawingOptions(patch: Partial<DrawingOptions>): void {
     this.drawingLayer.options = { ...this.drawingLayer.options, ...patch };
     if (this.drawingLayer.options.hideAll || this.drawingLayer.options.lockAll)
@@ -1916,6 +1931,11 @@ export class Chart implements StudyApi, DrawingApi {
     // Symbol/interval changed: drawings shown there may differ (scope, visibility).
     if (this.drawingInput.busy) this.drawingInput.abort();
     this.drawingLayer.measure = null;
+    if (this.drawingLayer.rangeSelection) {
+      // Other bars now: the selection no longer means anything.
+      this.drawingLayer.rangeSelection = null;
+      this.events.emit('rangeSelected', { range: null });
+    }
     this.drawingLayer.pruneSelection();
     this.loadPromise = this.doLoad();
     return this.loadPromise;

@@ -120,16 +120,35 @@ export interface Conversation {
   contextKey: string | null;
 }
 
+export interface TimeRange {
+  from: number;
+  to: number;
+}
+
 interface ChatState {
   byChart: Record<string, Conversation>;
+  /** Range selected on each chart (engine `RANGE_TOOL`); questions are about it when set. */
+  selection: Record<string, TimeRange>;
+  /** Bumped to ask the panel to focus its question box. */
+  focusTick: number;
   update: (chartId: string, fn: (c: Conversation) => Conversation) => void;
   clear: (chartId: string) => void;
+  setSelection: (chartId: string, range: TimeRange | null) => void;
+  requestFocus: () => void;
 }
 
 export const EMPTY_CONVERSATION: Conversation = { messages: [], contextKey: null };
 
 export const useAiChat = create<ChatState>()((set) => ({
   byChart: {},
+  selection: {},
+  focusTick: 0,
+  setSelection: (chartId, range) =>
+    set((s) => {
+      const { [chartId]: _old, ...rest } = s.selection;
+      return { selection: range ? { ...rest, [chartId]: range } : rest };
+    }),
+  requestFocus: () => set((s) => ({ focusTick: s.focusTick + 1 })),
   update: (chartId, fn) =>
     set((s) => ({
       byChart: { ...s.byChart, [chartId]: fn(s.byChart[chartId] ?? EMPTY_CONVERSATION) },

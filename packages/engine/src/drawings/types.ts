@@ -378,6 +378,12 @@ export interface DrawingEvents {
   toolFinished: { type: string; drawingId: string | null; active: boolean };
   /** A click while the pick-point mode (`PICK_TOOL`) was active: bar time and price under the pointer. */
   pointPicked: { time: number; price: number; paneId: string };
+  /**
+   * The range selection changed: a drag with `RANGE_TOOL` finished (`range` = first and last
+   * selected bar times), or Esc / a symbol or interval change cleared it (`range` null).
+   * `setRangeSelection` is silent.
+   */
+  rangeSelected: { range: { from: number; to: number } | null };
 }
 
 /** Methods `Chart` implements for drawings. */

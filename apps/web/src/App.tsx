@@ -7,6 +7,7 @@ import { registerIndicatorCommands } from './indicators/commands';
 import { registerReplayCommands } from './replay/commands';
 import { installShortcuts } from './commands/shortcuts';
 import { registerWatchlistCommands } from './watchlist/commands';
+import { registerAiCommands } from './ai/commands';
 import { registerNotesCommands } from './notes/commands';
 import { registerScreenerCommands } from './screener/commands';
 import { startPersistence } from './persist/bootstrap';
@@ -111,6 +112,7 @@ function Shell() {
     const unregisterScreener = registerScreenerCommands();
     const unregisterNotes = registerNotesCommands();
     const unregisterReplay = registerReplayCommands();
+    const unregisterAi = registerAiCommands();
     // Digits open the interval input, anything else symbol search.
     const uninstall = installShortcuts((initial) =>
       useUiStore
@@ -127,6 +129,7 @@ function Shell() {
       unregisterScreener();
       unregisterNotes();
       unregisterReplay();
+      unregisterAi();
       uninstall();
     };
   }, []);

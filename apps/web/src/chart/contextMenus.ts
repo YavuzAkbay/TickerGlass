@@ -8,13 +8,16 @@ import {
   Lock,
   LineChart,
   Maximize2,
+  MessageSquareText,
   Minimize2,
   MoveDown,
   MoveUp,
   RotateCcw,
+  ScanSearch,
   Settings,
   Trash2,
 } from 'lucide-react';
+import { useAiStatus } from '../ai/store';
 import { commands } from '../commands/registry';
 import { isCompareId } from '../compare/model';
 import { findCompare } from '../compare/actions';
@@ -168,6 +171,21 @@ export function openChartContextMenu(chart: Chart, p: ChartPoint): void {
       shortcut: 'Alt+R',
       onSelect: () => chart.resetView(),
     },
+    ...(useAiStatus.getState().status?.enabled
+      ? ([
+          {
+            label: 'Ask AI about the visible range',
+            icon: MessageSquareText,
+            onSelect: () => commands.execute('ai.open'),
+          },
+          {
+            label: 'Ask AI about a range…',
+            icon: ScanSearch,
+            shortcut: 'Alt+Q',
+            onSelect: () => commands.execute('ai.selectRange'),
+          },
+        ] as const)
+      : []),
     { type: 'separator' },
     {
       label: `Copy price ${priceText(chart, p.price)}`,
