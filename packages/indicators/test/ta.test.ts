@@ -240,3 +240,35 @@ describe('phase 12 ta primitives with save/restore', () => {
     expect(() => ta.linreg(5, NaN)).toThrow();
   });
 });
+
+describe('running totals recover from non-finite inputs', () => {
+  const feed = (make: (ta: Ta) => Streaming, xs: number[]) => {
+    const scope = new TaScope();
+    const s = make(scope.ta);
+    scope.open = false;
+    return xs.map((x) => s.update(x));
+  };
+  const xs = [...values(20), Infinity, ...values(40, 9), -Infinity, ...values(40, 11)];
+
+  for (const [name, make] of [
+    ['sma', (ta: Ta) => ta.sma(5)],
+    ['wma', (ta: Ta) => ta.wma(5)],
+  ] as const) {
+    it(`${name} is finite again once the infinity has left the window`, () => {
+      const got = feed(make, xs);
+      const want = naive(xs, 5, (w) =>
+        name === 'sma'
+          ? w.reduce((a, v) => a + v, 0) / 5
+          : w.reduce((a, v, k) => a + v * (k + 1), 0) / 15,
+      );
+      got.forEach((g, i) => {
+        if (Number.isNaN(want[i]!)) expect(g).toBeNaN();
+        else expect(g).toBeCloseTo(want[i]!, 9);
+      });
+      // Still in the window the infinity shows, afterwards the value is back.
+      expect(Number.isFinite(got[20]!)).toBe(false);
+      expect(Number.isFinite(got[26]!)).toBe(true);
+      expect(Number.isFinite(got[got.length - 1]!)).toBe(true);
+    });
+  }
+});

@@ -53,6 +53,13 @@ class Ring implements Stateful {
     return this.count === this.size;
   }
 
+  /** Sum of the held values (order of the slots, not of arrival). */
+  sum(): number {
+    let t = 0;
+    for (let k = 0; k < this.count; k++) t += this.buf[k]!;
+    return t;
+  }
+
   save(): void {
     this.savedHead = this.head;
     this.savedCount = this.count;
@@ -100,6 +107,12 @@ class Sum implements Streaming, Stateful {
     const out = this.ring.push(x);
     this.total += x;
     if (!Number.isNaN(out)) this.total -= out;
+    // An infinite value poisons the running total for good (Infinity - Infinity
+    // is NaN when it leaves the window), so while one is in play, or just left,
+    // re-sum the window instead. Finite inputs never take this path.
+    if (!Number.isFinite(this.total) || (this.ring.full && !Number.isFinite(out))) {
+      this.total = this.ring.sum();
+    }
     return this.ring.full ? this.total : NaN;
   }
 
@@ -339,6 +352,12 @@ class Wma implements Streaming, Stateful {
     if (wasFull) {
       this.w += n * x - this.s;
       this.s += x - out;
+      // Same recovery as Sum: an infinity must not poison s/w permanently.
+      if (!Number.isFinite(this.s) || !Number.isFinite(this.w) || !Number.isFinite(out)) {
+        this.s = this.ring.sum();
+        this.w = 0;
+        for (let k = 0; k < n; k++) this.w += (n - k) * this.ring.get(k);
+      }
     } else {
       // Weights while filling are relative to the final position; recompute
       // exactly once the window is complete.

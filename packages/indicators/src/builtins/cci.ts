@@ -86,7 +86,15 @@ export const CCI = defineIndicator({
     const ma = movingAverage(ta, inputs.maType, inputs.maLength);
     return (c) => {
       const x = c.src.source[c.i]!;
-      const cci = (x - sma.update(x)) / (0.015 * dev.update(x));
+      const mean = sma.update(x);
+      const meanDev = dev.update(x);
+      // A flat window has no deviation: x - mean can still be ~1 ulp from
+      // rounding while the deviation is exactly 0 (or rounding noise), and the
+      // division would yield +-Infinity (poisoning the smoothing line). Report
+      // 0, as TradingView does for flat series. NaN (warm-up) fails the test and
+      // stays NaN.
+      const flat = meanDev <= Math.abs(mean) * 1e-12;
+      const cci = flat ? 0 : (x - mean) / (0.015 * meanDev);
       c.set('cci', cci);
       c.set('ma', ma.update(cci, c.volume[c.i]!));
     };
