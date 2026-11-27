@@ -269,6 +269,9 @@ function fmtTime(chart: Chart): (t: number) => string {
 }
 
 const round = (v: number): number => Number(v.toPrecision(6));
+/** A price for people and the model: 2 decimals from 1 up, else 4 significant digits. */
+const px = (v: number): number =>
+  Math.abs(v) >= 1 ? Number(v.toFixed(2)) : Number(v.toPrecision(4));
 
 /** Bar time for a model-supplied time: a date / date-time as in the brief, or unix seconds. */
 export function parseBarTime(chart: Chart, raw: unknown): number | null {
@@ -643,7 +646,7 @@ function findLevelsTool(ctx: ToolContext, args: Record<string, unknown>) {
       note: 'Prices where swings turned at least twice, nearest to the close on both sides.',
       levels: levels.map((l) => ({
         id: l.id,
-        price: round(l.price),
+        price: px(l.price),
         role: l.role,
         touches: l.touches.length,
         first: fmt(l.touches[0]!.time),
@@ -672,7 +675,7 @@ function drawLevelTool(ctx: ToolContext, args: Record<string, unknown>) {
     ],
     `AI: ${l.role}`,
   );
-  return result({ drawn: l.id }, `Drew ${l.role} at ${round(l.price)}`);
+  return result({ drawn: l.id }, `Drew ${l.role} at ${px(l.price)}`);
 }
 
 function drawTrendLineTool(ctx: ToolContext, args: Record<string, unknown>) {
@@ -722,7 +725,7 @@ function drawHorizontalTool(ctx: ToolContext, args: Record<string, unknown>) {
     ],
     'AI: Horizontal line',
   );
-  return result({ drawn: 'horizontal line', price }, `Drew a line at ${round(price)}`);
+  return result({ drawn: 'horizontal line', price }, `Drew a line at ${px(price)}`);
 }
 
 function clearTool(ctx: ToolContext) {
