@@ -44,9 +44,15 @@ export async function openChartSettings(page: Page) {
   await openOverflowItem(page, 'Settings');
 }
 
-/** Arm a drawing tool from its dock category ("Lines", "Shapes", "Text", "Measure", "Patterns"). */
+/** Open a dock category's flyout ("Fib & Gann", "Lines", "Measure", "Patterns", "Markup") with
+ * its corner arrow ("<category> tools"; the main button arms the category's current tool). */
+export async function openToolCategory(page: Page, category: string) {
+  await page.getByRole('button', { name: `${category} tools`, exact: true }).click();
+}
+
+/** Arm a drawing tool from its dock category (see `openToolCategory`). */
 export async function pickTool(page: Page, category: string, name: string) {
-  await page.getByRole('button', { name: category, exact: true }).click();
+  await openToolCategory(page, category);
   await page
     .getByRole('menu', { name: category })
     .getByRole('menuitem')

@@ -1069,6 +1069,10 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
     // Ask AI is off in e2e (no model server): the app hides the panel, as on a fresh install.
     if (url.pathname === '/api/ai/status')
       return route.fulfill({ status: 200, json: { enabled: false } });
+    // No portfolios yet: the Portfolio panel shows its empty state (specs that need portfolios
+    // route them themselves).
+    if (url.pathname === '/api/portfolios' && req.method() === 'GET')
+      return route.fulfill({ status: 200, json: [] });
     if (!USER_DATA.test(url.pathname)) {
       server.unhandled.push(call);
       return route.fulfill({ status: 501, json: { detail: `e2e: unexpected API call ${call}` } });

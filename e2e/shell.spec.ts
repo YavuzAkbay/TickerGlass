@@ -31,7 +31,8 @@ test('typing a digit opens the interval box and Enter applies it', async ({ page
 
 test('command palette runs a command', async ({ page }) => {
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
-  await page.keyboard.type('log');
+  // "log" alone also matches "Log trade for current symbol".
+  await page.keyboard.type('logarithmic');
   await page.keyboard.press('Enter');
   await expect
     .poll(() =>

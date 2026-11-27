@@ -359,7 +359,8 @@ function CategoryButton({ cat }: { cat: DockCategory }) {
       onClick={() => {
         if (armed) selectTool(armed.id);
       }}
-      flyoutLabel={cat.label}
+      // Not the category name alone: the Measure category's default tool is also "Measure".
+      flyoutLabel={`${cat.label} tools`}
       flyout={(close) => <CategoryFlyout cat={cat} onClose={close} />}
     />
   );

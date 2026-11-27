@@ -52,8 +52,14 @@ async function open(page: Page) {
 }
 
 async function openPanel(page: Page) {
+  // After a reload the app restores the open panel while it boots: decide only once it has,
+  // or a click lands on the restored tab and toggles the panel shut.
+  await page.waitForFunction(() => window.chart?.store.length > 0);
+  const tab = page.locator('[data-panel="watchlist"]');
+  await expect(tab).toBeVisible();
   const panel = page.getByRole('tabpanel', { name: 'Watchlist', exact: true });
-  if (!(await panel.isVisible())) await page.locator('[data-panel="watchlist"]').click();
+  if ((await tab.getAttribute('aria-selected')) !== 'true' || !(await panel.isVisible()))
+    await tab.click();
   await expect(panel).toBeVisible();
 }
 

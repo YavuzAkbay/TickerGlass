@@ -209,7 +209,14 @@ test('saving a screen persists the draft and marks it active; built-in presets a
     .toBe(2);
   expect([...m.screener.screens.values()][0]!.alert).toEqual({
     enabled: true,
-    notify: { webhook: true, telegram: false, email: false },
+    notify: {
+      webhook: true,
+      telegram: false,
+      email: false,
+      ntfy: false,
+      gotify: false,
+      apprise: false,
+    },
   });
   await page.getByTestId('scr-alert-telegram').click();
   await expect

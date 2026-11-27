@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, pickTool, test } from './fixtures';
+import { expect, openToolCategory, pickTool, test } from './fixtures';
 
 declare global {
   interface Window {
@@ -25,7 +25,7 @@ test('place a sticker from the Text flyout', async ({ page }) => {
   await page.goto('/?feed=synthetic');
   await waitForChart(page);
 
-  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  await openToolCategory(page, 'Markup');
   await page.getByRole('tab', { name: 'Stickers' }).click();
   await page.getByRole('menuitem', { name: 'Diamond hands' }).click();
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe('icon');
@@ -56,7 +56,7 @@ const FIVE = zigzag(5);
 const SIX = zigzag(6);
 const SEVEN = zigzag(7);
 const LINES = 'Lines';
-const FIB = 'Measure';
+const FIB = 'Fib & Gann';
 const PATTERNS = 'Patterns';
 
 /** Flyout (toolbar group label), tool name, engine type, clicks (viewport px), stored anchors. */
@@ -171,12 +171,7 @@ for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
     await page.goto('/?feed=synthetic');
     await waitForChart(page);
 
-    await page.getByRole('button', { name: group, exact: true }).click();
-    await page
-      .getByRole('menu', { name: group })
-      .getByRole('menuitem')
-      .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
-      .click();
+    await pickTool(page, group, name);
     expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
 
     for (const [x, y] of clicks) await page.mouse.click(x, y);
@@ -188,7 +183,7 @@ for (const { group, name, type, clicks, count } of LINE_TOOL_CASES) {
   });
 }
 
-const SHAPES = 'Shapes';
+const SHAPES = 'Markup';
 const PATH_CLICKS: [number, number][] = [
   [450, 400],
   [550, 300],
@@ -219,12 +214,7 @@ const SHAPE_TOOL_CASES: {
 ];
 
 async function pickShapeTool(page: Page, name: string, type: string) {
-  await page.getByRole('button', { name: SHAPES, exact: true }).click();
-  await page
-    .getByRole('menu', { name: SHAPES })
-    .getByRole('menuitem')
-    .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
-    .click();
+  await pickTool(page, SHAPES, name);
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
 }
 
@@ -293,16 +283,11 @@ test('finish a path with Enter', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-const ANNOTATION = 'Text';
+const ANNOTATION = 'Markup';
 const ONE: [number, number][] = [[600, 350]];
 
 async function pickAnnotationTool(page: Page, name: string, type: string) {
-  await page.getByRole('button', { name: ANNOTATION, exact: true }).click();
-  await page
-    .getByRole('menu', { name: ANNOTATION })
-    .getByRole('menuitem')
-    .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
-    .click();
+  await pickTool(page, ANNOTATION, name);
   expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
 }
 
@@ -421,12 +406,7 @@ for (const { name, type, clicks, finish, count } of PROJECTION_TOOL_CASES) {
     const errors: Error[] = [];
     page.on('pageerror', (e) => errors.push(e));
     await openFresh(page);
-    await page.getByRole('button', { name: FORECASTING, exact: true }).click();
-    await page
-      .getByRole('menu', { name: FORECASTING })
-      .getByRole('menuitem')
-      .filter({ has: page.locator('.lt-fly-name').getByText(name, { exact: true }) })
-      .click();
+    await pickTool(page, FORECASTING, name);
     expect(await page.evaluate(() => window.chart.getActiveTool())).toBe(type);
 
     const last = clicks[clicks.length - 1]!;
@@ -537,12 +517,7 @@ test('anchored VWAP: a click adds the indicator anchored at that bar', async ({ 
   await openFresh(page);
   const studies = () => page.evaluate(() => window.chart.getStudies().length);
   const before = await studies();
-  await page.getByRole('button', { name: 'Measure', exact: true }).click();
-  await page
-    .getByRole('menu', { name: 'Measure' })
-    .getByRole('menuitem')
-    .filter({ has: page.locator('.lt-fly-name').getByText('Anchored VWAP', { exact: true }) })
-    .click();
+  await pickTool(page, 'Measure', 'Anchored VWAP');
   await page.mouse.click(700, 350);
   await expect.poll(studies).toBe(before + 1);
   expect(await drawings(page)).toHaveLength(0);
@@ -574,7 +549,7 @@ test('quick tools at the cursor: a default tool, then search across categories',
 
 test('dock search: typing filters a category, Enter arms the first match', async ({ page }) => {
   await openFresh(page);
-  await page.getByRole('button', { name: 'Lines', exact: true }).click();
+  await openToolCategory(page, 'Lines');
   await page.keyboard.type('pitch');
   const rows = page.getByRole('menu', { name: 'Lines' }).locator('.lt-fly-name');
   await expect(rows.first()).toHaveText('Pitchfork');

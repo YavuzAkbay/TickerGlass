@@ -159,7 +159,10 @@ const defaultNews = (symbol: string): Json[] => [
 
 const defaultEvents = (): Json => {
   const day = 86_400;
-  const midnight = Math.floor(Date.now() / 1000 / day) * day;
+  // UTC midnight of the local calendar day: the app counts "in N days" from the local date, which
+  // differs from the UTC date around midnight in non-UTC zones.
+  const now = new Date();
+  const midnight = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 1000;
   return {
     earnings: [
       { t: midnight + 6 * day, epsEstimate: 1.23, epsActual: null, surprisePercent: null },

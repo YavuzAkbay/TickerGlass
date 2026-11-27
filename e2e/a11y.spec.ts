@@ -98,8 +98,9 @@ test('navigator tabs use tablist semantics and arrow keys', async ({ page }) => 
   await expect(hotlists).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(watchlist).toBeFocused();
+  // From the first tab, ArrowUp wraps to the last one.
   await page.keyboard.press('ArrowUp');
-  await expect(panels.getByRole('tab', { name: 'Values' })).toBeFocused();
+  await expect(panels.getByRole('tab').last()).toBeFocused();
   await page.keyboard.press('Home');
   await expect(watchlist).toBeFocused();
 });
