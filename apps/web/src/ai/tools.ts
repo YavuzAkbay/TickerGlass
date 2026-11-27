@@ -24,6 +24,7 @@ import { commit, findDrawing } from '../drawings/actions';
 import { addIndicator, findIndicator, removeIndicators } from '../indicators/actions';
 import { useIndicatorStore } from '../indicators/store';
 import { runInSession } from '../store/chart';
+import { fundamentalsReport } from './fundamentals';
 
 /** Ollama function schema. */
 export interface ToolSchema {
@@ -88,9 +89,39 @@ const ADDABLE = [
   'atr',
   'volume',
 ];
+/** Financial-statement indicators by the name the model uses (each plots in its own pane). */
+const FINANCIAL: Record<string, string> = {
+  revenue: 'fin-revenue',
+  revenue_growth: 'fin-revenue-growth',
+  net_income: 'fin-net-income',
+  net_income_growth: 'fin-net-income-growth',
+  eps: 'fin-eps',
+  gross_margin: 'fin-gross-margin',
+  operating_margin: 'fin-operating-margin',
+  net_margin: 'fin-net-margin',
+  operating_cash_flow: 'fin-ocf',
+  free_cash_flow: 'fin-fcf',
+  debt_to_equity: 'fin-debt-equity',
+  debt_to_cash: 'fin-debt-cash',
+  current_ratio: 'fin-current-ratio',
+  roe: 'fin-roe',
+  book_value_per_share: 'fin-bvps',
+  pe: 'fin-pe',
+  ps: 'fin-ps',
+  pb: 'fin-pb',
+};
+/** Tools that only read: offered even when the user has not let the AI change the chart. */
+export const READ_ONLY_TOOLS = new Set([
+  'list_indicators',
+  'get_fundamentals',
+  'find_swings',
+  'find_divergences',
+  'find_levels',
+]);
 const TONE = { bullish: '#34C38F', bearish: '#F2626B', neutral: '#9AA8FF' } as const;
 type Tone = keyof typeof TONE;
 const MAX_RESULT_CHARS = 4000;
+const MAX_FUNDAMENTALS_CHARS = 9000;
 const STUDY_WAIT_MS = 4000;
 
 const str = (v: unknown, fallback = ''): string =>
@@ -112,15 +143,24 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: 'add_indicator',
       description:
-        'Add an indicator to the chart (reuses an identical one already there). Returns its id and recent values.',
+        'Add an indicator to the chart (reuses an identical one already there). Returns its id and recent values. Financial ones (revenue, pe, roe...) plot the statements of the chart symbol over time.',
       parameters: {
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ADDABLE },
+          type: { type: 'string', enum: [...ADDABLE, ...Object.keys(FINANCIAL)] },
           length: { type: 'number', description: 'Period, e.g. 14 for RSI, 20 for Bollinger' },
         },
         required: ['type'],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_fundamentals',
+      description:
+        "Financial statements and valuation of the chart's symbol, computed exactly: trailing twelve months revenue, earnings, EPS, cash flow, margins, growth, ROE, balance sheet, P/E, P/S, P/B, PEG, yields, the same multiples at past period ends, and the last quarters and fiscal years. Read-only.",
+      parameters: { type: 'object', properties: {} },
     },
   },
   {
@@ -425,9 +465,14 @@ function paneFor(ctx: ToolContext, pane: unknown): { paneId: string; name: strin
   return info ? { paneId: info.paneId, name: info.title } : null;
 }
 
-function result(data: unknown, summary: string, ok = true): ToolResult {
+function result(
+  data: unknown,
+  summary: string,
+  ok = true,
+  maxChars = MAX_RESULT_CHARS,
+): ToolResult {
   let content = JSON.stringify(data);
-  if (content.length > MAX_RESULT_CHARS) content = `${content.slice(0, MAX_RESULT_CHARS)}…`;
+  if (content.length > maxChars) content = `${content.slice(0, maxChars)}…`;
   return { content, summary, ok };
 }
 
@@ -437,13 +482,19 @@ const fail = (message: string, summary = message): ToolResult =>
 // ------------------------------------------------------------ tools
 
 async function addIndicatorTool(ctx: ToolContext, args: Record<string, unknown>) {
-  const type = str(args.type).toLowerCase();
-  if (!ADDABLE.includes(type))
-    return fail(`unknown indicator "${type}"; use one of ${ADDABLE.join(', ')}`);
+  const name = str(args.type)
+    .toLowerCase()
+    .replace(/[\s/-]+/g, '_');
+  const financial = FINANCIAL[name] ?? (name === 'p_e' ? FINANCIAL.pe : undefined);
+  const type = financial ?? name;
+  if (!financial && !ADDABLE.includes(type))
+    return fail(
+      `unknown indicator "${name}"; use one of ${[...ADDABLE, ...Object.keys(FINANCIAL)].join(', ')}`,
+    );
   const length = num(args.length);
   const inputs = Number.isFinite(length) && length > 0 ? { length: Math.round(length) } : {};
-  // MACD, Stochastic, OBV and Volume have no plain `length` input.
-  const takesLength = !['macd', 'stochastic', 'obv', 'volume'].includes(type);
+  // MACD, Stochastic, OBV, Volume and the financial ones have no plain `length` input.
+  const takesLength = !financial && !['macd', 'stochastic', 'obv', 'volume'].includes(type);
   const got = await ensureIndicator(ctx, type, takesLength ? inputs : {});
   if (!got) return fail(`could not add ${type}`);
   const info = studyInfo(ctx.chart, got.id);
@@ -474,6 +525,28 @@ function listIndicatorsTool(ctx: ToolContext) {
     { indicators: list },
     `Read ${list.length} indicator${list.length === 1 ? '' : 's'}`,
   );
+}
+
+/** JSON without the nulls of figures the statements do not have. */
+function prune(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(prune);
+  if (v && typeof v === 'object')
+    return Object.fromEntries(
+      Object.entries(v)
+        .filter(([, x]) => x !== null && x !== undefined)
+        .map(([k, x]) => [k, prune(x)]),
+    );
+  return v;
+}
+
+async function getFundamentalsTool(ctx: ToolContext) {
+  try {
+    const report = await fundamentalsReport(ctx.chart);
+    return result(prune(report), 'Read fundamentals', true, MAX_FUNDAMENTALS_CHARS);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return fail(`financial statements unavailable: ${msg}`, 'No fundamentals available');
+  }
 }
 
 function removeIndicatorTool(ctx: ToolContext, args: Record<string, unknown>) {
@@ -776,6 +849,8 @@ export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolRes
         return listIndicatorsTool(ctx);
       case 'add_indicator':
         return await addIndicatorTool(ctx, args);
+      case 'get_fundamentals':
+        return await getFundamentalsTool(ctx);
       case 'remove_indicator':
         return removeIndicatorTool(ctx, args);
       case 'find_swings':

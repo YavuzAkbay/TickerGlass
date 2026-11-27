@@ -158,25 +158,38 @@ Models with tool support (Settings → AI and the model picker mark them **chart
 - "Find bullish and bearish RSI divergences and draw them."
 - "Add a 20-day Bollinger Band and tell me if price is stretched."
 - "Mark the main support and resistance levels."
+- "Analyze this stock fundamentally. Does it look cheap or expensive?"
+- "Plot revenue and P/E under the chart."
 
 The model only changes the chart when you ask it to (draw, mark, show, add, remove…); a question
-like "summarize the chart" is answered in words. Its tools:
+like "summarize the chart" is answered in words. With **Draw** off it still uses the read-only
+tools (fundamentals, levels, swings, divergences) but cannot change the chart. Its tools:
 
-| Tool                   | What it does                                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| `list_indicators`      | Reads the indicators on the chart and their latest values. Read-only.                           |
-| `find_levels`          | Finds support and resistance: prices where swings turned at least twice. Read-only.             |
-| `find_swings`          | Lists swing highs and lows of price or an indicator, including one still forming. Read-only.    |
-| `find_divergences`     | Finds regular and hidden, bullish and bearish divergences against RSI, MACD, … Read-only.       |
-| `draw_level`           | Draws a found level as a line from where it formed (green support, red resistance).             |
-| `draw_divergence`      | Draws a found divergence on price and on the oscillator (adds the oscillator if it is missing). |
-| `add_indicator`        | Adds RSI, MACD, Stochastic, CCI, MFI, OBV, SMA, EMA, Bollinger Bands, ATR or Volume.            |
-| `remove_indicator`     | Removes an indicator.                                                                           |
-| `draw_trend_line`      | Draws a line between two points on price or an indicator pane.                                  |
-| `draw_horizontal_line` | Draws a level at a given price.                                                                 |
-| `clear_ai_drawings`    | Removes the lines it drew earlier in the conversation.                                          |
+| Tool                   | What it does                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| `list_indicators`      | Reads the indicators on the chart and their latest values. Read-only.                            |
+| `get_fundamentals`     | Reads the symbol's financial statements and valuation (see below). Read-only.                    |
+| `find_levels`          | Finds support and resistance: prices where swings turned at least twice. Read-only.              |
+| `find_swings`          | Lists swing highs and lows of price or an indicator, including one still forming. Read-only.     |
+| `find_divergences`     | Finds regular and hidden, bullish and bearish divergences against RSI, MACD, … Read-only.        |
+| `draw_level`           | Draws a found level as a line from where it formed (green support, red resistance).              |
+| `draw_divergence`      | Draws a found divergence on price and on the oscillator (adds the oscillator if it is missing).  |
+| `add_indicator`        | Adds RSI, MACD, … Volume, or a financial indicator (revenue, EPS, P/E, P/S, P/B, ROE, margins…). |
+| `remove_indicator`     | Removes an indicator.                                                                            |
+| `draw_trend_line`      | Draws a line between two points on price or an indicator pane.                                   |
+| `draw_horizontal_line` | Draws a level at a given price.                                                                  |
+| `clear_ai_drawings`    | Removes the lines it drew earlier in the conversation.                                           |
 
-Levels, swings and divergences are **computed by TickerGlass**, not guessed by the model:
+Levels, swings, divergences and fundamentals are **computed by TickerGlass**, not guessed by the
+model:
+
+- **Fundamentals:** from the provider's quarterly and annual statements (the same rows, trailing
+  twelve months and split handling as the Financials indicators): TTM revenue, net income, EPS,
+  cash flow, margins, year-over-year growth, ROE, cash, debt, debt to equity, current ratio; P/E,
+  P/S, P/B, PEG, earnings and free cash flow yield at the latest price, and P/E and P/S at each past
+  period end (at that day's close on the chart, so load a long daily range for more history); the
+  last 8 quarters and 4 fiscal years. Needs a provider with financial statements (Yahoo); there is
+  no peer, sector or estimate data, so valuation is judged against the stock's own history.
 
 - **Levels:** swing highs and lows (3 bars on each side, plus a swing still forming at the end)
   within 4% of each other form a level; at least two touches; ranked by touches, use as both

@@ -14,6 +14,7 @@ import { chartImage } from './image';
 import {
   removeAiDrawings,
   runTool,
+  READ_ONLY_TOOLS,
   TOOL_SCHEMAS,
   type AiChanges,
   type ToolCall,
@@ -123,7 +124,11 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   if (!model) throw new Error('No model is available');
   const focus = opts.focus ?? visibleFocus(chart);
   if (!focus) throw new Error('The chart has no bars yet');
-  const useTools = model.tools && useAiPrefs.getState().allowActions;
+  // Read-only tools (fundamentals, levels, swings...) always; chart changes only when allowed.
+  const useTools = model.tools;
+  const tools = useAiPrefs.getState().allowActions
+    ? TOOL_SCHEMAS
+    : TOOL_SCHEMAS.filter((t) => READ_ONLY_TOOLS.has(t.function.name));
   const userCtx = useAiPrefs.getState().numCtx;
   const numCtx = userCtx || opts.status.numCtx;
   const brief = briefFromChart(chart, focus, briefBudget(numCtx, useTools));
@@ -201,7 +206,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
         {
           model: model.name,
           messages: apiMessages(history),
-          ...(useTools ? { tools: TOOL_SCHEMAS } : {}),
+          ...(useTools ? { tools } : {}),
           ...(userCtx ? { numCtx: userCtx } : {}),
         },
         (e) => {
@@ -252,7 +257,16 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
       }
       for (const call of calls) {
         if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        const r = await runTool(ctx, call);
+        const offered = tools.some((t) => t.function.name === call.name);
+        const r = offered
+          ? await runTool(ctx, call)
+          : {
+              content: JSON.stringify({
+                error: `${call.name} is not available: the user has not allowed chart changes`,
+              }),
+              summary: `Skipped ${call.name} (chart changes off)`,
+              ok: false,
+            };
         append({
           id: nextId(),
           role: 'tool',

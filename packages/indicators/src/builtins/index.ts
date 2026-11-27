@@ -63,6 +63,8 @@ export { MA_TYPES } from './common';
 export type { MaType } from './common';
 export { anchorPeriod, VWAP_ANCHORS, VWAP_EVENT_ANCHORS } from './vwap';
 export type { VwapAnchor, VwapEventAnchor } from './vwap';
+/** Statement helpers of the Financials built-ins, for hosts that read statements directly. */
+export * as financialMath from './financials/common';
 export * from './groups/external';
 export * from './groups/financials';
 export * from './groups/momentum';
