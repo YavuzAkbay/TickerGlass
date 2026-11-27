@@ -6,7 +6,8 @@ short design note (in this file or its own `docs/design/*.md`) before code, and 
 
 Status legend: `todo` · `design` · `wip` · `done` · `dropped`.
 
-Tier 5 (local AI via Ollama, MCP server, community script repo) is parked for now.
+Tier 5: local AI via Ollama — `done` 2026-11-27 ([design](local-ai.md), [guide](../ai.md)). MCP server
+and community script repo are still parked.
 
 ---
 

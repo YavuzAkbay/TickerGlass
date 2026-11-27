@@ -24,6 +24,19 @@ server {
         proxy_set_header X-Forwarded-Proto $tg_forwarded_proto;
     }
 
+    # Ask AI (docs/ai.md): the answer streams as NDJSON. A request can carry a chart image (the
+    # API caps it with AI_MAX_IMAGE_MB), and a local model may take minutes to load and between
+    # chunks (AI_TIMEOUT_S); no buffering so words appear as they come.
+    location = /api/ai/chat {
+        proxy_pass http://${TG_API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $tg_forwarded_proto;
+        client_max_body_size 16m;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+
     # Prometheus metrics (docs/metrics.md): the API serves them at the root, not under /api. Off
     # unless the API has METRICS_ENABLED=true (404 otherwise); the API checks the Bearer token.
     location = /metrics {

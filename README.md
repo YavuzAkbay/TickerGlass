@@ -53,6 +53,7 @@ TickerGlass gives you those features as free, open-source software that you run 
 | Intraday bar-by-bar market replay with paper trading               |            Often paid            |     ✅      |
 | Portfolio tracker with broker CSV import and a trade journal       |     Separate product / paid      |     ✅      |
 | Custom indicators in JavaScript                                    |   Proprietary script language    |     ✅      |
+| AI chart assistant running on your own hardware (Ollama)           |         Cloud AI or none         |     ✅      |
 | Unlimited indicators per chart                                     |       Capped on free plans       |     ✅      |
 | Data stored on hardware you control, full backup download          |                ❌                |     ✅      |
 | No ads, no tracking                                                |          Varies by plan          |     ✅      |
@@ -87,6 +88,7 @@ TickerGlass gives you those features as free, open-source software that you run 
 - [Alerts](docs/alerts.md) on price, indicators, drawings or scripts, evaluated on the server around the clock
 - [Strategy tester](docs/backtest.md) for entry and exit rules, with stops and targets, commission, slippage and an equity curve
 - [Portfolio tracker](docs/portfolio.md) with holdings, time-weighted performance against a benchmark, dividends and a trade journal
+- [Ask AI about the chart](docs/ai.md): questions about the visible bars or a range you drag, answered by a local model through Ollama
 - Broker CSV import for IBKR, Schwab, DEGIRO, Trading 212 and generic files
 
 **🏠 Self-hosting**

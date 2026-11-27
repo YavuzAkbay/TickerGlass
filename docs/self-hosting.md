@@ -3,7 +3,8 @@
 Everything about running TickerGlass on your own machine or server: installing,
 updating, backing up, protecting, and exposing it. For provider configuration see
 [providers.md](providers.md), for alert delivery [alerts.md](alerts.md), for Prometheus
-metrics, Grafana, and health probes [metrics.md](metrics.md).
+metrics, Grafana, and health probes [metrics.md](metrics.md), for the AI chart assistant
+(Ollama) [ai.md](ai.md).
 
 ## Install
 
@@ -808,6 +809,9 @@ The stack runs comfortably in 512 MB RAM (SQLite, default provider). The bar
 cache grows with usage and is pruned automatically (see
 [caching.md](caching.md)); `Settings → Server` shows the current database size.
 ARM64 images make Raspberry Pi 4/5 and NAS containers first-class.
+
+Ask AI needs an [Ollama](ai.md) server with its own resources (a 7B model wants about 5–6 GB of
+memory, ideally on a GPU); it can run on another machine than TickerGlass.
 
 ## Troubleshooting
 

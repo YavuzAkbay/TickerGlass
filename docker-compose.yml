@@ -125,6 +125,20 @@ services:
       METRICS_ENABLED: ${METRICS_ENABLED:-false}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       METRICS_PUBLIC: ${METRICS_PUBLIC:-false}
+      # Ask AI about the chart (docs/ai.md); off unless OLLAMA_URL is set. Ollama on this host:
+      # http://host.docker.internal:11434 (start it with OLLAMA_HOST=0.0.0.0 on Linux); the
+      # bundled `ollama` profile below: http://ollama:11434.
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_MODELS: ${AI_MODELS:-}
+      AI_DEFAULT_MODEL: ${AI_DEFAULT_MODEL:-}
+      AI_NUM_CTX: ${AI_NUM_CTX:-8192}
+      AI_TIMEOUT_S: ${AI_TIMEOUT_S:-180}
+      AI_KEEP_ALIVE: ${AI_KEEP_ALIVE:-}
+      AI_MAX_IMAGE_MB: ${AI_MAX_IMAGE_MB:-4}
+    # Lets OLLAMA_URL=http://host.docker.internal:11434 reach Ollama on the host (Linux too).
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     volumes:
       - api-data:/data
       # Local backup target: a host folder, ideally on another disk, with BACKUP_DIR=/backups.
@@ -206,6 +220,17 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
 
+  # Optional: `docker compose --profile ollama up`, then OLLAMA_URL=http://ollama:11434 in .env and
+  # `docker compose exec ollama ollama pull qwen2.5:7b`. CPU only as written; for an NVIDIA GPU add
+  # `deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }`.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+
 volumes:
   api-data:
   pg-data:
+  ollama-data:

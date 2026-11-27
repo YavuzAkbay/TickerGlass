@@ -254,7 +254,7 @@ class OllamaBackend:
                 info = self._describe(tag)
                 if info is not None:
                     models.append(info)
-            models.sort(key=lambda m: m.name)
+            models.sort(key=lambda m: m.name.lower())
             self._models = (time.monotonic(), models)
             return models
 
