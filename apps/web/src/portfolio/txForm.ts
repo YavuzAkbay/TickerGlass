@@ -1,6 +1,7 @@
 /** Transaction form: per-kind field rules (mirrors the API table) and validation. Pure. */
 import type { TxIn, TxKind } from '@tickerglass/portfolio';
 import type { Transaction } from '../api/portfolio';
+import { formatLocale } from '../sidebar/format';
 
 export const TX_KINDS: readonly TxKind[] = [
   'buy',
@@ -188,18 +189,58 @@ export function withKind(form: TxFormState, kind: TxKind): TxFormState {
   };
 }
 
+/** The locale's decimal separator, narrowed to the two we parse ('.' or ','). */
+function localeDecimal(locale: string): '.' | ',' {
+  try {
+    const part = new Intl.NumberFormat(locale).formatToParts(1.1).find((p) => p.type === 'decimal');
+    return part?.value === ',' ? ',' : '.';
+  } catch {
+    return '.'; // invalid locale tag
+  }
+}
+
+/** True for a well-formed thousands-grouped integer: `1,000`, `12,345,678` (no leading zero). */
+const isGrouped = (s: string, group: '.' | ','): boolean =>
+  new RegExp(`^[1-9]\\d{0,2}(?:[${group}]\\d{3})+$`).test(s);
+
 /**
- * Parse a typed number. With a dot, commas are thousands separators (`1,000.5`); without one, a
- * single comma is the decimal separator (`12,5`) unless it groups thousands (`1,000,000`).
+ * Parse a typed number, locale-aware. Returns null for blank input and NaN for malformed input.
+ * - Both `.` and `,` present: the last one is the decimal separator, the other groups thousands
+ *   and must be well-formed (`1,000.5`, `1.234,56`; `1,0.5` is NaN).
+ * - One kind, repeated: it must be thousands grouping (`1,000,000`; `1,2,3` is NaN).
+ * - One kind, once: the locale's decimal char is a decimal point. The other char is thousands when
+ *   it groups exactly (`1,000` in en-US, `1.000` in de-DE) and a decimal otherwise (`12,5`,
+ *   `12.5`), since people type those whatever their locale.
+ * `locale` defaults to the app's number locale.
  */
-export function parseTyped(s: string): number | null {
-  let v = s.trim().replace(/\s/g, '');
-  if (!v) return null;
-  if (v.includes('.')) v = v.replace(/,/g, '');
-  else if (/^[+-]?\d{1,3}(,\d{3}){2,}$/.test(v)) v = v.replace(/,/g, '');
-  else if ((v.match(/,/g)?.length ?? 0) === 1) v = v.replace(',', '.');
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(v)) return Number.NaN;
-  return Number(v);
+export function parseTyped(s: string, locale: string = formatLocale()): number | null {
+  const trimmed = s.trim().replace(/\s/g, '');
+  if (!trimmed) return null;
+  const sign = /^[+-]/.test(trimmed) ? trimmed[0]! : '';
+  const body = sign ? trimmed.slice(1) : trimmed;
+
+  const dots = body.split('.').length - 1;
+  const commas = body.split(',').length - 1;
+  let v = body;
+  if (dots && commas) {
+    const at = Math.max(body.lastIndexOf('.'), body.lastIndexOf(','));
+    const group = body[at] === '.' ? ',' : '.';
+    const int = body.slice(0, at);
+    if (!isGrouped(int, group)) return Number.NaN;
+    v = `${int.split(group).join('')}.${body.slice(at + 1)}`;
+  } else if (dots || commas) {
+    const sep = dots ? '.' : ',';
+    if (dots + commas > 1) {
+      if (!isGrouped(body, sep)) return Number.NaN;
+      v = body.split(sep).join('');
+    } else if (sep === localeDecimal(locale) || !isGrouped(body, sep)) {
+      v = body.replace(sep, '.');
+    } else {
+      v = body.replace(sep, '');
+    }
+  }
+  if (!/^(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(v)) return Number.NaN;
+  return Number(sign + v);
 }
 
 export type TxFormResult = { ok: true; tx: TxIn } | { ok: false; errors: TxFormErrors };

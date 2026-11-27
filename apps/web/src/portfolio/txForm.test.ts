@@ -24,13 +24,40 @@ describe('parseTyped', () => {
     expect(parseTyped(' -3 ')).toBe(-3);
     expect(parseTyped('1e3')).toBe(1000);
     expect(parseTyped('.5')).toBe(0.5);
+    expect(parseTyped('0.5')).toBe(0.5);
   });
-  it('takes a lone comma as the decimal separator', () => {
+  it('takes a lone non-grouping comma as the decimal separator', () => {
     expect(parseTyped('12,5')).toBe(12.5);
-    expect(parseTyped('1,000.5')).toBe(1000.5);
+    expect(parseTyped('0,500')).toBe(0.5);
+    expect(parseTyped('1,5e3')).toBe(1500);
+  });
+  it('reads comma thousands groups (en-US), not a decimal', () => {
+    expect(parseTyped('10,000', 'en-US')).toBe(10_000);
+    expect(parseTyped('1,000', 'en-US')).toBe(1000);
+    expect(parseTyped('-1,000', 'en-US')).toBe(-1000);
     expect(parseTyped('1,000,000')).toBe(1_000_000);
+    expect(parseTyped('1,000.5')).toBe(1000.5);
+  });
+  it('lets the last separator be the decimal when both appear', () => {
+    expect(parseTyped('1.234,56')).toBe(1234.56);
+    expect(parseTyped('1.234,56', 'de-DE')).toBe(1234.56);
+    expect(parseTyped('1,000.5', 'de-DE')).toBe(1000.5);
+  });
+  it('follows a comma-decimal locale (de-DE)', () => {
+    expect(parseTyped('1.000', 'de-DE')).toBe(1000);
+    expect(parseTyped('12,5', 'de-DE')).toBe(12.5);
+    expect(parseTyped('1,000', 'de-DE')).toBe(1);
+    expect(parseTyped('12.5', 'de-DE')).toBe(12.5);
+    expect(parseTyped('1.000.000', 'de-DE')).toBe(1_000_000);
+  });
+  it('rejects malformed grouping', () => {
+    expect(parseTyped('1,0.5')).toBeNaN();
+    expect(parseTyped('1,000,00')).toBeNaN();
+    expect(parseTyped('1.5,3')).toBeNaN();
+    expect(parseTyped('1.2.3')).toBeNaN();
   });
   it('returns null for blank and NaN for junk', () => {
+    expect(parseTyped('')).toBeNull();
     expect(parseTyped('  ')).toBeNull();
     expect(parseTyped('abc')).toBeNaN();
     expect(parseTyped('1,2,3')).toBeNaN();
