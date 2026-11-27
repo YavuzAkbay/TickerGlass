@@ -76,4 +76,23 @@ describe('valuate', () => {
     );
     expect(valuate(l, {}, fx({}), 'USD').rows).toEqual([]);
   });
+
+  it('converts a foreign-currency dividend into the position currency', () => {
+    // GBP-quoted line paying a USD dividend; base EUR (EUR per GBP 1.2, EUR per USD 0.9).
+    const l = computeLedger(
+      [
+        buy(d(1), 'ULVR', 1, 40, 0, { currency: 'GBP' }),
+        mk('dividend', d(2), { symbol: 'ULVR', amount: 10, fee: 1, currency: 'USD' }),
+        mk('dividend', d(3), { symbol: 'ULVR', amount: 2, currency: 'GBP' }),
+      ],
+      { costMethod: 'fifo' },
+    );
+    const v = valuate(l, { ULVR: 41 }, fx({ GBP: 1.2, USD: 0.9 }), 'EUR');
+    expect(v.rows[0]?.dividends).toBeCloseTo(2 + (9 * 0.9) / 1.2, 9);
+    expect(v.totals.dividends).toBeCloseTo(2 * 1.2 + 9 * 0.9, 9);
+    // Missing USD rate: the row keeps the same-currency part only.
+    const v2 = valuate(l, { ULVR: 41 }, fx({ GBP: 1.2 }), 'EUR');
+    expect(v2.rows[0]?.dividends).toBe(2);
+    expect(v2.missingFx).toEqual(['USD']);
+  });
 });

@@ -17,7 +17,7 @@ export interface ValuationRow {
   unrealizedPct: number | null;
   dayChange: number | null;
   dayChangePct: number | null;
-  /** Realized P&L and net dividends for this symbol, own currency. */
+  /** Realized P&L and net dividends for this symbol, own currency (other currencies converted). */
   realized: number;
   dividends: number;
   fxRate: number | null;
@@ -98,6 +98,16 @@ export function valuate(
     return r;
   };
 
+  /** Net dividends in the position's currency, foreign-currency payments converted via the base. */
+  const dividendsOf = (pos: Ledger['positions'][number], posRate: number | null): number => {
+    let sum = pos.dividends;
+    for (const [ccy, f] of Object.entries(pos.foreignDividends)) {
+      const r = rateOf(ccy);
+      if (r !== null && posRate !== null) sum += (f.net * r) / posRate;
+    }
+    return sum;
+  };
+
   const rows: ValuationRow[] = [];
   for (const pos of ledger.positions) {
     if (pos.quantity <= 0) continue;
@@ -124,7 +134,7 @@ export function valuate(
       dayChange,
       dayChangePct: dayChange !== null && prevValue > 0 ? (dayChange / prevValue) * 100 : null,
       realized: pos.realized,
-      dividends: pos.dividends,
+      dividends: dividendsOf(pos, rate),
       fxRate: rate,
       marketValueBase: marketValue !== null && rate !== null ? marketValue * rate : null,
       costBasisBase: rate !== null && marketValue !== null ? pos.costBasis * rate : null,

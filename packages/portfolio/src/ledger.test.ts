@@ -212,13 +212,16 @@ describe('dividends and currencies', () => {
     expect(l.totals.USD?.dividends).toBe(2.5);
   });
 
-  it('a dividend in another currency than the open position only reaches totals and cash', () => {
-    const tx = div(2, 'A', 3, 'EUR');
-    const l = computeLedger([buy(d(1), 'A', 1, 10), tx], { costMethod: 'fifo' });
-    expect(l.issues).toMatchObject([{ txId: tx.id, code: 'currencyMismatch' }]);
-    expect(pos(l, 'A').dividends).toBe(0);
-    expect(l.totals.EUR?.dividends).toBe(3);
-    expect(l.cash.EUR).toBe(3);
+  it('a dividend in another currency than the open position is attributed, not flagged', () => {
+    const l = computeLedger(
+      [buy(d(1), 'A', 1, 10), div(2, 'A', 3, 'EUR', 1), div(3, 'A', 2, 'EUR'), div(4, 'A', 1, 'USD')],
+      { costMethod: 'fifo' },
+    );
+    expect(l.issues).toEqual([]);
+    expect(pos(l, 'A')).toMatchObject({ dividends: 1, withholding: 0 });
+    expect(pos(l, 'A').foreignDividends).toEqual({ EUR: { net: 4, withholding: 1 } });
+    expect(l.totals.EUR).toMatchObject({ dividends: 4, withholding: 1 });
+    expect(l.cash.EUR).toBe(4);
   });
 
   it('a rejected sell (currency clash) has no cash effect', () => {

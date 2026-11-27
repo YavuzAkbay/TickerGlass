@@ -6,6 +6,7 @@ export * from './types';
 export { computeLedger, cashEffect } from './ledger';
 export type {
   ClosedLot,
+  ForeignDividend,
   Ledger,
   LedgerIssue,
   LedgerIssueCode,

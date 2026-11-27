@@ -10,6 +10,12 @@ export interface OpenLot {
   unitCost: number;
 }
 
+export interface ForeignDividend {
+  /** Net of withholding, in the payment currency. */
+  net: number;
+  withholding: number;
+}
+
 export interface Position {
   symbol: string;
   currency: string;
@@ -23,6 +29,12 @@ export interface Position {
   dividends: number;
   /** Withholding tax taken from dividends (informational; already deducted from `dividends`). */
   withholding: number;
+  /**
+   * Dividends paid in a currency other than `currency` (an ADR or foreign listing paying in USD on
+   * a GBP-quoted line), by payment currency. Not included in `dividends`: the ledger has no FX
+   * rates, so valuation converts them.
+   */
+  foreignDividends: Record<string, ForeignDividend>;
   /** Commissions on buys/sells plus `fee` transactions tagged with this symbol. */
   fees: number;
   openLots: OpenLot[];
@@ -128,6 +140,7 @@ interface PosState {
   realized: number;
   dividends: number;
   withholding: number;
+  foreignDividends: Record<string, ForeignDividend>;
   fees: number;
 }
 
@@ -196,6 +209,7 @@ export function computeLedger(txs: Tx[], opts: { costMethod: CostMethod }): Ledg
       realized: 0,
       dividends: 0,
       withholding: 0,
+      foreignDividends: {},
       fees: 0,
     };
     states.set(symbol, fresh);
@@ -326,10 +340,16 @@ export function computeLedger(txs: Tx[], opts: { costMethod: CostMethod }): Ledg
         cash[ccy] = (cash[ccy] ?? 0) + cashEffect(tx);
         t.dividends += a - fee;
         t.withholding += fee;
-        const s = stateFor(tx, false);
-        if (s) {
+        // A dividend in another currency than the position's is not a clash: it is kept per
+        // currency for valuation to convert.
+        const s = states.get(tx.symbol as string);
+        if (s && s.currency === ccy) {
           s.dividends += a - fee;
           s.withholding += fee;
+        } else if (s) {
+          const f = (s.foreignDividends[ccy] ??= { net: 0, withholding: 0 });
+          f.net += a - fee;
+          f.withholding += fee;
         }
         break;
       }
@@ -429,6 +449,7 @@ export function computeLedger(txs: Tx[], opts: { costMethod: CostMethod }): Ledg
       realized: s.realized,
       dividends: s.dividends,
       withholding: s.withholding,
+      foreignDividends: s.foreignDividends,
       fees: s.fees,
       openLots,
     });
