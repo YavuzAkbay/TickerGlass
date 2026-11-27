@@ -18,6 +18,8 @@ from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 from ..ai import AiBackend, AiError, ModelInfo
 from ..ai.config import (
     MAX_MODELS,
+    NUM_CTX_MAX,
+    NUM_CTX_MIN,
     AiConfig,
     AiRuntime,
     detect,
@@ -36,21 +38,35 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
-MAX_MESSAGES = 40
+#: Messages per request (tool rounds add an assistant and a tool message each).
+MAX_MESSAGES = 80
+MAX_TOOLS = 24
+MAX_TOOLS_JSON = 64 * 1024
 MAX_IMAGES_PER_MESSAGE = 2
 _IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
 
 
+class ToolCall(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChatMessage(BaseModel):
-    role: Literal["user", "assistant"]
+    role: Literal["user", "assistant", "tool"]
     content: str = Field(max_length=2_000_000)
     #: Base64 PNG/JPEG (no `data:` prefix); only for vision models.
     images: list[str] = Field(default_factory=list, max_length=MAX_IMAGES_PER_MESSAGE)
+    #: Assistant: the chart tools it asked for.
+    tool_calls: list[ToolCall] | None = Field(default=None, max_length=MAX_TOOLS)
+    #: Tool: which tool this result belongs to.
+    tool_name: str | None = Field(default=None, max_length=100)
 
 
 class ChatRequest(BaseModel):
     model: str = Field(min_length=1, max_length=200)
     messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_MESSAGES)
+    #: Ollama function schemas of the chart tools the browser can run.
+    tools: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_TOOLS)
 
 
 def _runtime(request: Request) -> AiRuntime:
@@ -95,9 +111,22 @@ def status(request: Request, who: UserDep, settings: SettingsDep) -> dict[str, A
         "error": error,
         "models": [m.as_json() for m in models],
         "defaultModel": _default_model(models, runtime.default_model),
-        "numCtx": settings.ai_num_ctx,
+        "numCtx": runtime.num_ctx,
         "maxImageBytes": int(settings.ai_max_image_mb * 1024 * 1024),
     }
+
+
+def _ollama_message(m: ChatMessage) -> dict[str, Any]:
+    out: dict[str, Any] = {"role": m.role, "content": m.content}
+    if m.images:
+        out["images"] = m.images
+    if m.tool_calls:
+        out["tool_calls"] = [
+            {"function": {"name": c.name, "arguments": c.arguments}} for c in m.tool_calls
+        ]
+    if m.tool_name:
+        out["tool_name"] = m.tool_name
+    return out
 
 
 def _check_images(body: ChatRequest, max_bytes: int) -> int:
@@ -126,8 +155,10 @@ async def chat(
     backend = _backend(request)
     if backend is None:
         raise HTTPException(404, "AI is not configured")
-    if body.messages[-1].role != "user":
-        raise HTTPException(422, "the last message must be from the user")
+    if body.messages[-1].role not in ("user", "tool"):
+        raise HTTPException(422, "the last message must be from the user or a tool")
+    if body.tools and len(json.dumps(body.tools)) > MAX_TOOLS_JSON:
+        raise HTTPException(413, "tool definitions too large")
     if sum(len(m.content) for m in body.messages) > settings.ai_max_chars:
         raise HTTPException(413, "conversation too long")
     images = _check_images(body, int(settings.ai_max_image_mb * 1024 * 1024))
@@ -141,14 +172,16 @@ async def chat(
         raise HTTPException(400, "unknown model")
     if images and not info.vision:
         raise HTTPException(400, "this model cannot read images")
+    if body.tools and not info.tools:
+        raise HTTPException(400, "this model cannot use chart tools")
 
     active: set[str] = request.app.state.ai_active
     if who.id in active:
         raise HTTPException(429, "an answer is already being generated")
     active.add(who.id)
-    messages = assemble([m.model_dump() for m in body.messages])
+    messages = assemble([_ollama_message(m) for m in body.messages], tools=bool(body.tools))
     try:
-        stream = await run_in_threadpool(backend.open_chat, info.name, messages)
+        stream = await run_in_threadpool(backend.open_chat, info.name, messages, body.tools or None)
     except AiError as exc:
         active.discard(who.id)
         raise HTTPException(exc.status, str(exc)) from None
@@ -187,6 +220,7 @@ def _config_view(request: Request, settings: Any) -> dict[str, Any]:
             "url": redact_url(settings.ollama_url),
             "models": list(settings.ai_models),
             "defaultModel": settings.ai_default_model,
+            "numCtx": settings.ai_num_ctx,
         }
     cfg = runtime.config
     return {
@@ -196,6 +230,7 @@ def _config_view(request: Request, settings: Any) -> dict[str, Any]:
         "url": cfg.url if cfg else None,
         "models": list(cfg.models) if cfg else [],
         "defaultModel": cfg.default_model if cfg else None,
+        "numCtx": runtime.num_ctx,
     }
 
 
@@ -210,6 +245,8 @@ class ConfigBody(BaseModel):
     #: Models users may pick; empty = every installed chat model.
     models: list[str] = Field(default_factory=list, max_length=MAX_MODELS)
     defaultModel: str | None = Field(default=None, max_length=200)
+    #: Context window in tokens; None = `AI_NUM_CTX`.
+    numCtx: int | None = Field(default=None, ge=NUM_CTX_MIN, le=NUM_CTX_MAX)
 
 
 @router.put("/config")
@@ -226,7 +263,7 @@ def put_config(
             raise HTTPException(422, f"Ollama URL {exc}") from None
         models = tuple(dict.fromkeys(m.strip() for m in body.models if m.strip()))
         default = (body.defaultModel or "").strip() or None
-        config = AiConfig(url, models, default)
+        config = AiConfig(url, models, default, body.numCtx)
     save_config(request.app.state.engine, config)
     request.app.state.ai_runtime = resolve(settings, config)
     log.info("Ask AI %s in the app", "connected" if config else "turned off")

@@ -62,6 +62,23 @@ def _status_error(status: int, raw: bytes) -> AiError:
     return AiError(f"Ollama error {status}: {text}")
 
 
+def _tool_calls(raw: Any) -> list[dict[str, Any]]:
+    """Ollama `message.tool_calls` as `{name, arguments}` (arguments may be a JSON string)."""
+    out: list[dict[str, Any]] = []
+    for call in raw if isinstance(raw, list) else []:
+        fn = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(fn, dict) or not isinstance(fn.get("name"), str):
+            continue
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except ValueError:
+                args = {}
+        out.append({"name": fn["name"], "arguments": args if isinstance(args, dict) else {}})
+    return out
+
+
 class _Chat:
     """One streamed chat response; iterate once."""
 
@@ -74,6 +91,7 @@ class _Chat:
         self._lock = threading.Lock()
 
     def __iter__(self) -> Iterator[Event]:
+        calls: list[dict[str, Any]] = []
         try:
             while True:
                 line = self._resp.readline(MAX_LINE_BYTES)
@@ -95,8 +113,11 @@ class _Chat:
                         yield {"t": "thinking", "text": str(msg["thinking"])}
                     if msg.get("content"):
                         yield {"t": "delta", "text": str(msg["content"])}
+                    calls.extend(_tool_calls(msg.get("tool_calls")))
                 if obj.get("done"):
                     upstream.record(PROVIDER_ID, "ok")
+                    if calls:
+                        yield {"t": "tool_calls", "calls": calls}
                     total = obj.get("total_duration")
                     yield {
                         "t": "done",
@@ -225,6 +246,7 @@ class OllamaBackend:
         raw_details = tag.get("details")
         details: dict[str, Any] = raw_details if isinstance(raw_details, dict) else {}
         vision = bool(_VISION_FAMILIES & set(details.get("families") or []))
+        tools = False
         try:
             show = self._json("POST", "/api/show", {"model": name})
         except AiError:
@@ -234,10 +256,12 @@ class OllamaBackend:
             if "completion" not in caps:
                 return None  # embedding-only model
             vision = "vision" in caps
+            tools = "tools" in caps
         size = tag.get("size")
         return ModelInfo(
             name=name,
             vision=vision,
+            tools=tools,
             parameter_size=details.get("parameter_size") or None,
             size_bytes=size if isinstance(size, int) else None,
         )
@@ -265,13 +289,20 @@ class OllamaBackend:
             self._models = (time.monotonic(), models)
             return models
 
-    def open_chat(self, model: str, messages: list[dict[str, Any]]) -> _Chat:
+    def open_chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> _Chat:
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": True,
             "options": {"num_ctx": self._num_ctx},
         }
+        if tools:
+            body["tools"] = tools
         if self._keep_alive:
             body["keep_alive"] = self._keep_alive
         conn, resp = self._open("POST", "/api/chat", body, self._timeout_s)

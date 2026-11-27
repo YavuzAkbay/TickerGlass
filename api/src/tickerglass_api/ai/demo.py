@@ -1,6 +1,7 @@
 """Offline stand-in for Ollama (`AI_PROVIDER=demo`): canned, streamed replies that echo what
 was received, so the UI can be tried and tested without a model."""
 
+import json
 import threading
 from collections.abc import Iterator
 from typing import Any
@@ -8,18 +9,31 @@ from typing import Any
 from .base import Event, ModelInfo
 
 MODELS = [
-    ModelInfo(name="demo-text", vision=False, parameter_size="0B"),
-    ModelInfo(name="demo-vision", vision=True, parameter_size="0B"),
+    ModelInfo(name="demo-text", vision=False, tools=True, parameter_size="0B"),
+    ModelInfo(name="demo-vision", vision=True, tools=True, parameter_size="0B"),
 ]
 
 
 class _DemoChat:
-    def __init__(self, text: str, delay_s: float) -> None:
+    def __init__(
+        self, text: str, delay_s: float, calls: list[dict[str, Any]] | None = None
+    ) -> None:
         self._text = text
         self._delay_s = delay_s
+        self._calls = calls or []
         self._stop = threading.Event()
 
     def __iter__(self) -> Iterator[Event]:
+        if self._calls:
+            yield {"t": "tool_calls", "calls": self._calls}
+            yield {
+                "t": "done",
+                "reason": "stop",
+                "promptTokens": None,
+                "evalTokens": 0,
+                "durationMs": None,
+            }
+            return
         words = self._text.split(" ")
         for i, word in enumerate(words):
             if self._stop.wait(self._delay_s):
@@ -67,5 +81,51 @@ class DemoBackend:
     def list_models(self) -> list[ModelInfo]:
         return list(MODELS)
 
-    def open_chat(self, model: str, messages: list[dict[str, Any]]) -> _DemoChat:
+    def open_chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> _DemoChat:
+        if tools:
+            scripted = _tool_script(messages, {t.get("function", {}).get("name") for t in tools})
+            if scripted is not None:
+                text, calls = scripted
+                return _DemoChat(text, self._delay_s, calls)
         return _DemoChat(_reply(messages), self._delay_s)
+
+
+def _tool_script(
+    messages: list[dict[str, Any]], names: set[Any]
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """Divergence questions: find_divergences, then draw_divergence for what was found, then
+    a summary. None = no script (a plain reply)."""
+    if not {"find_divergences", "draw_divergence"} <= names:
+        return None
+    convo = [m for m in messages if m["role"] != "system"]
+    last = convo[-1] if convo else None
+    if last is None:
+        return None
+    if last["role"] == "user":
+        if "divergence" not in last["content"].lower():
+            return None
+        return "", [{"name": "find_divergences", "arguments": {"oscillator": "rsi"}}]
+    if last["role"] == "tool" and last.get("tool_name") == "find_divergences":
+        try:
+            found = json.loads(last["content"]).get("divergences") or []
+        except (ValueError, AttributeError):
+            found = []
+        ids = [d["id"] for d in found[:2] if isinstance(d, dict) and "id" in d]
+        if ids:
+            return "", [{"name": "draw_divergence", "arguments": {"id": i}} for i in ids]
+        return "**Demo reply**: find_divergences found no divergences in this range.", []
+    if last["role"] == "tool":
+        drawn = sum(
+            1 for m in convo if m["role"] == "tool" and m.get("tool_name") == "draw_divergence"
+        )
+        return (
+            f"**Demo reply**: found divergences with find_divergences and drew {drawn} of them "
+            "on the price and RSI panes. A real model would explain them here.",
+            [],
+        )
+    return None

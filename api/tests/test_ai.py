@@ -321,6 +321,7 @@ def test_config_off_by_default(tmp_path: Path) -> None:
             "url": None,
             "models": [],
             "defaultModel": None,
+            "numCtx": 8192,
         }
 
 
@@ -407,3 +408,127 @@ def test_new_model_shows_at_once(ollama: FakeOllama, monkeypatch: pytest.MonkeyP
     assert "phi4:latest" in [m.name for m in backend.list_models()]
     # Only the new model was described again.
     assert sum(r["path"] == "/api/show" for r in ollama.requests) == shows + 1
+
+
+# --- chart tools (Ollama tool calling) ----------------------------------------------------
+
+TOOL = {
+    "type": "function",
+    "function": {
+        "name": "find_divergences",
+        "description": "Find divergences",
+        "parameters": {"type": "object", "properties": {"oscillator": {"type": "string"}}},
+    },
+}
+
+
+def test_tools_capability(ollama: FakeOllama) -> None:
+    by_name = {
+        m.name: m for m in OllamaBackend(ollama.url, timeout_s=5, num_ctx=1024).list_models()
+    }
+    assert by_name["qwen2.5:7b"].tools and not by_name["gemma3:4b"].tools
+
+
+def test_tool_calls_event(ollama: FakeOllama) -> None:
+    ollama.chat_lines = [
+        {
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "find_divergences", "arguments": {"oscillator": "rsi"}}},
+                    {"function": {"name": "draw_divergence", "arguments": '{"id": "d1"}'}},
+                    {"function": {"arguments": {}}},  # nameless: dropped
+                ],
+            },
+            "done": False,
+        },
+        {"message": {"role": "assistant", "content": ""}, "done": True, "done_reason": "stop"},
+    ]
+    backend = OllamaBackend(ollama.url, timeout_s=5, num_ctx=1024)
+    evs = list(backend.open_chat("qwen2.5:7b", [], tools=[TOOL]))
+    assert evs[0] == {
+        "t": "tool_calls",
+        "calls": [
+            {"name": "find_divergences", "arguments": {"oscillator": "rsi"}},
+            {"name": "draw_divergence", "arguments": {"id": "d1"}},
+        ],
+    }
+    assert evs[1]["t"] == "done"
+    assert ollama.requests[-1]["body"]["tools"] == [TOOL]
+
+
+def test_route_tools(tmp_path: Path, ollama: FakeOllama) -> None:
+    with make(tmp_path, ollama_url=ollama.url) as c:
+        body = {
+            "model": "qwen2.5:7b",
+            "tools": [TOOL],
+            "messages": [
+                {"role": "user", "content": "find divergences"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {"name": "find_divergences", "arguments": {"oscillator": "rsi"}}
+                    ],
+                },
+                {"role": "tool", "tool_name": "find_divergences", "content": '{"divergences": []}'},
+            ],
+        }
+        assert c.post("/api/ai/chat", json=body).status_code == 200
+        sent = ollama.requests[-1]["body"]
+        assert sent["tools"] == [TOOL]
+        assert "## Working on the chart" in sent["messages"][0]["content"]
+        assert sent["messages"][2]["tool_calls"] == [
+            {"function": {"name": "find_divergences", "arguments": {"oscillator": "rsi"}}}
+        ]
+        assert sent["messages"][3] == {
+            "role": "tool",
+            "content": '{"divergences": []}',
+            "tool_name": "find_divergences",
+        }
+        # No tools: plain prompt, no tools key.
+        c.post("/api/ai/chat", json=ask(model="qwen2.5:7b"))
+        sent = ollama.requests[-1]["body"]
+        assert (
+            "tools" not in sent and "## Working on the chart" not in sent["messages"][0]["content"]
+        )
+        # A model without the capability refuses tools.
+        r = c.post("/api/ai/chat", json={**body, "model": "gemma3:4b"})
+        assert r.status_code == 400 and "chart tools" in r.json()["detail"]
+
+
+def test_demo_tool_script(tmp_path: Path) -> None:
+    tools = [
+        {"type": "function", "function": {"name": n}}
+        for n in ("find_divergences", "draw_divergence")
+    ]
+    with make(tmp_path, ai_provider="demo") as c:
+        q = {"role": "user", "content": "Find RSI divergences"}
+        evs = events(
+            c.post("/api/ai/chat", json={"model": "demo-text", "tools": tools, "messages": [q]})
+        )
+        assert evs[0] == {
+            "t": "tool_calls",
+            "calls": [{"name": "find_divergences", "arguments": {"oscillator": "rsi"}}],
+        }
+        found = {"divergences": [{"id": "d1"}, {"id": "d2"}, {"id": "d3"}]}
+        msgs = [
+            q,
+            {"role": "assistant", "content": "", "tool_calls": evs[0]["calls"]},
+            {"role": "tool", "tool_name": "find_divergences", "content": json.dumps(found)},
+        ]
+        evs = events(
+            c.post("/api/ai/chat", json={"model": "demo-text", "tools": tools, "messages": msgs})
+        )
+        assert [x["arguments"]["id"] for x in evs[0]["calls"]] == ["d1", "d2"]
+        msgs += [
+            {"role": "assistant", "content": "", "tool_calls": evs[0]["calls"]},
+            {"role": "tool", "tool_name": "draw_divergence", "content": "{}"},
+            {"role": "tool", "tool_name": "draw_divergence", "content": "{}"},
+        ]
+        evs = events(
+            c.post("/api/ai/chat", json={"model": "demo-text", "tools": tools, "messages": msgs})
+        )
+        text = "".join(e.get("text", "") for e in evs)
+        assert "drew 2" in text and evs[-1]["t"] == "done"

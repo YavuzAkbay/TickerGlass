@@ -5,6 +5,8 @@ A backend lists the chat models users may pick and opens one streamed chat. Both
 
 - `{"t": "delta", "text": str}`: a piece of the answer.
 - `{"t": "thinking", "text": str}`: a piece of a reasoning model's thinking.
+- `{"t": "tool_calls", "calls": [{"name": str, "arguments": dict}]}`: the model wants the
+  browser to run chart tools (sent once, before `done`).
 - `{"t": "done", "reason": str, "promptTokens": int|None, "evalTokens": int|None,
   "durationMs": int|None}`: the last event.
 
@@ -40,6 +42,8 @@ class AiBadRequest(AiError):
 class ModelInfo:
     name: str
     vision: bool
+    #: Ollama tool calling ("tools" capability): the model may act on the chart.
+    tools: bool = False
     #: As reported by the backend (`7.6B`), for display only.
     parameter_size: str | None = None
     size_bytes: int | None = None
@@ -48,6 +52,7 @@ class ModelInfo:
         return {
             "name": self.name,
             "vision": self.vision,
+            "tools": self.tools,
             "parameterSize": self.parameter_size,
             "sizeBytes": self.size_bytes,
         }
@@ -66,7 +71,13 @@ class AiBackend(Protocol):
 
     def list_models(self) -> list[ModelInfo]: ...
 
-    def open_chat(self, model: str, messages: list[dict[str, Any]]) -> ChatStream:
+    def open_chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ChatStream:
         """Start a chat. `messages` are Ollama-shaped (`role`, `content`, optional `images`
-        as base64 strings), system prompt included."""
+        as base64 strings, `tool_calls`, `tool_name`), system prompt included; `tools` are
+        Ollama function schemas."""
         ...

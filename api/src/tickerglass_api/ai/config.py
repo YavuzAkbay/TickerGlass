@@ -36,6 +36,9 @@ CANDIDATE_URLS = (
 #: Seconds a probe waits per address.
 PROBE_TIMEOUT_S = 4.0
 MAX_MODELS = 200
+#: Context windows offered in Settings → AI (tokens).
+NUM_CTX_MIN = 2048
+NUM_CTX_MAX = 131072
 
 Source = Literal["env", "app", "off"]
 
@@ -45,9 +48,16 @@ class AiConfig:
     url: str
     models: tuple[str, ...] = field(default_factory=tuple)
     default_model: str | None = None
+    #: Context window sent to Ollama; None = `AI_NUM_CTX`.
+    num_ctx: int | None = None
 
     def as_json(self) -> dict[str, Any]:
-        return {"url": self.url, "models": list(self.models), "defaultModel": self.default_model}
+        return {
+            "url": self.url,
+            "models": list(self.models),
+            "defaultModel": self.default_model,
+            "numCtx": self.num_ctx,
+        }
 
 
 def normalize_url(raw: str) -> str:
@@ -94,7 +104,9 @@ def load_config(engine: Engine) -> AiConfig | None:
         url = normalize_url(str(value["url"]))
         models = tuple(str(m) for m in value.get("models") or [])[:MAX_MODELS]
         default = value.get("defaultModel")
-        return AiConfig(url, models, str(default) if default else None)
+        ctx = value.get("numCtx")
+        num_ctx = int(ctx) if isinstance(ctx, int) and NUM_CTX_MIN <= ctx <= NUM_CTX_MAX else None
+        return AiConfig(url, models, str(default) if default else None, num_ctx)
     except (KeyError, TypeError, ValueError, AttributeError):
         log.warning("ignoring the stored AI settings, they are malformed")
         return None
@@ -115,11 +127,13 @@ def save_config(engine: Engine, config: AiConfig | None) -> None:
             row.updated_at = now
 
 
-def ollama_backend(settings: Settings, url: str, allow: list[str] | None = None) -> OllamaBackend:
+def ollama_backend(
+    settings: Settings, url: str, allow: list[str] | None = None, num_ctx: int | None = None
+) -> OllamaBackend:
     return OllamaBackend(
         url,
         timeout_s=settings.ai_timeout_s,
-        num_ctx=settings.ai_num_ctx,
+        num_ctx=num_ctx or settings.ai_num_ctx,
         keep_alive=settings.ai_keep_alive,
         allow=allow,
     )
@@ -133,21 +147,26 @@ class AiRuntime:
     source: Source
     default_model: str | None
     config: AiConfig | None = None
+    #: Context window in force.
+    num_ctx: int = 8192
 
 
 def resolve(settings: Settings, stored: AiConfig | None) -> AiRuntime:
     """Environment first, then the in-app settings, else off."""
     match settings.ai_backend:
         case "demo":
-            return AiRuntime(DemoBackend(), "env", settings.ai_default_model)
+            return AiRuntime(
+                DemoBackend(), "env", settings.ai_default_model, num_ctx=settings.ai_num_ctx
+            )
         case "ollama":
             assert settings.ollama_url
             backend = ollama_backend(settings, settings.ollama_url, settings.ai_models)
-            return AiRuntime(backend, "env", settings.ai_default_model)
+            return AiRuntime(backend, "env", settings.ai_default_model, num_ctx=settings.ai_num_ctx)
     if stored is not None:
-        backend = ollama_backend(settings, stored.url, list(stored.models))
-        return AiRuntime(backend, "app", stored.default_model, stored)
-    return AiRuntime(None, "off", None)
+        num_ctx = stored.num_ctx or settings.ai_num_ctx
+        backend = ollama_backend(settings, stored.url, list(stored.models), num_ctx)
+        return AiRuntime(backend, "app", stored.default_model, stored, num_ctx)
+    return AiRuntime(None, "off", None, num_ctx=settings.ai_num_ctx)
 
 
 @dataclass(frozen=True)
