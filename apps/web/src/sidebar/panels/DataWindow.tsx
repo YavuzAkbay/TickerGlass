@@ -54,20 +54,28 @@ export function DataWindow() {
 
   return (
     <div className="rs-datawin">
-      <div className="rs-section-title">
-        {symbolInfo?.symbol ?? chart.getSymbol()}
-        <span className="rs-muted"> · {interval}</span>
+      <div className="rs-dw-head">
+        <span className="rs-dw-symbol">{symbolInfo?.symbol ?? chart.getSymbol()}</span>
+        <span className="rs-dw-chip">{interval}</span>
+        <span
+          className={`rs-dw-chip rs-dw-live${crosshair?.bar ? ' on' : ''}`}
+          title={crosshair?.bar ? 'Bar under the crosshair' : 'Last bar'}
+        >
+          {crosshair?.bar ? 'Crosshair' : 'Last bar'}
+        </span>
       </div>
-      <Row label="Date" value={bar ? dateFmt.format(new Date(bar.time * 1000)) : '—'} />
-      <Row label="Open" value={fmtPrice(bar?.open, d)} />
-      <Row label="High" value={fmtPrice(bar?.high, d)} />
-      <Row label="Low" value={fmtPrice(bar?.low, d)} />
-      <Row label="Close" value={fmtPrice(bar?.close, d)} cls={cls} />
-      <Row label="Change" value={fmtSigned(change, d)} cls={cls} />
-      <Row label="Change %" value={fmtSigned(changePct, 2, '%')} cls={cls} />
-      <Row label="Volume" value={fmtCompact(bar?.volume)} />
+      <div className="rs-dw-card">
+        <Row label="Date" value={bar ? dateFmt.format(new Date(bar.time * 1000)) : '—'} />
+        <Row label="Open" value={fmtPrice(bar?.open, d)} />
+        <Row label="High" value={fmtPrice(bar?.high, d)} />
+        <Row label="Low" value={fmtPrice(bar?.low, d)} />
+        <Row label="Close" value={fmtPrice(bar?.close, d)} cls={cls} />
+        <Row label="Change" value={fmtSigned(change, d)} cls={cls} />
+        <Row label="Change %" value={fmtSigned(changePct, 2, '%')} cls={cls} />
+        <Row label="Volume" value={fmtCompact(bar?.volume)} />
+      </div>
       {bar && compares.length > 0 ? (
-        <div>
+        <div className="rs-dw-card">
           <div className="rs-section-title">Compare</div>
           {compares.map((s) => (
             <Row key={s.id} label={s.title || s.id} value={valueText(s.valuesAt(index))} />
@@ -78,7 +86,7 @@ export function DataWindow() {
         const series = pane.series.filter((s) => s.id !== 'main' && !isCompareId(s.id));
         if (!series.length || !bar) return null;
         return (
-          <div key={pane.id}>
+          <div key={pane.id} className="rs-dw-card">
             <div className="rs-section-title">
               {pane.id === 'main' ? 'Overlays' : series[0]?.title || pane.id}
             </div>

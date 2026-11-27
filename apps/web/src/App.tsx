@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useRef } from 'react';
 import { ChartGrid } from './layout/ChartGrid';
+import { useRailClearance } from './layout/railClearance';
 import { registerGridCommands } from './layout/commands';
 import { registerCoreCommands } from './commands/core';
 import { registerDrawingCommands } from './drawings/commands';
@@ -66,6 +67,8 @@ function Shell() {
   const screen = useUiStore((s) => s.screen);
   const screenOpen = screen !== 'charts';
   const appRef = useRef<HTMLDivElement>(null);
+  // Pane legends that fall under the floating drawing dock move right of it.
+  useRailClearance(appRef);
   const PageScreen =
     screen === 'watchlists'
       ? WatchlistsPage.get()

@@ -63,7 +63,10 @@ export function Notes() {
         <div className="rs-notes-target" data-testid="notes-target">
           {target === null ? (
             <>
-              <span className="rs-notes-follow">{t('notes.following')}</span>
+              <span className="rs-notes-follow">
+                <span className="rs-notes-live" aria-hidden="true" />
+                {t('notes.following')}
+              </span>
               <button
                 type="button"
                 className="rs-notes-pin"
@@ -78,7 +81,10 @@ export function Notes() {
             </>
           ) : (
             <>
-              <span className="rs-notes-follow">{t('notes.pinned', { symbol: target })}</span>
+              <span className="rs-notes-follow">
+                <Pin size={11} aria-hidden="true" />
+                {t('notes.pinned', { symbol: target })}
+              </span>
               <button
                 type="button"
                 className="rs-notes-pin rs-notes-back"
@@ -92,19 +98,28 @@ export function Notes() {
           )}
         </div>
       )}
-      <textarea
-        ref={input}
-        className="rs-notes-input"
-        aria-label={key === GENERAL_NOTE ? 'General notes' : `Notes for ${symbol}`}
-        placeholder={
-          key === GENERAL_NOTE ? 'Write your trading notes here...' : `Notes about ${symbol}...`
-        }
-        value={text}
-        spellCheck
-        onChange={(e) => useNotesStore.getState().edit(key, e.target.value)}
-      />
-      <div className="rs-notes-foot">
-        {text.length ? `${text.length.toLocaleString()} characters · ${status}` : status}
+      <div className="rs-notes-box">
+        <textarea
+          ref={input}
+          className="rs-notes-input"
+          aria-label={key === GENERAL_NOTE ? 'General notes' : `Notes for ${symbol}`}
+          placeholder={
+            key === GENERAL_NOTE ? 'Write your trading notes here...' : `Notes about ${symbol}...`
+          }
+          value={text}
+          spellCheck
+          onChange={(e) => useNotesStore.getState().edit(key, e.target.value)}
+        />
+        <div className="rs-notes-foot">
+          <span
+            className={`rs-notes-dot${note?.dirty ? (online ? ' saving' : ' offline') : ''}`}
+            aria-hidden="true"
+          />
+          <span className="rs-notes-status">{status}</span>
+          {text.length ? (
+            <span className="rs-notes-count">{text.length.toLocaleString()} chars</span>
+          ) : null}
+        </div>
       </div>
     </div>
   );

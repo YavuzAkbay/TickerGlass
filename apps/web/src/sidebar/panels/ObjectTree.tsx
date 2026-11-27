@@ -99,7 +99,7 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
             <span className="rs-tree-label">{label}</span>
             <button
               type="button"
-              className="rs-tree-btn"
+              className={`rs-tree-btn${d.locked ? ' on' : ''}`}
               aria-label={d.locked ? `Unlock ${name}` : `Lock ${name}`}
               title={d.locked ? 'Unlock' : 'Lock'}
               onClick={(e) => {
@@ -111,7 +111,7 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
             </button>
             <button
               type="button"
-              className="rs-tree-btn"
+              className={`rs-tree-btn${d.hidden ? ' on' : ''}`}
               aria-label={d.hidden ? `Show ${name}` : `Hide ${name}`}
               title={d.hidden ? 'Show' : 'Hide'}
               onClick={(e) => {
@@ -123,7 +123,7 @@ function DrawingRows({ paneId, list }: { paneId: string; list: Drawing[] }) {
             </button>
             <button
               type="button"
-              className="rs-tree-btn"
+              className="rs-tree-btn danger"
               aria-label={`Remove ${name}`}
               title="Remove"
               onClick={(e) => {
@@ -169,10 +169,17 @@ export function ObjectTree() {
         const name = isMain ? 'Main pane' : `Pane ${i + 1}`;
         const stack = paneStack(pane.id);
         return (
-          <div key={pane.id} role="treeitem" aria-expanded={!pane.collapsed} aria-label={name}>
+          <div
+            key={pane.id}
+            role="treeitem"
+            aria-expanded={!pane.collapsed}
+            aria-label={name}
+            className="rs-tree-group"
+          >
             <div className={`rs-tree-row rs-tree-pane${pane.collapsed ? ' muted' : ''}`}>
               <ChevronRight size={14} className={`rs-tree-caret${pane.collapsed ? '' : ' open'}`} />
               <span className="rs-tree-label">{name}</span>
+              <span className="rs-tree-count">{pane.series.length + stack.length}</span>
               <button
                 type="button"
                 className="rs-tree-btn"
@@ -187,7 +194,7 @@ export function ObjectTree() {
               ) : (
                 <button
                   type="button"
-                  className="rs-tree-btn"
+                  className="rs-tree-btn danger"
                   aria-label={`Remove ${name}`}
                   title="Remove"
                   onClick={() => chart.removePane(pane.id)}
@@ -197,18 +204,18 @@ export function ObjectTree() {
               )}
             </div>
             {pane.collapsed ? null : (
-              <div role="group">
+              <div role="group" className="rs-tree-group-body">
                 <DrawingRows paneId={pane.id} list={stack} />
                 {pane.series.map((s) => (
                   <div key={s.id} role="treeitem" className="rs-tree-row rs-tree-series">
-                    <span className="rs-tree-dot" />
+                    <span className="rs-tree-dot series" />
                     <span className="rs-tree-label">
                       {s.id === 'main' ? `${symbol}, ${interval}` : s.title || s.id}
                     </span>
                   </div>
                 ))}
                 {pane.series.length === 0 && stack.length === 0 ? (
-                  <div className="rs-tree-row rs-tree-series muted">Empty pane</div>
+                  <div className="rs-tree-empty">Empty pane</div>
                 ) : null}
               </div>
             )}

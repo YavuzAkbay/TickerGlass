@@ -8,8 +8,12 @@
 .bt-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px 14px 0;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+.bt-bar + .bt-bar {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 .bt-bar .wl-seg {
   flex: 1;
@@ -21,9 +25,17 @@
 }
 .bt-run {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 4px;
-  margin-left: 6px;
+  gap: 5px;
+  height: 30px;
+  margin-left: 4px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.bt-run:active {
+  transform: scale(0.97);
 }
 .bt-body {
   flex: 1;
@@ -32,7 +44,7 @@
   padding-bottom: 16px;
 }
 .bt-muted {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 12px;
 }
 .bt-pad {
@@ -41,11 +53,14 @@
 .bt-select {
   min-width: 0;
   max-width: 100%;
-  height: 26px;
+  height: 28px;
+  font-size: 12.5px;
 }
 .bt-num {
-  width: 72px;
-  height: 26px;
+  width: 76px;
+  height: 28px;
+  font-family: var(--font-num);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .bt-missing {
@@ -55,8 +70,11 @@
 
 /* ---- rules ---- */
 .bt-rule {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 10px;
+  padding-bottom: 6px;
+}
+.bt-rule + .bt-rule {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
 }
 .bt-rule-head {
   display: flex;
@@ -66,8 +84,12 @@
 }
 .bt-match {
   flex: 0 0 auto;
-  width: 96px;
+  width: 104px;
   margin: 10px 0 0;
+}
+.bt-match button {
+  height: 22px;
+  font-size: 11.5px;
 }
 .bt-conds {
   list-style: none;
@@ -75,16 +97,26 @@
   padding: 0 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .bt-cond {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--panel-2);
+  border-radius: var(--radius-float);
+  background: var(--surface);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+.bt-cond:hover {
+  border-color: var(--border-strong);
+}
+.bt-cond:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .bt-cond-line {
   display: flex;
@@ -100,16 +132,39 @@
 }
 .bt-cond-remove {
   flex: 0 0 auto;
+  min-width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+.bt-cond-remove:hover {
+  color: var(--down);
 }
 .bt-empty-rule {
-  margin: 0;
-  padding: 0 14px 4px;
+  margin: 0 14px 4px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-float);
+  color: var(--faint);
+  text-align: center;
 }
 .bt-add {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin: 8px 14px 0;
+  gap: 5px;
+  height: 28px;
+  margin: 10px 14px 0;
+  padding: 0 12px 0 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.bt-add:hover {
+  border-style: solid;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 /* ---- settings ---- */
@@ -124,11 +179,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 32px;
+  min-height: 36px;
   padding: 2px 14px;
 }
 .bt-field-label {
-  color: var(--text-muted);
+  color: var(--muted);
+  font-size: 12.5px;
   white-space: nowrap;
 }
 .bt-field-control {
@@ -138,36 +194,56 @@
   min-width: 0;
 }
 .bt-note {
-  margin: 6px 14px 0;
-  line-height: 1.45;
+  margin: 8px 14px 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
 /* ---- report ---- */
 .bt-ran {
   margin: 10px 14px 0;
 }
+.bt-ran {
+  color: var(--faint);
+  font-family: var(--font-num);
+  font-size: 11px;
+}
 .bt-headline {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 8px;
   padding: 10px 14px 4px;
 }
 .bt-headline .bt-stat {
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 8px;
+  gap: 3px;
+  min-height: 0;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--panel-2);
+  border-radius: var(--radius-float);
+  background: var(--surface);
+}
+.bt-headline .bt-stat-label {
+  font-size: 11.5px;
 }
 .bt-headline .bt-stat-value {
-  font-size: 14px;
+  max-width: 100%;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   text-align: left;
 }
 .bt-stats {
-  padding: 4px 0 8px;
+  margin: 8px 14px;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-float);
+  background: var(--surface);
+}
+.bt-stats .bt-stat {
+  padding: 2px 12px;
 }
 .bt-stat {
   display: flex;
@@ -178,14 +254,14 @@
   padding: 2px 14px;
 }
 .bt-stat-label {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
 }
 .bt-stat-value {
   min-width: 0;
   text-align: right;
-  font-family: var(--font-mono, inherit);
+  font-family: var(--font-num);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -193,9 +269,14 @@
 }
 .bt-equity {
   display: block;
+  box-sizing: border-box;
   width: calc(100% - 28px);
-  height: 120px;
-  margin: 6px 14px;
+  height: 130px;
+  margin: 8px 14px;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-float);
+  background: var(--input-bg);
 }
 .bt-equity-base {
   stroke: var(--border-strong);
@@ -218,10 +299,12 @@
   fill: var(--down-soft);
 }
 .bt-trades {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   list-style: none;
   margin: 4px 0 0;
-  padding: 0;
-  border-top: 1px solid var(--border);
+  padding: 0 6px;
 }
 .bt-trade {
   display: flex;
@@ -229,18 +312,29 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 6px 14px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 .bt-trade:hover {
-  background: var(--hover);
+  border-color: var(--border);
+  background: var(--raised);
+}
+.bt-trade:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+.bt-trade-pnl {
+  font-family: var(--font-num);
 }
 .bt-trade-main,
 .bt-trade-pnl {

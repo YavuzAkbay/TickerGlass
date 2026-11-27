@@ -52,22 +52,24 @@ export function ReplayTrading() {
 
   return (
     <div className="rt-panel">
-      <Row label="Position" value={side} id="rt-position" />
-      <Row label="Average price" value={pos ? fmtPrice(pos.avg, d) : '—'} id="rt-avg" />
-      <Row label="Last price" value={fmtPrice(marks[symbol], d)} id="rt-last" />
-      <Row
-        label="Unrealized P&L"
-        value={fmtSigned(open, d)}
-        cls={changeClass(open)}
-        id="rt-unrealized"
-      />
-      <Row
-        label="Realized P&L"
-        value={fmtSigned(paper.realized, d)}
-        cls={changeClass(paper.realized)}
-        id="rt-realized"
-      />
-      <Row label="Total P&L" value={fmtSigned(total, d)} cls={changeClass(total)} id="rt-total" />
+      <div className="rt-card">
+        <Row label="Position" value={side} id="rt-position" />
+        <Row label="Average price" value={pos ? fmtPrice(pos.avg, d) : '—'} id="rt-avg" />
+        <Row label="Last price" value={fmtPrice(marks[symbol], d)} id="rt-last" />
+        <Row
+          label="Unrealized P&L"
+          value={fmtSigned(open, d)}
+          cls={changeClass(open)}
+          id="rt-unrealized"
+        />
+        <Row
+          label="Realized P&L"
+          value={fmtSigned(paper.realized, d)}
+          cls={changeClass(paper.realized)}
+          id="rt-realized"
+        />
+        <Row label="Total P&L" value={fmtSigned(total, d)} cls={changeClass(total)} id="rt-total" />
+      </div>
       <div className="rs-section-title">Trades</div>
       {paper.trades.length === 0 ? (
         <div className="rs-empty-text rs-pad">

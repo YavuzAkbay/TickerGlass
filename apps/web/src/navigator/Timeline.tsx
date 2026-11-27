@@ -2,6 +2,7 @@ import { isExpressionSymbol } from '@tickerglass/engine';
 import {
   AlarmClock,
   CalendarDays,
+  History,
   Newspaper,
   Scissors,
   Wallet,
@@ -189,7 +190,10 @@ export function Timeline() {
       ) : null}
       {upcoming.length ? (
         <section aria-label={t('timeline.upcoming')}>
-          <h3 className="tl-head">{t('timeline.upcoming')}</h3>
+          <h3 className="tl-head">
+            {t('timeline.upcoming')}
+            <span className="tl-count">{upcoming.length}</span>
+          </h3>
           <ul className="tl-list">
             {upcoming.map((r) => (
               <Row key={r.key} row={r} now={now} showSymbol={showSymbol} />
@@ -199,7 +203,10 @@ export function Timeline() {
       ) : null}
       {past.length ? (
         <section aria-label={t('timeline.recent')}>
-          <h3 className="tl-head">{t('timeline.recent')}</h3>
+          <h3 className="tl-head">
+            {t('timeline.recent')}
+            <span className="tl-count">{past.length}</span>
+          </h3>
           <ul className="tl-list">
             {past.map((r) => (
               <Row key={r.key} row={r} now={now} showSymbol={showSymbol} />
@@ -213,10 +220,13 @@ export function Timeline() {
           ))}
         </div>
       ) : (
-        <div className="rs-pad rs-muted">
-          {mode === 'watchlist' && !listSymbols.length
-            ? t('timeline.emptyList')
-            : t('timeline.empty')}
+        <div className="rs-empty tl-empty">
+          <History size={20} aria-hidden="true" />
+          <div className="rs-empty-text">
+            {mode === 'watchlist' && !listSymbols.length
+              ? t('timeline.emptyList')
+              : t('timeline.empty')}
+          </div>
         </div>
       )}
       {mode === 'watchlist' && listSymbols.length ? (

@@ -1,25 +1,29 @@
 .al-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  gap: 10px;
+  padding: 10px 12px 14px;
 }
 .al-banner {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--border);
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--down-soft);
   border-radius: var(--radius-control);
-  color: var(--down);
+  background: var(--down-soft);
+  color: var(--text);
   font-size: 12px;
+  line-height: 1.45;
 }
 .al-banner svg {
   flex: none;
-  margin-top: 1px;
+  margin-top: 2px;
+  color: var(--down);
 }
 .al-tabs {
   align-items: center;
+  margin: 0;
 }
 .al-badge,
 .rs-badge {
@@ -27,27 +31,70 @@
   min-width: 16px;
   margin-left: 6px;
   padding: 0 5px;
-  border-radius: var(--radius-panel);
+  border-radius: 999px;
   background: var(--accent);
   color: var(--on-accent);
+  font-family: var(--font-num);
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;
   text-align: center;
 }
+
+/* Search / filter / sort strip: one input card with pill selects. */
 .al-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
+.al-tools .io-input {
+  height: 30px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.al-tools select.io-input {
+  flex: none;
+  width: auto;
+  padding: 0 26px 0 12px;
+  color: var(--muted);
+}
+.al-tools select.io-input:hover {
+  color: var(--text);
+}
+.al-tools .io-input:focus,
+.al-tools .io-input:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.al-tools .io-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.al-tools .io-icon-btn {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+.al-tools .io-icon-btn:hover {
+  color: var(--text);
+}
 .al-search {
   flex: 1 1 100px;
   min-width: 0;
+  padding: 0 12px;
 }
 .al-log-filter {
   flex: 1 1 100px;
   min-width: 0;
+}
+/* Column header for wide layouts; the docked panel uses stacked rows. */
+.al-head {
+  display: none;
 }
 .al-list,
 .al-log {
@@ -56,66 +103,109 @@
   gap: 6px;
 }
 .al-none {
-  padding: 16px 0;
+  padding: 24px 0;
+  color: var(--faint);
+  font-size: 12.5px;
   text-align: center;
 }
+
+/* Alert row: rounded card, status tile, hover lift. */
 .al-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px;
+  gap: 10px;
+  padding: 9px 6px 9px 9px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-control);
+  border-radius: 10px;
+  background: var(--surface);
   cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 }
 .al-row:hover {
-  background: var(--hover);
+  border-color: var(--border-strong);
+  background: var(--raised);
+}
+.al-row:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .al-paused,
 .al-expired {
-  opacity: 0.7;
+  opacity: 0.72;
 }
+/* The status dot sits centred in a 26px tile. */
 .al-dot {
+  position: relative;
   flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--raised);
+  transition: background 0.12s;
+}
+.al-dot::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
   width: 8px;
   height: 8px;
-  margin-top: 5px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--faint);
+  transform: translate(-50%, -50%);
 }
-.al-dot-active {
+.al-row:hover .al-dot {
+  background: var(--accent-soft);
+}
+.al-dot-active::after {
   background: var(--up);
+  box-shadow: 0 0 0 3px var(--up-soft);
 }
-.al-dot-triggered {
+.al-dot-triggered::after {
   background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .al-dot-error {
+  background: var(--down-soft);
+}
+.al-dot-error::after {
   background: var(--down);
 }
 .al-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
   min-width: 0;
+  padding-top: 1px;
 }
 .al-name {
   overflow: hidden;
-  color: var(--text-strong);
+  color: var(--text);
+  font-size: 12.5px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.al-cond,
-.al-meta {
-  color: var(--text-muted);
+.al-cond {
+  color: var(--muted);
   font-size: 12px;
+  line-height: 1.4;
+}
+.al-meta {
+  color: var(--faint);
+  font-size: 11px;
 }
 .al-reason {
-  margin-top: 2px;
+  margin-top: 4px;
   overflow-wrap: anywhere;
   color: var(--down);
   font-size: 12px;
 }
 .al-waiting {
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -126,48 +216,93 @@
 }
 .al-more {
   flex: none;
+  min-width: 28px;
+  height: 28px;
+  color: var(--faint);
+  opacity: 0.6;
+  transition: opacity 0.12s;
 }
+.al-row:hover .al-more,
+.al-more:focus-visible {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Log entry */
 .al-entry {
-  padding: 8px;
+  position: relative;
+  padding: 9px 11px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-control);
+  border-radius: 10px;
+  background: var(--surface);
 }
 .al-entry.unread {
-  border-left: 3px solid var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.al-entry.unread::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
 }
 .al-entry.focused {
-  background: var(--hover);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 .al-entry-head {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
   font-size: 12px;
 }
 .al-entry-name {
-  color: var(--text-strong);
+  color: var(--text);
+  font-size: 12.5px;
   font-weight: 600;
 }
-.al-entry-head time,
+.al-entry-head time {
+  flex: none;
+  color: var(--faint);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+}
 .al-entry-meta {
-  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--faint);
   font-size: 11px;
 }
 .al-entry-msg {
-  margin: 4px 0;
+  margin: 4px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
 .al-chip {
-  margin-left: 6px;
-  padding: 0 6px;
+  margin-left: 4px;
+  padding: 0 7px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
+  border-radius: 999px;
+  background: var(--raised);
+  font-size: 10.5px;
+  line-height: 17px;
 }
 .al-chip-sent {
   color: var(--up);
 }
 .al-chip-failed {
+  border-color: var(--down-soft);
+  background: var(--down-soft);
   color: var(--down);
 }
 .al-more-log {

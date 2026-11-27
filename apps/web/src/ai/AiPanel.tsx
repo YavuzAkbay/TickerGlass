@@ -1,17 +1,26 @@
 /** Navigator section "Ask AI": chat with a local model about the active chart. */
 import {
+  Activity,
+  AlignLeft,
   ArrowUp,
+  ArrowUpRight,
   BarChart3,
   CircleAlert,
+  Gauge,
+  Image as ImageIcon,
+  Info,
   RefreshCw,
   ScanSearch,
+  SeparatorHorizontal,
+  Sparkles,
   Square,
-  Trash2,
+  SquarePen,
   Undo2,
   Wand2,
   X,
+  type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getActiveSession, useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { TIER_LABEL } from './api';
@@ -28,12 +37,12 @@ import {
 } from './store';
 import './ai.css';
 
-const SUGGESTIONS = [
-  'Summarize what the chart shows.',
-  'Mark the key support and resistance levels.',
-  'Find the latest RSI divergence and draw it.',
-  'What happened in this range, and how unusual was it?',
-  'What do the indicators on the chart say right now?',
+const SUGGESTIONS: { text: string; icon: LucideIcon }[] = [
+  { text: 'Summarize what the chart shows.', icon: AlignLeft },
+  { text: 'Mark the key support and resistance levels.', icon: SeparatorHorizontal },
+  { text: 'Find the latest RSI divergence and draw it.', icon: Activity },
+  { text: 'What happened in this range, and how unusual was it?', icon: ScanSearch },
+  { text: 'What do the indicators on the chart say right now?', icon: Gauge },
 ];
 
 /** "12 Mar – 4 Apr · 18 bars" for a selected range on the active chart. */
@@ -60,7 +69,16 @@ function fmtSize(params: string | null): string {
 
 function AnswerMeta({ m }: { m: UiMessage }) {
   if (m.status === 'streaming')
-    return <div className="ai-meta ai-typing">{m.text ? 'Writing…' : 'Thinking…'}</div>;
+    return (
+      <div className="ai-meta ai-typing">
+        <span className="ai-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        {m.text ? 'Writing…' : 'Thinking…'}
+      </div>
+    );
   if (m.status === 'error') return <div className="ai-meta ai-error">{m.error ?? 'Failed'}</div>;
   const parts = [m.model];
   if (m.status === 'stopped') parts.push('stopped');
@@ -155,6 +173,14 @@ export function AiPanel() {
     if (focusTick) inputRef.current?.focus();
   }, [focusTick]);
 
+  // Grow the question box with its text, up to a limit.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [draft]);
+
   const streaming = conv.messages.some((m) => m.status === 'streaming');
   const lastText = conv.messages.at(-1)?.text ?? '';
   // Follow the answer while it streams, unless the user scrolled up to read.
@@ -221,89 +247,123 @@ export function AiPanel() {
   return (
     <div className="ai-panel">
       <div className="ai-bar">
-        <select
-          className="io-input ai-model"
-          aria-label="Model"
-          value={model?.name ?? ''}
-          disabled={!status.models.length}
-          // Re-read the installed models whenever the list is about to be used.
-          onPointerEnter={() => void refresh()}
-          onFocus={() => void refresh()}
-          onChange={(e) => setPrefs({ model: e.target.value })}
-        >
-          {!status.models.length && <option value="">No models</option>}
-          {status.models.map((m) => (
-            <option key={m.name} value={m.name}>
-              {m.name}
-              {fmtSize(m.parameterSize)}
-              {m.vision ? ' · vision' : ''}
-              {m.tools ? ` · ${TIER_LABEL[m.tier] ?? m.tier}` : ''}
-              {m.cloud ? ' · cloud' : ''}
-            </option>
-          ))}
-        </select>
+        <div className="ai-model-wrap">
+          <Sparkles size={13} className="ai-model-icon" aria-hidden="true" />
+          <select
+            className="io-input ai-model"
+            aria-label="Model"
+            value={model?.name ?? ''}
+            disabled={!status.models.length}
+            // Re-read the installed models whenever the list is about to be used.
+            onPointerEnter={() => void refresh()}
+            onFocus={() => void refresh()}
+            onChange={(e) => setPrefs({ model: e.target.value })}
+          >
+            {!status.models.length && <option value="">No models</option>}
+            {status.models.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.name}
+                {fmtSize(m.parameterSize)}
+                {m.vision ? ' · vision' : ''}
+                {m.tools ? ` · ${TIER_LABEL[m.tier] ?? m.tier}` : ''}
+                {m.cloud ? ' · cloud' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
         <button
           type="button"
-          className="io-icon-btn"
+          className="io-icon-btn ai-bar-btn"
           aria-label="Reload models"
           data-tip="Reload models"
+          data-tip-side="bottom"
           disabled={loading}
           onClick={() => void refresh()}
         >
-          <RefreshCw size={15} />
+          <RefreshCw size={14} className={loading ? 'ai-spin' : undefined} />
         </button>
         <button
           type="button"
-          className="io-icon-btn"
+          className="io-icon-btn ai-bar-btn"
           aria-label="New conversation"
           data-tip="New conversation"
+          data-tip-side="bottom"
           disabled={!chartId || streaming || !conv.messages.length}
           onClick={() => chartId && clear(chartId)}
         >
-          <Trash2 size={15} />
+          <SquarePen size={14} />
         </button>
       </div>
 
       {!status.reachable && (
         <div className="ai-notice ai-error">
-          {status.error ?? 'Ollama is not reachable.'}{' '}
-          <button type="button" className="ai-link" onClick={() => void refresh()}>
-            Retry
-          </button>
+          <CircleAlert size={14} />
+          <span>
+            {status.error ?? 'Ollama is not reachable.'}{' '}
+            <button type="button" className="ai-link" onClick={() => void refresh()}>
+              Retry
+            </button>
+          </span>
         </div>
       )}
       {status.reachable && !status.models.length && (
         <div className="ai-notice">
-          No chat models installed. On the Ollama machine run <code>ollama pull qwen3.5:9b</code>{' '}
-          (7B or larger works best); it shows up here straight away.
+          <Info size={14} />
+          <span>
+            No chat models installed. On the Ollama machine run <code>ollama pull qwen3.5:9b</code>{' '}
+            (7B or larger works best); it shows up here straight away.
+          </span>
         </div>
       )}
 
       <div className="ai-list" ref={listRef}>
         {conv.messages.length === 0 ? (
-          <div className="ai-pad ai-empty">
-            <p className="ai-faint">
-              Ask about the visible part of the chart, or use <em>Select range</em> to drag across
-              the bars you mean. The bars, indicator values and drawings are sent along with your
-              question.
-            </p>
-            <p className="ai-notice-legal">
-              Answers are generated by a language model for information and education only. They are
-              not financial advice, investment recommendations or consultation, and can be wrong.
-            </p>
-            <div className="ai-suggest">
-              {SUGGESTIONS.map((s) => (
+          <div className="ai-welcome">
+            <div className="ai-hero">
+              <div className="ai-hero-mark" aria-hidden="true">
+                <Sparkles size={20} />
+              </div>
+              <h3>Ask about this chart</h3>
+              <p>
+                Questions cover the visible bars, or{' '}
                 <button
-                  key={s}
                   type="button"
-                  className="io-btn"
-                  disabled={!model || !chartId}
-                  onClick={() => send(s)}
+                  className="ai-link"
+                  disabled={!chartId}
+                  onClick={() => startRangeSelect()}
                 >
-                  {s}
+                  select a range
+                </button>{' '}
+                to focus on the ones you mean. Bars, indicator values and drawings go along with
+                each question.
+              </p>
+            </div>
+            <div className="ai-suggest-label">Try asking</div>
+            <div className="ai-suggest">
+              {SUGGESTIONS.map(({ text, icon: Icon }) => (
+                <button
+                  key={text}
+                  type="button"
+                  className="ai-suggestion"
+                  disabled={!model || !chartId}
+                  onClick={() => send(text)}
+                >
+                  <span className="ai-suggestion-icon">
+                    <Icon size={14} />
+                  </span>
+                  <span className="ai-suggestion-text">{text}</span>
+                  <ArrowUpRight size={14} className="ai-suggestion-go" />
                 </button>
               ))}
             </div>
+            <p className="ai-legal">
+              <Info size={12} />
+              <span>
+                Answers are generated by a language model for information and education only. They
+                are not financial advice, investment recommendations or consultation, and can be
+                wrong.
+              </span>
+            </p>
           </div>
         ) : (
           conv.messages.map((m) => <Message key={m.id} m={m} chartId={chartId} />)
@@ -311,84 +371,54 @@ export function AiPanel() {
       </div>
 
       <div className="ai-composer">
-        {sendError && <div className="ai-meta ai-error">{sendError}</div>}
-        <div className="ai-scope">
-          {selection ? (
-            <span className="ai-chip" title="Questions are about the selected bars">
-              <ScanSearch size={12} />
-              <span className="ai-chip-text">{rangeLabel(selection)}</span>
-              <button
-                type="button"
-                className="ai-chip-x"
-                aria-label="Clear selection"
-                onClick={() => chartId && clearRangeSelect(chartId)}
-              >
-                <X size={12} />
-              </button>
-            </span>
-          ) : (
-            <span className="ai-faint ai-scope-label">
-              <BarChart3 size={12} /> Visible range
-            </span>
-          )}
-          <button
-            type="button"
-            className="ai-link ai-select-btn"
-            disabled={!chartId}
-            onClick={() => startRangeSelect()}
-            data-tip="Drag across the chart to pick bars (Alt+Q)"
-          >
-            {selection ? 'Reselect' : 'Select range'}
-          </button>
-        </div>
-        {model?.vision && (
-          <label className="ai-image-toggle ai-faint">
-            <input
-              type="checkbox"
-              checked={includeImage}
-              onChange={(e) => setPrefs({ includeImage: e.target.checked })}
-            />
-            Send a picture of the chart too
-          </label>
+        {sendError && (
+          <div className="ai-send-error">
+            <CircleAlert size={12} />
+            <span>{sendError}</span>
+          </div>
         )}
-        <label className="ai-ctx ai-faint">
-          Context window
-          <select
-            className="io-input"
-            value={userCtx}
-            onChange={(e) => setPrefs({ numCtx: Number(e.target.value) })}
-            data-tip="Room for chart data, conversation, reasoning and answer. Larger uses more memory on the Ollama machine."
-          >
-            <option value={0}>Default ({Math.round(status.numCtx / 1024)}K)</option>
-            {CONTEXT_WINDOWS.map((n) => (
-              <option key={n} value={n}>
-                {n / 1024}K tokens
-              </option>
-            ))}
-          </select>
-        </label>
-        {model?.tools ? (
-          <label className="ai-image-toggle ai-faint">
-            <input
-              type="checkbox"
-              checked={allowActions}
-              onChange={(e) => setPrefs({ allowActions: e.target.checked })}
-            />
-            Let AI add indicators and draw on the chart
-          </label>
-        ) : (
-          model && (
-            <div className="ai-faint ai-tools-hint">
-              {model.name} can only talk about the chart; pick a model with tool support (e.g.
-              qwen3.5:9b, gemma4:12b, qwen3.8:27b) to let it draw.
-            </div>
-          )
+        {model && !model.tools && (
+          <div className="ai-tools-hint">
+            {model.name} can only talk about the chart; pick a model with tool support (e.g.
+            qwen3.5:9b, gemma4:12b, qwen3.8:27b) to let it draw.
+          </div>
         )}
-        <div className="ai-input-row">
+        <div className={`ai-box${streaming ? ' ai-box-busy' : ''}`}>
+          <div className="ai-scope">
+            {selection ? (
+              <span className="ai-chip ai-chip-on" title="Questions are about the selected bars">
+                <ScanSearch size={12} />
+                <span className="ai-chip-text">{rangeLabel(selection)}</span>
+                <button
+                  type="button"
+                  className="ai-chip-x"
+                  aria-label="Clear selection"
+                  onClick={() => chartId && clearRangeSelect(chartId)}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ) : (
+              <span className="ai-chip">
+                <BarChart3 size={12} />
+                <span className="ai-chip-text">Visible range</span>
+              </span>
+            )}
+            <button
+              type="button"
+              className="ai-link ai-select-btn"
+              disabled={!chartId}
+              onClick={() => startRangeSelect()}
+              data-tip="Drag across the chart to pick bars (Alt+Q)"
+              data-tip-side="top"
+            >
+              {selection ? 'Reselect' : 'Select range'}
+            </button>
+          </div>
           <textarea
             ref={inputRef}
-            className="io-input ai-input"
-            rows={2}
+            className="ai-input"
+            rows={1}
             placeholder="Ask about this chart…"
             aria-label="Question"
             value={draft}
@@ -396,30 +426,75 @@ export function AiPanel() {
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKey}
           />
-          {streaming ? (
-            <button
-              type="button"
-              className="io-icon-btn ai-send"
-              aria-label="Stop"
-              data-tip="Stop"
-              onClick={() => chartId && stopAsking(chartId)}
-            >
-              <Square size={14} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="io-icon-btn ai-send"
-              aria-label="Send"
-              data-tip="Send"
-              disabled={!canSend}
-              onClick={() => send(draft)}
-            >
-              <ArrowUp size={16} />
-            </button>
-          )}
+          <div className="ai-tools">
+            {model?.tools && (
+              <button
+                type="button"
+                className={`ai-toggle${allowActions ? ' on' : ''}`}
+                aria-pressed={allowActions}
+                data-tip={allowActions ? 'AI can add indicators and draw' : 'AI only answers'}
+                data-tip-side="top"
+                onClick={() => setPrefs({ allowActions: !allowActions })}
+              >
+                <Wand2 size={13} />
+                Draw
+              </button>
+            )}
+            {model?.vision && (
+              <button
+                type="button"
+                className={`ai-toggle${includeImage ? ' on' : ''}`}
+                aria-pressed={includeImage}
+                data-tip="Send a picture of the chart too"
+                data-tip-side="top"
+                onClick={() => setPrefs({ includeImage: !includeImage })}
+              >
+                <ImageIcon size={13} />
+                Image
+              </button>
+            )}
+            <label className="ai-ctx" data-tip="Context window" data-tip-side="top">
+              <span className="ai-sr">Context window</span>
+              <select
+                value={userCtx}
+                onChange={(e) => setPrefs({ numCtx: Number(e.target.value) })}
+              >
+                <option value={0}>Auto · {Math.round(status.numCtx / 1024)}K</option>
+                {CONTEXT_WINDOWS.map((n) => (
+                  <option key={n} value={n}>
+                    {n / 1024}K ctx
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="ai-tools-spacer" />
+            {streaming ? (
+              <button
+                type="button"
+                className="ai-send ai-stop"
+                aria-label="Stop"
+                data-tip="Stop"
+                data-tip-side="top"
+                onClick={() => chartId && stopAsking(chartId)}
+              >
+                <Square size={11} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="ai-send"
+                aria-label="Send"
+                data-tip="Send (Enter)"
+                data-tip-side="top"
+                disabled={!canSend}
+                onClick={() => send(draft)}
+              >
+                <ArrowUp size={15} strokeWidth={2.25} />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="ai-disclaimer ai-faint">
+        <div className="ai-disclaimer">
           AI-generated, can be wrong. For information only: not financial advice or a recommendation
           to buy or sell.
         </div>

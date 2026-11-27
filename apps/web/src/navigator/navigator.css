@@ -284,85 +284,124 @@
 .tl-panel {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-bottom: 12px;
+  gap: 2px;
+  padding-bottom: 14px;
 }
 .tl-panel > .wl-seg {
-  margin: 8px 10px 4px;
+  margin: 10px 12px 6px;
 }
 .tl-head {
-  margin: 8px 12px 2px;
-  color: var(--muted);
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 14px 4px;
+  color: var(--faint);
+  font-size: 12px;
   font-weight: 500;
 }
+.tl-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--font-num);
+  font-size: 10.5px;
+  line-height: 16px;
+}
 .tl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0;
-  padding: 0 4px;
+  padding: 0 8px;
   list-style: none;
 }
 .tl-link {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
   align-items: start;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--radius-control);
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   font: inherit;
+  font-size: 12.5px;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 .tl-link:hover {
-  background: var(--hover);
+  border-color: var(--border);
+  background: var(--raised);
+}
+.tl-link:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
 .tl-static {
   cursor: default;
 }
 .tl-static:hover {
+  border-color: transparent;
   background: transparent;
 }
 .tl-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   background: var(--raised);
   color: var(--muted);
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.tl-link:not(.tl-static):hover .tl-icon {
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 .tl-row[data-kind='alert'] .tl-icon {
   background: var(--accent-soft);
   color: var(--accent-text);
 }
-.tl-row[data-kind='earnings'] .tl-icon {
-  background: var(--up-soft);
-  color: var(--up);
+/* Events are dated, not directional: gold, never jade/coral. */
+.tl-row[data-kind='earnings'] .tl-icon,
+.tl-row[data-kind='dividend'] .tl-icon,
+.tl-row[data-kind='split'] .tl-icon {
+  background: color-mix(in srgb, var(--star) 14%, transparent);
+  color: var(--star);
 }
 .tl-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  padding-top: 1px;
 }
 .tl-title {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .tl-meta {
   display: flex;
+  align-items: center;
   gap: 6px;
   min-width: 0;
   color: var(--muted);
   font-size: 11px;
+}
+.tl-meta:empty {
+  display: none;
 }
 .tl-detail {
   overflow: hidden;
@@ -371,20 +410,46 @@
 }
 .tl-sym {
   flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--raised);
   color: var(--text);
+  font-family: var(--font-num);
+  font-size: 10.5px;
   font-weight: 500;
+  line-height: 16px;
+}
+.tl-link:hover .tl-sym {
+  background: var(--surface);
 }
 .tl-when {
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+  color: var(--faint);
+  font-family: var(--font-num);
+  font-size: 10.5px;
   white-space: nowrap;
 }
 .tl-note {
-  margin: 4px 12px 0;
-  color: var(--muted);
+  margin: 10px 14px 0;
+  color: var(--faint);
   font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
 }
 .tl-error {
-  margin: 0 10px;
+  margin: 0 12px;
+}
+.tl-panel > .tl-unsupported.rs-pad {
+  margin: 0 12px;
+  color: var(--muted);
+  text-align: left;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--raised);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tl-panel .rs-skel-block {
+  padding: 8px 16px;
 }

@@ -360,23 +360,43 @@
   display: flex;
   gap: 2px;
   margin: 8px 14px;
-  padding: 2px;
-  border-radius: var(--radius-control);
-  background: var(--panel-2);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--input-bg);
 }
 .wl-seg button {
   flex: 1;
-  height: 24px;
+  min-width: 0;
+  height: 26px;
+  overflow: hidden;
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: 999px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--muted);
   font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+.wl-seg button:hover {
+  color: var(--text);
 }
 .wl-seg button[aria-pressed='true'] {
-  background: var(--panel);
-  color: var(--text-strong);
+  background: var(--raised);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px var(--border-strong);
+  color: var(--text);
+}
+.wl-seg button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 .wl-news-wrap {
   position: relative;
