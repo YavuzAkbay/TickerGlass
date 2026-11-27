@@ -1,6 +1,7 @@
 import type {
   Bar,
   BarListener,
+  ResyncListener,
   DataFeed,
   GetBarsRequest,
   GetBarsResult,
@@ -131,6 +132,7 @@ interface LiveSub {
   prevDayVolume: number | null;
   prevDayVolumeDay: number;
   onBar: BarListener;
+  onResync: ResyncListener | undefined;
 }
 
 /**
@@ -149,6 +151,8 @@ export class HttpDataFeed implements DataFeed {
   private ws: WebSocket | null = null;
   private readonly subsBySymbol = new Map<string, Set<LiveSub>>();
   private reconnectAttempt = 0;
+  /** The socket dropped unexpectedly: ticks may have been lost until it reopens. */
+  private outage = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -282,7 +286,12 @@ export class HttpDataFeed implements DataFeed {
 
   // -- Live -----------------------------------------------------------------
 
-  subscribe(req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener): Unsubscribe {
+  subscribe(
+    req: SubscribeRequest,
+    lastBar: Bar | null,
+    onBar: BarListener,
+    onResync?: ResyncListener,
+  ): Unsubscribe {
     if (toApiInterval(req.interval) === null) {
       throw new RangeError(
         `HttpDataFeed: interval ${formatInterval(req.interval)} is not served by the API; use ResamplingFeed`,
@@ -300,6 +309,7 @@ export class HttpDataFeed implements DataFeed {
       prevDayVolume: null,
       prevDayVolumeDay: NaN,
       onBar,
+      onResync,
     };
     if (req.timezone === undefined || req.session === undefined) {
       // Fill in what the caller did not provide; ticks before this lands use UTC/no session.
@@ -418,6 +428,13 @@ export class HttpDataFeed implements DataFeed {
       const symbols = [...this.subsBySymbol.keys()].filter((s) => WS_SYMBOL_RE.test(s));
       if (symbols.length > 0) this.send({ op: 'subscribe', symbols });
       this.pingTimer = setInterval(() => this.sendIfOpen({ op: 'ping' }), PING_MS);
+      if (this.outage) {
+        this.outage = false;
+        // Bars closed (and the current one moved) while we were away: let owners backfill.
+        for (const set of [...this.subsBySymbol.values()]) {
+          for (const sub of [...set]) sub.onResync?.();
+        }
+      }
     };
     ws.onmessage = (ev: MessageEvent) => {
       if (this.ws !== ws) return;
@@ -434,6 +451,7 @@ export class HttpDataFeed implements DataFeed {
         this.setStatus({ connection: 'idle' });
         return;
       }
+      this.outage = true;
       this.scheduleReconnect();
     };
   }
@@ -445,7 +463,10 @@ export class HttpDataFeed implements DataFeed {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.subsBySymbol.size > 0) this.connect();
-      else this.setStatus({ connection: 'idle' });
+      else {
+        this.outage = false;
+        this.setStatus({ connection: 'idle' });
+      }
     }, delay);
   }
 
@@ -481,6 +502,7 @@ export class HttpDataFeed implements DataFeed {
       this.reconnectTimer = null;
     }
     this.reconnectAttempt = 0;
+    this.outage = false;
     const ws = this.ws;
     this.ws = null;
     if (ws !== null) ws.close();

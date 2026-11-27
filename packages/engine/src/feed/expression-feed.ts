@@ -2,6 +2,7 @@ import type {
   Bar,
   BarColumns,
   BarListener,
+  ResyncListener,
   DataFeed,
   GetBarsRequest,
   GetBarsResult,
@@ -293,7 +294,12 @@ export class ExpressionFeed implements DataFeed {
     return { bars, hasMore: P.hasMore || cut > 0 || truncated };
   }
 
-  subscribe(req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener): Unsubscribe {
+  subscribe(
+    req: SubscribeRequest,
+    lastBar: Bar | null,
+    onBar: BarListener,
+    onResync?: ResyncListener,
+  ): Unsubscribe {
     const parsed = this.tryParse(req.symbol);
     if (parsed === null) {
       // getBars/resolveSymbol report the parse error; nothing to stream.
@@ -301,7 +307,7 @@ export class ExpressionFeed implements DataFeed {
     }
     const legs = parsed.symbols;
     if (parsed.plain)
-      return this.inner.subscribe({ ...req, symbol: legs[0] as string }, lastBar, onBar);
+      return this.inner.subscribe({ ...req, symbol: legs[0] as string }, lastBar, onBar, onResync);
 
     const interval = { unit: req.interval.unit, count: req.interval.count };
     const live = new LiveExpression(
@@ -312,6 +318,18 @@ export class ExpressionFeed implements DataFeed {
       onBar,
     );
     let active = true;
+    // Every leg reports the same reconnect: pass one signal on.
+    let resyncQueued = false;
+    const resync = onResync
+      ? () => {
+          if (resyncQueued) return;
+          resyncQueued = true;
+          queueMicrotask(() => {
+            resyncQueued = false;
+            if (active) onResync();
+          });
+        }
+      : undefined;
     const unsubs: Unsubscribe[] = [];
     const start = (infos: SymbolInfo[]): void => {
       live.setInfos(infos);
@@ -326,9 +344,14 @@ export class ExpressionFeed implements DataFeed {
         };
         if (req.prepost !== undefined) legReq.prepost = req.prepost;
         unsubs.push(
-          this.inner.subscribe(legReq, live.lastLegBar(k), (b) => {
-            if (active) live.onLegBar(k, b);
-          }),
+          this.inner.subscribe(
+            legReq,
+            live.lastLegBar(k),
+            (b) => {
+              if (active) live.onLegBar(k, b);
+            },
+            resync,
+          ),
         );
       });
     };

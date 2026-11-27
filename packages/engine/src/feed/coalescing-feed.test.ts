@@ -20,7 +20,11 @@ function setup(opts?: { ttlMs?: number; maxEntries?: number }) {
     if (fail) throw new Error('boom');
     return { bars: empty(), hasMore: false };
   });
-  const subscribe = vi.fn(() => () => undefined);
+  const subscribe = vi.fn(
+    (..._args: unknown[]) =>
+      () =>
+        undefined,
+  );
   const inner = { getBars, subscribe } as unknown as DataFeed;
   const feed = new CoalescingFeed(inner, { ...opts, now: () => t });
   const req = (symbol = 'AAPL', to?: number): GetBarsRequest => ({
@@ -114,11 +118,22 @@ describe('CoalescingFeed', () => {
     expect(s.getBars).toHaveBeenCalledTimes(4);
   });
 
-  it('passes subscribe through', () => {
+  it('passes subscribe through, including the resync listener', () => {
     const s = setup();
     const req = { symbol: 'AAPL', interval: parseInterval('1D') };
-    s.feed.subscribe(req, null, () => undefined);
+    const onResync = () => undefined;
+    s.feed.subscribe(req, null, () => undefined, onResync);
     expect(s.subscribe).toHaveBeenCalledTimes(1);
+    expect(s.subscribe.mock.calls[0]?.[3]).toBe(onResync);
+  });
+
+  it('bypasses the short cache for a fresh request', async () => {
+    const s = setup();
+    await s.feed.getBars(s.req());
+    await s.feed.getBars(s.req());
+    expect(s.getBars).toHaveBeenCalledTimes(1);
+    await s.feed.getBars({ ...s.req(), fresh: true });
+    expect(s.getBars).toHaveBeenCalledTimes(2);
   });
 });
 

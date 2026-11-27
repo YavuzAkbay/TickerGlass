@@ -64,6 +64,7 @@ interface Sub {
   req: SubscribeRequest;
   lastBar: Bar | null;
   listener: BarListener | null;
+  resync: (() => void) | null;
 }
 
 /** In-memory feed with API paging semantics: newest `limit` bars with t < to. */
@@ -110,13 +111,15 @@ class FakeFeed implements DataFeed {
     };
   });
 
-  subscribe = vi.fn((req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener) => {
-    const sub: Sub = { req, lastBar, listener: onBar };
-    this.subs.push(sub);
-    return () => {
-      sub.listener = null;
-    };
-  });
+  subscribe = vi.fn(
+    (req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener, onResync?: () => void) => {
+      const sub: Sub = { req, lastBar, listener: onBar, resync: onResync ?? null };
+      this.subs.push(sub);
+      return () => {
+        sub.listener = null;
+      };
+    },
+  );
 
   /** Push a live bar for `symbol` and record it in the data (as a reload would see it). */
   push(symbol: string, bar: Omit<Bar, 'volume'>): void {
@@ -406,7 +409,12 @@ describe('ExpressionFeed getBars', () => {
     expect(inner.resolveSymbol).toHaveBeenCalledWith('BTC-USD');
     const onBar = vi.fn();
     feed.subscribe({ symbol: 'aapl', interval: D1 }, null, onBar);
-    expect(inner.subscribe).toHaveBeenCalledWith({ symbol: 'AAPL', interval: D1 }, null, onBar);
+    expect(inner.subscribe).toHaveBeenCalledWith(
+      { symbol: 'AAPL', interval: D1 },
+      null,
+      onBar,
+      undefined,
+    );
   });
 
   it('rejects invalid expressions with a FeedError', async () => {
@@ -629,6 +637,24 @@ describe('ExpressionFeed subscribe', () => {
     expect(inner.subs.every((s) => s.listener !== null)).toBe(true);
     unsub();
     expect(inner.subs.every((s) => s.listener === null)).toBe(true);
+  });
+
+  it('passes one resync on when the legs reconnect together, and none after unsubscribe', async () => {
+    const inner = hourlyFeed();
+    const feed = new ExpressionFeed(inner);
+    await feed.resolveSymbol('A/B');
+    const onResync = vi.fn();
+    const unsub = feed.subscribe({ symbol: 'A/B', interval: H1 }, null, () => {}, onResync);
+    expect(inner.subs).toHaveLength(2);
+    for (const s of inner.subs) s.resync?.();
+    expect(onResync).not.toHaveBeenCalled(); // coalesced into a microtask
+    await Promise.resolve();
+    expect(onResync).toHaveBeenCalledTimes(1);
+
+    for (const s of inner.subs) s.resync?.();
+    unsub();
+    await Promise.resolve();
+    expect(onResync).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a late leg tick after unsubscribe', async () => {

@@ -2,6 +2,7 @@ import type {
   Bar,
   BarColumns,
   BarListener,
+  ResyncListener,
   DataFeed,
   GetBarsRequest,
   GetBarsResult,
@@ -167,7 +168,8 @@ export class CoalescingFeed implements DataFeed {
     const adjusted = req.adjusted ? 1 : 0;
     const prepost = req.prepost ? 1 : 0;
     const key = [req.symbol, interval, req.limit, req.to ?? '', adjusted, prepost].join('|');
-    const hit = this.entries.get(key);
+    // `fresh` skips a cached or in-flight result; the new one is shared as usual.
+    const hit = req.fresh ? undefined : this.entries.get(key);
     if (hit && (hit.doneAt === null || this.now() - hit.doneAt < hit.ttlMs)) {
       this.entries.delete(key);
       this.entries.set(key, hit);
@@ -206,8 +208,13 @@ export class CoalescingFeed implements DataFeed {
     return entry.promise;
   }
 
-  subscribe(req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener): Unsubscribe {
-    return this.inner.subscribe(req, lastBar, onBar);
+  subscribe(
+    req: SubscribeRequest,
+    lastBar: Bar | null,
+    onBar: BarListener,
+    onResync?: ResyncListener,
+  ): Unsubscribe {
+    return this.inner.subscribe(req, lastBar, onBar, onResync);
   }
 
   /** Open-ended request with `tailRefresh`: merge a small tail into the cached series when possible. */

@@ -406,6 +406,29 @@ describe('HttpDataFeed live', () => {
     feed.dispose();
   });
 
+  it('tells subscribers to resync when the socket reopens after an outage, not on first open', () => {
+    const feed = makeFeed();
+    const onResync = vi.fn();
+    const req = { symbol: 'AAPL', interval: parseInterval('1m'), ...NY };
+    feed.subscribe(req, null, () => {}, onResync);
+    const ws1 = FakeWebSocket.last();
+    ws1.open();
+    expect(onResync).not.toHaveBeenCalled();
+
+    ws1.drop();
+    vi.advanceTimersByTime(500);
+    expect(onResync).not.toHaveBeenCalled(); // still connecting
+    FakeWebSocket.last().open();
+    expect(onResync).toHaveBeenCalledTimes(1);
+
+    // A later drop is a new outage.
+    FakeWebSocket.last().drop();
+    vi.advanceTimersByTime(500);
+    FakeWebSocket.last().open();
+    expect(onResync).toHaveBeenCalledTimes(2);
+    feed.dispose();
+  });
+
   it('caps backoff at 30s', () => {
     const feed = makeFeed();
     feed.subscribe({ symbol: 'AAPL', interval: parseInterval('1m'), ...NY }, null, () => {});

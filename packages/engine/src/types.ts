@@ -65,6 +65,8 @@ export interface GetBarsRequest {
   prepost?: boolean;
   /** Dividend-adjusted prices. */
   adjusted?: boolean;
+  /** Skip short-lived caches (e.g. CoalescingFeed's): the caller knows its data is stale. */
+  fresh?: boolean;
 }
 
 export interface GetBarsResult {
@@ -75,6 +77,11 @@ export interface GetBarsResult {
 
 /** Called with the latest (possibly still forming) bar for a subscription. */
 export type BarListener = (bar: Bar) => void;
+/**
+ * Called when a subscription may have missed bars (the live connection dropped and
+ * came back): the owner should re-fetch the recent bars and re-subscribe.
+ */
+export type ResyncListener = () => void;
 export type Unsubscribe = () => void;
 
 export interface SubscribeRequest {
@@ -99,7 +106,13 @@ export interface DataFeed {
   getBars(req: GetBarsRequest): Promise<GetBarsResult>;
   /**
    * Live updates. `lastBar` is the newest bar the chart already has, so the
-   * feed can continue it (same time = update, later time = new bar).
+   * feed can continue it (same time = update, later time = new bar). `onResync`
+   * (optional) fires after an interruption that may have lost ticks.
    */
-  subscribe(req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener): Unsubscribe;
+  subscribe(
+    req: SubscribeRequest,
+    lastBar: Bar | null,
+    onBar: BarListener,
+    onResync?: ResyncListener,
+  ): Unsubscribe;
 }

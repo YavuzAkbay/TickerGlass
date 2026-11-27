@@ -2,6 +2,7 @@ import type {
   Bar,
   BarColumns,
   BarListener,
+  ResyncListener,
   DataFeed,
   GetBarsRequest,
   GetBarsResult,
@@ -767,9 +768,16 @@ export class ReplayFeed implements DataFeed {
     return { bars: clipColumns(res.bars, to), hasMore: res.hasMore };
   }
 
-  subscribe(req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener): Unsubscribe {
+  subscribe(
+    req: SubscribeRequest,
+    lastBar: Bar | null,
+    onBar: BarListener,
+    onResync?: ResyncListener,
+  ): Unsubscribe {
     if (this._mode === 'live') {
-      const s: PassthroughSub = { unsubscribe: this.inner.subscribe(req, lastBar, onBar) };
+      const s: PassthroughSub = {
+        unsubscribe: this.inner.subscribe(req, lastBar, onBar, onResync),
+      };
       this.live.add(s);
       return () => {
         // Already dropped (and unsubscribed) when replay started.

@@ -74,6 +74,17 @@ export class TimeScale {
     this.clamp();
   }
 
+  /** Called after the last bar went away (a brick view retracted it): the mirror
+   * of `onAppend`. Auto-scrolls back when the vanished bar was visible, otherwise
+   * holds the view still. */
+  onRetract(): void {
+    if (this.baseIndex < 0) return;
+    const lastVisible = this.indexToX(this.baseIndex) <= this.width;
+    this.baseIndex -= 1;
+    if (!lastVisible) this.rightOffset += 1;
+    this.clamp();
+  }
+
   reset(baseIndex: number): void {
     this.baseIndex = baseIndex;
     this.rightOffset = DEFAULT_RIGHT_OFFSET;

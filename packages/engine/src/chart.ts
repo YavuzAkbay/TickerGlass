@@ -2081,7 +2081,7 @@ export class Chart implements StudyApi, DrawingApi {
           const before = this.store.length;
           this.rebuildView();
           const added = this.store.length - before;
-          for (let k = 0; k < added; k++) this.timeScale.onAppend();
+          this.followLength(added);
           if (added) this.recomputeWeights();
         } else if (r === 'append') {
           this.timeScale.onAppend();
@@ -2100,7 +2100,83 @@ export class Chart implements StudyApi, DrawingApi {
         if (this.store.length !== lengthBefore) this.emitViewChange('data');
         this.events.emit('barUpdate', bar);
       },
+      () => this.resync(gen),
     );
+  }
+
+  /** Move the time scale along with `delta` bars appended (or, if negative, retracted by a brick view). */
+  private followLength(delta: number): void {
+    for (let k = 0; k < delta; k++) this.timeScale.onAppend();
+    for (let k = 0; k > delta; k--) this.timeScale.onRetract();
+  }
+
+  private resyncing = false;
+  private resyncAgain = false;
+
+  /** The feed's live connection came back after an outage: backfill the recent bars. */
+  private resync(gen: number): void {
+    if (gen !== this.loadGen || this.destroyed) return;
+    if (this.resyncing) {
+      this.resyncAgain = true;
+      return;
+    }
+    this.resyncing = true;
+    void this.doResync(gen).finally(() => {
+      this.resyncing = false;
+      if (this.resyncAgain) {
+        this.resyncAgain = false;
+        this.resync(this.loadGen);
+      }
+    });
+  }
+
+  /**
+   * Re-fetch the bars since the last known one (bypassing feed caches), merge them
+   * over the tail, and re-subscribe so the feed continues from the corrected bar.
+   * A result that does not connect to the loaded bars triggers a full reload.
+   */
+  private async doResync(gen: number): Promise<void> {
+    const n = this.raw.length;
+    if (!n) return;
+    const elapsed = Math.ceil(
+      (Date.now() / 1000 - this.raw.time[n - 1]!) / intervalSeconds(this.interval),
+    );
+    try {
+      const res = await this.feed.getBars({
+        symbol: this.symbol,
+        interval: this.interval,
+        limit: Math.min(this.options.pageSize, Math.max(0, elapsed) + 3),
+        prepost: this.options.prepost,
+        adjusted: this.options.adjusted,
+        fresh: true,
+      });
+      if (gen !== this.loadGen) return;
+      if (res.bars.time.length) {
+        // Plain views share the raw store, so measure before it changes.
+        const before = this.store.length;
+        const keep = this.raw.replaceTail(res.bars);
+        if (keep < 0) {
+          void this.load();
+          return;
+        }
+        this.rawEpoch++;
+        this.rebuildView();
+        this.followLength(this.store.length - before);
+        this.recomputeWeights();
+        this.invalidate(INVALIDATE_MAIN);
+        this.emitSeriesReset(this.usesTransform ? 0 : keep);
+        if (this.crosshair) this.emitCrosshair();
+        if (this.store.length !== before) this.emitViewChange('data');
+        const last = this.raw.last();
+        if (last) this.events.emit('barUpdate', last);
+      }
+      // New feed state from the corrected last bar, then drop the old one.
+      const old = this.unsubscribe;
+      this.subscribeLive(gen);
+      old?.();
+    } catch {
+      // Offline again or a bad response: keep what we have; the next reconnect retries.
+    }
   }
 
   private loadMorePromise: Promise<number> | null = null;

@@ -92,8 +92,11 @@ function columns(bars: Bar[]) {
 
 class FakeFeed implements DataFeed {
   listener: BarListener | null = null;
+  resync: (() => void) | null = null;
+  requests: GetBarsRequest[] = [];
+  subscribes: Array<Bar | null> = [];
   constructor(
-    private readonly recent: Bar[],
+    public recent: Bar[],
     private readonly older: Bar[] = [],
   ) {}
   async resolveSymbol(symbol: string): Promise<SymbolInfo> {
@@ -114,13 +117,24 @@ class FakeFeed implements DataFeed {
     return [];
   }
   async getBars(req: GetBarsRequest): Promise<GetBarsResult> {
+    this.requests.push(req);
+    if (req.to === undefined && req.limit < this.recent.length)
+      return { bars: columns(this.recent.slice(-req.limit)), hasMore: true };
     if (req.to !== undefined) return { bars: columns(this.older), hasMore: false };
     return { bars: columns(this.recent), hasMore: this.older.length > 0 };
   }
-  subscribe(_req: unknown, _last: Bar | null, onBar: BarListener): Unsubscribe {
+  subscribe(
+    _req: unknown,
+    last: Bar | null,
+    onBar: BarListener,
+    onResync?: () => void,
+  ): Unsubscribe {
+    this.subscribes.push(last);
     this.listener = onBar;
+    this.resync = onResync ?? null;
     return () => {
-      this.listener = null;
+      // A re-subscription may already have replaced this listener.
+      if (this.listener === onBar) this.listener = null;
     };
   }
   tick(bar: Bar): void {
@@ -271,6 +285,92 @@ describe('Chart seriesChange', () => {
       appended += appends.length;
     }
     expect(appended).toBeGreaterThan(0);
+  });
+});
+
+describe('live reconnect backfill', () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  afterEach(() => vi.useRealTimers());
+
+  it('re-fetches the tail, upserts missed bars and re-subscribes from the corrected bar', async () => {
+    const { chart, feed, recent } = await load(50);
+    const last = recent[49]!;
+    const n0 = chart.store.length;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime((last.time + 2 * DAY) * 1000);
+    // While offline the last bar moved on and three more closed.
+    const missed = makeBars(4, last.time, 200).map((b, i) => (i === 0 ? { ...b, high: 999 } : b));
+    feed.recent = [...recent.slice(0, 49), ...missed];
+    const changes: SeriesChange[] = [];
+    chart.on('seriesChange', (c) => changes.push(c));
+    feed.requests.length = 0;
+    feed.resync?.();
+    await settle();
+
+    expect(feed.requests).toHaveLength(1);
+    expect(feed.requests[0]).toMatchObject({ fresh: true });
+    expect(feed.requests[0]!.to).toBeUndefined();
+    expect(feed.requests[0]!.limit).toBeLessThan(500); // bounded tail, not a page reload
+    expect(chart.store.length).toBe(n0 + 3);
+    expect(chart.store.time[chart.store.length - 1]).toBe(missed[3]!.time);
+    expect(chart.store.high[n0 - 1]).toBe(999); // stale H/L/V of the old last bar replaced
+    expect(chart.timeScale.baseIndex).toBe(chart.store.length - 1);
+    expect(changes.map((c) => c.kind)).toEqual(['reset']);
+    // Older bars are untouched and the feed continues from the corrected last bar.
+    expect(chart.store.time[0]).toBe(recent[0]!.time);
+    expect(feed.subscribes).toHaveLength(2);
+    expect(feed.subscribes[1]).toMatchObject({ time: missed[3]!.time });
+    expect(feed.listener).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('drops the result when the chart reloaded meanwhile', async () => {
+    const { chart, feed, recent } = await load(50);
+    feed.recent = [...recent, ...makeBars(2, recent[49]!.time + DAY, 300)];
+    const resync = feed.resync!;
+    resync();
+    await chart.setSymbol('OTHER'); // new load generation before the tail landed
+    await settle();
+    expect(chart.store.length).toBe(52); // loaded by the new symbol's own getBars
+    expect(feed.subscribes).toHaveLength(2); // initial + the reload, none from the stale resync
+  });
+
+  it('reloads when the fetched tail does not reach the loaded bars', async () => {
+    const { chart, feed, recent } = await load(50);
+    // The tail starts after our last bar: bars in between are missing.
+    feed.recent = [...recent, ...makeBars(2, recent[49]!.time + 5 * DAY, 300)];
+    const gapTail = feed.recent.slice(-2);
+    const getBars = feed.getBars.bind(feed);
+    feed.getBars = async (req) =>
+      req.fresh ? { bars: columns(gapTail), hasMore: true } : getBars(req);
+    feed.resync?.();
+    await settle();
+    await settle();
+    expect(chart.store.length).toBe(52); // full reload (non-fresh request) picked up everything
+    expect(feed.subscribes).toHaveLength(2); // subscribed again by the reload
+  });
+});
+
+describe('brick views keep the time scale on the last brick', () => {
+  it('baseIndex follows bricks that a live tick retracts and rebuilds', async () => {
+    const { chart, feed, recent } = await load(50);
+    chart.setChartStyle({ renko: { boxSizeMode: 'fixed', boxSize: 1 } });
+    chart.setChartType('renko');
+    const last = recent[49]!;
+    const t = last.time + DAY;
+    const tick = (close: number) =>
+      feed.tick({ time: t, open: close, high: close, low: close, close, volume: 1 });
+    for (let cycle = 0; cycle < 4; cycle++) {
+      const n0 = chart.store.length;
+      tick(last.close + 6); // bricks appear
+      const n1 = chart.store.length;
+      expect(n1).toBeGreaterThan(n0);
+      expect(chart.timeScale.baseIndex).toBe(n1 - 1);
+      tick(last.close); // ...and are given back within the same bar
+      expect(chart.store.length).toBeLessThan(n1);
+      expect(chart.timeScale.baseIndex).toBe(chart.store.length - 1);
+      expect(chart.timeScale.visibleRange().to).toBeLessThanOrEqual(chart.store.length - 1);
+    }
   });
 });
 

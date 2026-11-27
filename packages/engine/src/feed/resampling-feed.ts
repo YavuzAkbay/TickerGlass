@@ -2,6 +2,7 @@ import type {
   Bar,
   BarColumns,
   BarListener,
+  ResyncListener,
   DataFeed,
   GetBarsRequest,
   GetBarsResult,
@@ -174,8 +175,13 @@ export class ResamplingFeed implements DataFeed {
     return { bars, hasMore: baseHasMore || n > limit };
   }
 
-  subscribe(req: SubscribeRequest, lastBar: Bar | null, onBar: BarListener): Unsubscribe {
-    if (isNativeInterval(req.interval)) return this.inner.subscribe(req, lastBar, onBar);
+  subscribe(
+    req: SubscribeRequest,
+    lastBar: Bar | null,
+    onBar: BarListener,
+    onResync?: ResyncListener,
+  ): Unsubscribe {
+    if (isNativeInterval(req.interval)) return this.inner.subscribe(req, lastBar, onBar, onResync);
     const target = { unit: req.interval.unit, count: req.interval.count };
     const intraday = isIntraday(target);
     const { base } = resampleBase(target);
@@ -224,7 +230,7 @@ export class ResamplingFeed implements DataFeed {
 
     // Base bars start fresh (null lastBar): they then carry only post-subscription
     // activity, which combines with `prefix` without double-counting volume.
-    const unsubInner = this.inner.subscribe({ ...req, interval: base }, null, onBase);
+    const unsubInner = this.inner.subscribe({ ...req, interval: base }, null, onBase, onResync);
     return () => {
       if (!active) return;
       active = false;

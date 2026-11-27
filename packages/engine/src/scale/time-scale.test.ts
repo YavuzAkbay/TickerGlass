@@ -69,6 +69,20 @@ describe('TimeScale', () => {
     expect(ts.indexToX(500)).toBeCloseTo(xHist);
   });
 
+  it('retracting mirrors appending: pinned when the last bar is visible, else holds the view', () => {
+    const ts = scale();
+    const x = ts.indexToX(999);
+    ts.onRetract();
+    expect(ts.baseIndex).toBe(998);
+    expect(ts.indexToX(998)).toBeCloseTo(x);
+
+    ts.pan(2000); // scroll back into history
+    const xHist = ts.indexToX(500);
+    ts.onRetract();
+    expect(ts.baseIndex).toBe(997);
+    expect(ts.indexToX(500)).toBeCloseTo(xHist);
+  });
+
   it('visibleRange is clamped to data', () => {
     const ts = scale(50);
     const r = ts.visibleRange();

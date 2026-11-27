@@ -61,6 +61,25 @@ export class SeriesStore {
     return n;
   }
 
+  /**
+   * Overwrite the newest bars: everything from `cols.time[0]` on is replaced by
+   * `cols`; older bars stay. Returns the number of bars kept in front, or -1
+   * (store unchanged) when `cols` does not connect: empty, starting after the
+   * last bar (a gap) or before the first.
+   */
+  replaceTail(cols: BarColumns): number {
+    const n = cols.time.length;
+    const first = n ? cols.time[0]! : NaN;
+    if (!n || (this.length && (first > this.time[this.length - 1]! || first < this.time[0]!)))
+      return -1;
+    let keep = 0;
+    while (keep < this.length && this.time[keep]! < first) keep++;
+    this.ensureCapacity(keep + n, true);
+    for (const f of FIELDS) this[f].set(cols[f].subarray(0, n), keep);
+    this.length = keep + n;
+    return keep;
+  }
+
   /** Update the last bar (same time) or append a newer one. */
   upsert(bar: Bar): 'update' | 'append' | 'ignored' {
     const n = this.length;
