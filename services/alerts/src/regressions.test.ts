@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AlertSpec } from '@tickerglass/alerts';
-import { BAR_T, bar, harness, makeAlert, minuteBars, until, type Harness } from './test-utils';
+import {
+  BAR_T,
+  bar,
+  harness,
+  makeAlert,
+  minuteBars,
+  settle,
+  until,
+  type Harness,
+} from './test-utils';
 
 let h: Harness | null = null;
 afterEach(async () => {
@@ -320,5 +329,67 @@ describe('review regressions', () => {
     const s = h!.service.series()[0]!;
     expect(s.state).toBe('ready');
     expect(s.runners.size).toBe(1);
+  });
+
+  it('#19 an alert added while the series is loading gets its indicator instances', async () => {
+    const ind = (
+      type: string,
+      inputs: Record<string, unknown>,
+      op: 'greater' | 'less',
+      v: number,
+    ) =>
+      ({
+        schemaVersion: 1,
+        left: {
+          kind: 'indicator',
+          ref: {
+            instances: [{ id: 'i', type, inputs }],
+            instanceId: 'i',
+            outputId: type === 'sma' ? 'ma' : 'p',
+            title: type,
+          },
+        },
+        condition: { op, right: { kind: 'value', value: v } },
+        trigger: 'everyTime',
+      }) as AlertSpec;
+    h = await harness();
+    const a1 = makeAlert({
+      id: 'a1',
+      spec: ind('pivot-points', { timeframe: '1h' }, 'greater', 1e9),
+    });
+    const a2 = makeAlert({
+      id: 'a2',
+      spec: ind('sma', { length: 2, source: 'close' }, 'greater', 0),
+    });
+    h.api.alerts = [a1];
+    h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [98, 99, 99]));
+    h.feed.setBars(
+      'TEST',
+      '1h',
+      minuteBars(BAR_T, [98, 99, 99]).map((b, i) => ({ ...b, time: BAR_T - (3 - i) * 3600 })),
+    );
+    // Hold the higher-timeframe fetch: buildRuntime already snapshotted the runners.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const getBars = h.feed.getBars.bind(h.feed);
+    let held = false;
+    h.feed.getBars = async (req) => {
+      if (req.interval.unit === 'hour') {
+        held = true;
+        await gate;
+      }
+      return getBars(req);
+    };
+    const starting = h.start();
+    await until(() => held, 'tf fetch');
+    h.api.alerts = [a1, a2];
+    h.control.alertsChanged(['a2']);
+    await settle();
+    expect(h.service.series()[0]!.state).toBe('loading');
+    release();
+    await starting;
+    await h.service.whenIdle();
+    await until(() => h!.api.fires.some((f) => f.id === 'a2'), 'a2 fire');
+    expect(h.api.fires.find((f) => f.id === 'a2')!.body.values.x).toBeCloseTo(99, 10);
   });
 });

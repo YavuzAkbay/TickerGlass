@@ -429,6 +429,7 @@ export class Series {
       this.resetTracker();
       await this.loadTimeframes(gen);
       if (gen !== this.gen) return;
+      if (!(await this.adoptLateRunners(gen))) return;
       this.state = 'ready';
       this.retryAttempt = 0;
       this.lastError = null;
@@ -440,6 +441,34 @@ export class Series {
     } catch (err) {
       if (gen !== this.gen) return;
       this.onLoadError(err);
+    }
+  }
+
+  /**
+   * Runners added while the load was in flight (`addAlert` ignores them) missed the
+   * `buildRuntime` snapshot: give them their indicator instances, or restart the load when
+   * they need more history than was fetched. Returns false when the load was superseded.
+   */
+  private async adoptLateRunners(gen: number): Promise<boolean> {
+    for (;;) {
+      const late = [...this.runners.values()].filter((r) =>
+        r.instances.some((h) => !this.instanceUsers.get(h.hash)?.has(r.id)),
+      );
+      if (late.length === 0) return true;
+      const need = this.windowFor(late);
+      if (
+        need > this.window ||
+        late.some((r) => r.deep || r.since !== null) // drawings / anchors are fetched at load start
+      ) {
+        await this.load();
+        return false;
+      }
+      for (const r of late) {
+        if (this.runners.get(r.id) === r) await this.addInstances(r);
+        if (gen !== this.gen) return false;
+      }
+      await this.loadTimeframes(gen);
+      if (gen !== this.gen) return false;
     }
   }
 
@@ -762,14 +791,14 @@ export class Series {
     const now = this.host.clock.now();
     if (addInstances) {
       const gen = this.gen;
-      for (const r of runners) if (this.runners.has(r.id)) await this.addInstances(r);
+      for (const r of runners) if (this.runners.get(r.id) === r) await this.addInstances(r);
       if (gen !== this.gen) return;
       await this.loadTimeframes(this.gen);
     }
     this.clearCache();
     const n = this.cols.length;
     for (const r of runners) {
-      if (!this.runners.has(r.id)) continue;
+      if (this.runners.get(r.id) !== r) continue;
       if (this.instanceError(r)) continue;
       this.host.metrics.evaluations++;
       try {

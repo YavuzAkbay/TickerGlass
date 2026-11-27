@@ -1,6 +1,6 @@
 /** Dirty set of alert states, flushed with `PUT /alerts/states` (docs/alerts.md §3.5). */
 import type { AlertRuntimeState } from '@tickerglass/alerts';
-import type { ApiClient } from './api';
+import { ApiError, type ApiClient } from './api';
 import { errText, type Logger } from './log';
 
 const CHUNK = 1000;
@@ -25,8 +25,34 @@ export class StateStore {
     this.dirty.delete(alertId);
   }
 
-  /** Never throws: failures leave the rows dirty for the next flush. */
-  async flush(): Promise<void> {
+  private running: Promise<void> | null = null;
+  private again = false;
+
+  /**
+   * Never throws: failures leave the rows dirty for the next flush. Flushes never overlap
+   * (an older snapshot landing after a newer one would persist stale state): a call while one
+   * is running queues one more pass and resolves when that pass is done.
+   */
+  flush(): Promise<void> {
+    if (this.running) {
+      this.again = true;
+      return this.running;
+    }
+    const run = (async () => {
+      try {
+        do {
+          this.again = false;
+          await this.flushOnce();
+        } while (this.again);
+      } finally {
+        this.running = null;
+      }
+    })();
+    this.running = run;
+    return run;
+  }
+
+  private async flushOnce(): Promise<void> {
     if (this.dirty.size === 0) return;
     const batch = [...this.dirty].map(([alertId, d]) => ({
       alertId,
@@ -40,12 +66,28 @@ export class StateStore {
         await this.api.putStates(
           chunk.map(({ alertId, revision, state }) => ({ alertId, revision, state })),
         );
-        for (const c of chunk)
-          if (this.dirty.get(c.alertId) === c.src) this.dirty.delete(c.alertId);
       } catch (err) {
-        this.log.warn('state flush failed', { error: errText(err) });
-        return;
+        if (err instanceof ApiError && isPermanent(err.status)) {
+          // Retrying can never succeed (e.g. 413/422): drop the chunk instead of starving the rest.
+          this.log.error('state flush rejected, dropping chunk', {
+            error: errText(err),
+            status: err.status,
+            alerts: chunk.length,
+          });
+        } else {
+          this.log.warn('state flush failed', { error: errText(err) });
+          return;
+        }
       }
+      for (const c of chunk) if (this.dirty.get(c.alertId) === c.src) this.dirty.delete(c.alertId);
     }
   }
 }
+
+/**
+ * A 4xx about the payload itself fails identically on retry. Auth / routing errors (401, 403,
+ * 404: token rotation, API mid-deploy), request-timeout and rate-limit are not about the payload:
+ * keep the rows and retry.
+ */
+const isPermanent = (status: number): boolean =>
+  status >= 400 && status < 500 && ![401, 403, 404, 408, 429].includes(status);

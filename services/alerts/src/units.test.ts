@@ -3,6 +3,8 @@ import { ApiClient, ApiError } from './api';
 import { ConfigError, deriveWsUrl, loadConfig } from './config';
 import { hashInstances } from './operands';
 import { Registry } from './registry';
+import { StateStore } from './state';
+import type { AlertRuntimeState } from '@tickerglass/alerts';
 import { resolveTimeframe } from './series';
 import { makeAlert } from './test-utils';
 
@@ -145,5 +147,69 @@ describe('api client', () => {
     await api.listAlerts();
     await api.heartbeat({} as never);
     expect(seen).toEqual([null, null]);
+  });
+});
+
+describe('StateStore', () => {
+  const st = (n: number) => ({ n }) as unknown as AlertRuntimeState;
+  const log = { debug() {}, info() {}, warn() {}, error() {} } as never;
+
+  it('never overlaps flushes: the newer snapshot is written last', async () => {
+    const calls: number[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let releaseFirst!: () => void;
+    const first = new Promise<void>((r) => (releaseFirst = r));
+    const api = {
+      async putStates(rows: { state: AlertRuntimeState }[]) {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        calls.push((rows[0]!.state as unknown as { n: number }).n);
+        if (calls.length === 1) await first;
+        inFlight--;
+        return { written: [], ignored: [] };
+      },
+    };
+    const store = new StateStore(api, log);
+    store.mark('a', 1, () => st(1));
+    const f1 = store.flush();
+    await Promise.resolve();
+    store.mark('a', 1, () => st(2));
+    const f2 = store.flush();
+    releaseFirst();
+    await Promise.all([f1, f2]);
+    expect(maxInFlight).toBe(1);
+    expect(calls).toEqual([1, 2]);
+    expect(store.size).toBe(0);
+  });
+
+  it('drops a chunk rejected with a permanent 4xx and still sends the rest', async () => {
+    const sent: number[] = [];
+    const api = {
+      async putStates(rows: unknown[]) {
+        sent.push(rows.length);
+        if (sent.length === 1) throw new ApiError('too large', 413);
+        return { written: [], ignored: [] };
+      },
+    };
+    const store = new StateStore(api, log);
+    for (let i = 0; i < 1500; i++) store.mark(`a${i}`, 1, () => st(i));
+    await store.flush();
+    expect(sent).toEqual([1000, 500]);
+    expect(store.size).toBe(0);
+  });
+
+  it('keeps rows dirty on 5xx / 429 / auth / network errors', async () => {
+    for (const status of [0, 503, 429, 401, 403, 404]) {
+      const api = {
+        async putStates(): Promise<never> {
+          throw new ApiError('x', status);
+        },
+      };
+      const store = new StateStore(api, log);
+      store.mark('a', 1, () => st(1));
+      await store.flush();
+      expect(store.size).toBe(1);
+    }
   });
 });
