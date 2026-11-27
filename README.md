@@ -43,20 +43,20 @@ TickerGlass gives you those features as free, open-source software that you run 
 
 ### Features that are usually paid add-ons
 
-| Capability                                                         | Typical hosted charting platform | TickerGlass |
-| ------------------------------------------------------------------ | :------------------------------: | :---------: |
-| Several charts per layout (up to 16, synced)                       |            Paid tiers            |     ✅      |
-| Server-side alerts that fire with the browser closed               |       Limited count / paid       |     ✅      |
-| Alert delivery to Telegram, email, ntfy, Gotify, Apprise, webhooks |           Some or none           |     ✅      |
-| Market screener with heatmap, saved screens and screen alerts      |            Often paid            |     ✅      |
-| No-code strategy tester with a full performance report             |            Often paid            |     ✅      |
-| Intraday bar-by-bar market replay with paper trading               |            Often paid            |     ✅      |
-| Portfolio tracker with broker CSV import and a trade journal       |     Separate product / paid      |     ✅      |
-| Custom indicators in JavaScript                                    |   Proprietary script language    |     ✅      |
-| AI chart assistant running on your own hardware (Ollama)           |         Cloud AI or none         |     ✅      |
-| Unlimited indicators per chart                                     |       Capped on free plans       |     ✅      |
-| Data stored on hardware you control, full backup download          |                ❌                |     ✅      |
-| No ads, no tracking                                                |          Varies by plan          |     ✅      |
+| Capability                                                                 | Typical hosted charting platform | TickerGlass |
+| -------------------------------------------------------------------------- | :------------------------------: | :---------: |
+| Several charts per layout (up to 16, synced)                               |            Paid tiers            |     ✅      |
+| Server-side alerts that fire with the browser closed                       |       Limited count / paid       |     ✅      |
+| Alert delivery to Telegram, email, ntfy, Gotify, Apprise, webhooks         |           Some or none           |     ✅      |
+| Market screener with heatmap, saved screens and screen alerts              |            Often paid            |     ✅      |
+| No-code strategy tester with a full performance report                     |            Often paid            |     ✅      |
+| Intraday bar-by-bar market replay with paper trading                       |            Often paid            |     ✅      |
+| Portfolio tracker with broker CSV import and a trade journal               |     Separate product / paid      |     ✅      |
+| Custom indicators in JavaScript                                            |   Proprietary script language    |     ✅      |
+| AI analyst for charts and fundamentals, local (Ollama) or your own API key |         Cloud AI or none         |     ✅      |
+| Unlimited indicators per chart                                             |       Capped on free plans       |     ✅      |
+| Data stored on hardware you control, full backup download                  |                ❌                |     ✅      |
+| No ads, no tracking                                                        |          Varies by plan          |     ✅      |
 
 <sub>The comparison describes common patterns in hosted charting services in general, not any specific product.</sub>
 
@@ -88,7 +88,7 @@ TickerGlass gives you those features as free, open-source software that you run 
 - [Alerts](docs/alerts.md) on price, indicators, drawings or scripts, evaluated on the server around the clock
 - [Strategy tester](docs/backtest.md) for entry and exit rules, with stops and targets, commission, slippage and an equity curve
 - [Portfolio tracker](docs/portfolio.md) with holdings, time-weighted performance against a benchmark, dividends and a trade journal
-- [Ask AI about the chart](#ask-ai-about-your-charts): a local model (Ollama) that analyses the chart, finds divergences and draws on it
+- [Ask AI about the chart](#ask-ai-about-your-charts): technical and fundamental analysis by a local model (Ollama) or a cloud model; finds levels and divergences, draws Fibonacci and more on the chart
 - Broker CSV import for IBKR, Schwab, DEGIRO, Trading 212 and generic files
 
 **🏠 Self-hosting**
@@ -211,43 +211,90 @@ Demo prices are synthetic and are not real quotes.
 ## Ask AI about your charts
 
 Ask a language model about the chart you are looking at, or about a range you drag across, and
-let it work on the chart for you: _"Find bullish and bearish RSI divergences and draw them"_ adds
-RSI, finds the divergences, draws them on price and on RSI, and explains them with dates and
-values. The model runs on **your own machine through [Ollama](https://ollama.com)**; charts and
-questions never go to a cloud service.
+let it work on the chart for you. It handles **technical analysis** (trend, levels, indicators,
+divergences, patterns), **fundamental analysis** (revenue, earnings, margins, debt, P/E, P/S,
+cheap or expensive against its own history) and general questions ("how do traders use a
+Fibonacci retracement?").
+
+- _"Find bullish and bearish RSI divergences and draw them"_ adds RSI, finds the divergences,
+  draws them on price and on RSI, and explains them with dates and values.
+- _"Analyze this stock fundamentally. Is it cheap or expensive?"_ reads the company's statements,
+  computes growth, margins, balance sheet and valuation, and compares today's multiples with the
+  stock's own history.
+- _"Draw a Fibonacci retracement of the last big move"_ anchors it on the real swing high and low.
+
+Run it **locally with [Ollama](https://ollama.com)** (charts and questions stay on your hardware)
+or connect a **cloud or OpenAI-compatible API** (OpenAI, OpenRouter, Z.ai GLM, DeepSeek,
+OpenCode Zen, Groq, Mistral, LM Studio). Both can be connected at once; users pick the model in
+the Ask AI panel.
 
 - **Connect in the app:** as an admin open **Settings → AI**. It finds a local Ollama by itself,
-  lists the installed models, and lets you choose which ones users can pick. No `.env` editing.
+  lists the installed models, and lets you choose which ones users can pick. Cloud providers are
+  added under **Cloud and other connections** with an API key. No `.env` editing.
 - **What the model gets:** a compact brief of the bars, statistics computed exactly (trend, swings,
   ATR, volume, levels), indicator values and your drawings, plus a picture of the chart for models
-  that read images. It is instructed to work like a technical analyst and to quote only the data.
-- **What it can do on the chart** (models with tool calling): add or remove indicators, find
-  swings and divergences (computed by TickerGlass, not guessed), draw divergences, trend lines and
-  support/resistance. Each answer's changes are one undo step.
+  that read images. Levels, swings, divergences and fundamentals are **computed by TickerGlass**,
+  not guessed by the model, and it is told to quote only that data.
+- **It only changes the chart when you ask** (draw, add, mark, remove…). Each answer's changes are
+  one undo step, and **Undo AI changes** reverts them. Turn **Draw** off in the panel to keep it to
+  words; it still reads data.
 
-### Which model?
+### What each model can do: tiers
 
-Two things matter:
+Small models follow a strict script and a short tool list well, and get lost with more. Big and
+cloud models do better with freedom and every tool. So each model gets a **tier**, picked from its
+size. Admins can change it per model in Settings → AI.
 
-1. **Size: use 7B parameters or more; 9B and up is better.** Smaller models misread numbers and
-   usually ignore the chart tools.
-2. **Tool calling.** Only models with Ollama's _tools_ capability can add indicators and draw. In
-   Settings → AI such models carry a **chart tools** tag (and **reads images** for vision). Models
-   without it can still answer in words.
+| Tier         | Picked for                                              | Answers                                                            | Tools                                                                                                                                                                                                                               |
+| ------------ | ------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Basic**    | Local models under 14B                                  | Strict analyst script: summary, then evidence                      | Fundamentals of the chart symbol, support/resistance, swings, divergences, 11 common indicators + 18 financial ones, trend and horizontal lines                                                                                     |
+| **Standard** | 14B–60B, or size unknown                                | Freer: follows your format, answers general and teaching questions | Basic + **every indicator in the app** (search by name or idea) + **drawings from anchor points**: Fibonacci retracement, extension and time zones, rectangles, parallel channels, rays, text, callouts                             |
+| **Full**     | 60B and larger (mixtures: total), **every cloud model** | Free                                                               | Standard + every drawing type, editing and removing your drawings and indicators, **switching symbol, interval, range and chart type**, **other symbols'** prices and fundamentals, **earnings surprises, dividends, splits, news** |
 
-Recommended as of November 2026, all with tool calling, vision and reasoning. Ollama downloads are
-4-bit, the Unsloth rows show their quant in the tag; allow 1–3 GB more for the context window. On Apple Silicon the unified memory counts.
+The rules are the same in every tier: no buy or sell advice, no entries, stops or targets, no
+invented numbers.
 
-| Free memory (RAM or VRAM) | Model                                                                       | Download | Notes                                                                    |
-| ------------------------- | --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
-| 8 GB                      | `qwen3.5:9b`                                                                | 6.6 GB   | Smallest model we recommend. Tools, vision, reasoning.                   |
-| 8 GB                      | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-IQ2_XXS`            | 7.2 GB   | A 27B model at 2-bit: more knowledge, but 2-bit costs some precision.    |
-| 12–16 GB                  | `gemma4:12b`                                                                | 7.7 GB   | Google Gemma 4. Tools and vision, leaves room for a 16K context.         |
-| 12–16 GB                  | Unsloth Gemma 4 26B-A4B, `hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-IQ3_XXS` | 11.4 GB  | Mixture of experts: 26B of knowledge, only 4B active per token, so fast. |
-| 16–24 GB                  | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`            | 13.1 GB  | The same 27B at 3-bit, in about 13 GB.                                   |
-| 24 GB +                   | `qwen3.8:27b`                                                               | 18 GB    | Best all-round pick: analysis, tool calling, chart pictures, reasoning.  |
-| 24 GB +                   | `gemma4:26b`                                                                | 16 GB    | Faster alternative (mixture of experts).                                 |
-| 32 GB +                   | `qwen3.6:35b`                                                               | 23 GB    | Larger mixture-of-experts model when you have the memory.                |
+### Which model and context window?
+
+The **context window** is the model's working memory: the chart brief, the conversation, tool
+results and, for reasoning models, their thinking all have to fit. The brief shrinks to fit, so a
+small window still works, but it sees fewer bars and long answers get cut off.
+
+| What you ask                                                                    | Model                                        | Context window |
+| ------------------------------------------------------------------------------- | -------------------------------------------- | -------------- |
+| Quick read of the visible chart: trend, levels, what an indicator says          | Any tools model, 9B+ (Basic)                 | 16K            |
+| Full technical analysis with drawings: divergences, Fibonacci, channels         | 27B class (Standard)                         | 32K            |
+| Fundamental analysis, cheap or expensive                                        | 27B class (Standard); 9B works for a summary | 32K            |
+| Reasoning models (Qwen 3.x, Gemma 4, DeepSeek R-series, GLM) on any of these    | Add 16K for their thinking                   | 32K–64K        |
+| Compare symbols, earnings and news, multi-year or intraday history, "do it all" | Cloud model or a local 60B+ model (Full)     | 64K–128K       |
+
+- Local window: Settings → AI sets the default (16K), and each user can raise it up to 128K in the
+  Ask AI panel. A bigger window needs more memory on the Ollama machine.
+- Cloud window: set per connection (128K by default); the provider decides the real limit.
+- Ask about a **selected range** rather than years of bars when you want detail: the brief then
+  spends its room on the bars that matter.
+
+### Local models (Ollama)
+
+Two things matter: **size** (7B or more, 9B and up is better; smaller models misread numbers and
+ignore the tools) and **tool calling** (Settings → AI tags such models **chart tools**, and **reads
+images** for vision). Recommended as of November 2026, all with tool calling, vision and reasoning.
+Ollama downloads are 4-bit, the Unsloth rows show their quant in the tag; allow 1–3 GB more for the
+context window. On Apple Silicon the unified memory counts.
+
+| Free memory (RAM or VRAM) | Model                                                                       | Download | Tier     | Notes                                                                    |
+| ------------------------- | --------------------------------------------------------------------------- | -------- | -------- | ------------------------------------------------------------------------ |
+| 8 GB                      | `qwen3.5:9b`                                                                | 6.6 GB   | Basic    | Smallest model we recommend. Tools, vision, reasoning.                   |
+| 8 GB                      | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-IQ2_XXS`            | 7.2 GB   | Standard | A 27B model at 2-bit: more knowledge, but 2-bit costs some precision.    |
+| 12–16 GB                  | `gemma4:12b`                                                                | 7.7 GB   | Basic    | Google Gemma 4. Tools and vision, leaves room for a 16K context.         |
+| 12–16 GB                  | Unsloth Gemma 4 26B-A4B, `hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-IQ3_XXS` | 11.4 GB  | Standard | Mixture of experts: 26B of knowledge, only 4B active per token, so fast. |
+| 16–24 GB                  | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`            | 13.1 GB  | Standard | The same 27B at 3-bit, in about 13 GB.                                   |
+| 24 GB +                   | `qwen3.8:27b`                                                               | 18 GB    | Standard | Best all-round local pick: analysis, tools, chart pictures, reasoning.   |
+| 24 GB +                   | `gemma4:26b`                                                                | 16 GB    | Standard | Faster alternative (mixture of experts).                                 |
+| 32 GB +                   | `qwen3.6:35b`                                                               | 23 GB    | Standard | Larger mixture-of-experts model when you have the memory.                |
+
+A strong 27B–35B model often handles the Full tier well: try it by setting the tier to Full in
+Settings → AI, and go back to Standard if it starts misusing tools.
 
 Pull a model on the Ollama machine, then press **Reload** in Settings → AI:
 
@@ -258,10 +305,23 @@ ollama pull hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL
 ```
 
 [Unsloth](https://unsloth.ai) Dynamic quants keep the important layers at higher precision, so a
-big model still works well on a small machine; that is the way to run a 27B model on 8–16 GB. Check
-that the model shows the **chart tools** tag after pulling. Reasoning models (Qwen 3.x, Gemma 4)
-work best with a **32K** or larger context window: the default is 16K and each user can pick up to
-128K in the Ask AI panel.
+big model still works well on a small machine; that is the way to run a 27B model on 8–16 GB.
+
+### Cloud and OpenAI-compatible models
+
+**Settings → AI → Cloud and other connections → Add connection:** pick a preset (OpenAI,
+OpenRouter, Z.ai GLM, Z.ai Coding Plan, DeepSeek, OpenCode Zen, Groq, Mistral, LM Studio) or any
+OpenAI-compatible URL, paste the API key, **Load models**, and tick the models users may pick
+(say for each whether it reads images and uses tools).
+
+- **Pick models with tool calling.** Any current flagship or mid-size model from these providers
+  works; through OpenRouter you also reach Claude, Gemini and others with one key.
+- **API keys, not chat subscriptions.** A ChatGPT or Claude subscription cannot be used; providers
+  bill API use per token. The admin's key is shared by every user, and each user is limited to 30
+  cloud requests a minute (`AI_CLOUD_RATE_PER_MIN`). Set a spending limit at the provider.
+- **Privacy:** with a cloud model, questions, chart data and chart pictures go to that provider.
+  Saving a cloud connection asks you to confirm that. Keys stay on the server (shown only as their
+  last four characters) and are part of database backups, so enable backup encryption.
 
 Everything else, from Docker networking to every setting, is in the
 [Ask AI guide](docs/ai.md).
@@ -346,13 +406,13 @@ If TickerGlass is useful to you, a ⭐ on GitHub helps other people find it.
 
 ## Privacy
 
-Self-hosting lets you control where the application server and database run. TickerGlass includes no analytics or telemetry. Browser preferences and some chart data are also kept in that browser's local storage. With the default Yahoo provider, your server contacts Yahoo Finance for market data. If you configure notification integrations, alert messages are sent to the services you select. Ask AI sends chart data and questions only to the Ollama server you connect. Review the code and configuration for your deployment before making privacy claims about a particular setup.
+Self-hosting lets you control where the application server and database run. TickerGlass includes no analytics or telemetry. Browser preferences and some chart data are also kept in that browser's local storage. With the default Yahoo provider, your server contacts Yahoo Finance for market data. If you configure notification integrations, alert messages are sent to the services you select. Ask AI sends chart data and questions only to the AI servers an admin connects: a local Ollama, or a cloud provider when one is set up in Settings → AI. Review the code and configuration for your deployment before making privacy claims about a particular setup.
 
 ## Disclaimer
 
 TickerGlass is provided for informational and educational purposes. It is not investment, financial, tax, or legal advice, and it does not recommend buying or selling any security. Market data may be delayed, incomplete, inaccurate, or unavailable. You are responsible for your decisions and for checking data before relying on it.
 
-**Nothing in this project is financial advice, and that includes every answer, analysis, level or drawing produced by the Ask AI feature.** AI answers are generated automatically by a language model that you choose and run yourself; they can be wrong, incomplete or made up, and they are not reviewed by anyone. The authors and contributors are not licensed financial advisers, brokers or analysts, do not provide investment advice or consultation, and accept no liability for decisions made using this software or its AI output. Consult a licensed professional before making investment decisions.
+**Nothing in this project is financial advice, and that includes every answer, analysis, level or drawing produced by the Ask AI feature.** AI answers are generated automatically by a language model that you choose and run yourself or reach with your own API key; they can be wrong, incomplete or made up, and they are not reviewed by anyone. The authors and contributors are not licensed financial advisers, brokers or analysts, do not provide investment advice or consultation, and accept no liability for decisions made using this software or its AI output. Consult a licensed professional before making investment decisions.
 
 TickerGlass is independent and is not affiliated with or endorsed by Yahoo or any other data provider. Product names and trademarks belong to their respective owners. This project does not grant rights to third-party data or trademarks. Check each provider's terms before accessing, storing, displaying, or sharing its data.
 
