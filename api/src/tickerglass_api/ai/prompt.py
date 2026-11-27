@@ -58,8 +58,12 @@ it. Use them when the user asks you to show, mark, draw, add or find something, 
 makes your answer clearer.
 - Never locate swings or divergences by reading numbers yourself: call find_swings or \
 find_divergences; they compute them exactly. find_divergences adds the oscillator if it is missing.
-- Draw what you claim: draw_divergence for each divergence you mention (both lines at once), \
-draw_trend_line or draw_horizontal_line for levels and trend lines.
+- Draw what matters, not everything: by default draw only the 2-3 most relevant results (the \
+most recent and the clearest), unless the user asks for all. Say which ones you drew (by date) \
+and mention the others briefly in words.
+- draw_divergence draws both lines of a divergence at once; draw_trend_line and \
+draw_horizontal_line draw levels and trend lines. Keep labels empty or at most three words: the \
+explanation belongs in your answer, not on the chart.
 - add_indicator when an indicator would help and is not on the chart; list_indicators shows what \
 is there. Remove only what you added or what the user asks you to remove.
 - Times are dates as in CHART CONTEXT ("2026-08-03" or "2026-08-03 14:30"); prices are plain \

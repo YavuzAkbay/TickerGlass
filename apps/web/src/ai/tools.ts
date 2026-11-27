@@ -184,7 +184,10 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
           from_value: { type: 'number' },
           to_time: { type: 'string' },
           to_value: { type: 'number' },
-          label: { type: 'string' },
+          label: {
+            type: 'string',
+            description: 'Optional, at most 3 words; usually leave empty',
+          },
           tone: { type: 'string', enum: ['bullish', 'bearish', 'neutral'] },
         },
         required: ['from_time', 'from_value', 'to_time', 'to_value'],
@@ -200,7 +203,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         type: 'object',
         properties: {
           price: { type: 'number' },
-          label: { type: 'string' },
+          label: { type: 'string', description: 'Optional, e.g. "Support" or "R1"' },
           tone: { type: 'string', enum: ['bullish', 'bearish', 'neutral'] },
         },
         required: ['price'],
@@ -529,8 +532,8 @@ function drawDivergenceTool(ctx: ToolContext, args: Record<string, unknown>) {
         type: 'trend-line',
         paneId: 'main',
         points: d.price.map((p) => ({ time: p.time, price: p.value })),
+        // No text on the chart: the colour says bullish/bearish; the answer explains.
         style: lineStyle(tone),
-        text: `${label} (${d.studyTitle})`,
       },
       {
         type: 'trend-line',
@@ -568,7 +571,7 @@ function drawTrendLineTool(ctx: ToolContext, args: Record<string, unknown>) {
           { time: t2, price: v2 },
         ],
         style: lineStyle(tone),
-        text: str(args.label).slice(0, 80),
+        text: str(args.label).slice(0, 24),
       },
     ],
     'AI: Trend line',
@@ -589,7 +592,7 @@ function drawHorizontalTool(ctx: ToolContext, args: Record<string, unknown>) {
         paneId: 'main',
         points: [{ time: s.time[Math.max(0, s.length - 1)]!, price }],
         style: lineStyle(tone),
-        text: str(args.label).slice(0, 80),
+        text: str(args.label).slice(0, 24),
       },
     ],
     'AI: Horizontal line',
