@@ -1435,8 +1435,63 @@ export class Chart implements StudyApi, DrawingApi {
     this.emitState();
   }
 
-  /** Composite all layers (panes, axes, legend text) into one canvas. */
-  takeScreenshot(): HTMLCanvasElement {
+  /**
+   * Composite all layers (panes, axes, legend text) into one canvas. With `crop`, keep only the
+   * bars from `crop.from` to `crop.to` (bar times, plus `padBars` slots each side, default 3)
+   * as far as they are on screen, joined to the price axis; off screen = the whole chart.
+   * `minAspect` widens a narrow crop (more bars around it) to at least that width/height.
+   */
+  takeScreenshot(crop?: {
+    from: number;
+    to: number;
+    padBars?: number;
+    minAspect?: number;
+  }): HTMLCanvasElement {
+    // A crop would cut the legend text (drawn at the left edge) mid-line: leave it out.
+    const full = this.composeScreenshot(!crop);
+    if (!crop) return full;
+    const tl = this.getAnchorTimeline();
+    if (!tl.length) return full;
+    const ts = this.timeScale;
+    const pad = (crop.padBars ?? 3) + 0.5;
+    const a = timeToLogical(tl, { time: Math.min(crop.from, crop.to) });
+    const b = timeToLogical(tl, { time: Math.max(crop.from, crop.to) });
+    let left = Math.max(0, ts.indexToX(a - pad));
+    let right = Math.min(this.paneWidth, ts.indexToX(b + pad));
+    if (!(right - left >= 2)) return full;
+    const minWidth = Math.min(this.paneWidth, (crop.minAspect ?? 0) * this.height);
+    if (right - left < minWidth) {
+      // Grow evenly; whatever one side cannot take goes to the other.
+      const grow = (minWidth - (right - left)) / 2;
+      left -= grow;
+      right += grow;
+      if (left < 0) {
+        right -= left;
+        left = 0;
+      }
+      if (right > this.paneWidth) {
+        left = Math.max(0, left - (right - this.paneWidth));
+        right = this.paneWidth;
+      }
+    }
+    const dpr = this.dpr;
+    const axis = Math.max(0, this.width - this.paneWidth);
+    const sx = Math.round(left * dpr);
+    const sw = Math.max(1, Math.round((right - left) * dpr));
+    const aw = Math.round(axis * dpr);
+    const out = document.createElement('canvas');
+    out.width = sw + aw;
+    out.height = full.height;
+    const ctx = out.getContext('2d')!;
+    ctx.drawImage(full, sx, 0, sw, full.height, 0, 0, sw, full.height);
+    if (aw > 0) {
+      const ax = Math.round(this.paneWidth * dpr);
+      ctx.drawImage(full, ax, 0, aw, full.height, sw, 0, aw, full.height);
+    }
+    return out;
+  }
+
+  private composeScreenshot(legend: boolean): HTMLCanvasElement {
     const dpr = this.dpr;
     const out = document.createElement('canvas');
     out.width = Math.round(this.width * dpr);
@@ -1452,6 +1507,7 @@ export class Chart implements StudyApi, DrawingApi {
       if (pane.height <= 0) continue;
       for (const l of [pane.bg, pane.main, pane.overlay]) blit(l, 0, pane.top);
       for (const l of [pane.axisMain, pane.axisOverlay]) blit(l, this.paneWidth, pane.top);
+      if (!legend) continue;
       // Legend is DOM: redraw its text.
       ctx.save();
       ctx.scale(dpr, dpr);

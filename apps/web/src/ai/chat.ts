@@ -8,6 +8,7 @@ import { errorMessage } from '../api/client';
 import { getActiveSession } from '../store/chart';
 import { streamChat, type AiChatMessage, type AiModel, type AiStatus } from './api';
 import { briefBudget, briefFromChart, visibleFocus } from './context';
+import { chartImage } from './image';
 import { useAiChat, useAiPrefs, type AiContextInfo, type UiMessage } from './store';
 
 const controllers = new Map<string, AbortController>();
@@ -84,8 +85,6 @@ export interface AskOptions {
   status: EnabledStatus;
   /** Defaults to the visible range. */
   focus?: BriefFocus;
-  /** Base64 image(s) of the chart to attach with a new context. */
-  images?: string[];
 }
 
 /**
@@ -110,7 +109,18 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   );
   const conv = useAiChat.getState().byChart[chartId];
   const newContext = key !== conv?.contextKey;
-  const images = newContext && model.vision ? (opts.images ?? []) : [];
+  // Claim the chart before the (async) picture so a second click cannot send twice.
+  const controller = new AbortController();
+  controllers.set(chartId, controller);
+  let images: string[] = [];
+  if (newContext && model.vision && useAiPrefs.getState().includeImage) {
+    try {
+      const img = await chartImage(chart, focus, opts.status.maxImageBytes);
+      if (img) images = [img];
+    } catch {
+      // No picture: the text brief still goes.
+    }
+  }
   const context: AiContextInfo | undefined = newContext
     ? {
         label: focusLabel(chart, focus, brief),
@@ -149,8 +159,6 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
     }));
 
   const history = useAiChat.getState().byChart[chartId]!.messages.filter((m) => m.id !== answerId);
-  const controller = new AbortController();
-  controllers.set(chartId, controller);
   try {
     await streamChat(
       { model: model.name, messages: apiMessages(history) },

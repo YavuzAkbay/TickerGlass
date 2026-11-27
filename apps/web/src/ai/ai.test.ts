@@ -119,3 +119,12 @@ describe('markdown', () => {
     expect(parseBlocks('```\npartial')).toEqual([{ kind: 'code', text: 'partial' }]);
   });
 });
+
+describe('fitSize', () => {
+  it('scales the longest side down, never up', async () => {
+    const { fitSize } = await import('./image');
+    expect(fitSize(2560, 1440, 1280)).toEqual({ width: 1280, height: 720 });
+    expect(fitSize(600, 1600, 800)).toEqual({ width: 300, height: 800 });
+    expect(fitSize(400, 300, 1280)).toEqual({ width: 400, height: 300 });
+  });
+});

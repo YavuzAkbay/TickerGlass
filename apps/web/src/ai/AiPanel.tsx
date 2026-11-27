@@ -95,6 +95,7 @@ export function AiPanel() {
   const focusTick = useAiChat((s) => s.focusTick);
   const wanted = useAiPrefs((s) => s.model);
   const setPrefs = useAiPrefs((s) => s.set);
+  const includeImage = useAiPrefs((s) => s.includeImage);
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -279,6 +280,16 @@ export function AiPanel() {
             {selection ? 'Reselect' : 'Select range'}
           </button>
         </div>
+        {model?.vision && (
+          <label className="ai-image-toggle ai-faint">
+            <input
+              type="checkbox"
+              checked={includeImage}
+              onChange={(e) => setPrefs({ includeImage: e.target.checked })}
+            />
+            Send a picture of the chart too
+          </label>
+        )}
         <div className="ai-input-row">
           <textarea
             ref={inputRef}
