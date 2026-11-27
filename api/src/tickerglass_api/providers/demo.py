@@ -99,12 +99,14 @@ def _minute_path(symbol: str, day: date, open_: float, close: float) -> np.ndarr
     return path
 
 
+#: Intraday volume profile: busier at the open and the close (the same every day).
+_VOLUME_SHAPE = 1 + 2.5 * np.linspace(-1, 1, SESSION_MINUTES) ** 2
+
+
 def _minute_volume(symbol: str, day: date) -> np.ndarray:
     rng = np.random.default_rng(_seed(symbol, day.isoformat(), "volume"))
-    x = np.linspace(-1, 1, SESSION_MINUTES)
-    shape = 1 + 2.5 * x**2  # busier at the open and the close
     busy = rng.lognormal(0, 0.45)  # some days trade far more than others
-    vol: np.ndarray = np.round(busy * shape * rng.lognormal(8, 0.5, SESSION_MINUTES))
+    vol: np.ndarray = np.round(busy * _VOLUME_SHAPE * rng.lognormal(8, 0.5, SESSION_MINUTES))
     return vol
 
 

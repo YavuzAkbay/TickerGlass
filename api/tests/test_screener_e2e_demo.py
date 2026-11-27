@@ -21,7 +21,9 @@ from tickerglass_api.services.screener.alerts import parse_state
 from tickerglass_api.settings import Settings
 
 TRACKED = 30
-DEADLINE_S = 60.0
+#: A hang detector, not a speed budget: each run regenerates ~20 years of demo bars per symbol
+#: (growing daily), which takes well over a minute on a busy CI runner.
+DEADLINE_S = 240.0
 
 
 def wait_for(check: Callable[[], Any], what: str) -> Any:
