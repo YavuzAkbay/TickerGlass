@@ -7,6 +7,9 @@
  */
 import { financialMath as fm, type FundamentalsData } from '@tickerglass/indicators';
 import type { Chart } from '@tickerglass/engine';
+
+/** What the report reads of a chart: its symbol and closes (any symbol's bars will do). */
+export type PriceHistory = Pick<Chart, 'getSymbol' | 'rawStore' | 'symbolInfo'>;
 import { useProviderStore } from '../api/provider';
 import type { Fundamentals } from '../api/types';
 import { fetchEvents } from '../events/api';
@@ -63,7 +66,7 @@ const ratio = (a: number, b: number): number =>
   Number.isFinite(a) && Number.isFinite(b) && b !== 0 ? a / b : NaN;
 
 /** Close of the last bar at or before `t` in the chart's bars (NaN before they start). */
-function closeAt(chart: Chart, t: number): number {
+function closeAt(chart: PriceHistory, t: number): number {
   const s = chart.rawStore;
   if (!s.length || s.time[0]! > t) return NaN;
   let lo = 0;
@@ -147,7 +150,7 @@ function spread(values: number[]): Record<string, number | null> | null {
  * The tool's result for `chart`'s symbol. Throws a plain message when the provider has no
  * statements for it (crypto, FX, indices, or a provider without fundamentals).
  */
-export async function fundamentalsReport(chart: Chart): Promise<Record<string, unknown>> {
+export async function fundamentalsReport(chart: PriceHistory): Promise<Record<string, unknown>> {
   const symbol = chart.getSymbol();
   const res: Fundamentals = await fetchFundamentals(symbol);
   const events = useProviderStore.getState().capabilities.events.includes('splits')

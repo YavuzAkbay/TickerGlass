@@ -18,11 +18,12 @@ import {
   type Divergence,
   type Level,
 } from '@tickerglass/ai-context';
-import type { Chart, DrawingInput, DrawingStyle } from '@tickerglass/engine';
+import type { Chart, Drawing, DrawingInput, DrawingStyle } from '@tickerglass/engine';
 import type { InputValueMap } from '@tickerglass/indicators';
 import { bindToChart } from '../drawings/attach';
 import { commit, findDrawing } from '../drawings/actions';
 import { addIndicator, findIndicator, removeIndicators } from '../indicators/actions';
+import type { IndicatorState } from '../indicators/model';
 import { useIndicatorStore } from '../indicators/store';
 import { runInSession } from '../store/chart';
 import type { AiTier } from './api';
@@ -35,6 +36,9 @@ import {
   searchIndicators,
 } from './catalog';
 import { fundamentalsReport } from './fundamentals';
+import { FULL_SCHEMAS } from './fullSchemas';
+import { runFullTool } from './fullTools';
+import { fail, prune, result, type ToolResult } from './toolResult';
 
 /** Ollama function schema. */
 export interface ToolSchema {
@@ -52,16 +56,15 @@ export interface ToolCall {
 }
 
 /** What one tool did: the JSON the model reads and a line for the user. */
-export interface ToolResult {
-  content: string;
-  summary: string;
-  ok: boolean;
-}
+export type { ToolResult } from './toolResult';
 
-/** Indicators and drawings the AI added while answering one question (for Undo). */
+/** What the AI changed while answering one question (for Undo AI changes). */
 export interface AiChanges {
+  /** Indicators and drawings it added. */
   indicators: string[];
   drawings: string[];
+  /** Existing items as they were before it edited or removed them (Full tier). */
+  restore?: { drawings: Drawing[]; indicators: IndicatorState[] };
 }
 
 export interface ToolContext {
@@ -164,6 +167,8 @@ export function schemasFor(tier: AiTier, allowActions: boolean): ToolSchema[] {
     if (tier === 'basic') return t;
     if (t.function.name === 'add_indicator') return OPEN_ADD_INDICATOR;
     if (t.function.name === 'draw') return drawSchema(tier);
+    if (tier === 'full' && t.function.name === 'get_fundamentals')
+      return FULL_SCHEMAS.find((f) => f.function.name === 'get_fundamentals')!;
     return t;
   });
 }
@@ -216,15 +221,14 @@ function drawSchema(tier: AiTier): ToolSchema {
   };
 }
 const TONE = { bullish: '#34C38F', bearish: '#F2626B', neutral: '#9AA8FF' } as const;
-type Tone = keyof typeof TONE;
-const MAX_RESULT_CHARS = 4000;
+export type Tone = keyof typeof TONE;
 const MAX_FUNDAMENTALS_CHARS = 9000;
 const STUDY_WAIT_MS = 4000;
 
-const str = (v: unknown, fallback = ''): string =>
+export const str = (v: unknown, fallback = ''): string =>
   typeof v === 'string' ? v : v === undefined || v === null ? fallback : String(v);
-const num = (v: unknown): number => (typeof v === 'number' ? v : Number(str(v).trim()));
-const toneOf = (v: unknown): Tone => (str(v) in TONE ? (str(v) as Tone) : 'neutral');
+export const num = (v: unknown): number => (typeof v === 'number' ? v : Number(str(v).trim()));
+export const toneOf = (v: unknown): Tone => (str(v) in TONE ? (str(v) as Tone) : 'neutral');
 
 export const TOOL_SCHEMAS: ToolSchema[] = [
   {
@@ -414,6 +418,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  ...FULL_SCHEMAS.filter((t) => t.function.name !== 'get_fundamentals'),
 ];
 
 // ------------------------------------------------------------ helpers
@@ -426,7 +431,7 @@ const divergences = new Map<
 /** Drawings the AI made per chart (clear_ai_drawings). */
 const aiDrawings = new Map<string, Set<string>>();
 
-function fmtTime(chart: Chart): (t: number) => string {
+export function fmtTime(chart: Chart): (t: number) => string {
   const tz =
     chart.timezone === 'local'
       ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -436,7 +441,7 @@ function fmtTime(chart: Chart): (t: number) => string {
 
 const round = (v: number): number => Number(v.toPrecision(6));
 /** A price for people and the model: 2 decimals from 1 up, else 4 significant digits. */
-const px = (v: number): number =>
+export const px = (v: number): number =>
   Math.abs(v) >= 1 ? Number(v.toFixed(2)) : Number(v.toPrecision(4));
 
 /** Bar time for a model-supplied time: a date / date-time as in the brief, or unix seconds. */
@@ -481,7 +486,7 @@ async function waitForStudy(chart: Chart, id: string): Promise<boolean> {
   return false;
 }
 
-function lastValues(chart: Chart, id: string): Record<string, number | null> {
+export function lastValues(chart: Chart, id: string): Record<string, number | null> {
   const data = chart.getStudyData(id);
   const out: Record<string, number | null> = {};
   if (!data) return out;
@@ -572,30 +577,16 @@ function addDrawings(ctx: ToolContext, inputs: DrawingInput[], label: string): s
   return ids;
 }
 
-function lineStyle(tone: Tone): DrawingStyle {
+export function lineStyle(tone: Tone): DrawingStyle {
   return { lineColor: TONE[tone], lineWidth: 2, textColor: TONE[tone] };
 }
 
-function paneFor(ctx: ToolContext, pane: unknown): { paneId: string; name: string } | null {
+export function paneFor(ctx: ToolContext, pane: unknown): { paneId: string; name: string } | null {
   const p = str(pane, 'price');
   if (!p || p === 'price' || p === 'main') return { paneId: 'main', name: 'price' };
   const info = studyInfo(ctx.chart, p);
   return info ? { paneId: info.paneId, name: info.title } : null;
 }
-
-function result(
-  data: unknown,
-  summary: string,
-  ok = true,
-  maxChars = MAX_RESULT_CHARS,
-): ToolResult {
-  let content = JSON.stringify(data);
-  if (content.length > maxChars) content = `${content.slice(0, maxChars)}…`;
-  return { content, summary, ok };
-}
-
-const fail = (message: string, summary = message): ToolResult =>
-  result({ error: message }, summary, false);
 
 // ------------------------------------------------------------ tools
 
@@ -723,18 +714,6 @@ function drawTool(ctx: ToolContext, args: Record<string, unknown>) {
     },
     `Drew ${name}`,
   );
-}
-
-/** JSON without the nulls of figures the statements do not have. */
-function prune(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(prune);
-  if (v && typeof v === 'object')
-    return Object.fromEntries(
-      Object.entries(v)
-        .filter(([, x]) => x !== null && x !== undefined)
-        .map(([k, x]) => [k, prune(x)]),
-    );
-  return v;
 }
 
 async function getFundamentalsTool(ctx: ToolContext) {
@@ -1042,6 +1021,10 @@ export function removeAiDrawings(chartId: string, ids: readonly string[]): void 
 export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolResult> {
   const args = call.arguments ?? {};
   try {
+    if (ctx.tier === 'full') {
+      const full = await runFullTool(ctx, call.name, args);
+      if (full) return full;
+    }
     switch (call.name) {
       case 'list_indicators':
         return listIndicatorsTool(ctx);

@@ -10,6 +10,7 @@ import { findIndicator, removeIndicators } from '../indicators/actions';
 import { getActiveSession, runInSession } from '../store/chart';
 import { streamChat, type AiChatMessage, type AiModel, type AiStatus } from './api';
 import { briefBudget, briefFromChart, visibleFocus } from './context';
+import { restoreChanges } from './fullTools';
 import { chartImage } from './image';
 import {
   removeAiDrawings,
@@ -282,7 +283,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
       update(chartId, (c) => ({ ...c, contextKey: conv?.contextKey ?? null }));
   } finally {
     controllers.delete(chartId);
-    if (changes.indicators.length || changes.drawings.length) {
+    if (changes.indicators.length || changes.drawings.length || changes.restore) {
       runInSession(chartId, () => foldHistorySince(mark, `AI: ${question.slice(0, 40)}`));
       patch(() => ({ changes }));
     }
@@ -299,6 +300,7 @@ export function undoAiChanges(chartId: string, messageId: string): void {
     const live = changes.indicators.filter((id) => findIndicator(id));
     if (live.length) removeIndicators(live);
     removeAiDrawings(chartId, changes.drawings);
+    if (changes.restore) restoreChanges(changes.restore);
     foldHistorySince(mark, 'Undo AI changes');
   });
   useAiChat.getState().update(chartId, (c) => ({

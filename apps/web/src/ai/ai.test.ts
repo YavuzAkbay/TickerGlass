@@ -120,6 +120,13 @@ describe('schemasFor', () => {
   it('mirrors the server tiers', async () => {
     expect(await names('basic', true)).not.toContain('draw');
     expect(await names('standard', true)).not.toContain('set_chart');
+    const full = await names('full', true);
+    expect(full).toEqual(expect.arrayContaining(['set_chart', 'get_bars', 'get_news', 'draw']));
+    expect(full.filter((n) => n === 'get_fundamentals')).toHaveLength(1);
+    expect(await names('full', false)).not.toContain('set_chart');
+    const { schemasFor } = await import('./tools');
+    const fund = schemasFor('full', false).find((t) => t.function.name === 'get_fundamentals')!;
+    expect(Object.keys(fund.function.parameters.properties)).toContain('symbol');
   });
   it('sizes the brief for more tools', () => {
     expect(briefBudget(12288, true, 25)).toBeLessThan(briefBudget(12288, true));
