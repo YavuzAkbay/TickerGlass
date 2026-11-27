@@ -1066,6 +1066,9 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
           localAccounts: false,
         },
       });
+    // Ask AI is off in e2e (no model server): the app hides the panel, as on a fresh install.
+    if (url.pathname === '/api/ai/status')
+      return route.fulfill({ status: 200, json: { enabled: false } });
     if (!USER_DATA.test(url.pathname)) {
       server.unhandled.push(call);
       return route.fulfill({ status: 501, json: { detail: `e2e: unexpected API call ${call}` } });
