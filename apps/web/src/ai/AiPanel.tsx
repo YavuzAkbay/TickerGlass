@@ -263,8 +263,8 @@ export function AiPanel() {
       )}
       {status.reachable && !status.models.length && (
         <div className="ai-notice">
-          No chat models installed. On the Ollama machine run <code>ollama pull qwen2.5:7b</code>{' '}
-          (or a vision model such as <code>qwen2.5vl:7b</code>); it shows up here straight away.
+          No chat models installed. On the Ollama machine run <code>ollama pull qwen3.5:9b</code>{' '}
+          (7B or larger works best); it shows up here straight away.
         </div>
       )}
 
@@ -349,7 +349,7 @@ export function AiPanel() {
           model && (
             <div className="ai-faint ai-tools-hint">
               {model.name} can only talk about the chart; pick a model with tool support (e.g.
-              qwen2.5, qwen3, llama3.1) to let it draw.
+              qwen3.5:9b, gemma4:12b, qwen3.8:27b) to let it draw.
             </div>
           )
         )}

@@ -63,7 +63,7 @@ api:
     # BACKUP_PASSPHRASE: { secretKeyRef: { name: tickerglass-backup, key: passphrase } }
     # Ask AI about the chart (docs/ai.md): an Ollama the API pods can reach.
     # OLLAMA_URL: http://ollama.ollama.svc:11434
-    # AI_MODELS: qwen2.5:7b,qwen2.5vl:7b
+    # AI_MODELS: qwen3.5:9b,qwen3.8:27b
     # BACKUP_AT: '03:30'              # in BACKUP_TZ (default UTC)
   # Same shape as env, merged over it (use it for your own additions so `env` can stay default).
   extraEnv: {}

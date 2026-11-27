@@ -221,7 +221,7 @@ services:
       - pg-data:/var/lib/postgresql/data
 
   # Optional: `docker compose --profile ollama up`, then OLLAMA_URL=http://ollama:11434 in .env and
-  # `docker compose exec ollama ollama pull qwen2.5:7b`. CPU only as written; for an NVIDIA GPU add
+  # `docker compose exec ollama ollama pull qwen3.5:9b`. CPU only as written; for an NVIDIA GPU add
   # `deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }`.
   ollama:
     image: ollama/ollama:latest

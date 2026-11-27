@@ -29,24 +29,39 @@ above any of your questions to see exactly what was sent.
 
 ### 1. Run Ollama and pull a model
 
-Install Ollama on a machine with enough memory (a GPU helps a lot, but is not required), then pull
-a model:
+Install Ollama on a machine with enough memory (a GPU or Apple Silicon helps a lot, but is not
+required), then pull a model.
+
+Two rules:
+
+1. **7 billion parameters or more; 9B and up is better.** Smaller models misread numbers and
+   usually ignore the chart tools.
+2. **Tool calling** (Ollama's _tools_ capability) is needed for the AI to add indicators and draw.
+   Settings → AI marks such models **chart tools**, and vision models **reads images**.
+
+Recommended as of November 2026 (all with tool calling, vision and reasoning; Ollama downloads are 4-bit, the Unsloth rows
+show their quant in the tag; allow 1–3 GB more for the context window; on Apple Silicon unified memory counts):
+
+| Free memory (RAM or VRAM) | Model                                                                       | Download | Notes                                                                    |
+| ------------------------- | --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| 8 GB                      | `qwen3.5:9b`                                                                | 6.6 GB   | Smallest model we recommend. Tools, vision, reasoning.                   |
+| 8 GB                      | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-IQ2_XXS`            | 7.2 GB   | A 27B model at 2-bit: more knowledge, but 2-bit costs some precision.    |
+| 12–16 GB                  | `gemma4:12b`                                                                | 7.7 GB   | Google Gemma 4. Tools and vision, leaves room for a 16K context.         |
+| 12–16 GB                  | Unsloth Gemma 4 26B-A4B, `hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-IQ3_XXS` | 11.4 GB  | Mixture of experts: 26B of knowledge, only 4B active per token, so fast. |
+| 16–24 GB                  | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`            | 13.1 GB  | The same 27B at 3-bit, in about 13 GB.                                   |
+| 24 GB +                   | `qwen3.8:27b`                                                               | 18 GB    | Best all-round pick: analysis, tool calling, chart pictures, reasoning.  |
+| 24 GB +                   | `gemma4:26b`                                                                | 16 GB    | Faster alternative (mixture of experts).                                 |
+| 32 GB +                   | `qwen3.6:35b`                                                               | 23 GB    | Larger mixture-of-experts model when you have the memory.                |
 
 ```sh
-ollama pull qwen2.5:7b        # text: good with numbers, about 5 GB
-ollama pull qwen2.5vl:7b      # can also read the chart picture, about 6 GB
+ollama pull qwen3.5:9b
+# Unsloth Dynamic quants straight from Hugging Face:
+ollama pull hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL
 ```
 
-| Model          | Reads images | Memory | Notes                                               |
-| -------------- | :----------: | ------ | --------------------------------------------------- |
-| `qwen2.5:7b`   |              | ~5 GB  | Good default for text-only answers.                 |
-| `llama3.1:8b`  |              | ~5 GB  | Solid alternative.                                  |
-| `qwen2.5vl:7b` |      ✅      | ~6 GB  | Reads the chart picture as well as the data.        |
-| `gemma3:12b`   |      ✅      | ~8 GB  | Better answers, slower.                             |
-| `qwen2.5:14b`  |              | ~9 GB  | Noticeably better reasoning if you have the memory. |
-
-Models under about 3 billion parameters run fast but often misread the numbers. Use them only to
-try the feature.
+[Unsloth](https://unsloth.ai) Dynamic quants keep the important layers at higher precision, which
+is how a 27B model runs on 8–16 GB. After pulling one from Hugging Face, check it shows the **chart
+tools** tag in Settings → AI (Ollama reads the capability from the model's chat template).
 
 ### 2. Connect it in the app
 
@@ -84,7 +99,7 @@ Ollama in the same stack instead:
 
 ```sh
 docker compose --profile ollama up -d
-docker compose exec ollama ollama pull qwen2.5:7b
+docker compose exec ollama ollama pull qwen3.5:9b
 # .env: OLLAMA_URL=http://ollama:11434
 ```
 
@@ -102,7 +117,7 @@ which needs more memory on the Ollama machine.
 | ------------------ | --------- | ------------------------------------------------------------------------------------ |
 | `OLLAMA_URL`       | unset     | Ollama base URL; wins over Settings → AI. Unset: the in-app setting decides.         |
 | `AI_PROVIDER`      | unset     | `ollama` or `demo`. Unset: `ollama` when `OLLAMA_URL` is set.                        |
-| `AI_MODELS`        | all       | Comma list of the models users may pick, e.g. `qwen2.5:7b,qwen2.5vl:7b`.             |
+| `AI_MODELS`        | all       | Comma list of the models users may pick, e.g. `qwen3.5:9b,qwen3.8:27b`.              |
 | `AI_DEFAULT_MODEL` | first one | Preselected model.                                                                   |
 | `AI_NUM_CTX`       | `8192`    | Context window sent to Ollama. The chart brief is sized to fit it.                   |
 | `AI_TIMEOUT_S`     | `180`     | Seconds to wait for the answer to start (loading a model counts) and between chunks. |
@@ -136,7 +151,7 @@ sends this value.
 ## Let the AI work on the chart
 
 Models with tool support (Settings → AI and the model picker mark them **chart tools**; e.g.
-`qwen2.5`, `qwen3`, `llama3.1`) can change the chart while they answer. Ask for example:
+`qwen3.5`, `qwen3.8`, `gemma4`) can change the chart while they answer. Ask for example:
 
 - "Find bullish and bearish RSI divergences and draw them."
 - "Add a 20-day Bollinger Band and tell me if price is stretched."
@@ -163,8 +178,9 @@ line under your question ("Added RSI 14 · Found 3 divergences"), and everything
 is a single undo step; **Undo AI changes** under the answer removes it too. Untick **Let AI add
 indicators and draw on the chart** in the panel to keep the model to words only.
 
-Very small models (under about 3 billion parameters) usually ignore the tools and only talk; use a
-7B model or larger for this.
+Small models usually ignore the tools and only talk: in our tests `qwen2.5:0.5b` wrote Python code
+instead of calling them, while a 26B model added RSI, found and drew the divergences and explained
+them. Use 7B or larger, ideally 9B+.
 
 ## Good to know
 

@@ -216,8 +216,9 @@ export function AiTab() {
           {models.length === 0 ? (
             <p className="dlg-note">
               No chat models installed. On the Ollama machine run{' '}
-              <code>ollama pull qwen2.5:7b</code> (or <code>qwen2.5vl:7b</code> to also read chart
-              pictures), then reload.
+              <code>ollama pull qwen3.5:9b</code> (or <code>qwen3.8:27b</code> with 24 GB or more;
+              both read chart pictures and can draw), then reload. Use 7B or larger: smaller models
+              misread numbers.
             </p>
           ) : (
             <>

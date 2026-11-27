@@ -88,7 +88,7 @@ TickerGlass gives you those features as free, open-source software that you run 
 - [Alerts](docs/alerts.md) on price, indicators, drawings or scripts, evaluated on the server around the clock
 - [Strategy tester](docs/backtest.md) for entry and exit rules, with stops and targets, commission, slippage and an equity curve
 - [Portfolio tracker](docs/portfolio.md) with holdings, time-weighted performance against a benchmark, dividends and a trade journal
-- [Ask AI about the chart](docs/ai.md): questions about the visible bars or a range you drag, answered by a local model through Ollama
+- [Ask AI about the chart](#ask-ai-about-your-charts): a local model (Ollama) that analyses the chart, finds divergences and draws on it
 - Broker CSV import for IBKR, Schwab, DEGIRO, Trading 212 and generic files
 
 **🏠 Self-hosting**
@@ -208,6 +208,63 @@ MARKET_PROVIDER=demo
 
 Demo prices are synthetic and are not real quotes.
 
+## Ask AI about your charts
+
+Ask a language model about the chart you are looking at, or about a range you drag across, and
+let it work on the chart for you: _"Find bullish and bearish RSI divergences and draw them"_ adds
+RSI, finds the divergences, draws them on price and on RSI, and explains them with dates and
+values. The model runs on **your own machine through [Ollama](https://ollama.com)**; charts and
+questions never go to a cloud service.
+
+- **Connect in the app:** as an admin open **Settings → AI**. It finds a local Ollama by itself,
+  lists the installed models, and lets you choose which ones users can pick. No `.env` editing.
+- **What the model gets:** a compact brief of the bars, statistics computed exactly (trend, swings,
+  ATR, volume, levels), indicator values and your drawings, plus a picture of the chart for models
+  that read images. It is instructed to work like a technical analyst and to quote only the data.
+- **What it can do on the chart** (models with tool calling): add or remove indicators, find
+  swings and divergences (computed by TickerGlass, not guessed), draw divergences, trend lines and
+  support/resistance. Each answer's changes are one undo step.
+
+### Which model?
+
+Two things matter:
+
+1. **Size: use 7B parameters or more; 9B and up is better.** Smaller models misread numbers and
+   usually ignore the chart tools.
+2. **Tool calling.** Only models with Ollama's _tools_ capability can add indicators and draw. In
+   Settings → AI such models carry a **chart tools** tag (and **reads images** for vision). Models
+   without it can still answer in words.
+
+Recommended as of November 2026, all with tool calling, vision and reasoning. Ollama downloads are
+4-bit, the Unsloth rows show their quant in the tag; allow 1–3 GB more for the context window. On Apple Silicon the unified memory counts.
+
+| Free memory (RAM or VRAM) | Model                                                                       | Download | Notes                                                                    |
+| ------------------------- | --------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| 8 GB                      | `qwen3.5:9b`                                                                | 6.6 GB   | Smallest model we recommend. Tools, vision, reasoning.                   |
+| 8 GB                      | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-IQ2_XXS`            | 7.2 GB   | A 27B model at 2-bit: more knowledge, but 2-bit costs some precision.    |
+| 12–16 GB                  | `gemma4:12b`                                                                | 7.7 GB   | Google Gemma 4. Tools and vision, leaves room for a 16K context.         |
+| 12–16 GB                  | Unsloth Gemma 4 26B-A4B, `hf.co/unsloth/gemma-4-26B-A4B-it-GGUF:UD-IQ3_XXS` | 11.4 GB  | Mixture of experts: 26B of knowledge, only 4B active per token, so fast. |
+| 16–24 GB                  | Unsloth Qwen3.8 27B, `hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`            | 13.1 GB  | The same 27B at 3-bit, in about 13 GB.                                   |
+| 24 GB +                   | `qwen3.8:27b`                                                               | 18 GB    | Best all-round pick: analysis, tool calling, chart pictures, reasoning.  |
+| 24 GB +                   | `gemma4:26b`                                                                | 16 GB    | Faster alternative (mixture of experts).                                 |
+| 32 GB +                   | `qwen3.6:35b`                                                               | 23 GB    | Larger mixture-of-experts model when you have the memory.                |
+
+Pull a model on the Ollama machine, then press **Reload** in Settings → AI:
+
+```sh
+ollama pull qwen3.5:9b
+# Unsloth Dynamic quants straight from Hugging Face:
+ollama pull hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL
+```
+
+[Unsloth](https://unsloth.ai) Dynamic quants keep the important layers at higher precision, so a
+big model still works well on a small machine; that is the way to run a 27B model on 8–16 GB. Check
+that the model shows the **chart tools** tag after pulling. Reasoning models (Qwen 3.x, Gemma 4)
+work best with a **16K** context window, set in Settings → AI.
+
+Everything else, from Docker networking to every setting, is in the
+[Ask AI guide](docs/ai.md).
+
 ## Alert notifications
 
 Alerts are evaluated by the `alerts` service and keep running while the browser is closed. In-app, sound and browser notifications need no external service. Telegram, email, ntfy, Gotify, Apprise and webhooks are optional and need credentials or endpoints that you put in `.env`. Keep that file private and don't commit secrets. Setup details are in [the alerts guide](docs/alerts.md#4-notification-delivery).
@@ -241,7 +298,8 @@ The example file documents the database, auth and alert settings. Don't share `.
 | [Alerts](docs/alerts.md)                   | [Screener](docs/screener.md)               |
 | [Watchlists](docs/watchlists.md)           | [Strategy tester](docs/backtest.md)        |
 | [Portfolio](docs/portfolio.md)             | [Caching](docs/caching.md)                 |
-| [Metrics](docs/metrics.md)                 | [Known limitations](docs/LIMITATIONS.md)   |
+| [Metrics](docs/metrics.md)                 | [Ask AI (local LLM)](docs/ai.md)           |
+| [Known limitations](docs/LIMITATIONS.md)   |                                            |
 
 ## Development
 
@@ -284,7 +342,7 @@ If TickerGlass is useful to you, a ⭐ on GitHub helps other people find it.
 
 ## Privacy
 
-Self-hosting lets you control where the application server and database run. TickerGlass includes no analytics or telemetry. Browser preferences and some chart data are also kept in that browser's local storage. With the default Yahoo provider, your server contacts Yahoo Finance for market data. If you configure notification integrations, alert messages are sent to the services you select. Review the code and configuration for your deployment before making privacy claims about a particular setup.
+Self-hosting lets you control where the application server and database run. TickerGlass includes no analytics or telemetry. Browser preferences and some chart data are also kept in that browser's local storage. With the default Yahoo provider, your server contacts Yahoo Finance for market data. If you configure notification integrations, alert messages are sent to the services you select. Ask AI sends chart data and questions only to the Ollama server you connect. Review the code and configuration for your deployment before making privacy claims about a particular setup.
 
 ## Disclaimer
 
