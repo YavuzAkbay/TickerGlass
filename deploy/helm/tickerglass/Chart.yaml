@@ -4,8 +4,8 @@ description: Self-hosted charting, alerts, screener and portfolio (API, web and 
 type: application
 # Bumped together with the repository VERSION file by the release process (deploy/check.py
 # fails CI when they differ).
-version: 0.2.0
-appVersion: '0.2.0'
+version: 0.3.0
+appVersion: '0.3.0'
 kubeVersion: '>=1.25.0-0'
 home: https://github.com/YavuzAkbay/TickerGlass
 sources:

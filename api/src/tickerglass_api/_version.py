@@ -3,4 +3,4 @@
 Keep in sync with the root VERSION file when cutting a release by hand.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

@@ -91,7 +91,7 @@ Open <http://localhost:8080>. Notes:
   code and your restart policy brings it back. `docker stop` shuts everything down
   cleanly.
 - **Update.** `docker pull ghcr.io/yavuzakbay/tickerglass:latest` and recreate the
-  container (or pin a version tag such as `0.2.0`; image tags have no `v` prefix).
+  container (or pin a version tag such as `0.3.0`; image tags have no `v` prefix).
 
 #### Unraid
 
@@ -217,7 +217,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Pin a version by setting `TICKERGLASS_TAG` in `.env` (e.g. `v0.2.0`); the default
+Pin a version by setting `TICKERGLASS_TAG` in `.env` (e.g. `v0.3.0`); the default
 `latest` tracks the newest release. When building from source, `git pull` and
 `docker compose up -d --build`. User data survives updates (it is in the volume);
 the running version shows in **Settings → Server**, next to a manual

@@ -2,7 +2,7 @@ manifestVersion: 1
 id: tickerglass-store-tickerglass
 category: finance
 name: TickerGlass
-version: '0.2.0'
+version: '0.3.0'
 icon: https://raw.githubusercontent.com/YavuzAkbay/TickerGlass/main/apps/web/public/icons/icon-512.png
 tagline: Self-hosted charts, alerts, screener and portfolio
 description: >-
