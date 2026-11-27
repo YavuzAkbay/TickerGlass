@@ -127,9 +127,10 @@ describe('alerts on user scripts', () => {
     await h!.service.whenIdle();
     await tick(104);
     await tick(107, BAR_T + 60);
-    await until(() => h!.api.fires.length >= 4, 'fires');
     const xs = (id: string) => h!.api.fires.filter((f) => f.id === id).map((f) => f.body.values.x);
-    expect(xs('u').length).toBeGreaterThan(0);
+    // Both alerts fire on the history value and on each live bar (3 each). Wait for each one's
+    // own fires: a total count can be reached while one alert is still a bar behind.
+    await until(() => xs('u').length >= 3 && xs('b').length >= 3, 'fires');
     expect(xs('u')).toEqual(xs('b'));
   });
 
