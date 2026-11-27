@@ -141,4 +141,67 @@ describe('PriceScale', () => {
   it('linear tick sets carry no step decimals', () => {
     expect(scale().tickSet().decimals).toBeNull();
   });
+
+  it('keeps the price window fixed when the base changes with auto-scale off', () => {
+    for (const mode of ['percent', 'indexed'] as const) {
+      const ps = new PriceScale();
+      ps.height = 500;
+      ps.mode = mode;
+      ps.setBase(100);
+      ps.setAutoRange(100, 200);
+      ps.scaleBy(0.8); // user zoom -> manual
+      expect(ps.autoScale).toBe(false);
+      const y = ps.priceToY(150);
+      const lo = ps.yToPrice(500);
+      ps.setBase(125); // horizontal pan changed the first visible close
+      expect(ps.base).toBe(125);
+      expect(ps.priceToY(150)).toBeCloseTo(y, 6);
+      expect(ps.yToPrice(500)).toBeCloseTo(lo, 6);
+    }
+  });
+
+  it('adopts the base as-is while auto-scale is on, and after resetBase', () => {
+    const ps = new PriceScale();
+    ps.mode = 'percent';
+    ps.setBase(100);
+    ps.setAutoRange(100, 200);
+    ps.setBase(125);
+    expect(ps.base).toBe(125);
+    ps.scaleBy(1);
+    const [min, max] = [ps.min, ps.max];
+    ps.resetBase();
+    ps.setBase(50);
+    expect([ps.min, ps.max]).toEqual([min, max]);
+  });
+
+  it('scaleBy stays finite and ordered under repeated extreme zoom', () => {
+    for (const mode of ['linear', 'log', 'percent', 'indexed'] as const) {
+      for (const factor of [1e-3, 1e3]) {
+        const ps = new PriceScale();
+        ps.height = 500;
+        ps.mode = mode;
+        ps.setBase(100);
+        ps.setAutoRange(100, 200);
+        for (let i = 0; i < 400; i++) ps.scaleBy(factor);
+        expect(Number.isFinite(ps.min)).toBe(true);
+        expect(Number.isFinite(ps.max)).toBe(true);
+        expect(ps.max).toBeGreaterThan(ps.min);
+        expect(Number.isFinite(ps.yToPrice(0))).toBe(true);
+        expect(Number.isFinite(ps.yToPrice(500))).toBe(true);
+        if (mode === 'log') expect(ps.yToPrice(0)).toBeGreaterThan(0);
+        // Still recoverable: zooming back changes the span.
+        const span = ps.max - ps.min;
+        ps.scaleBy(factor < 1 ? 2 : 0.5);
+        expect(ps.max - ps.min).not.toBe(span);
+      }
+    }
+  });
+
+  it('scaleBy ignores invalid factors', () => {
+    const ps = scale();
+    ps.scaleBy(NaN);
+    ps.scaleBy(-2);
+    ps.scaleBy(0);
+    expect([ps.min, ps.max]).toEqual([100, 200]);
+  });
 });

@@ -9,6 +9,8 @@ export interface PriceTick {
 }
 
 const MIN_LOG_PRICE = 1e-12;
+/** Largest |log10(price)| the log scale may reach; headroom keeps 10 ** v finite past the margins. */
+const MAX_LOG_EXP = 150;
 
 /**
  * Vertical scale. Internally works in "internal" coordinates: price for linear,
@@ -29,8 +31,40 @@ export class PriceScale {
   reserveBottomPx = 0;
   /** Reference price for percent/indexed modes (first visible close). */
   base = 1;
+  /** False until `setBase` ran once (or after a restore), so the first base is adopted, not rebased onto. */
+  private baseKnown = false;
   min = 0;
   max = 1;
+
+  /**
+   * Update the percent/indexed reference price. With auto-scale off the stored
+   * min/max are in base-relative units, so they are re-expressed against the new
+   * base: the PRICE window (and thus what the user dragged/zoomed to) stays put
+   * while panning horizontally changes the first visible close. Axis labels stay
+   * relative to the new base. Linear/log are base-independent.
+   */
+  setBase(base: number): void {
+    if (!(base > 0) || !Number.isFinite(base)) return;
+    if (base === this.base) {
+      this.baseKnown = true;
+      return;
+    }
+    if (this.baseKnown && !this.autoScale && (this.mode === 'percent' || this.mode === 'indexed')) {
+      const lo = this.fromInternal(this.min);
+      const hi = this.fromInternal(this.max);
+      this.base = base;
+      this.min = this.toInternal(lo);
+      this.max = this.toInternal(hi);
+    } else {
+      this.base = base;
+    }
+    this.baseKnown = true;
+  }
+
+  /** Forget the current base (e.g. after restoring saved min/max) so the next one is adopted as-is. */
+  resetBase(): void {
+    this.baseKnown = false;
+  }
 
   toInternal(price: number): number {
     switch (this.mode) {
@@ -134,10 +168,31 @@ export class PriceScale {
   /** Stretch around the centre; factor > 1 expands the visible range. */
   scaleBy(factor: number): void {
     this.autoScale = false;
+    if (!(factor > 0) || !Number.isFinite(factor)) return;
     const mid = (this.min + this.max) / 2;
-    const half = ((this.max - this.min) / 2) * factor;
-    this.min = mid - half;
-    this.max = mid + half;
+    const span = this.max - this.min;
+    let next = span * factor;
+    if (this.mode === 'log') {
+      // Internal values are log10(price): keep 10 ** v finite (and non-zero).
+      next = Math.min(Math.max(next, factor < 1 ? Math.min(span, 1e-9) : 1e-9), 2 * MAX_LOG_EXP);
+    } else {
+      const ref = Math.max(Math.abs(mid), 1e-9);
+      const lo = 1e-9 * ref;
+      const hi = 1e6 * Math.max(ref, 1);
+      // Never fight the current span: only clamp in the direction of travel.
+      if (factor < 1) next = Math.max(next, Math.min(lo, span));
+      else next = Math.min(next, Math.max(hi, span));
+    }
+    let lo = mid - next / 2;
+    let hi = mid + next / 2;
+    if (this.mode === 'log') {
+      if (lo < -MAX_LOG_EXP) [lo, hi] = [-MAX_LOG_EXP, -MAX_LOG_EXP + next];
+      if (hi > MAX_LOG_EXP) [lo, hi] = [MAX_LOG_EXP - next, MAX_LOG_EXP];
+    }
+    if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) {
+      this.min = lo;
+      this.max = hi;
+    }
   }
 
   panBy(dyPx: number): void {

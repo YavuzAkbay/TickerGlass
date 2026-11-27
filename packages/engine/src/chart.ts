@@ -1616,6 +1616,7 @@ export class Chart implements StudyApi, DrawingApi {
       ) {
         pane.priceScale.min = ps.priceScale.min;
         pane.priceScale.max = ps.priceScale.max;
+        pane.priceScale.resetBase();
       }
     }
     if (state.chartType) this.setChartType(state.chartType);
@@ -2465,7 +2466,7 @@ export class Chart implements StudyApi, DrawingApi {
       const ps = pane.priceScale;
       // Auto-scale + percent base.
       const base = pane.series[0]?.baseValue(from);
-      if (base) ps.base = base;
+      if (base) ps.setBase(base);
       // Keep candles clear of the event strip; its layout depends on x only.
       ps.reserveBottomPx = pane.id === 'main' ? this.stripReserve(pane.height) : 0;
       if (ps.autoScale && from <= to) {
