@@ -38,7 +38,7 @@ export function TxFormDialog({ portfolio, editing, initial, onClose }: Props) {
 
   const submit = async () => {
     if (busy) return;
-    const res = validateTxForm(form);
+    const res = validateTxForm(form, editing);
     if (!res.ok) {
       setErrors(res.errors);
       return;

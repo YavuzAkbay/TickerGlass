@@ -196,6 +196,47 @@ describe('form <-> transaction', () => {
     expect(r.tx).not.toHaveProperty('externalId');
     expect(r.tx.time).toBe(t.time);
   });
+  describe('editing keeps the stored time', () => {
+    const stored = (time: string): Transaction => ({
+      id: 'a',
+      portfolioId: 'p',
+      kind: 'buy',
+      time,
+      symbol: 'MSFT',
+      quantity: 3,
+      price: 410.5,
+      amount: null,
+      fee: 0,
+      currency: 'USD',
+      note: null,
+      source: 'import:ibkr',
+      externalId: 'x1',
+      importBatch: 'b1',
+      seq: 4,
+      revision: 2,
+      createdAt: '',
+      updatedAt: '',
+    });
+    const time = (r: ReturnType<typeof validateTxForm>) => (r.ok ? r.tx.time : null);
+
+    it('an untouched time field keeps seconds and milliseconds', () => {
+      const t = stored(new Date(2026, 0, 5, 10, 0, 50, 123).toISOString());
+      const f = { ...formFromTransaction(t), note: 'edited' };
+      expect(time(validateTxForm(f, t))).toBe(t.time);
+      // Without the stored row the minute-precision value is all there is.
+      expect(time(validateTxForm(f))).toBe(new Date(2026, 0, 5, 10, 0).toISOString());
+    });
+    it('a changed time field wins', () => {
+      const t = stored(new Date(2026, 0, 5, 10, 0, 50).toISOString());
+      const f = { ...formFromTransaction(t), time: '2026-01-05T10:01' };
+      expect(time(validateTxForm(f, t))).toBe(new Date(2026, 0, 5, 10, 1).toISOString());
+    });
+    it('a cleared time field is still an error', () => {
+      const t = stored(new Date(2026, 0, 5, 10, 0, 50).toISOString());
+      const r = validateTxForm({ ...formFromTransaction(t), time: '' }, t);
+      expect(r.ok).toBe(false);
+    });
+  });
   it('formats local datetime inputs', () => {
     expect(toLocalInput(new Date(2026, 8, 3, 7, 5))).toBe('2026-09-03T07:05');
   });

@@ -249,12 +249,16 @@ export type TxFormResult = { ok: true; tx: TxIn } | { ok: false; errors: TxFormE
  * Validate per kind and build the API body. Server rules: qty > 0, price >= 0, amount > 0,
  * fee >= 0 (only on buy / sell / dividend / interest; withholding <= gross). `externalId` is never
  * sent: a PUT without it keeps the stored one.
+ * When editing, pass the stored row: a `time` field the user left as `formFromTransaction` produced
+ * it keeps the stored instant (the input has minute precision, so re-parsing it would drop the
+ * seconds and could reorder same-minute trades, changing FIFO matching).
  */
-export function validateTxForm(form: TxFormState): TxFormResult {
+export function validateTxForm(form: TxFormState, original?: Transaction | null): TxFormResult {
   const errors: TxFormErrors = {};
   const rules = KIND_RULES[form.kind];
 
-  const d = form.time ? new Date(form.time) : null;
+  const kept = original && form.time && form.time === formFromTransaction(original).time;
+  const d = form.time ? new Date(kept ? original.time : form.time) : null;
   if (!d || Number.isNaN(d.getTime())) errors.time = 'Pick a date and time';
 
   const symbol = form.symbol.trim().toUpperCase();
