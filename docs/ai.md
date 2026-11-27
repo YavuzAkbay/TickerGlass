@@ -183,8 +183,10 @@ Levels, swings and divergences are **computed by TickerGlass**, not guessed by t
   support and resistance, recency and distance from the price, over the price range of the last
   250 bars. A level is drawn from its first touch.
 - **Divergences:** the latest swing (even one still forming) is compared with the earliest swing
-  5–60 bars before it that still makes a clean line to it, against RSI 14 or MACD computed
-  directly (the indicator is added only when a divergence is drawn). Most recent first.
+  5–60 bars before it that still makes a clean line to it, against RSI 14 or the MACD histogram
+  (the MACD line on request) computed directly; the indicator is added only when a divergence is
+  drawn. Two swings count only if they belong to one move (no lows on either side of a whole
+  rally), and each swing starts at most one divergence. Most recent first.
 
 The model decides what to look for, draws what was found and explains it. Each action shows as a
 line under your question ("Added RSI 14 · Found 3 divergences"), and everything one answer changed

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { apiMessages, OMITTED_CONTEXT, resolveModel } from './chat';
-import { briefBudget } from './context';
+import { briefBudget, lastBarLive } from './context';
 import { parseBlocks } from './Markdown';
 import { parseAiPrefs, type UiMessage } from './store';
 
@@ -184,5 +184,18 @@ describe('parseBarTime', () => {
     expect(parseBarTime(chart, '2026-07-01')).toBe(t0); // before the data: first bar
     expect(parseBarTime(chart, 'not a date')).toBeNull();
     expect(parseBarTime(chart, '')).toBeNull();
+  });
+});
+
+describe('lastBarLive', () => {
+  const day = Date.UTC(2026, 10, 27, 5) / 1000;
+  it('is true until the bar interval has passed', () => {
+    expect(lastBarLive('1D', day, day + 3600)).toBe(true);
+    expect(lastBarLive('1D', day, day + 86_400)).toBe(false);
+    expect(lastBarLive('5m', day, day + 299)).toBe(true);
+  });
+  it('is false for a bad interval or no bars', () => {
+    expect(lastBarLive('nope', day, day)).toBe(false);
+    expect(lastBarLive('1D', 0, 10)).toBe(false);
   });
 });

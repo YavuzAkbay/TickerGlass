@@ -117,3 +117,46 @@ describe('unconfirmed and wide divergences', () => {
     expect(d!.price.map((p) => p.index)).toEqual([8, 30]); // not 18 -> 30
   });
 });
+
+describe('findDivergences across one move only', () => {
+  /** Straight segments through the given points, `step` bars each; high/low ±1 around it. */
+  function wave(points: number[], step = 6): BriefBars {
+    const v: number[] = [];
+    for (let p = 1; p < points.length; p++)
+      for (let i = 0; i < step; i++)
+        v.push(points[p - 1]! + ((points[p]! - points[p - 1]!) * i) / step);
+    v.push(points.at(-1)!, points.at(-1)! + 2, points.at(-1)! + 4, points.at(-1)! + 6);
+    return {
+      length: v.length,
+      time: v.map((_, i) => 1_700_000_000 + i * DAY),
+      open: v,
+      high: v.map((x) => x + 1),
+      low: v.map((x) => x - 1),
+      close: v,
+      volume: v.map(() => 0),
+    };
+  }
+  /** Oscillator that is higher at every later low: a regular bullish divergence at any pair. */
+  const rising = (n: number) => Array.from({ length: n }, (_, i) => i);
+
+  it('pairs two lows of one decline', () => {
+    const b = wave([60, 50, 56, 46]);
+    const found = findDivergences(b, rising(b.length), { kinds: ['regular'] });
+    expect(found.map((d) => [d.price[0].value, d.price[1].value])).toEqual([[49, 45]]);
+  });
+
+  it('does not pair lows on either side of a whole rally', () => {
+    const b = wave([60, 50, 120, 46]);
+    expect(findDivergences(b, rising(b.length), { kinds: ['regular'] })).toEqual([]);
+    expect(
+      findDivergences(b, rising(b.length), { kinds: ['regular'], maxExcursion: 100 }),
+    ).toHaveLength(1);
+  });
+
+  it('draws one divergence per starting swing', () => {
+    const b = wave([60, 50, 56, 48, 54, 46]);
+    const found = findDivergences(b, rising(b.length), { kinds: ['regular'] });
+    const starts = found.map((d) => d.price[0].index);
+    expect(new Set(starts).size).toBe(starts.length);
+  });
+});

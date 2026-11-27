@@ -50,3 +50,18 @@ export function macdLine(close: ArrayLike<number>, fast = 12, slow = 26): Float6
   for (let i = slow - 1; i < close.length; i++) out[i] = f[i]! - s[i]!;
   return out;
 }
+
+/** MACD histogram (MACD line − its signal EMA), the usual series for MACD divergences. */
+export function macdHistogram(
+  close: ArrayLike<number>,
+  fast = 12,
+  slow = 26,
+  signal = 9,
+): Float64Array {
+  const line = macdLine(close, fast, slow);
+  const sig = ema(line, signal);
+  const out = new Float64Array(close.length).fill(NaN);
+  for (let i = 0; i < close.length; i++)
+    if (Number.isFinite(line[i]!) && Number.isFinite(sig[i]!)) out[i] = line[i]! - sig[i]!;
+  return out;
+}

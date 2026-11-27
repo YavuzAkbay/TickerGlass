@@ -12,7 +12,7 @@ export {
 } from './divergence';
 export { isIntraday, timeFormatter, type TimeFormat } from './format';
 export { findLevels, type Level, type LevelOptions, type LevelTouch } from './levels';
-export { macdLine, rsi } from './oscillators';
+export { macdHistogram, macdLine, rsi } from './oscillators';
 export { focusStats, rangeIndexes } from './stats';
 export type {
   BriefBars,

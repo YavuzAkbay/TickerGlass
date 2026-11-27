@@ -8,6 +8,7 @@ import {
   findLevels,
   findSwings,
   isIntraday,
+  macdHistogram,
   macdLine,
   rangeIndexes,
   rsi,
@@ -59,13 +60,20 @@ export interface ToolContext {
   changes: AiChanges;
 }
 
-const OSCILLATORS: Record<string, { output: string; inputs?: Record<string, number> }> = {
-  rsi: { output: 'rsi' },
-  macd: { output: 'macd' },
-  stochastic: { output: 'k' },
-  cci: { output: 'cci' },
-  mfi: { output: 'mf' },
-  obv: { output: 'obv' },
+/** Divergence sources: indicator type, the plotted output searched and drawn on, and how many
+ * bars its extreme may sit from the price swing. MACD means its histogram, as most analysts read
+ * MACD divergences (it turns before the line); `macd_line` is the MACD line itself. */
+const OSCILLATORS: Record<
+  string,
+  { type: string; output: string; tolerance?: number; inputs?: Record<string, number> }
+> = {
+  rsi: { type: 'rsi', output: 'rsi' },
+  macd: { type: 'macd', output: 'hist', tolerance: 5 },
+  macd_line: { type: 'macd', output: 'macd' },
+  stochastic: { type: 'stochastic', output: 'k' },
+  cci: { type: 'cci', output: 'cci' },
+  mfi: { type: 'mfi', output: 'mf' },
+  obv: { type: 'obv', output: 'obv' },
 };
 const ADDABLE = [
   'rsi',
@@ -151,7 +159,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: 'find_divergences',
       description:
-        'Find regular and hidden, bullish and bearish divergences between price and an oscillator in the focus range, most recent first. Read-only: does not change the chart. Returns ids for draw_divergence.',
+        'Find regular and hidden, bullish and bearish divergences between price and an oscillator in the focus range, most recent first. "macd" uses the MACD histogram (the usual choice); "macd_line" the MACD line. Read-only: does not change the chart. Returns ids for draw_divergence.',
       parameters: {
         type: 'object',
         properties: {
@@ -524,7 +532,7 @@ function oscillatorValues(
   const spec = OSCILLATORS[osc]!;
   const s = ctx.chart.store;
   const onChart = runInSession(ctx.chartId, () =>
-    useIndicatorStore.getState().instances.find((i) => i.type === osc),
+    useIndicatorStore.getState().instances.find((i) => i.type === spec.type),
   );
   if (onChart) {
     const data = ctx.chart.getStudyData(onChart.id);
@@ -533,12 +541,16 @@ function oscillatorValues(
       return {
         values: values.subarray(0, data.length),
         studyId: onChart.id,
-        title: studyInfo(ctx.chart, onChart.id)?.title ?? osc.toUpperCase(),
+        title:
+          (studyInfo(ctx.chart, onChart.id)?.title ?? osc.toUpperCase()) +
+          (spec.output === 'hist' ? ' histogram' : ''),
       };
   }
   const close = s.close.subarray(0, s.length);
   if (osc === 'rsi') return { values: rsi(close, 14), studyId: null, title: 'RSI 14' };
-  if (osc === 'macd') return { values: macdLine(close), studyId: null, title: 'MACD 12 26' };
+  if (osc === 'macd')
+    return { values: macdHistogram(close), studyId: null, title: 'MACD 12 26 9 histogram' };
+  if (osc === 'macd_line') return { values: macdLine(close), studyId: null, title: 'MACD 12 26' };
   return null;
 }
 
@@ -548,7 +560,8 @@ async function findDivergencesTool(ctx: ToolContext, args: Record<string, unknow
   let source = oscillatorValues(ctx, osc);
   if (!source) {
     // Stochastic, CCI, MFI, OBV: only from the chart's own indicator.
-    const got = await ensureIndicator(ctx, osc, OSCILLATORS[osc]!.inputs ?? {});
+    const spec = OSCILLATORS[osc]!;
+    const got = await ensureIndicator(ctx, spec.type, spec.inputs ?? {});
     if (!got) return fail(`could not add ${osc}`);
     source = oscillatorValues(ctx, osc);
     if (!source) return fail(`${osc} has no values yet`);
@@ -560,6 +573,7 @@ async function findDivergencesTool(ctx: ToolContext, args: Record<string, unknow
     from: range[0],
     to: range[1],
     strength: 4,
+    tolerance: OSCILLATORS[osc]!.tolerance ?? 2,
     kinds:
       kinds === 'regular' ? ['regular'] : kinds === 'hidden' ? ['hidden'] : ['regular', 'hidden'],
   });
@@ -590,12 +604,13 @@ async function drawDivergenceTool(ctx: ToolContext, args: Record<string, unknown
   const d = divergences.get(ctx.chartId)?.get(str(args.id));
   if (!d) return fail(`unknown divergence id "${str(args.id)}"; call find_divergences first`);
   // The oscillator goes on the chart only now, when there is something to draw on it.
-  const got = await ensureIndicator(ctx, d.osc, OSCILLATORS[d.osc]!.inputs ?? {});
+  const spec = OSCILLATORS[d.osc]!;
+  const got = await ensureIndicator(ctx, spec.type, spec.inputs ?? {});
   if (!got) return fail(`could not add ${d.osc}`);
   const pane = studyInfo(ctx.chart, got.id);
   if (!pane) return fail(`${d.osc} is not on the chart`);
   // Anchor the oscillator line on the plotted values (they match the search to rounding).
-  const plotted = ctx.chart.getStudyData(got.id)?.values[OSCILLATORS[d.osc]!.output];
+  const plotted = ctx.chart.getStudyData(got.id)?.values[spec.output];
   const oscPoint = (p: { index: number; time: number; value: number }) => {
     const v = plotted?.[p.index];
     return { time: p.time, price: v !== undefined && Number.isFinite(v) ? v : p.value };

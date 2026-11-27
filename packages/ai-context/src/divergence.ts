@@ -110,6 +110,8 @@ export interface DivergenceOptions extends SwingOptions {
   tolerance?: number;
   /** Most results returned (most recent first). Default 10. */
   limit?: number;
+  /** How far price may move away between the two swings, in average bar ranges. Default 4. */
+  maxExcursion?: number;
 }
 
 /** Whether no swing strictly between `a` and `b` crosses the straight line from `a` to `b`
@@ -123,6 +125,27 @@ function clean(swings: Swing[], from: number, to: number, kind: 'high' | 'low'):
     if (kind === 'low' ? m.value < line : m.value > line) return false;
   }
   return true;
+}
+
+/** Whether the two swings belong to one move: between two lows price may not rally (between two
+ * highs not fall) more than `maxRanges` average bar ranges past them. Lows on either side of a
+ * whole rally and crash are not something a chartist would connect. */
+function sameMove(bars: BriefBars, a: Swing, b: Swing, kind: 'high' | 'low', maxRanges: number) {
+  let range = 0;
+  let extreme = kind === 'low' ? -Infinity : Infinity;
+  for (let i = a.index; i <= b.index; i++) {
+    range += at(bars.high, i) - at(bars.low, i);
+    extreme =
+      kind === 'low' ? Math.max(extreme, at(bars.high, i)) : Math.min(extreme, at(bars.low, i));
+  }
+  const avg = range / (b.index - a.index + 1);
+  const excursion =
+    kind === 'low' ? extreme - Math.max(a.value, b.value) : Math.min(a.value, b.value) - extreme;
+  // The swings themselves must be comparable too: not a low before and after a whole rally.
+  return (
+    !(avg > 0) ||
+    (excursion <= avg * maxRanges && Math.abs(b.value - a.value) <= avg * maxRanges * 2)
+  );
 }
 
 /** Extreme of `osc` within `tol` bars of `i`, or null without values. */
@@ -174,6 +197,7 @@ export function findDivergences(
         const a = swings[r]!;
         const gap = b.index - a.index;
         if (gap < minBars || gap > maxBars || !clean(swings, r, s, kind)) continue;
+        if (!sameMove(bars, a, b, kind, opts.maxExcursion ?? 4)) continue;
         const oa = oscAt(osc, a.index, tol, kind);
         const ob = oscAt(osc, b.index, tol, kind);
         if (!oa || !ob || oa.value === ob.value || a.value === b.value) continue;
@@ -209,5 +233,13 @@ export function findDivergences(
   scan('high');
   scan('low');
   found.sort((x, y) => y.price[1].index - x.price[1].index || y.price[0].index - x.price[0].index);
-  return found.slice(0, opts.limit ?? 10).map((d, i) => ({ id: `d${i + 1}`, ...d }));
+  // One divergence per starting swing (the most recent): no fans of lines from one point.
+  const used = new Set<string>();
+  const unique = found.filter((d) => {
+    const key = `${d.direction}:${d.price[0].index}`;
+    if (used.has(key)) return false;
+    used.add(key);
+    return true;
+  });
+  return unique.slice(0, opts.limit ?? 10).map((d, i) => ({ id: `d${i + 1}`, ...d }));
 }

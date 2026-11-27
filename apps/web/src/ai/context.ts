@@ -9,7 +9,7 @@ import {
   type BriefStudy,
   type ChartBrief,
 } from '@tickerglass/ai-context';
-import type { Chart } from '@tickerglass/engine';
+import { intervalSeconds, parseInterval, type Chart } from '@tickerglass/engine';
 import { exportInputFromChart } from '../chart/exportData';
 
 /** Tokens kept free for the system prompt, the conversation and the answer. */
@@ -56,6 +56,15 @@ export function visibleFocus(chart: Chart): BriefFocus | null {
   return range ? { kind: 'visible', from: range.from, to: range.to } : null;
 }
 
+/** Whether the bar opened at `time` (unix seconds) has not finished yet at `now`. */
+export function lastBarLive(interval: string, time: number, now: number): boolean {
+  try {
+    return time > 0 && now < time + intervalSeconds(parseInterval(interval));
+  } catch {
+    return false;
+  }
+}
+
 export function briefFromChart(
   chart: Chart,
   focus: BriefFocus,
@@ -85,6 +94,11 @@ export function briefFromChart(
     notes.push(`chart type ${chart.chartType}: the bars below are transformed, not traded prices`);
   }
   if (info?.currency) notes.push(`prices in ${info.currency}`);
+  const live = lastBarLive(chart.getInterval(), n ? input.time[n - 1]! : 0, Date.now() / 1000);
+  if (live)
+    notes.push(
+      'the last bar may still be in progress: its close is the latest price and its volume is partial, so do not compare that volume with full bars',
+    );
   const tz = chart.timezone === 'local' ? localZone() : chart.timezone;
   return buildChartBrief(
     {
