@@ -451,7 +451,7 @@ describe('ReplayController', () => {
     expect(status()).toBe('paused');
   });
 
-  it('detach (chart unmount) stops the loop and listeners without reloading; replay can start again', async () => {
+  it('detach (chart unmount) stops the loop and listeners without reloading it; replay can start again', async () => {
     const { feed, chart, ctl } = setup();
     await ctl.start(1000);
     ctl.play();
@@ -473,6 +473,33 @@ describe('ReplayController', () => {
     ctl.detach();
     ctl.detach(); // idempotent
     expect(feed.stops).toBe(2);
+  });
+
+  it('detach reloads the surviving charts (the feed dropped their subscriptions), not the detached one', async () => {
+    const other = new FakeChart();
+    other.symbol = 'MSFT';
+    const { chart, ctl, feed } = setup([other]);
+    await ctl.start(1000);
+    expect([chart.reloads, other.reloads]).toEqual([1, 1]);
+    ctl.detach();
+    expect(feed.stops).toBe(1);
+    expect([chart.reloads, other.reloads]).toEqual([1, 2]);
+  });
+
+  it('detach never reloads the detaching chart even when the layout still lists it', async () => {
+    const other = new FakeChart();
+    const feed = new FakeFeed();
+    const chart = new FakeChart();
+    const ctl = new ReplayController({
+      feed,
+      getChart: () => chart,
+      getOtherCharts: () => [chart, other],
+      prepost: () => false,
+    });
+    await ctl.start(1000);
+    const before = chart.reloads;
+    ctl.detach(chart);
+    expect([chart.reloads, other.reloads]).toEqual([before, 2]);
   });
 
   it('every completed feed step reaches the sessions exactly once, also when play() interleaves', async () => {

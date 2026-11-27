@@ -280,13 +280,18 @@ export class ReplayController {
     this.realtime();
   }
 
-  /** The chart is going away: stop everything without touching it (no reload). */
-  detach(): void {
+  /**
+   * The chart is going away: stop everything without touching it (no reload). The
+   * feed's stop drops every replay subscription, so the surviving charts reload
+   * to resubscribe live. `dying` is the going-away chart, never reloaded.
+   */
+  detach(dying?: ReplayChart): void {
     if (useReplayStore.getState().status === 'off' && this.offs.length === 0) return;
-    this.leave(null, false);
+    this.leave(null, true, dying);
   }
 
-  private leave(chart: ReplayChart | null, reload: boolean): void {
+  /** Leave replay; with `reload`, reload `chart` and the other charts (minus `exclude`). */
+  private leave(chart: ReplayChart | null, reload: boolean, exclude?: ReplayChart): void {
     this.generation++;
     this.clearTimer();
     this.offs.forEach((off) => off());
@@ -294,11 +299,11 @@ export class ReplayController {
     this.each((s) => s.end?.());
     this.each((s) => s.reset());
     // Read before the caller unpins the replay chart (status 'off' below).
-    const others = reload ? this.deps.getOtherCharts() : [];
+    const others = reload ? this.deps.getOtherCharts().filter((c) => c !== exclude) : [];
     this.deps.feed.stop();
     this.set({ status: 'off', last: NaN, next: NaN, tick: null, warning: null });
-    if (reload && chart) {
-      for (const c of [chart, ...others])
+    if (reload) {
+      for (const c of chart ? [chart, ...others] : others)
         c.reload().catch((err: unknown) => this.onError(`Replay: ${errText(err)}`));
     }
   }

@@ -49,6 +49,6 @@ export function attachReplay(session: Pick<ChartSession, 'id' | 'chart'>): () =>
     // The chart is going away: stop the play loop, drop the feed's replay state and listeners.
     // Other charts leaving (layout change) do not stop the replay.
     const pinned = useReplayStore.getState().chartId;
-    if (pinned === null || pinned === session.id) replay.detach();
+    if (pinned === null || pinned === session.id) replay.detach(chart);
   };
 }
