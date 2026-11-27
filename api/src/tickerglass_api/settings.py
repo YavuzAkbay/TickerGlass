@@ -236,7 +236,7 @@ class Settings(BaseSettings):
     ai_default_model: str | None = None
     #: Context window sent as `options.num_ctx` (Ollama's own default is small and silently
     #: truncates the chart data).
-    ai_num_ctx: int = Field(default=8192, ge=1024, le=1_048_576)
+    ai_num_ctx: int = Field(default=16384, ge=1024, le=1_048_576)
     #: Seconds to wait for Ollama to answer (covers loading a model) and between streamed chunks.
     ai_timeout_s: float = Field(default=180, gt=0, le=3600)
     #: How long Ollama keeps the model loaded after a request (`5m`, `1h`, `-1`); unset = Ollama's.

@@ -294,12 +294,13 @@ class OllamaBackend:
         model: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        num_ctx: int | None = None,
     ) -> _Chat:
         body: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"num_ctx": self._num_ctx},
+            "options": {"num_ctx": num_ctx or self._num_ctx},
         }
         if tools:
             body["tools"] = tools

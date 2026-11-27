@@ -17,7 +17,14 @@ import { useUiStore } from '../store/ui';
 import { clearRangeSelect, startRangeSelect } from './attach';
 import { ask, resolveModel, stopAsking, undoAiChanges } from './chat';
 import { Markdown } from './Markdown';
-import { EMPTY_CONVERSATION, useAiChat, useAiPrefs, useAiStatus, type UiMessage } from './store';
+import {
+  CONTEXT_WINDOWS,
+  EMPTY_CONVERSATION,
+  useAiChat,
+  useAiPrefs,
+  useAiStatus,
+  type UiMessage,
+} from './store';
 import './ai.css';
 
 const SUGGESTIONS = [
@@ -131,6 +138,7 @@ export function AiPanel() {
   const setPrefs = useAiPrefs((s) => s.set);
   const includeImage = useAiPrefs((s) => s.includeImage);
   const allowActions = useAiPrefs((s) => s.allowActions);
+  const userCtx = useAiPrefs((s) => s.numCtx);
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -336,6 +344,22 @@ export function AiPanel() {
             Send a picture of the chart too
           </label>
         )}
+        <label className="ai-ctx ai-faint">
+          Context window
+          <select
+            className="io-input"
+            value={userCtx}
+            onChange={(e) => setPrefs({ numCtx: Number(e.target.value) })}
+            data-tip="Room for chart data, conversation, reasoning and answer. Larger uses more memory on the Ollama machine."
+          >
+            <option value={0}>Default ({Math.round(status.numCtx / 1024)}K)</option>
+            {CONTEXT_WINDOWS.map((n) => (
+              <option key={n} value={n}>
+                {n / 1024}K tokens
+              </option>
+            ))}
+          </select>
+        </label>
         {model?.tools ? (
           <label className="ai-image-toggle ai-faint">
             <input

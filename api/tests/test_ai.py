@@ -321,7 +321,7 @@ def test_config_off_by_default(tmp_path: Path) -> None:
             "url": None,
             "models": [],
             "defaultModel": None,
-            "numCtx": 8192,
+            "numCtx": 16384,
         }
 
 
@@ -532,3 +532,15 @@ def test_demo_tool_script(tmp_path: Path) -> None:
         )
         text = "".join(e.get("text", "") for e in evs)
         assert "drew 2" in text and evs[-1]["t"] == "done"
+
+
+def test_per_request_context_window(tmp_path: Path, ollama: FakeOllama) -> None:
+    with make(tmp_path, ollama_url=ollama.url) as c:
+        c.post("/api/ai/chat", json=ask(model="qwen2.5:7b"))
+        assert ollama.requests[-1]["body"]["options"] == {"num_ctx": 16384}
+        c.post("/api/ai/chat", json={**ask(model="qwen2.5:7b"), "numCtx": 65536})
+        assert ollama.requests[-1]["body"]["options"] == {"num_ctx": 65536}
+        assert (
+            c.post("/api/ai/chat", json={**ask(model="qwen2.5:7b"), "numCtx": 100}).status_code
+            == 422
+        )

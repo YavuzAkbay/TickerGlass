@@ -100,6 +100,9 @@ describe('briefBudget', () => {
   it('leaves room for the answer', () => {
     expect(briefBudget(8192)).toBe(Math.floor((8192 - 2500) * 0.7));
     expect(briefBudget(2048)).toBe(800);
+    // With tools: room for definitions, results and reasoning; at most 35% of the window.
+    expect(briefBudget(16384, true)).toBe(Math.floor(Math.min((16384 - 7000) * 0.7, 16384 * 0.35)));
+    expect(briefBudget(8192, true)).toBe(834);
   });
 });
 

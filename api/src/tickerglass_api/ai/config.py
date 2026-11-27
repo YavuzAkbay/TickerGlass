@@ -148,7 +148,7 @@ class AiRuntime:
     default_model: str | None
     config: AiConfig | None = None
     #: Context window in force.
-    num_ctx: int = 8192
+    num_ctx: int = 16384
 
 
 def resolve(settings: Settings, stored: AiConfig | None) -> AiRuntime:

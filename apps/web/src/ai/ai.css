@@ -347,3 +347,17 @@
   font-size: 11px;
   line-height: 1.4;
 }
+.ai-ctx {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.ai-ctx .io-input {
+  width: auto;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 12px;
+}

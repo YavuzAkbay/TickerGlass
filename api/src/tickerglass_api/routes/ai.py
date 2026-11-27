@@ -67,6 +67,8 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_MESSAGES)
     #: Ollama function schemas of the chart tools the browser can run.
     tools: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_TOOLS)
+    #: The user's context window for this request (tokens); None = the server's.
+    numCtx: int | None = Field(default=None, ge=NUM_CTX_MIN, le=NUM_CTX_MAX)
 
 
 def _runtime(request: Request) -> AiRuntime:
@@ -181,7 +183,9 @@ async def chat(
     active.add(who.id)
     messages = assemble([_ollama_message(m) for m in body.messages], tools=bool(body.tools))
     try:
-        stream = await run_in_threadpool(backend.open_chat, info.name, messages, body.tools or None)
+        stream = await run_in_threadpool(
+            backend.open_chat, info.name, messages, body.tools or None, body.numCtx
+        )
     except AiError as exc:
         active.discard(who.id)
         raise HTTPException(exc.status, str(exc)) from None

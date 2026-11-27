@@ -80,7 +80,7 @@ function parseEvent(line: string): AiEvent | null {
  * AbortError when `signal` aborts.
  */
 export async function streamChat(
-  body: { model: string; messages: AiChatMessage[]; tools?: unknown[] },
+  body: { model: string; messages: AiChatMessage[]; tools?: unknown[]; numCtx?: number },
   onEvent: (e: AiEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {

@@ -76,8 +76,9 @@ class AiBackend(Protocol):
         model: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        num_ctx: int | None = None,
     ) -> ChatStream:
         """Start a chat. `messages` are Ollama-shaped (`role`, `content`, optional `images`
         as base64 strings, `tool_calls`, `tool_name`), system prompt included; `tools` are
-        Ollama function schemas."""
+        Ollama function schemas; `num_ctx` overrides the backend's context window."""
         ...

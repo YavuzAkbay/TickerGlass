@@ -14,15 +14,26 @@ import { exportInputFromChart } from '../chart/exportData';
 
 /** Tokens kept free for the system prompt, the conversation and the answer. */
 const RESERVED_TOKENS = 2500;
+/** With chart tools: their definitions (~1.5K), results over several rounds and the model's
+ * reasoning between them need room too (a full window cuts the answer off mid-sentence). */
+const RESERVED_TOKENS_TOOLS = 7000;
 /** Share of the rest of the context window the brief may use. */
 const BRIEF_SHARE = 0.7;
+/** With tools the brief never takes more than this share of the whole window. */
+const BRIEF_MAX_SHARE_TOOLS = 0.35;
 
 /** Drawing tools that carry no chart meaning for the model. */
 const SKIP_DRAWINGS = new Set(['image', 'icon', 'emoji', 'sticker']);
 
 /** Token budget of the brief for a model context window of `numCtx` tokens. */
-export function briefBudget(numCtx: number): number {
-  return Math.max(800, Math.floor((numCtx - RESERVED_TOKENS) * BRIEF_SHARE));
+export function briefBudget(numCtx: number, tools = false): number {
+  if (!tools) return Math.max(800, Math.floor((numCtx - RESERVED_TOKENS) * BRIEF_SHARE));
+  return Math.max(
+    800,
+    Math.floor(
+      Math.min((numCtx - RESERVED_TOKENS_TOOLS) * BRIEF_SHARE, numCtx * BRIEF_MAX_SHARE_TOOLS),
+    ),
+  );
 }
 
 /** `value` shifted by `offset` bars (plots with an offset draw value[i - offset] at bar i). */

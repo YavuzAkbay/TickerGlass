@@ -86,6 +86,7 @@ class DemoBackend:
         model: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        num_ctx: int | None = None,
     ) -> _DemoChat:
         if tools:
             scripted = _tool_script(messages, {t.get("function", {}).get("name") for t in tools})

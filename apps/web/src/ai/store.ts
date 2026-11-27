@@ -17,9 +17,19 @@ export interface AiPrefs {
   includeImage: boolean;
   /** Let a model with tool support add indicators and draw on the chart. */
   allowActions: boolean;
+  /** Context window in tokens for this user's questions; 0 = the server's default. */
+  numCtx: number;
 }
 
-export const DEFAULT_AI_PREFS: AiPrefs = { model: '', includeImage: true, allowActions: true };
+/** Context windows offered in the panel (the server accepts 2K–128K). */
+export const CONTEXT_WINDOWS = [8192, 16384, 32768, 65536, 131072] as const;
+
+export const DEFAULT_AI_PREFS: AiPrefs = {
+  model: '',
+  includeImage: true,
+  allowActions: true,
+  numCtx: 0,
+};
 
 export function parseAiPrefs(v: unknown): Partial<AiPrefs> {
   const out: Partial<AiPrefs> = {};
@@ -27,6 +37,12 @@ export function parseAiPrefs(v: unknown): Partial<AiPrefs> {
   if (typeof v.model === 'string' && v.model.length <= 200) out.model = v.model;
   if (typeof v.includeImage === 'boolean') out.includeImage = v.includeImage;
   if (typeof v.allowActions === 'boolean') out.allowActions = v.allowActions;
+  if (
+    typeof v.numCtx === 'number' &&
+    Number.isInteger(v.numCtx) &&
+    (v.numCtx === 0 || (v.numCtx >= 2048 && v.numCtx <= 131072))
+  )
+    out.numCtx = v.numCtx;
   return out;
 }
 
@@ -38,6 +54,7 @@ const pickPrefs = (s: AiPrefs): AiPrefs => ({
   model: s.model,
   includeImage: s.includeImage,
   allowActions: s.allowActions,
+  numCtx: s.numCtx,
 });
 
 export const useAiPrefs = create<PrefsState>()(

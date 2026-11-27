@@ -25,6 +25,10 @@ const controllers = new Map<string, AbortController>();
 let seq = 0;
 const nextId = (): string => `ai_${Date.now().toString(36)}_${(seq++).toString(36)}`;
 
+function fullWindow(numCtx: number): string {
+  return `Ran out of room: the ${Math.round(numCtx / 1024)}K context window is full, so the answer was cut off. Pick a larger context window below the question box (32K or more for reasoning models), ask about a shorter range, or start a new conversation.`;
+}
+
 /** Tool rounds per question before the loop gives up. */
 const MAX_TOOL_ROUNDS = 6;
 
@@ -119,7 +123,10 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   if (!model) throw new Error('No model is available');
   const focus = opts.focus ?? visibleFocus(chart);
   if (!focus) throw new Error('The chart has no bars yet');
-  const brief = briefFromChart(chart, focus, briefBudget(opts.status.numCtx));
+  const useTools = model.tools && useAiPrefs.getState().allowActions;
+  const userCtx = useAiPrefs.getState().numCtx;
+  const numCtx = userCtx || opts.status.numCtx;
+  const brief = briefFromChart(chart, focus, briefBudget(numCtx, useTools));
   if (!brief) throw new Error('The chart has no bars yet');
 
   const last = chart.store.length ? chart.store.time[chart.store.length - 1] : 0;
@@ -171,7 +178,6 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
       messages: c.messages.map((m) => (m.id === answerId ? { ...m, ...fn(m) } : m)),
     }));
 
-  const useTools = model.tools && useAiPrefs.getState().allowActions;
   const changes: AiChanges = { indicators: [], drawings: [] };
   const ctx: ToolContext = { chartId, chart, focus, changes };
   const mark = runInSession(chartId, historyMark);
@@ -196,6 +202,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
           model: model.name,
           messages: apiMessages(history),
           ...(useTools ? { tools: TOOL_SCHEMAS } : {}),
+          ...(userCtx ? { numCtx: userCtx } : {}),
         },
         (e) => {
           switch (e.t) {
@@ -211,8 +218,12 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
               break;
             case 'done':
               patch(() => ({
-                status: 'done',
                 stats: { evalTokens: e.evalTokens, durationMs: e.durationMs },
+                // Ollama stops with `length` when the context window is full: the answer
+                // was cut off, not finished.
+                ...(e.reason === 'length'
+                  ? { status: 'error' as const, error: fullWindow(numCtx) }
+                  : { status: 'done' as const }),
               }));
               break;
             case 'error':
@@ -226,10 +237,15 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
       patch((m) =>
         m.status === 'streaming' ? { status: 'error', error: 'The answer was cut off' } : {},
       );
-      const status = useAiChat
+      const current = useAiChat
         .getState()
-        .byChart[chartId]?.messages.find((m) => m.id === answerId)?.status;
-      if (!calls.length || status !== 'done') break;
+        .byChart[chartId]?.messages.find((m) => m.id === answerId);
+      if (!calls.length && current?.status === 'done' && !current.text.trim())
+        patch(() => ({
+          status: 'error',
+          error: 'The model finished without an answer. Ask again, or try a larger model.',
+        }));
+      if (!calls.length || current?.status !== 'done') break;
       if (++rounds > MAX_TOOL_ROUNDS) {
         patch(() => ({ text: '_Stopped after too many chart actions._' }));
         break;

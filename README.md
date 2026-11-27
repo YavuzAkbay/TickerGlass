@@ -260,7 +260,8 @@ ollama pull hf.co/unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL
 [Unsloth](https://unsloth.ai) Dynamic quants keep the important layers at higher precision, so a
 big model still works well on a small machine; that is the way to run a 27B model on 8–16 GB. Check
 that the model shows the **chart tools** tag after pulling. Reasoning models (Qwen 3.x, Gemma 4)
-work best with a **16K** context window, set in Settings → AI.
+work best with a **32K** or larger context window: the default is 16K and each user can pick up to
+128K in the Ask AI panel.
 
 Everything else, from Docker networking to every setting, is in the
 [Ask AI guide](docs/ai.md).

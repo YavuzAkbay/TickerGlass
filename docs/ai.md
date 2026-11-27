@@ -106,10 +106,12 @@ docker compose exec ollama ollama pull qwen3.5:9b
 To try the interface without any model, set `AI_PROVIDER=demo`: answers are canned and only echo
 what was received.
 
-**Context window.** Settings → AI also sets how much the model can hold at once: chart data,
-conversation, its reasoning and its answer share it. There is no separate limit on reasoning or
-answer length. 8K suits most 7B models; give reasoning models (Qwen3, DeepSeek-R1) 16K or more,
-which needs more memory on the Ollama machine.
+**Context window.** The model holds the chart data, the conversation, its reasoning and its answer
+in one context window; there is no separate limit on reasoning or answer length. Settings → AI sets
+the default (16K); each user can pick their own in the Ask AI panel (**Context window**, 8K–128K,
+saved with their settings). Reasoning models (Qwen 3.x, Gemma 4) and chart tools work best with
+32K or more. A larger window needs more memory on the Ollama machine. When it fills up, the answer
+says so instead of stopping silently.
 
 ### 3. Optional settings
 
@@ -119,7 +121,7 @@ which needs more memory on the Ollama machine.
 | `AI_PROVIDER`      | unset     | `ollama` or `demo`. Unset: `ollama` when `OLLAMA_URL` is set.                        |
 | `AI_MODELS`        | all       | Comma list of the models users may pick, e.g. `qwen3.5:9b,qwen3.8:27b`.              |
 | `AI_DEFAULT_MODEL` | first one | Preselected model.                                                                   |
-| `AI_NUM_CTX`       | `8192`    | Context window sent to Ollama. The chart brief is sized to fit it.                   |
+| `AI_NUM_CTX`       | `16384`   | Context window sent to Ollama. The chart brief is sized to fit it.                   |
 | `AI_TIMEOUT_S`     | `180`     | Seconds to wait for the answer to start (loading a model counts) and between chunks. |
 | `AI_KEEP_ALIVE`    | Ollama's  | How long Ollama keeps the model loaded after a question: `5m`, `1h`, `-1` (forever). |
 | `AI_MAX_IMAGE_MB`  | `4`       | Largest chart picture accepted.                                                      |

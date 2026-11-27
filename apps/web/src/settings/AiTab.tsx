@@ -38,7 +38,7 @@ export function AiTab() {
   const [allModels, setAllModels] = useState(true);
   const [picked, setPicked] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
-  const [numCtx, setNumCtx] = useState(8192);
+  const [numCtx, setNumCtx] = useState(16384);
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
   const [saving, setSaving] = useState(false);
   const testSeq = useRef(0);
@@ -281,7 +281,7 @@ export function AiTab() {
                   {[4096, 8192, 16384, 32768, 65536].map((n) => (
                     <option key={n} value={n}>
                       {n / 1024}K tokens
-                      {n === 8192 ? ' (default)' : n === 16384 ? ' (reasoning models)' : ''}
+                      {n === 16384 ? ' (default)' : n === 32768 ? ' (reasoning models)' : ''}
                     </option>
                   ))}
                 </select>
