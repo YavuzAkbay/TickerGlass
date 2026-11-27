@@ -38,6 +38,40 @@ describe('apiMessages', () => {
   });
 });
 
+describe('apiMessages with tools', () => {
+  it('keeps tool calls and results in order', () => {
+    const msgs: UiMessage[] = [
+      { id: '1', role: 'user', text: 'q', content: 'q' },
+      {
+        id: '2',
+        role: 'assistant',
+        text: '',
+        content: '',
+        status: 'done',
+        toolCalls: [{ name: 'find_divergences', arguments: { oscillator: 'rsi' } }],
+      },
+      {
+        id: '3',
+        role: 'tool',
+        text: 'Found 1',
+        content: '{"divergences":[]}',
+        toolName: 'find_divergences',
+      },
+      { id: '4', role: 'assistant', text: 'None found.', content: '' },
+    ];
+    expect(apiMessages(msgs)).toEqual([
+      { role: 'user', content: 'q' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ name: 'find_divergences', arguments: { oscillator: 'rsi' } }],
+      },
+      { role: 'tool', content: '{"divergences":[]}', tool_name: 'find_divergences' },
+      { role: 'assistant', content: 'None found.' },
+    ]);
+  });
+});
+
 describe('resolveModel', () => {
   const status = {
     enabled: true as const,
@@ -50,6 +84,7 @@ describe('resolveModel', () => {
     models: ['a', 'b'].map((name) => ({
       name,
       vision: false,
+      tools: false,
       parameterSize: null,
       sizeBytes: null,
     })),
@@ -70,7 +105,10 @@ describe('briefBudget', () => {
 
 describe('parseAiPrefs', () => {
   it('keeps valid fields only', () => {
-    expect(parseAiPrefs({ model: 'm', includeImage: 'yes' })).toEqual({ model: 'm' });
+    expect(parseAiPrefs({ model: 'm', includeImage: 'yes', allowActions: false })).toEqual({
+      model: 'm',
+      allowActions: false,
+    });
     expect(parseAiPrefs(null)).toEqual({});
   });
 });
@@ -126,5 +164,22 @@ describe('fitSize', () => {
     expect(fitSize(2560, 1440, 1280)).toEqual({ width: 1280, height: 720 });
     expect(fitSize(600, 1600, 800)).toEqual({ width: 300, height: 800 });
     expect(fitSize(400, 300, 1280)).toEqual({ width: 400, height: 300 });
+  });
+});
+
+describe('parseBarTime', () => {
+  it('maps brief dates, date-times and unix seconds to bars', async () => {
+    const { parseBarTime } = await import('./tools');
+    const DAY = 86_400;
+    const t0 = Date.UTC(2026, 7, 3) / 1000; // 2026-08-03 00:00 UTC
+    const time = Float64Array.from({ length: 10 }, (_, i) => t0 + i * DAY);
+    const chart = { timezone: 'UTC', store: { length: 10, time } } as unknown as Parameters<
+      typeof parseBarTime
+    >[0];
+    expect(parseBarTime(chart, '2026-08-05')).toBe(t0 + 2 * DAY);
+    expect(parseBarTime(chart, String(t0 + 3 * DAY + 100))).toBe(t0 + 3 * DAY);
+    expect(parseBarTime(chart, '2026-07-01')).toBe(t0); // before the data: first bar
+    expect(parseBarTime(chart, 'not a date')).toBeNull();
+    expect(parseBarTime(chart, '')).toBeNull();
   });
 });

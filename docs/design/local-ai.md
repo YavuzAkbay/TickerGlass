@@ -116,9 +116,32 @@ returns to the cursor after one selection. Web: `attachAi` mirrors it into the A
 panel and focuses the question box; armed by the panel, <kbd>Alt</kbd>+<kbd>Q</kbd>, the palette
 or the chart context menu.
 
-## 6. Not done / later
+## 6. Analyst prompt and chart tools
 
-- Tool calling (the model asking for more bars or another indicator).
+- `ai/prompt.py`: the system prompt casts the model as a technical analyst with a fixed method
+  (structure → levels → momentum/indicators → volume → patterns → confluence, invalidation,
+  confidence), exact divergence definitions and the rules. A tool section is appended only when
+  tools are sent. No `num_predict`: reasoning and answers are bounded only by the context window
+  (`numCtx`, Settings → AI or `AI_NUM_CTX`).
+- Tool calling uses Ollama's `tools`. The browser owns the schemas and executors
+  (`apps/web/src/ai/tools.ts`) because they act on its chart; the API forwards `tools`, accepts
+  assistant `tool_calls` and `tool` results, and emits `{"t":"tool_calls","calls":[{name,
+arguments}]}` before `done`. Models without the `tools` capability get none (400 if sent).
+- Loop (`chat.ts`): stream → run the calls → append `tool` messages → next round, at most 6
+  rounds. Tool results are JSON (≤ 4 KB); the panel shows each as a chip. All store changes of one
+  question are folded into one undo step (`historyMark` / `foldHistorySince`), and the answer keeps
+  the indicator and drawing ids for **Undo AI changes**.
+- Detection (`packages/ai-context/src/divergence.ts`): confirmed pivots (strength 3, earlier bar
+  wins ties); consecutive price swings 5–60 bars apart, oscillator extreme within ±2 bars;
+  regular bearish HH/LH, regular bullish LL/HL, hidden bearish LH/HH, hidden bullish HL/LL; ids
+  `d1…` most recent first, cached per chart for `draw_divergence`.
+- Drawings: the engine's `addDrawing` fills in defaults, the drawing is taken out of the engine
+  again and committed through the store (`commit`), bound to the chart like a user drawing.
+  Indicators go through `addIndicator` (an identical instance is reused).
+- Demo backend scripts find_divergences → draw_divergence → summary for tests and smoke runs.
+
+## 7. Not done / later
+
 - Saved conversations.
 - Other backends (OpenAI-compatible servers such as llama.cpp or LM Studio) behind the same
   `AiBackend` protocol.

@@ -91,6 +91,11 @@ docker compose exec ollama ollama pull qwen2.5:7b
 To try the interface without any model, set `AI_PROVIDER=demo`: answers are canned and only echo
 what was received.
 
+**Context window.** Settings → AI also sets how much the model can hold at once: chart data,
+conversation, its reasoning and its answer share it. There is no separate limit on reasoning or
+answer length. 8K suits most 7B models; give reasoning models (Qwen3, DeepSeek-R1) 16K or more,
+which needs more memory on the Ollama machine.
+
 ### 3. Optional settings
 
 | Variable           | Default   | Meaning                                                                              |
@@ -127,6 +132,39 @@ sends this value.
   conversation. Conversations are kept per chart until you reload the page; they are not saved.
 - The chosen model and the picture setting are saved with your settings and follow you to other
   devices.
+
+## Let the AI work on the chart
+
+Models with tool support (Settings → AI and the model picker mark them **chart tools**; e.g.
+`qwen2.5`, `qwen3`, `llama3.1`) can change the chart while they answer. Ask for example:
+
+- "Find bullish and bearish RSI divergences and draw them."
+- "Add a 20-day Bollinger Band and tell me if price is stretched."
+- "Mark the main support and resistance levels."
+
+The model can:
+
+| Tool                   | What it does                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `list_indicators`      | Reads the indicators on the chart and their latest values.                                  |
+| `add_indicator`        | Adds RSI, MACD, Stochastic, CCI, MFI, OBV, SMA, EMA, Bollinger Bands, ATR or Volume.        |
+| `remove_indicator`     | Removes an indicator.                                                                       |
+| `find_swings`          | Lists confirmed swing highs and lows of price or an indicator in the range.                 |
+| `find_divergences`     | Finds regular and hidden, bullish and bearish divergences against an oscillator.            |
+| `draw_divergence`      | Draws a found divergence: a line on price and one on the oscillator, coloured and labelled. |
+| `draw_trend_line`      | Draws a line between two points on price or an indicator pane.                              |
+| `draw_horizontal_line` | Draws a level, e.g. support or resistance.                                                  |
+| `clear_ai_drawings`    | Removes the lines it drew earlier in the conversation.                                      |
+
+Swings and divergences are **computed by TickerGlass**, not guessed by the model: two confirmed
+swing points 5–60 bars apart (3 bars on each side), compared with the oscillator at the same bars.
+The model decides what to look for, draws what was found and explains it. Each action shows as a
+line under your question ("Added RSI 14 · Found 3 divergences"), and everything one answer changed
+is a single undo step; **Undo AI changes** under the answer removes it too. Untick **Let AI add
+indicators and draw on the chart** in the panel to keep the model to words only.
+
+Very small models (under about 3 billion parameters) usually ignore the tools and only talk; use a
+7B model or larger for this.
 
 ## Good to know
 

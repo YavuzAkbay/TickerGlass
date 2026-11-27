@@ -38,6 +38,7 @@ export function AiTab() {
   const [allModels, setAllModels] = useState(true);
   const [picked, setPicked] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
+  const [numCtx, setNumCtx] = useState(8192);
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
   const [saving, setSaving] = useState(false);
   const testSeq = useRef(0);
@@ -61,6 +62,7 @@ export function AiTab() {
     setAllModels(c.models.length === 0);
     setPicked(c.models);
     setDefaultModel(c.defaultModel ?? '');
+    setNumCtx(c.numCtx);
   };
 
   useEffect(() => {
@@ -97,18 +99,20 @@ export function AiTab() {
     trimmedUrl !== (config.url ?? '') ||
     (allModels ? 0 : picked.length) !== config.models.length ||
     (!allModels && picked.some((m) => !config.models.includes(m))) ||
-    defaultModel !== (config.defaultModel ?? '');
+    defaultModel !== (config.defaultModel ?? '') ||
+    numCtx !== config.numCtx;
 
   const save = async (off = false) => {
     setSaving(true);
     try {
       const next = await saveAiConfig(
         off
-          ? { url: null, models: [], defaultModel: null }
+          ? { url: null, models: [], defaultModel: null, numCtx: null }
           : {
               url: trimmedUrl || null,
               models: allModels ? [] : picked,
               defaultModel: defaultModel && allowed.includes(defaultModel) ? defaultModel : null,
+              numCtx,
             },
       );
       adopt(next);
@@ -247,6 +251,7 @@ export function AiTab() {
                         .join(' · ')}
                     </span>
                     {m.vision && <span className="ai-set-tag">reads images</span>}
+                    {m.tools && <span className="ai-set-tag">chart tools</span>}
                   </li>
                 ))}
               </ul>
@@ -265,6 +270,26 @@ export function AiTab() {
                   ))}
                 </select>
               </Row>
+              <Row label="Context window" htmlFor="ai-ctx">
+                <select
+                  id="ai-ctx"
+                  className="io-input"
+                  value={numCtx}
+                  onChange={(e) => setNumCtx(Number(e.target.value))}
+                >
+                  {[4096, 8192, 16384, 32768, 65536].map((n) => (
+                    <option key={n} value={n}>
+                      {n / 1024}K tokens
+                      {n === 8192 ? ' (default)' : n === 16384 ? ' (reasoning models)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+              <p className="dlg-note">
+                Room for the chart data, the conversation, the model&apos;s reasoning and its
+                answer. Larger needs more memory on the Ollama machine; reasoning models (Qwen3,
+                DeepSeek-R1) work best with 16K or more.
+              </p>
             </>
           )}
           <p className="dlg-note">

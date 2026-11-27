@@ -1,16 +1,28 @@
 /** Navigator section "Ask AI": chat with a local model about the active chart. */
-import { ArrowUp, BarChart3, RefreshCw, ScanSearch, Square, Trash2, X } from 'lucide-react';
+import {
+  ArrowUp,
+  BarChart3,
+  CircleAlert,
+  RefreshCw,
+  ScanSearch,
+  Square,
+  Trash2,
+  Undo2,
+  Wand2,
+  X,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getActiveSession, useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
 import { clearRangeSelect, startRangeSelect } from './attach';
-import { ask, resolveModel, stopAsking } from './chat';
+import { ask, resolveModel, stopAsking, undoAiChanges } from './chat';
 import { Markdown } from './Markdown';
 import { EMPTY_CONVERSATION, useAiChat, useAiPrefs, useAiStatus, type UiMessage } from './store';
 import './ai.css';
 
 const SUGGESTIONS = [
   'Summarize what the chart shows.',
+  'Find bullish and bearish RSI divergences and draw them.',
   'Where are the key support and resistance levels?',
   'What happened in this range, and how unusual was it?',
   'What do the indicators on the chart say right now?',
@@ -49,7 +61,17 @@ function AnswerMeta({ m }: { m: UiMessage }) {
   return <div className="ai-meta">{parts.filter(Boolean).join(' · ')}</div>;
 }
 
-function Message({ m }: { m: UiMessage }) {
+function Message({ m, chartId }: { m: UiMessage; chartId: string | null }) {
+  if (m.role === 'tool') {
+    return (
+      <div className={`ai-action${m.ok === false ? ' ai-action-failed' : ''}`}>
+        {m.ok === false ? <CircleAlert size={12} /> : <Wand2 size={12} />}
+        <span>{m.text}</span>
+      </div>
+    );
+  }
+  // A round that only asked for tools: its actions show as chips, nothing else to say.
+  if (m.role === 'assistant' && m.toolCalls?.length && !m.text && m.status === 'done') return null;
   if (m.role === 'user') {
     return (
       <div className="ai-msg ai-user">
@@ -83,6 +105,17 @@ function Message({ m }: { m: UiMessage }) {
       )}
       {m.text && <Markdown text={m.text} />}
       <AnswerMeta m={m} />
+      {m.changes && chartId && (
+        <button
+          type="button"
+          className="ai-link ai-undo"
+          disabled={m.changesUndone}
+          onClick={() => undoAiChanges(chartId, m.id)}
+        >
+          <Undo2 size={12} />
+          {m.changesUndone ? 'AI changes removed' : 'Undo AI changes'}
+        </button>
+      )}
     </div>
   );
 }
@@ -97,6 +130,7 @@ export function AiPanel() {
   const wanted = useAiPrefs((s) => s.model);
   const setPrefs = useAiPrefs((s) => s.set);
   const includeImage = useAiPrefs((s) => s.includeImage);
+  const allowActions = useAiPrefs((s) => s.allowActions);
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -257,7 +291,7 @@ export function AiPanel() {
             </div>
           </div>
         ) : (
-          conv.messages.map((m) => <Message key={m.id} m={m} />)
+          conv.messages.map((m) => <Message key={m.id} m={m} chartId={chartId} />)
         )}
       </div>
 
@@ -301,6 +335,23 @@ export function AiPanel() {
             />
             Send a picture of the chart too
           </label>
+        )}
+        {model?.tools ? (
+          <label className="ai-image-toggle ai-faint">
+            <input
+              type="checkbox"
+              checked={allowActions}
+              onChange={(e) => setPrefs({ allowActions: e.target.checked })}
+            />
+            Let AI add indicators and draw on the chart
+          </label>
+        ) : (
+          model && (
+            <div className="ai-faint ai-tools-hint">
+              {model.name} can only talk about the chart; pick a model with tool support (e.g.
+              qwen2.5, qwen3, llama3.1) to let it draw.
+            </div>
+          )
         )}
         <div className="ai-input-row">
           <textarea

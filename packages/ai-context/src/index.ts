@@ -10,6 +10,7 @@ export {
   type Swing,
   type SwingOptions,
 } from './divergence';
+export { isIntraday, timeFormatter, type TimeFormat } from './format';
 export { focusStats, rangeIndexes } from './stats';
 export type {
   BriefBars,

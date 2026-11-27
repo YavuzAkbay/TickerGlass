@@ -49,7 +49,7 @@ import { reconcileDrawings, replaceDrawings, type SyncedDrawings } from './sync'
  * With drawing sync off a new drawing belongs to the chart it was made on
  * (also a paste of another chart's drawing); with it on, to no chart.
  */
-function bindToChart(d: Drawing, chartId: string): Drawing {
+export function bindToChart(d: Drawing, chartId: string): Drawing {
   const want = useLayoutGrid.getState().sync.drawings ? undefined : chartId;
   if (d.chartId === want) return d;
   const { chartId: _old, ...rest } = d;

@@ -5,15 +5,28 @@
 import type { BriefFocus, ChartBrief } from '@tickerglass/ai-context';
 import type { Chart } from '@tickerglass/engine';
 import { errorMessage } from '../api/client';
-import { getActiveSession } from '../store/chart';
+import { foldHistorySince, historyMark } from '../drawings/actions';
+import { findIndicator, removeIndicators } from '../indicators/actions';
+import { getActiveSession, runInSession } from '../store/chart';
 import { streamChat, type AiChatMessage, type AiModel, type AiStatus } from './api';
 import { briefBudget, briefFromChart, visibleFocus } from './context';
 import { chartImage } from './image';
+import {
+  removeAiDrawings,
+  runTool,
+  TOOL_SCHEMAS,
+  type AiChanges,
+  type ToolCall,
+  type ToolContext,
+} from './tools';
 import { useAiChat, useAiPrefs, type AiContextInfo, type UiMessage } from './store';
 
 const controllers = new Map<string, AbortController>();
 let seq = 0;
 const nextId = (): string => `ai_${Date.now().toString(36)}_${(seq++).toString(36)}`;
+
+/** Tool rounds per question before the loop gives up. */
+const MAX_TOOL_ROUNDS = 6;
 
 export const OMITTED_CONTEXT = '[Earlier chart context omitted; see the latest CHART CONTEXT.]';
 
@@ -66,8 +79,14 @@ export function apiMessages(messages: readonly UiMessage[]): AiChatMessage[] {
   const out: AiChatMessage[] = [];
   messages.forEach((m, i) => {
     if (m.role === 'assistant') {
+      if (m.toolCalls?.length)
+        out.push({ role: 'assistant', content: m.text, tool_calls: m.toolCalls });
       // Failed or empty answers are left out; the next question follows the last good one.
-      if (m.text) out.push({ role: 'assistant', content: m.text });
+      else if (m.text) out.push({ role: 'assistant', content: m.text });
+      return;
+    }
+    if (m.role === 'tool') {
+      out.push({ role: 'tool', content: m.content, tool_name: m.toolName ?? '' });
       return;
     }
     const content =
@@ -138,62 +157,125 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
     ...(images.length ? { images } : {}),
     ...(context ? { context } : {}),
   };
-  const answerId = nextId();
-  const answer: UiMessage = {
-    id: answerId,
-    role: 'assistant',
-    text: '',
-    content: '',
-    status: 'streaming',
-    model: model.name,
-  };
   const { update } = useAiChat.getState();
   update(chartId, (c) => ({
-    messages: [...c.messages, userMsg, answer],
+    messages: [...c.messages, userMsg],
     contextKey: newContext ? key : c.contextKey,
   }));
+  const append = (m: UiMessage): void =>
+    update(chartId, (c) => ({ ...c, messages: [...c.messages, m] }));
+  let answerId = '';
   const patch = (fn: (m: UiMessage) => Partial<UiMessage>): void =>
     update(chartId, (c) => ({
       ...c,
       messages: c.messages.map((m) => (m.id === answerId ? { ...m, ...fn(m) } : m)),
     }));
 
-  const history = useAiChat.getState().byChart[chartId]!.messages.filter((m) => m.id !== answerId);
+  const useTools = model.tools && useAiPrefs.getState().allowActions;
+  const changes: AiChanges = { indicators: [], drawings: [] };
+  const ctx: ToolContext = { chartId, chart, focus, changes };
+  const mark = runInSession(chartId, historyMark);
+  let rounds = 0;
   try {
-    await streamChat(
-      { model: model.name, messages: apiMessages(history) },
-      (e) => {
-        switch (e.t) {
-          case 'delta':
-            patch((m) => ({ text: m.text + e.text }));
-            break;
-          case 'thinking':
-            patch((m) => ({ thinking: (m.thinking ?? '') + e.text }));
-            break;
-          case 'done':
-            patch(() => ({
-              status: 'done',
-              stats: { evalTokens: e.evalTokens, durationMs: e.durationMs },
-            }));
-            break;
-          case 'error':
-            patch(() => ({ status: 'error', error: e.message }));
-            break;
-        }
-      },
-      controller.signal,
-    );
-    // A stream that ended without `done` or `error` was cut off.
-    patch((m) =>
-      m.status === 'streaming' ? { status: 'error', error: 'The answer was cut off' } : {},
-    );
+    for (;;) {
+      answerId = nextId();
+      append({
+        id: answerId,
+        role: 'assistant',
+        text: '',
+        content: '',
+        status: 'streaming',
+        model: model.name,
+      });
+      const history = useAiChat
+        .getState()
+        .byChart[chartId]!.messages.filter((m) => m.id !== answerId);
+      let calls: ToolCall[] = [];
+      await streamChat(
+        {
+          model: model.name,
+          messages: apiMessages(history),
+          ...(useTools ? { tools: TOOL_SCHEMAS } : {}),
+        },
+        (e) => {
+          switch (e.t) {
+            case 'delta':
+              patch((m) => ({ text: m.text + e.text }));
+              break;
+            case 'thinking':
+              patch((m) => ({ thinking: (m.thinking ?? '') + e.text }));
+              break;
+            case 'tool_calls':
+              calls = e.calls;
+              patch(() => ({ toolCalls: e.calls }));
+              break;
+            case 'done':
+              patch(() => ({
+                status: 'done',
+                stats: { evalTokens: e.evalTokens, durationMs: e.durationMs },
+              }));
+              break;
+            case 'error':
+              patch(() => ({ status: 'error', error: e.message }));
+              break;
+          }
+        },
+        controller.signal,
+      );
+      // A stream that ended without `done` or `error` was cut off.
+      patch((m) =>
+        m.status === 'streaming' ? { status: 'error', error: 'The answer was cut off' } : {},
+      );
+      const status = useAiChat
+        .getState()
+        .byChart[chartId]?.messages.find((m) => m.id === answerId)?.status;
+      if (!calls.length || status !== 'done') break;
+      if (++rounds > MAX_TOOL_ROUNDS) {
+        patch(() => ({ text: '_Stopped after too many chart actions._' }));
+        break;
+      }
+      for (const call of calls) {
+        if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        const r = await runTool(ctx, call);
+        append({
+          id: nextId(),
+          role: 'tool',
+          text: r.summary,
+          content: r.content,
+          toolName: call.name,
+          ok: r.ok,
+        });
+      }
+    }
   } catch (e) {
     const aborted = e instanceof DOMException && e.name === 'AbortError';
     patch(() => (aborted ? { status: 'stopped' } : { status: 'error', error: errorMessage(e) }));
     // The server never saw a question it refused: let the next one resend the context.
-    if (!aborted && newContext)
+    if (!aborted && newContext && rounds === 0)
       update(chartId, (c) => ({ ...c, contextKey: conv?.contextKey ?? null }));
   } finally {
     controllers.delete(chartId);
+    if (changes.indicators.length || changes.drawings.length) {
+      runInSession(chartId, () => foldHistorySince(mark, `AI: ${question.slice(0, 40)}`));
+      patch(() => ({ changes }));
+    }
   }
+}
+
+/** Remove what the AI added while answering (the button under the answer); one undo step. */
+export function undoAiChanges(chartId: string, messageId: string): void {
+  const msg = useAiChat.getState().byChart[chartId]?.messages.find((m) => m.id === messageId);
+  const changes = msg?.changes;
+  if (!changes || msg.changesUndone) return;
+  runInSession(chartId, () => {
+    const mark = historyMark();
+    const live = changes.indicators.filter((id) => findIndicator(id));
+    if (live.length) removeIndicators(live);
+    removeAiDrawings(chartId, changes.drawings);
+    foldHistorySince(mark, 'Undo AI changes');
+  });
+  useAiChat.getState().update(chartId, (c) => ({
+    ...c,
+    messages: c.messages.map((m) => (m.id === messageId ? { ...m, changesUndone: true } : m)),
+  }));
 }

@@ -7,6 +7,8 @@ import { ApiError, getJson, notifyUnauthorized, requestJson } from '../api/clien
 export interface AiModel {
   name: string;
   vision: boolean;
+  /** Ollama tool calling: the model can act on the chart. */
+  tools: boolean;
   parameterSize: string | null;
   sizeBytes: number | null;
 }
@@ -25,15 +27,18 @@ export type AiStatus =
     };
 
 export interface AiChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
   /** Base64 PNG/JPEG without a `data:` prefix. */
   images?: string[];
+  tool_calls?: { name: string; arguments: Record<string, unknown> }[];
+  tool_name?: string;
 }
 
 export type AiEvent =
   | { t: 'delta'; text: string }
   | { t: 'thinking'; text: string }
+  | { t: 'tool_calls'; calls: { name: string; arguments: Record<string, unknown> }[] }
   | {
       t: 'done';
       reason: string;
@@ -75,7 +80,7 @@ function parseEvent(line: string): AiEvent | null {
  * AbortError when `signal` aborts.
  */
 export async function streamChat(
-  body: { model: string; messages: AiChatMessage[] },
+  body: { model: string; messages: AiChatMessage[]; tools?: unknown[] },
   onEvent: (e: AiEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -123,6 +128,8 @@ export interface AiConfig {
   /** Models users may pick; empty = all installed. */
   models: string[];
   defaultModel: string | null;
+  /** Context window in force (tokens). */
+  numCtx: number;
 }
 
 export type AiTestResult =
@@ -142,6 +149,7 @@ export function saveAiConfig(body: {
   url: string | null;
   models: string[];
   defaultModel: string | null;
+  numCtx: number | null;
 }): Promise<AiConfig> {
   return requestJson<AiConfig>('PUT', '/ai/config', body);
 }

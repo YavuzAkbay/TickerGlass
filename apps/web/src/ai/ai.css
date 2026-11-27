@@ -316,3 +316,34 @@
   margin: 0;
   accent-color: var(--accent);
 }
+
+/* Chart actions taken by the AI */
+.ai-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+.ai-action-failed {
+  color: var(--down);
+}
+.ai-undo {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.ai-undo:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.ai-tools-hint {
+  margin-bottom: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+}

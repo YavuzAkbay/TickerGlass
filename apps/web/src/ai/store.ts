@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { isObj } from '../persist/net';
 import { getAiStatus, type AiStatus } from './api';
+import type { AiChanges, ToolCall } from './tools';
 
 // ------------------------------------------------------------ preferences
 
@@ -14,15 +15,18 @@ export interface AiPrefs {
   model: string;
   /** Attach a picture of the chart when the model can read images. */
   includeImage: boolean;
+  /** Let a model with tool support add indicators and draw on the chart. */
+  allowActions: boolean;
 }
 
-export const DEFAULT_AI_PREFS: AiPrefs = { model: '', includeImage: true };
+export const DEFAULT_AI_PREFS: AiPrefs = { model: '', includeImage: true, allowActions: true };
 
 export function parseAiPrefs(v: unknown): Partial<AiPrefs> {
   const out: Partial<AiPrefs> = {};
   if (!isObj(v)) return out;
   if (typeof v.model === 'string' && v.model.length <= 200) out.model = v.model;
   if (typeof v.includeImage === 'boolean') out.includeImage = v.includeImage;
+  if (typeof v.allowActions === 'boolean') out.allowActions = v.allowActions;
   return out;
 }
 
@@ -30,7 +34,11 @@ interface PrefsState extends AiPrefs {
   set: (patch: Partial<AiPrefs>) => void;
 }
 
-const pickPrefs = (s: AiPrefs): AiPrefs => ({ model: s.model, includeImage: s.includeImage });
+const pickPrefs = (s: AiPrefs): AiPrefs => ({
+  model: s.model,
+  includeImage: s.includeImage,
+  allowActions: s.allowActions,
+});
 
 export const useAiPrefs = create<PrefsState>()(
   persist<PrefsState, [], [], AiPrefs>(
@@ -99,7 +107,8 @@ export interface AiContextInfo {
 
 export interface UiMessage {
   id: string;
-  role: 'user' | 'assistant';
+  /** `tool`: a chart action's result (shown as a chip, sent to the model). */
+  role: 'user' | 'assistant' | 'tool';
   /** What the user typed / the answer so far. */
   text: string;
   /** Exactly what goes to the model for this message (user: brief + question). */
@@ -112,6 +121,14 @@ export interface UiMessage {
   error?: string;
   model?: string;
   stats?: { evalTokens: number | null; durationMs: number | null };
+  /** Assistant: chart tools it asked for. */
+  toolCalls?: ToolCall[];
+  /** Tool: which tool ran and whether it worked. */
+  toolName?: string;
+  ok?: boolean;
+  /** Last assistant message of a question that changed the chart: what to undo. */
+  changes?: AiChanges;
+  changesUndone?: boolean;
 }
 
 export interface Conversation {
