@@ -352,10 +352,13 @@ export class Series {
   // ------------------------------------------------------------ plumbing
 
   /** Run `fn` after everything queued before it; errors are logged, never thrown. */
-  private serial(fn: () => Promise<void> | void): void {
+  private serial(fn: () => Promise<void> | void, onSkip?: () => void): void {
     const gen = this.gen;
     this.chain = this.chain.then(async () => {
-      if (gen !== this.gen) return;
+      if (gen !== this.gen) {
+        onSkip?.();
+        return;
+      }
       try {
         await fn();
       } catch (err) {
@@ -1053,13 +1056,20 @@ export class Series {
       // up): nothing was due then, so the lag counts from now.
       const scheduledAt = now - this.nextPollAt > interval ? now : this.nextPollAt;
       this.nextPollAt = now + interval;
-      this.serial(async () => {
-        try {
-          await this.pollOnce(scheduledAt);
-        } finally {
+      // A reload can supersede the queued poll (the task is skipped); release the flag then too,
+      // or the series would never poll again.
+      this.serial(
+        async () => {
+          try {
+            await this.pollOnce(scheduledAt);
+          } finally {
+            this.polling = false;
+          }
+        },
+        () => {
           this.polling = false;
-        }
-      });
+        },
+      );
     }
   }
 

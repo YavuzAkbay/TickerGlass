@@ -54,6 +54,10 @@ const tick = async (p: number, t = BAR_T) => {
 interface SeriesPrivate {
   closeBar(barTime: number, at: number): Promise<void>;
   runnerFailure(r: unknown, err: unknown): void;
+  chain: Promise<void>;
+  polling: boolean;
+  serial(fn: () => Promise<void> | void, onSkip?: () => void): void;
+  load(): Promise<void>;
 }
 
 describe('review regressions', () => {
@@ -271,5 +275,50 @@ describe('review regressions', () => {
     await h!.clock.advance(60_000);
     const hb = h!.api.heartbeats.at(-1) as { lastError: string | null };
     expect(hb.lastError).toBeNull();
+  });
+
+  it('#17 a poll skipped by a queued reload does not leave the series unable to poll', async () => {
+    await setup([makeAlert()], [98, 99, 99], { ALERTS_POLL_MS: '5000' });
+    const polls = () => h!.feed.getBarsCalls.filter((c) => c.limit === 3).length;
+    h!.feed.setLive('reconnecting');
+    await h!.clock.advance(30_000);
+    await until(() => polls() > 0, 'first poll');
+    const s = h!.service.series()[0]! as unknown as SeriesPrivate;
+    // A reload queued ahead of the next poll: it bumps the generation before the poll runs.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    s.chain = s.chain.then(() => gate);
+    s.serial(() => s.load());
+    await h!.clock.advance(6_000);
+    expect(s.polling).toBe(true);
+    release();
+    await h!.service.whenIdle();
+    expect(s.polling).toBe(false);
+    const before = polls();
+    await h!.clock.advance(12_000);
+    await until(() => polls() > before, 'poll after the reload');
+  });
+
+  it('#18 an alert saved with a legacy indicator id attaches and runs', async () => {
+    const legacy: AlertSpec = {
+      schemaVersion: 1,
+      left: {
+        kind: 'indicator',
+        ref: {
+          instances: [{ id: 'r', type: 'relative-volume', inputs: { length: 2 } }],
+          instanceId: 'r',
+          outputId: 'rvol',
+          title: 'RVol',
+        },
+      },
+      condition: { op: 'greater', right: { kind: 'value', value: -1 } },
+      trigger: 'everyTime',
+    };
+    await setup([makeAlert({ spec: legacy })], [98, 99, 99]);
+    await h!.service.whenIdle();
+    expect(h!.api.statuses).toHaveLength(0);
+    const s = h!.service.series()[0]!;
+    expect(s.state).toBe('ready');
+    expect(s.runners.size).toBe(1);
   });
 });

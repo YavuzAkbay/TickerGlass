@@ -443,10 +443,12 @@ export function createService(deps: ServiceDeps): Service {
       );
       return;
     }
+    // validateAlert upgrades legacy indicator ids; build from that spec so they resolve.
+    const live: Alert = { ...alert, spec: v.alert.spec };
     let runner: AlertRunner;
     let series: Series;
     try {
-      runner = new AlertRunner(alert, {
+      runner = new AlertRunner(live, {
         minRefireMs: config.minRefireS * 1000,
         graceS: config.closeGraceS,
         registry: catalog.registry(),
