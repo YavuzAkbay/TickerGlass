@@ -19,12 +19,21 @@ import {
   type Level,
 } from '@tickerglass/ai-context';
 import type { Chart, DrawingInput, DrawingStyle } from '@tickerglass/engine';
+import type { InputValueMap } from '@tickerglass/indicators';
 import { bindToChart } from '../drawings/attach';
 import { commit, findDrawing } from '../drawings/actions';
 import { addIndicator, findIndicator, removeIndicators } from '../indicators/actions';
 import { useIndicatorStore } from '../indicators/store';
 import { runInSession } from '../store/chart';
 import type { AiTier } from './api';
+import {
+  anchorRange,
+  coerceInputs,
+  describeIndicator,
+  drawableTypes,
+  findIndicatorDef,
+  searchIndicators,
+} from './catalog';
 import { fundamentalsReport } from './fundamentals';
 
 /** Ollama function schema. */
@@ -60,6 +69,8 @@ export interface ToolContext {
   chart: Chart;
   focus: BriefFocus;
   changes: AiChanges;
+  /** The model's tier: Basic gets the curated indicator list only. */
+  tier?: AiTier;
 }
 
 /** Divergence sources: indicator type, the plotted output searched and drawn on, and how many
@@ -149,7 +160,60 @@ export function schemasFor(tier: AiTier, allowActions: boolean): ToolSchema[] {
     const name = t.function.name;
     if (TIER_RANK[MIN_TIER[name] ?? 'basic'] > TIER_RANK[tier]) return false;
     return allowActions || READ_ONLY_TOOLS.has(name);
+  }).map((t) => {
+    if (tier === 'basic') return t;
+    if (t.function.name === 'add_indicator') return OPEN_ADD_INDICATOR;
+    if (t.function.name === 'draw') return drawSchema(tier);
+    return t;
   });
+}
+
+/** Standard and Full: any indicator in the app, with its inputs. */
+const OPEN_ADD_INDICATOR: ToolSchema = {
+  type: 'function',
+  function: {
+    name: 'add_indicator',
+    description:
+      'Add any indicator in the app (reuses an identical one already there). type: an id from search_indicators, or a common name (rsi, macd, bollinger, pe, revenue...). inputs: values by input key from search_indicators; omitted ones keep their defaults. Returns its id and latest values.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string' },
+        inputs: { type: 'object', description: 'e.g. {"length": 50}' },
+        length: { type: 'number', description: 'Shortcut for inputs.length' },
+      },
+      required: ['type'],
+    },
+  },
+};
+
+function drawSchema(tier: AiTier): ToolSchema {
+  return {
+    type: 'function',
+    function: {
+      name: 'draw',
+      description:
+        'Place a drawing from anchor points. Anchors per type: fib-retracement 2 (start and end of the move), fib-extension 3 (move start, move end, retracement end), rectangle 2 (opposite corners), parallel-channel 3 (line start, line end, a point on the parallel side), trend-line/ray/extended-line/arrow-line/callout 2, horizontal-ray/vertical-line/text 1. Anchor on swings from find_swings or levels from find_levels.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: drawableTypes(tier) },
+          points: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { time: { type: 'string' }, price: { type: 'number' } },
+              required: ['time', 'price'],
+            },
+          },
+          pane: { type: 'string', description: "'price' (default) or an indicator id" },
+          text: { type: 'string', description: 'Label or text, a few words' },
+          tone: { type: 'string', enum: ['bullish', 'bearish', 'neutral'] },
+        },
+        required: ['type', 'points'],
+      },
+    },
+  };
 }
 const TONE = { bullish: '#34C38F', bearish: '#F2626B', neutral: '#9AA8FF' } as const;
 type Tone = keyof typeof TONE;
@@ -168,6 +232,27 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: 'list_indicators',
       description: 'List the indicators on the chart with their ids, panes and latest values.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_indicators',
+      description:
+        'Search every indicator in the app by name or idea (e.g. "ichimoku", "volatility", "vwap"). Returns ids and inputs for add_indicator. Read-only.',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'draw',
+      description: 'Place a drawing from anchor points (schema filled per tier).',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -416,7 +501,7 @@ function sameInputs(a: Record<string, unknown>, b: Record<string, unknown>): boo
 async function ensureIndicator(
   ctx: ToolContext,
   type: string,
-  inputs: Record<string, number>,
+  inputs: InputValueMap,
 ): Promise<{ id: string; added: boolean } | null> {
   return runInSession(ctx.chartId, async () => {
     const existing = useIndicatorStore
@@ -520,6 +605,19 @@ async function addIndicatorTool(ctx: ToolContext, args: Record<string, unknown>)
     .replace(/[\s/-]+/g, '_');
   const financial = FINANCIAL[name] ?? (name === 'p_e' ? FINANCIAL.pe : undefined);
   const type = financial ?? name;
+  if (ctx.tier && ctx.tier !== 'basic' && !ADDABLE.includes(type)) {
+    const def = findIndicatorDef(financial ?? str(args.type));
+    if (!def) return fail(`no indicator "${str(args.type)}"; call search_indicators first`);
+    const raw =
+      args.inputs && typeof args.inputs === 'object'
+        ? { ...(args.inputs as Record<string, unknown>) }
+        : {};
+    if (args.length !== undefined && raw.length === undefined && 'length' in def.inputs)
+      raw.length = args.length;
+    const { inputs, errors } = coerceInputs(def, raw);
+    if (errors.length) return fail(`${def.name}: ${errors.join('; ')}`);
+    return addedResult(ctx, await ensureIndicator(ctx, def.id, inputs as InputValueMap), def.id);
+  }
   if (!financial && !ADDABLE.includes(type))
     return fail(
       `unknown indicator "${name}"; use one of ${[...ADDABLE, ...Object.keys(FINANCIAL)].join(', ')}`,
@@ -528,7 +626,14 @@ async function addIndicatorTool(ctx: ToolContext, args: Record<string, unknown>)
   const inputs = Number.isFinite(length) && length > 0 ? { length: Math.round(length) } : {};
   // MACD, Stochastic, OBV, Volume and the financial ones have no plain `length` input.
   const takesLength = !financial && !['macd', 'stochastic', 'obv', 'volume'].includes(type);
-  const got = await ensureIndicator(ctx, type, takesLength ? inputs : {});
+  return addedResult(ctx, await ensureIndicator(ctx, type, takesLength ? inputs : {}), type);
+}
+
+function addedResult(
+  ctx: ToolContext,
+  got: { id: string; added: boolean } | null,
+  type: string,
+): ToolResult {
   if (!got) return fail(`could not add ${type}`);
   const info = studyInfo(ctx.chart, got.id);
   const title = info?.title ?? type;
@@ -557,6 +662,66 @@ function listIndicatorsTool(ctx: ToolContext) {
   return result(
     { indicators: list },
     `Read ${list.length} indicator${list.length === 1 ? '' : 's'}`,
+  );
+}
+
+function searchIndicatorsTool(args: Record<string, unknown>) {
+  const query = str(args.query);
+  const found = searchIndicators(query);
+  if (!found.length) return fail(`no indicator matches "${query}"`);
+  return result(
+    { indicators: found.map(describeIndicator) },
+    `Searched indicators: ${query}`,
+    true,
+    6000,
+  );
+}
+
+function drawTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const type = str(args.type);
+  const tier = ctx.tier ?? 'basic';
+  if (tier === 'basic' || !drawableTypes(tier).includes(type))
+    return fail(`cannot draw "${type}"; use one of ${drawableTypes(tier).join(', ')}`);
+  const range = anchorRange(type)!;
+  const raw = Array.isArray(args.points) ? (args.points as unknown[]) : [];
+  if (raw.length < range.min || raw.length > range.max)
+    return fail(
+      `${type} takes ${range.min === range.max ? range.min : `${range.min}-${range.max}`} point(s), got ${raw.length}`,
+    );
+  const pane = paneFor(ctx, args.pane);
+  if (!pane) return fail(`no indicator pane "${str(args.pane)}"`);
+  const points: { time: number; price: number }[] = [];
+  for (const [i, p] of raw.entries()) {
+    const o = (p && typeof p === 'object' ? p : {}) as Record<string, unknown>;
+    const time = parseBarTime(ctx.chart, o.time);
+    const price = num(o.price);
+    if (time === null || !Number.isFinite(price))
+      return fail(`point ${i + 1} needs a time on the chart and a numeric price`);
+    points.push({ time, price });
+  }
+  const text = str(args.text).slice(0, 80);
+  const name = type.replace(/-/g, ' ');
+  addDrawings(
+    ctx,
+    [
+      {
+        type,
+        paneId: pane.paneId,
+        points,
+        ...(args.tone ? { style: lineStyle(toneOf(args.tone)) } : {}),
+        ...(text ? { text } : {}),
+      },
+    ],
+    `AI: ${name}`,
+  );
+  const fmt = fmtTime(ctx.chart);
+  return result(
+    {
+      drawn: type,
+      pane: pane.name,
+      points: points.map((p) => ({ time: fmt(p.time), price: px(p.price) })),
+    },
+    `Drew ${name}`,
   );
 }
 
@@ -884,6 +1049,10 @@ export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolRes
         return await addIndicatorTool(ctx, args);
       case 'get_fundamentals':
         return await getFundamentalsTool(ctx);
+      case 'search_indicators':
+        return searchIndicatorsTool(args);
+      case 'draw':
+        return drawTool(ctx, args);
       case 'remove_indicator':
         return removeIndicatorTool(ctx, args);
       case 'find_swings':

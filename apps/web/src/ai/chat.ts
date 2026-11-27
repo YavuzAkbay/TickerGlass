@@ -180,7 +180,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
     }));
 
   const changes: AiChanges = { indicators: [], drawings: [] };
-  const ctx: ToolContext = { chartId, chart, focus, changes };
+  const ctx: ToolContext = { chartId, chart, focus, changes, tier };
   const mark = runInSession(chartId, historyMark);
   let rounds = 0;
   try {
