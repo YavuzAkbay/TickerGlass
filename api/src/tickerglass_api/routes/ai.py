@@ -17,9 +17,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from ..ai import AiBackend, AiError, ModelInfo
+from ..ai.base import ChatStream
 from ..ai.config import (
     MAX_CONNECTIONS,
     MAX_MODELS,
@@ -182,6 +184,37 @@ def _check_images(body: ChatRequest, max_bytes: int) -> int:
     return count
 
 
+class _Answer:
+    """The user's one running answer: holds their slot in `active` and the upstream stream.
+    `finish` (idempotent, any thread) frees the slot and cuts the upstream; a stream that
+    opens after `finish` (request cancelled while the model was loading) is cut at once."""
+
+    def __init__(self, active: set[str], user_id: str) -> None:
+        self._active = active
+        self._user_id = user_id
+        self._stream: ChatStream | None = None
+        self._done = False
+        self._lock = threading.Lock()
+        active.add(user_id)
+
+    def attach(self, stream: ChatStream) -> None:
+        with self._lock:
+            self._stream = stream
+            done = self._done
+        if done:
+            stream.abort()
+
+    def finish(self) -> None:
+        with self._lock:
+            if self._done:
+                return
+            self._done = True
+            stream = self._stream
+            self._active.discard(self._user_id)
+        if stream is not None:
+            stream.abort()
+
+
 @router.post("/chat")
 async def chat(
     body: ChatRequest, request: Request, who: UserDep, settings: SettingsDep
@@ -218,19 +251,23 @@ async def chat(
     active: set[str] = request.app.state.ai_active
     if who.id in active:
         raise HTTPException(429, "an answer is already being generated")
-    active.add(who.id)
-    messages = assemble(
-        [_ollama_message(m) for m in body.messages], tools=bool(body.tools), tier=tier
-    )
+    answer = _Answer(active, who.id)
     try:
-        stream = await run_in_threadpool(
-            backend.open_chat, info.name, messages, body.tools or None, body.numCtx
+        messages = assemble(
+            [_ollama_message(m) for m in body.messages], tools=bool(body.tools), tier=tier
         )
+
+        def open_stream() -> ChatStream:
+            stream = backend.open_chat(info.name, messages, body.tools or None, body.numCtx)
+            answer.attach(stream)
+            return stream
+
+        stream = await run_in_threadpool(open_stream)
     except AiError as exc:
-        active.discard(who.id)
+        answer.finish()
         raise HTTPException(exc.status, str(exc)) from None
-    except BaseException:
-        active.discard(who.id)
+    except BaseException:  # incl. the client going away (CancelledError)
+        answer.finish()
         raise
 
     async def events() -> AsyncIterator[bytes]:
@@ -240,14 +277,14 @@ async def chat(
         except AiError as exc:
             yield json.dumps({"t": "error", "message": str(exc)}).encode() + b"\n"
         finally:
-            # Client gone or stream over: cut the upstream so the model stops generating.
-            stream.abort()
-            active.discard(who.id)
+            answer.finish()
 
     return StreamingResponse(
         events(),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        # The generator's `finally` never runs if the client leaves before it starts.
+        background=BackgroundTask(answer.finish),
     )
 
 
@@ -359,7 +396,7 @@ class ConnectionBody(BaseModel):
     acknowledged: bool = False
 
 
-_CONN_ID = r"^[a-z0-9][a-z0-9-]{0,31}$"
+_CONN_ID = r"[a-z0-9][a-z0-9-]{0,31}"
 
 
 @router.put("/connections/{conn_id}")
@@ -367,7 +404,7 @@ def put_connection(
     conn_id: str, body: ConnectionBody, request: Request, who: AdminDep, settings: SettingsDep
 ) -> dict[str, Any]:
     _locked(settings)
-    if not re.match(_CONN_ID, conn_id):
+    if not re.fullmatch(_CONN_ID, conn_id):
         raise HTTPException(422, "connection id: lower-case letters, digits and dashes")
     try:
         base_url = normalize_url(body.baseUrl)

@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from tickerglass_api.ai.prompt import SYSTEM_PROMPT, system_prompt
 from tickerglass_api.ai.tiers import auto_tier, parse_billions, with_tiers
 from tickerglass_api.app import create_app
 from tickerglass_api.metrics import upstream
+from tickerglass_api.routes.ai import ChatRequest, chat
 from tickerglass_api.settings import Settings
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
@@ -618,3 +620,112 @@ def test_route_standard_tier(tmp_path: Path) -> None:
             json={"model": "demo-text", "tools": [_tool("set_chart")], "messages": [q]},
         )
         assert r.status_code == 400 and "set_chart" in r.json()["detail"]
+
+
+# --- regressions: failed /api/show, leaked answer slot ---------------------------------------
+
+
+def test_failed_show_is_not_remembered(ollama: FakeOllama, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tickerglass_api.ai import ollama as ollama_mod
+
+    monkeypatch.setattr(ollama_mod, "MODELS_TTL_S", 0)
+    backend = OllamaBackend(ollama.url, timeout_s=5, num_ctx=8192)
+    real_json = backend._json
+    failing = {"on": True}
+
+    def flaky(method: str, path: str, body: Any = None) -> Any:
+        if path == "/api/show" and failing["on"]:
+            raise AiUnavailable("Ollama is unavailable (503)")
+        return real_json(method, path, body)
+
+    monkeypatch.setattr(backend, "_json", flaky)
+    assert not {m.name: m for m in backend.list_models()}["qwen2.5:7b"].tools  # a guess
+    failing["on"] = False
+    assert {m.name: m for m in backend.list_models()}["qwen2.5:7b"].tools  # described for real
+    shows = sum(r["path"] == "/api/show" for r in ollama.requests)
+    backend.list_models()
+    assert sum(r["path"] == "/api/show" for r in ollama.requests) == shows  # now cached
+
+
+class _Stream:
+    def __init__(self) -> None:
+        self.aborted = threading.Event()
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(())
+
+    def abort(self) -> None:
+        self.aborted.set()
+
+
+class _SlowBackend:
+    """`open_chat` blocks until `release` is set, as when Ollama is loading the model."""
+
+    id = "slow"
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.entered = threading.Event()
+        self.stream = _Stream()
+
+    def list_models(self) -> list[ModelInfo]:
+        return [ModelInfo(name="m", vision=False)]
+
+    def open_chat(self, *a: Any, **kw: Any) -> _Stream:
+        self.entered.set()
+        self.release.wait(5)
+        return self.stream
+
+
+def _chat_call(backend: Any) -> tuple[Any, Any, set[str]]:
+    active: set[str] = set()
+    state = SimpleNamespace(
+        ai_active=active, ai_runtime=SimpleNamespace(backend=backend, tiers={}, num_ctx=4096)
+    )
+    request = SimpleNamespace(app=SimpleNamespace(state=state))
+    body = ChatRequest(model="m", messages=[{"role": "user", "content": "hi"}])  # type: ignore[list-item]
+    return request, body, active
+
+
+def test_slot_released_when_stream_never_starts() -> None:
+    import asyncio
+
+    request, body, active = _chat_call(_SlowBackend())
+    request.app.state.ai_runtime.backend.release.set()
+    stream = request.app.state.ai_runtime.backend.stream
+
+    async def scenario() -> None:
+        resp = await chat(body, request, SimpleNamespace(id="u1"), Settings(_env_file=None))  # type: ignore[call-arg]
+        assert active == {"u1"}
+        # Client left before the body generator ever ran: only the background task runs.
+        assert resp.background is not None
+        await resp.background()
+        assert not active and stream.aborted.is_set()
+        await resp.background()  # idempotent
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_open_releases_slot_and_aborts_orphan() -> None:
+    import asyncio
+
+    backend = _SlowBackend()
+    request, body, active = _chat_call(backend)
+
+    async def scenario() -> None:
+        task = asyncio.create_task(
+            chat(body, request, SimpleNamespace(id="u1"), Settings(_env_file=None))  # type: ignore[call-arg]
+        )
+        await asyncio.to_thread(backend.entered.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not active  # slot freed at once, not when the thread finishes
+        backend.release.set()  # the orphaned open_chat now completes
+        for _ in range(200):
+            if backend.stream.aborted.is_set():
+                break
+            await asyncio.sleep(0.01)
+        assert backend.stream.aborted.is_set()
+
+    asyncio.run(scenario())

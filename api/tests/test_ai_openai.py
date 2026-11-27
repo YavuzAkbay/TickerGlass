@@ -222,3 +222,60 @@ def test_cloud_connection_needs_acknowledgement(tmp_path: Path) -> None:
             c.put("/api/ai/connections/oa", json={**body, "acknowledged": True}).status_code == 200
         )
         assert c.put("/api/ai/connections/BAD id", json=body).status_code in (404, 422)
+
+
+def test_eof_without_finish_is_a_dropped_connection(fake: FakeOpenAI) -> None:
+    fake.events = [{"choices": [{"delta": {"content": "Up "}}]}]  # no finish_reason, no [DONE]
+    got: list[Any] = []
+    with pytest.raises(AiError, match="closed the stream early"):
+        for ev in backend(fake).open_chat("gpt-test", []):
+            got.append(ev)
+    assert [e["t"] for e in got] == ["delta"]  # no `done` after a truncated answer
+
+
+def test_eof_after_finish_without_done_marker_is_fine(fake: FakeOpenAI) -> None:
+    fake.events = [{"choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]}]
+    evs = list(backend(fake).open_chat("gpt-test", []))
+    assert evs[-1]["t"] == "done" and evs[-1]["reason"] == "stop"
+
+
+def test_to_openai_drops_unanswered_calls_and_orphan_results() -> None:
+    call = lambda name: {"function": {"name": name, "arguments": {}}}  # noqa: E731
+    out = to_openai(
+        [
+            {"role": "user", "content": "q"},
+            # Two calls, only one answered: the other is dropped.
+            {"role": "assistant", "content": "", "tool_calls": [call("a"), call("b")]},
+            {"role": "tool", "tool_name": "b", "content": "B"},
+            # Calls nobody answered and no text: the whole message goes.
+            {"role": "assistant", "content": "", "tool_calls": [call("c")]},
+            # Unanswered calls but some text: the text stays.
+            {"role": "assistant", "content": "thinking", "tool_calls": [call("d")]},
+            {"role": "user", "content": "again"},
+            # A result nobody asked for.
+            {"role": "tool", "tool_name": "zzz", "content": "Z"},
+        ]
+    )
+    assert out == [
+        {"role": "user", "content": "q"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_2",
+                    "type": "function",
+                    "function": {"name": "b", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_2", "content": "B"},
+        {"role": "assistant", "content": "thinking"},
+        {"role": "user", "content": "again"},
+    ]
+
+
+def test_connection_id_rejects_trailing_newline(tmp_path: Path, fake: FakeOpenAI) -> None:
+    with make(tmp_path) as c:
+        assert c.put("/api/ai/connections/oa%0A", json=_conn_body(fake)).status_code == 422
+        assert c.put("/api/ai/connections/oa", json=_conn_body(fake)).status_code == 200

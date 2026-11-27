@@ -247,32 +247,37 @@ class OllamaBackend:
         upstream.record(PROVIDER_ID, "ok")
         return data
 
-    def _describe(self, tag: dict[str, Any]) -> ModelInfo | None:
+    def _describe(self, tag: dict[str, Any]) -> tuple[ModelInfo | None, bool]:
+        """The model's capabilities, and whether the answer may be remembered: a failed
+        `/api/show` yields a guess (no tools) that must not stick."""
         name = str(tag.get("name") or tag.get("model") or "")
         if not name:
-            return None
+            return None, True
         raw_details = tag.get("details")
         details: dict[str, Any] = raw_details if isinstance(raw_details, dict) else {}
         vision = bool(_VISION_FAMILIES & set(details.get("families") or []))
         tools = False
+        reliable = True
         try:
             show = self._json("POST", "/api/show", {"model": name})
         except AiError:
             show = None
+            reliable = False
         caps = show.get("capabilities") if isinstance(show, dict) else None
         if isinstance(caps, list):
             if "completion" not in caps:
-                return None  # embedding-only model
+                return None, reliable  # embedding-only model
             vision = "vision" in caps
             tools = "tools" in caps
         size = tag.get("size")
-        return ModelInfo(
+        info = ModelInfo(
             name=name,
             vision=vision,
             tools=tools,
             parameter_size=details.get("parameter_size") or None,
             size_bytes=size if isinstance(size, int) else None,
         )
+        return info, reliable
 
     def list_models(self) -> list[ModelInfo]:
         with self._models_lock:
@@ -288,9 +293,12 @@ class OllamaBackend:
                 if self._allow and _normalize(name) not in self._allow:
                     continue
                 key = (name, str(tag.get("digest") or tag.get("modified_at") or ""))
-                if key not in self._described:
-                    self._described[key] = self._describe(tag)
-                info = self._described[key]
+                if key in self._described:
+                    info = self._described[key]
+                else:
+                    info, cacheable = self._describe(tag)
+                    if cacheable:  # a failed `/api/show` is retried on the next listing
+                        self._described[key] = info
                 if info is not None:
                     models.append(info)
             models.sort(key=lambda m: m.name.lower())

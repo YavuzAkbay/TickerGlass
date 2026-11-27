@@ -90,30 +90,48 @@ def _image_url(b64: str) -> str:
 def to_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Ollama-shaped messages (images as base64, tool calls without ids, tool results by name)
     in the OpenAI shape. Tool calls get ids `call_<n>`; each tool result answers the oldest
-    unanswered call of the same name (the browser runs calls and sends results in order)."""
-    out: list[dict[str, Any]] = []
+    unanswered call of the same name (the browser runs calls and sends results in order).
+    OpenAI-style servers reject a tool call nobody answered and a result nobody asked for, so
+    both are dropped (and an assistant message left empty with them)."""
+    # Pass 1: pair results with calls. `result_of[i]` is the call id the tool message at
+    # position i answers; `answered` the calls that got a result.
+    result_of: dict[int, str] = {}
+    answered: set[str] = set()
     pending: list[tuple[str, str]] = []  # (id, name) not answered yet
     n = 0
-    for msg in messages:
+    ids: dict[tuple[int, int], str] = {}
+    for i, msg in enumerate(messages):
+        if msg["role"] == "tool":
+            name = str(msg.get("tool_name") or "")
+            idx = next((j for j, (_, nm) in enumerate(pending) if nm == name), 0 if pending else -1)
+            if idx >= 0:
+                call_id, _ = pending.pop(idx)
+                result_of[i] = call_id
+                answered.add(call_id)
+            continue
+        pending.clear()  # results must follow their calls directly
+        if msg["role"] == "assistant":
+            for k, call in enumerate(msg.get("tool_calls") or []):
+                n += 1
+                ids[(i, k)] = f"call_{n}"
+                fn = call.get("function") or {}
+                pending.append((f"call_{n}", str(fn.get("name") or "")))
+
+    out: list[dict[str, Any]] = []
+    for i, msg in enumerate(messages):
         role = msg["role"]
         content = msg.get("content") or ""
         if role == "tool":
-            name = str(msg.get("tool_name") or "")
-            idx = next((i for i, (_, nm) in enumerate(pending) if nm == name), 0 if pending else -1)
-            if idx < 0:
-                # A result without a call (should not happen): keep it as plain context.
-                out.append({"role": "user", "content": f"[{name} result] {content}"})
-                continue
-            call_id, _ = pending.pop(idx)
-            out.append({"role": "tool", "tool_call_id": call_id, "content": content})
+            if i in result_of:
+                out.append({"role": "tool", "tool_call_id": result_of[i], "content": content})
             continue
         if role == "assistant" and msg.get("tool_calls"):
             calls = []
-            for call in msg["tool_calls"]:
+            for k, call in enumerate(msg["tool_calls"]):
+                call_id = ids[(i, k)]
+                if call_id not in answered:
+                    continue
                 fn = call.get("function") or {}
-                n += 1
-                call_id = f"call_{n}"
-                pending.append((call_id, str(fn.get("name") or "")))
                 calls.append(
                     {
                         "id": call_id,
@@ -124,7 +142,10 @@ def to_openai(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         },
                     }
                 )
-            out.append({"role": "assistant", "content": content or None, "tool_calls": calls})
+            if calls:
+                out.append({"role": "assistant", "content": content or None, "tool_calls": calls})
+            elif content:
+                out.append({"role": "assistant", "content": content})
             continue
         if msg.get("images"):
             parts: list[dict[str, Any]] = [{"type": "text", "text": content}]
@@ -212,12 +233,17 @@ class _Chat:
     def __iter__(self) -> Iterator[Event]:
         calls = _Calls()
         reason = "stop"
+        finished = False
         usage: dict[str, Any] = {}
         try:
             while True:
                 line = self._resp.readline(MAX_LINE_BYTES)
                 if not line:
-                    break  # some servers end without [DONE]
+                    # Some servers end without [DONE], but only after a finish reason; a bare
+                    # EOF is a dropped connection and the answer is cut short.
+                    if finished:
+                        break
+                    raise AiUnavailable(f"{self._name} closed the stream early")
                 text = line.decode("utf-8", "replace").strip()
                 if not text.startswith("data:"):
                     continue  # comments (": keep-alive"), event names, blank lines
@@ -248,6 +274,7 @@ class _Chat:
                         calls.add(delta.get("tool_calls"))
                     if choice.get("finish_reason"):
                         reason = str(choice["finish_reason"])
+                        finished = True
             upstream.record(PROVIDER_ID, "ok")
             found = calls.result()
             if found:
