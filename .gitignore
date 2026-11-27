@@ -17,3 +17,7 @@ CLAUDE.local.md
 
 # Local e2e screenshots
 e2e/.artifacts/
+
+# Local dev planning (agent sessions)
+.zcode/
+docs/plans/
