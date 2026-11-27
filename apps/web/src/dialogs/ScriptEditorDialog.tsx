@@ -49,7 +49,7 @@ export interface ScriptEditorArg {
 const LINE_HEIGHT = 18;
 
 /** The script being edited. `isNew`: not saved yet (no server copy). */
-interface Draft {
+export interface Draft {
   id: string;
   isNew: boolean;
   /** Only used while `isNew`; saved scripts take the name from the store. */
@@ -65,6 +65,15 @@ function newDraft(scripts: readonly UserScript[]): Draft {
       scripts.map((s) => s.name),
     ),
   };
+}
+
+/**
+ * The draft to show once a save of script `startedId` has finished, or null when the editor
+ * has moved on to another script meanwhile (applying it would label that script's text with
+ * this id, and the next save would overwrite the wrong script).
+ */
+export function draftAfterSave(active: Draft, startedId: string, savedName: string): Draft | null {
+  return active.id === startedId ? { id: startedId, isNew: false, name: savedName } : null;
 }
 
 function initialState(
@@ -94,7 +103,14 @@ export default function ScriptEditorDialog({
   const scripts = useScriptsStore((s) => s.scripts);
   const instances = useIndicatorStore((s) => s.instances);
   const [init] = useState(() => initialState(useScriptsStore.getState().scripts, arg));
-  const [draft, setDraft] = useState(init.draft);
+  const [draft, setDraftState] = useState(init.draft);
+  // The script being edited right now: async handlers read this after an `await`, where
+  // `draft` of their render is stale.
+  const draftRef = useRef(init.draft);
+  const setDraft = (d: Draft) => {
+    draftRef.current = d;
+    setDraftState(d);
+  };
   const [text, setText] = useState(init.text);
   const [baseline, setBaseline] = useState(init.baseline);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
@@ -195,7 +211,9 @@ export default function ScriptEditorDialog({
           label: 'Reload',
           run: () => {
             sync?.adopt(err.current);
-            openScript(err.current);
+            // Only when still on that script: otherwise it would pull the editor away from
+            // (and discard) what is being edited now.
+            if (draftRef.current.id === err.current.id) openScript(err.current);
           },
         },
         { label: 'Overwrite', run: overwrite },
@@ -203,10 +221,15 @@ export default function ScriptEditorDialog({
       'error',
     );
 
+  /** Show the problems of script `id`, unless another script is open by now. */
+  const showDiagnostics = (id: string, a: Analysis) => {
+    if (draftRef.current.id === id) setDiagnostics(a.diagnostics);
+  };
+
   const saveDeps = (
     s: UserScriptsSync,
     id: string,
-    onAnalysis: (a: Analysis) => void = (a) => setDiagnostics(a.diagnostics),
+    onAnalysis: (a: Analysis) => void = (a) => showDiagnostics(id, a),
   ): SaveDeps => ({
     parse: parseSource,
     probe: (source, withCheck) =>
@@ -227,12 +250,16 @@ export default function ScriptEditorDialog({
     let shown = opts.analysis;
     const deps = saveDeps(s, id, (a) => {
       shown = a;
-      setDiagnostics(a.diagnostics);
+      showDiagnostics(id, a);
     });
     try {
       const { saved, analysis } = await saveScript(id, name, source, deps, opts);
-      setDraft({ id, isNew: false, name: saved.name });
-      setBaseline(source);
+      // The save can take seconds: the editor may show another script by now.
+      const next = draftAfterSave(draftRef.current, id, saved.name);
+      if (next) {
+        setDraft(next);
+        setBaseline(source);
+      }
       if (analysis.manifest) toast(`"${saved.name}" saved`, 'success', 1800);
       else if (loadTimedOut(analysis))
         toast(`Saved, but it cannot run: ${loadTimeoutMessage(PROBE_TIMEOUT_MS)}`, 'error');
@@ -256,10 +283,11 @@ export default function ScriptEditorDialog({
   const check = async () => {
     const s = requireSync();
     if (!s || busy) return;
+    const { id } = draft;
     setBusy('check');
     try {
-      const analysis = await analyzeScript(text, saveDeps(s, draft.id));
-      setDiagnostics(analysis.diagnostics);
+      const analysis = await analyzeScript(text, saveDeps(s, id));
+      showDiagnostics(id, analysis);
     } finally {
       setBusy(null);
     }
@@ -284,13 +312,18 @@ export default function ScriptEditorDialog({
       okLabel: 'Rename',
     });
     if (!next || next === name) return;
+    // The prompt is async: act on what is open now, not on this render's `draft`.
+    if (draftRef.current.id !== draft.id) return;
     if (!current) {
-      setDraft({ ...draft, name: next });
+      setDraft({ ...draftRef.current, name: next });
       return;
     }
     const s = requireSync();
     if (!s) return;
-    await renameScript(current, next, {
+    // Rename the stored script as it is now (not the copy this render saw).
+    const stored = useScriptsStore.getState().scripts.find((x) => x.id === current.id);
+    if (!stored) return;
+    await renameScript(stored, next, {
       save: (id, input, opts) => s.save(id, input, opts),
       onConflict: (err, overwrite) => conflictToast(err, () => void overwrite()),
       onError: (err) => toast(errorMessage(err), 'error'),
@@ -309,7 +342,7 @@ export default function ScriptEditorDialog({
       if (alsoInstances) removeIndicators(ids);
       toast(`"${target.name}" deleted`, 'success', 2500);
       setDeleting(null);
-      if (target.id === draft.id) afterRemoved(target.id);
+      if (target.id === draftRef.current.id) afterRemoved(target.id);
     } catch (err) {
       toast(errorMessage(err), 'error');
     }
@@ -369,6 +402,7 @@ export default function ScriptEditorDialog({
               type="button"
               className="io-icon-btn"
               aria-label="New script"
+              disabled={!!busy}
               title="New script"
               onClick={() => void create()}
             >
@@ -378,6 +412,7 @@ export default function ScriptEditorDialog({
               type="button"
               className="io-icon-btn"
               aria-label="Rename script"
+              disabled={!!busy}
               title="Rename"
               onClick={() => void rename()}
             >
@@ -387,6 +422,7 @@ export default function ScriptEditorDialog({
               type="button"
               className="io-icon-btn"
               aria-label="Duplicate script"
+              disabled={!!busy}
               title="Duplicate"
               onClick={() => void duplicate()}
             >
@@ -396,6 +432,7 @@ export default function ScriptEditorDialog({
               type="button"
               className="io-icon-btn"
               aria-label="Delete script"
+              disabled={!!busy}
               title="Delete"
               onClick={askDelete}
             >
@@ -416,6 +453,7 @@ export default function ScriptEditorDialog({
                 role="option"
                 aria-selected={s.id === draft.id && !draft.isNew}
                 className={`se-script${s.id === draft.id && !draft.isNew ? ' active' : ''}`}
+                disabled={!!busy}
                 onClick={() => void select(s)}
               >
                 <span className="se-script-name">{s.id === draft.id ? name : s.name}</span>
