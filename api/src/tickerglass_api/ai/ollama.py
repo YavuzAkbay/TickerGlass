@@ -31,8 +31,8 @@ MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_LINE_BYTES = 1024 * 1024
 #: Seconds for the small metadata calls (`/api/tags`, `/api/show`).
 META_TIMEOUT_S = 10.0
-#: Seconds a successful model list is reused.
-MODELS_TTL_S = 60.0
+#: Seconds a model list is reused (only to merge bursts: a freshly pulled model shows at once).
+MODELS_TTL_S = 2.0
 #: Families that mark a vision model on Ollama versions without `capabilities`.
 _VISION_FAMILIES = {"clip", "mllama"}
 
@@ -150,6 +150,7 @@ class OllamaBackend:
         keep_alive: str | None = None,
         allow: list[str] | None = None,
         connect: Connect | None = None,
+        meta_timeout_s: float = META_TIMEOUT_S,
     ) -> None:
         parts = urlsplit(url)
         if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -167,7 +168,10 @@ class OllamaBackend:
         self._keep_alive = keep_alive
         self._allow = {_normalize(n) for n in allow or []}
         self._connect = connect or self._default_connect
+        self._meta_timeout_s = meta_timeout_s
         self._models: tuple[float, list[ModelInfo]] | None = None
+        #: `/api/show` answers per (name, digest): a model's capabilities never change.
+        self._described: dict[tuple[str, str], ModelInfo | None] = {}
         self._models_lock = threading.Lock()
 
     def _default_connect(self, timeout: float) -> http.client.HTTPConnection:
@@ -192,7 +196,7 @@ class OllamaBackend:
             raise AiUnavailable("Ollama is not reachable") from None
 
     def _json(self, method: str, path: str, body: Any = None) -> Any:
-        conn, resp = self._open(method, path, body, META_TIMEOUT_S)
+        conn, resp = self._open(method, path, body, self._meta_timeout_s)
         try:
             raw = resp.read(MAX_JSON_BYTES + 1)
         except (OSError, http.client.HTTPException):
@@ -251,7 +255,10 @@ class OllamaBackend:
                 name = str(tag.get("name") or tag.get("model") or "")
                 if self._allow and _normalize(name) not in self._allow:
                     continue
-                info = self._describe(tag)
+                key = (name, str(tag.get("digest") or tag.get("modified_at") or ""))
+                if key not in self._described:
+                    self._described[key] = self._describe(tag)
+                info = self._described[key]
                 if info is not None:
                     models.append(info)
             models.sort(key=lambda m: m.name.lower())

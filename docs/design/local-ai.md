@@ -20,6 +20,25 @@ leaving the user's own hardware.
 
 ## 2. API (`api/src/tickerglass_api/ai/`, `routes/ai.py`)
 
+### 2.1 Where the set-up comes from
+
+Environment first (`OLLAMA_URL` or `AI_PROVIDER` set: in-app settings are read-only), else the
+admin's in-app settings in `app_meta["ai_config"]` = `{url, models, defaultModel}` (`ai/config.py`),
+else off. Resolved lazily into `app.state.ai_runtime` and replaced on save, so no restart.
+Admin routes: `GET /api/ai/config` (env URL with its password redacted), `PUT /api/ai/config`
+(409 when env-locked; `url: null` turns it off), `POST /api/ai/test {url?}`: probe one address, or
+with none probe `localhost`, `127.0.0.1`, `host.docker.internal` and `ollama` on 11434 in parallel
+(4 s each) and return the first that answers, with every chat model there (no allow-list). The
+admin is trusted with the address like `OLLAMA_URL`; plain users never choose it. The web has a
+Settings → AI tab (admins) and admins see the Ask AI section while it is off, with "Connect
+Ollama…".
+
+Model lists are live: `/api/tags` is read on every status call (2 s burst cache) and only the
+per-model `/api/show` answer is cached, keyed by name and digest. The panel re-reads the status
+when it opens and when the model picker is pointed at.
+
+### 2.2 Routes
+
 - `GET /api/ai/status` (any user): `{enabled: false}` or `{enabled, provider, reachable, error,
 models: [{name, vision, parameterSize, sizeBytes}], defaultModel, numCtx, maxImageBytes}`.
   Models come from `/api/tags`; `/api/show` `capabilities` marks vision models and drops

@@ -16,8 +16,21 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from ..ai import AiBackend, AiError, ModelInfo
+from ..ai.config import (
+    MAX_MODELS,
+    AiConfig,
+    AiRuntime,
+    detect,
+    env_locked,
+    load_config,
+    normalize_url,
+    probe,
+    redact_url,
+    resolve,
+    save_config,
+)
 from ..ai.prompt import assemble
-from ..deps import SettingsDep, UserDep
+from ..deps import AdminDep, SettingsDep, UserDep
 
 log = logging.getLogger(__name__)
 
@@ -40,9 +53,19 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_MESSAGES)
 
 
+def _runtime(request: Request) -> AiRuntime:
+    """The AI set-up in force, resolved from the environment and the database on first use."""
+    state = request.app.state
+    runtime: AiRuntime | None = state.ai_runtime
+    if runtime is None:
+        settings = state.settings
+        stored = None if env_locked(settings) else load_config(state.engine)
+        runtime = state.ai_runtime = resolve(settings, stored)
+    return runtime
+
+
 def _backend(request: Request) -> AiBackend | None:
-    backend: AiBackend | None = request.app.state.ai
-    return backend
+    return _runtime(request).backend
 
 
 def _default_model(models: list[ModelInfo], wanted: str | None) -> str | None:
@@ -56,7 +79,8 @@ def _default_model(models: list[ModelInfo], wanted: str | None) -> str | None:
 
 @router.get("/status")
 def status(request: Request, who: UserDep, settings: SettingsDep) -> dict[str, Any]:
-    backend = _backend(request)
+    runtime = _runtime(request)
+    backend = runtime.backend
     if backend is None:
         return {"enabled": False}
     try:
@@ -70,7 +94,7 @@ def status(request: Request, who: UserDep, settings: SettingsDep) -> dict[str, A
         "reachable": error is None,
         "error": error,
         "models": [m.as_json() for m in models],
-        "defaultModel": _default_model(models, settings.ai_default_model),
+        "defaultModel": _default_model(models, runtime.default_model),
         "numCtx": settings.ai_num_ctx,
         "maxImageBytes": int(settings.ai_max_image_mb * 1024 * 1024),
     }
@@ -148,3 +172,90 @@ async def chat(
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+# ------------------------------------------------------------ admin set-up (Settings → AI)
+
+
+def _config_view(request: Request, settings: Any) -> dict[str, Any]:
+    runtime = _runtime(request)
+    if runtime.source == "env":
+        return {
+            "source": "env",
+            "locked": True,
+            "provider": settings.ai_backend,
+            "url": redact_url(settings.ollama_url),
+            "models": list(settings.ai_models),
+            "defaultModel": settings.ai_default_model,
+        }
+    cfg = runtime.config
+    return {
+        "source": runtime.source,
+        "locked": False,
+        "provider": "ollama" if cfg else None,
+        "url": cfg.url if cfg else None,
+        "models": list(cfg.models) if cfg else [],
+        "defaultModel": cfg.default_model if cfg else None,
+    }
+
+
+@router.get("/config")
+def get_config(request: Request, who: AdminDep, settings: SettingsDep) -> dict[str, Any]:
+    return _config_view(request, settings)
+
+
+class ConfigBody(BaseModel):
+    #: None or "" turns Ask AI off.
+    url: str | None = Field(default=None, max_length=2000)
+    #: Models users may pick; empty = every installed chat model.
+    models: list[str] = Field(default_factory=list, max_length=MAX_MODELS)
+    defaultModel: str | None = Field(default=None, max_length=200)
+
+
+@router.put("/config")
+def put_config(
+    body: ConfigBody, request: Request, who: AdminDep, settings: SettingsDep
+) -> dict[str, Any]:
+    if env_locked(settings):
+        raise HTTPException(409, "Ask AI is set by the server environment (OLLAMA_URL)")
+    config: AiConfig | None = None
+    if body.url and body.url.strip():
+        try:
+            url = normalize_url(body.url)
+        except ValueError as exc:
+            raise HTTPException(422, f"Ollama URL {exc}") from None
+        models = tuple(dict.fromkeys(m.strip() for m in body.models if m.strip()))
+        default = (body.defaultModel or "").strip() or None
+        config = AiConfig(url, models, default)
+    save_config(request.app.state.engine, config)
+    request.app.state.ai_runtime = resolve(settings, config)
+    log.info("Ask AI %s in the app", "connected" if config else "turned off")
+    return _config_view(request, settings)
+
+
+class TestBody(BaseModel):
+    #: None: try the usual addresses (localhost, host.docker.internal, ollama).
+    url: str | None = Field(default=None, max_length=2000)
+
+
+@router.post("/test")
+def test_connection(body: TestBody, who: AdminDep, settings: SettingsDep) -> dict[str, Any]:
+    """Reach an Ollama and list every chat model there (no allow-list)."""
+    if body.url and body.url.strip():
+        try:
+            url = normalize_url(body.url)
+        except ValueError as exc:
+            raise HTTPException(422, f"Ollama URL {exc}") from None
+        result = probe(settings, url)
+        tried = [result]
+    else:
+        found, tried = detect(settings)
+        result = found or tried[0]
+    if result.models is None:
+        return {
+            "ok": False,
+            "url": result.url,
+            "error": result.error,
+            "tried": [{"url": r.url, "error": r.error} for r in tried],
+        }
+    return {"ok": True, "url": result.url, "models": [m.as_json() for m in result.models]}

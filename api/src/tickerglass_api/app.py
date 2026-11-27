@@ -16,7 +16,6 @@ from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .accounts import Accounts
-from .ai import make_backend
 from .auth import (
     USERNAME_MAX_FAILURES,
     Authenticator,
@@ -227,7 +226,8 @@ def create_app(
             server_lock.release()
 
     app = FastAPI(title="TickerGlass API", version=__version__, lifespan=lifespan)
-    app.state.ai = make_backend(settings)
+    # Ask AI: resolved on first use (the in-app settings live in the database).
+    app.state.ai_runtime = None
     app.state.ai_active = set()
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(

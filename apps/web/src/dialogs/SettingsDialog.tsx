@@ -9,6 +9,7 @@ import {
   PanelTop,
   Ruler,
   Server,
+  Sparkles,
   UserRound,
   Users,
 } from 'lucide-react';
@@ -45,6 +46,8 @@ import { useAppStore, type Theme } from '../store/app';
 import { DEFAULT_STATUS_LINE, useChartView, type StatusLineSettings } from '../store/chartView';
 import { TradingTab } from '../replay/TradingTab';
 import { AccountTab } from '../settings/AccountTab';
+import { AiTab } from '../settings/AiTab';
+import { isAdminInfo } from '../auth/access';
 import { ServerTab } from '../settings/ServerTab';
 import { UsersTab } from '../settings/UsersTab';
 import { useAuthStore } from '../store/auth';
@@ -67,6 +70,7 @@ type TabId =
   | 'events'
   | 'dataSource'
   | 'server'
+  | 'ai'
   | 'account'
   | 'users';
 
@@ -85,6 +89,7 @@ const TABS: {
   { id: 'alerts', label: 'settings.tab.alerts', icon: AlarmClock },
   { id: 'dataSource', label: 'settings.tab.dataSource', icon: Database },
   { id: 'server', label: 'settings.tab.server', icon: Server },
+  { id: 'ai', label: 'settings.tab.ai', icon: Sparkles },
   { id: 'account', label: 'settings.tab.account', icon: UserRound },
   { id: 'users', label: 'settings.tab.users', icon: Users },
 ];
@@ -93,7 +98,9 @@ const TABS: {
 export function visibleTabs(info: AuthState | null): typeof TABS {
   return TABS.filter(
     (def) =>
-      (def.id !== 'account' || !!info?.user?.id) && (def.id !== 'users' || !!info?.canManageUsers),
+      (def.id !== 'account' || !!info?.user?.id) &&
+      (def.id !== 'users' || !!info?.canManageUsers) &&
+      (def.id !== 'ai' || isAdminInfo(info)),
   );
 }
 
@@ -189,7 +196,7 @@ const sameScale = (a: Draft['scale'], b: Draft['scale']) =>
   !!a && !!b && a.mode === b.mode && a.invert === b.invert && a.autoScale === b.autoScale;
 
 /** Chart settings: tabs on the left, live preview, Ok applies, Cancel reverts. */
-export default function SettingsDialog({ onClose }: { onClose: () => void; arg?: unknown }) {
+export default function SettingsDialog({ onClose, arg }: { onClose: () => void; arg?: unknown }) {
   const t = useT();
   const caps = useCapabilities();
   const provider = useProviderName();
@@ -197,7 +204,11 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
   const [draft, setDraft] = useState(initial);
   const authInfo = useAuthStore((s) => s.info);
   const tabs = visibleTabs(authInfo);
-  const [tab, setTab] = useState<TabId>('symbol');
+  // `openDialog('settings', { tab: 'ai' })` opens on a given tab.
+  const [tab, setTab] = useState<TabId>(() => {
+    const want = (arg as { tab?: unknown } | undefined)?.tab;
+    return tabs.some((d) => d.id === want) ? (want as TabId) : 'symbol';
+  });
   const chartType = useChartView((st) => st.chartType);
   const [templateBtn, setTemplateBtn] = useState<HTMLButtonElement | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -602,6 +613,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void; arg?:
     );
   } else if (tab === 'server') {
     content = <ServerTab />;
+  } else if (tab === 'ai') {
+    content = <AiTab />;
   } else if (tab === 'account') {
     content = <AccountTab />;
   } else if (tab === 'users') {

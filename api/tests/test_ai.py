@@ -307,3 +307,103 @@ def test_route_ollama_down(tmp_path: Path) -> None:
 def test_make_backend_demo() -> None:
     backend = make_backend(Settings(_env_file=None, ai_provider="demo"))  # type: ignore[call-arg]
     assert backend is not None and backend.id == "demo"
+
+
+# --- in-app set-up (Settings → AI) -------------------------------------------------------
+
+
+def test_config_off_by_default(tmp_path: Path) -> None:
+    with make(tmp_path) as c:
+        assert c.get("/api/ai/config").json() == {
+            "source": "off",
+            "locked": False,
+            "provider": None,
+            "url": None,
+            "models": [],
+            "defaultModel": None,
+        }
+
+
+def test_config_connect_persist_and_turn_off(tmp_path: Path, ollama: FakeOllama) -> None:
+    with make(tmp_path) as c:
+        r = c.put(
+            "/api/ai/config",
+            json={
+                "url": ollama.url + "/",
+                "models": ["qwen2.5:7b", "gemma3:4b"],
+                "defaultModel": "qwen2.5:7b",
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["source"] == "app" and r.json()["url"] == ollama.url
+        st = c.get("/api/ai/status").json()
+        assert st["enabled"] and st["provider"] == "ollama"
+        assert [m["name"] for m in st["models"]] == ["gemma3:4b", "qwen2.5:7b"]  # allow-list
+        assert st["defaultModel"] == "qwen2.5:7b"
+        assert c.post("/api/ai/chat", json=ask(model="qwen2.5:7b")).status_code == 200
+    # A restart reads it back from the database.
+    with make(tmp_path) as c:
+        assert c.get("/api/ai/status").json()["enabled"]
+        assert c.put("/api/ai/config", json={"url": None}).json()["source"] == "off"
+        assert c.get("/api/ai/status").json() == {"enabled": False}
+    with make(tmp_path) as c:
+        assert c.get("/api/ai/status").json() == {"enabled": False}
+
+
+def test_config_rejects_bad_url(tmp_path: Path) -> None:
+    with make(tmp_path) as c:
+        r = c.put("/api/ai/config", json={"url": "ftp://x"})
+        assert r.status_code == 422
+        assert "http(s)" in r.json()["detail"]
+
+
+def test_config_locked_by_environment(tmp_path: Path) -> None:
+    with make(tmp_path, ollama_url="http://u:secret@10.0.0.5:11434") as c:
+        view = c.get("/api/ai/config").json()
+        assert view["locked"] and view["source"] == "env"
+        assert view["url"] == "http://u:***@10.0.0.5:11434"
+        assert c.put("/api/ai/config", json={"url": "http://x:1"}).status_code == 409
+
+
+def test_config_admin_only(multi: Any) -> None:
+    alice = multi.users["alice"]
+    assert alice.get("/api/ai/config").status_code == 403
+    assert alice.put("/api/ai/config", json={"url": None}).status_code == 403
+    assert alice.post("/api/ai/test", json={}).status_code == 403
+    assert alice.get("/api/ai/status").status_code == 200
+
+
+def test_test_connection(tmp_path: Path, ollama: FakeOllama) -> None:
+    with make(tmp_path) as c:
+        r = c.post("/api/ai/test", json={"url": ollama.url.removeprefix("http://")}).json()
+        assert r["ok"] and r["url"] == ollama.url
+        assert [m["name"] for m in r["models"]] == ["gemma3:4b", "llava:latest", "qwen2.5:7b"]
+        r = c.post("/api/ai/test", json={"url": "http://127.0.0.1:9"}).json()
+        assert not r["ok"] and "not reachable" in r["error"]
+
+
+def test_detect(tmp_path: Path, ollama: FakeOllama, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tickerglass_api.ai import config
+
+    monkeypatch.setattr(config, "CANDIDATE_URLS", ("http://127.0.0.1:9", ollama.url))
+    with make(tmp_path) as c:
+        r = c.post("/api/ai/test", json={}).json()
+        assert r["ok"] and r["url"] == ollama.url
+    monkeypatch.setattr(config, "CANDIDATE_URLS", ("http://127.0.0.1:9",))
+    with make(tmp_path) as c:
+        r = c.post("/api/ai/test", json={}).json()
+        assert not r["ok"] and r["tried"][0]["url"] == "http://127.0.0.1:9"
+
+
+def test_new_model_shows_at_once(ollama: FakeOllama, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tickerglass_api.ai import ollama as ollama_mod
+
+    monkeypatch.setattr(ollama_mod, "MODELS_TTL_S", 0)
+    backend = OllamaBackend(ollama.url, timeout_s=5, num_ctx=8192)
+    assert len(backend.list_models()) == 3
+    shows = sum(r["path"] == "/api/show" for r in ollama.requests)
+    ollama.models.append({"name": "phi4:latest", "size": 1, "details": {}})
+    ollama.capabilities["phi4:latest"] = ["completion"]
+    assert "phi4:latest" in [m.name for m in backend.list_models()]
+    # Only the new model was described again.
+    assert sum(r["path"] == "/api/show" for r in ollama.requests) == shows + 1

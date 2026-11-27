@@ -141,6 +141,7 @@ export const en = {
   'settings.tab.events': 'Markers',
   'settings.tab.dataSource': 'Data source',
   'settings.tab.server': 'Server',
+  'settings.tab.ai': 'AI',
   'settings.tab.account': 'Account',
   'settings.tab.users': 'Users',
   'settings.dataSource.title': 'Market data provider',

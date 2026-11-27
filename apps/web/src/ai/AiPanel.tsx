@@ -2,6 +2,7 @@
 import { ArrowUp, BarChart3, RefreshCw, ScanSearch, Square, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getActiveSession, useChartStore } from '../store/chart';
+import { useUiStore } from '../store/ui';
 import { clearRangeSelect, startRangeSelect } from './attach';
 import { ask, resolveModel, stopAsking } from './chat';
 import { Markdown } from './Markdown';
@@ -101,9 +102,10 @@ export function AiPanel() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Fresh status (and model list) every time the panel opens.
   useEffect(() => {
-    if (!status && !loading) void refresh();
-  }, [status, loading, refresh]);
+    void refresh();
+  }, [refresh]);
 
   // A new range selection (or "Ask AI") puts the cursor in the question box.
   useEffect(() => {
@@ -132,11 +134,18 @@ export function AiPanel() {
     return (
       <div className="ai-panel">
         <div className="ai-pad ai-empty">
-          <h4>Ask AI is off</h4>
+          <h4>Ask AI is not connected</h4>
           <p>
-            Point the server at a local <a href="https://ollama.com">Ollama</a> with{' '}
-            <code>OLLAMA_URL</code> to ask questions about your charts.
+            Ask questions about your charts with a model running on your own{' '}
+            <a href="https://ollama.com">Ollama</a>. Connect it once and every user can use it.
           </p>
+          <button
+            type="button"
+            className="io-btn io-btn-primary"
+            onClick={() => useUiStore.getState().openDialog('settings', { tab: 'ai' })}
+          >
+            Connect Ollama…
+          </button>
         </div>
       </div>
     );
@@ -174,6 +183,9 @@ export function AiPanel() {
           aria-label="Model"
           value={model?.name ?? ''}
           disabled={!status.models.length}
+          // Re-read the installed models whenever the list is about to be used.
+          onPointerEnter={() => void refresh()}
+          onFocus={() => void refresh()}
           onChange={(e) => setPrefs({ model: e.target.value })}
         >
           {!status.models.length && <option value="">No models</option>}
@@ -218,7 +230,7 @@ export function AiPanel() {
       {status.reachable && !status.models.length && (
         <div className="ai-notice">
           No chat models installed. On the Ollama machine run <code>ollama pull qwen2.5:7b</code>{' '}
-          (or a vision model such as <code>qwen2.5vl:7b</code>), then reload.
+          (or a vision model such as <code>qwen2.5vl:7b</code>); it shows up here straight away.
         </div>
       )}
 

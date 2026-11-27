@@ -2,7 +2,7 @@
  * Ask AI about the chart: the server's `/api/ai` routes (docs/design/local-ai.md). The chat
  * answer streams back as NDJSON, one event per line.
  */
-import { ApiError, getJson, notifyUnauthorized } from '../api/client';
+import { ApiError, getJson, notifyUnauthorized, requestJson } from '../api/client';
 
 export interface AiModel {
   name: string;
@@ -110,4 +110,43 @@ export async function streamChat(
   }
   const rest = buffer.trim() ? parseEvent(buffer.trim()) : null;
   if (rest) onEvent(rest);
+}
+
+// ------------------------------------------------------------ admin set-up (Settings → AI)
+
+export interface AiConfig {
+  /** env: OLLAMA_URL / AI_PROVIDER in the server environment (read-only here). */
+  source: 'env' | 'app' | 'off';
+  locked: boolean;
+  provider: string | null;
+  url: string | null;
+  /** Models users may pick; empty = all installed. */
+  models: string[];
+  defaultModel: string | null;
+}
+
+export type AiTestResult =
+  | { ok: true; url: string; models: AiModel[] }
+  | {
+      ok: false;
+      url: string;
+      error: string | null;
+      tried?: { url: string; error: string | null }[];
+    };
+
+export function getAiConfig(): Promise<AiConfig> {
+  return getJson<AiConfig>('/ai/config');
+}
+
+export function saveAiConfig(body: {
+  url: string | null;
+  models: string[];
+  defaultModel: string | null;
+}): Promise<AiConfig> {
+  return requestJson<AiConfig>('PUT', '/ai/config', body);
+}
+
+/** Reach Ollama at `url`, or with no url try the usual addresses. */
+export function testAi(url?: string): Promise<AiTestResult> {
+  return requestJson<AiTestResult>('POST', '/ai/test', url ? { url } : {});
 }

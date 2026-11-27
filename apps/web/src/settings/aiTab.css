@@ -1,0 +1,93 @@
+/* Settings → AI */
+.ai-set-url {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.ai-set-url .io-input {
+  flex: 1;
+  min-width: 0;
+}
+.ai-set-url .io-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.ai-set-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ai-set-ok {
+  color: var(--up);
+}
+.ai-set-error {
+  color: var(--down);
+}
+.ai-set-models {
+  list-style: none;
+  margin: 6px 0 10px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.ai-set-models li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+}
+.ai-set-models li + li {
+  border-top: 1px solid var(--border);
+}
+.ai-set-models .dlg-check {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.ai-set-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-set-dim {
+  opacity: 0.75;
+}
+.ai-set-meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-set-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+}
+.ai-set-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.ai-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+}

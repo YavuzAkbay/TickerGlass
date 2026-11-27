@@ -48,9 +48,24 @@ ollama pull qwen2.5vl:7b      # can also read the chart picture, about 6 GB
 Models under about 3 billion parameters run fast but often misread the numbers. Use them only to
 try the feature.
 
-### 2. Point TickerGlass at it
+### 2. Connect it in the app
 
-Set `OLLAMA_URL` for the API (in `.env`, the `api` container or the all-in-one image) and restart:
+As an admin, open **Settings → AI** (or click **Ask AI** in the right-hand navigator and then
+**Connect Ollama…**):
+
+1. The tab looks for Ollama by itself (this machine, the Docker host, an `ollama` container). If it
+   is somewhere else, type its address, e.g. `http://192.168.1.10:11434`, and press **Test**.
+2. The installed chat models are listed with their size and whether they read images. Leave
+   **Users can pick any installed model** ticked, or untick it and choose which ones.
+3. Pick a **Default model** and press **Connect**.
+
+No restart is needed. Models you `ollama pull` later appear in this list and in everyone's model
+picker straight away. **Turn off** disconnects.
+
+#### Or with an environment variable
+
+Set `OLLAMA_URL` for the API (in `.env`, the `api` container or the all-in-one image) and restart.
+This wins over the in-app settings, which then show it read-only:
 
 | Where Ollama runs                          | `OLLAMA_URL`                        |
 | ------------------------------------------ | ----------------------------------- |
@@ -80,7 +95,7 @@ what was received.
 
 | Variable           | Default   | Meaning                                                                              |
 | ------------------ | --------- | ------------------------------------------------------------------------------------ |
-| `OLLAMA_URL`       | unset     | Ollama base URL. Unset (and no `AI_PROVIDER`) turns the feature off and hides it.    |
+| `OLLAMA_URL`       | unset     | Ollama base URL; wins over Settings → AI. Unset: the in-app setting decides.         |
 | `AI_PROVIDER`      | unset     | `ollama` or `demo`. Unset: `ollama` when `OLLAMA_URL` is set.                        |
 | `AI_MODELS`        | all       | Comma list of the models users may pick, e.g. `qwen2.5:7b,qwen2.5vl:7b`.             |
 | `AI_DEFAULT_MODEL` | first one | Preselected model.                                                                   |

@@ -3,6 +3,7 @@ import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react'
 import { commands } from '../commands/registry';
 import { useT } from '../i18n';
 import { selectAiEnabled, useAiStatus } from '../ai/store';
+import { useIsAdmin } from '../auth/access';
 import { useReplayStore } from '../replay/store';
 import { DEFAULT_NAV_WIDTH, MAX_NAV_WIDTH, MIN_NAV_WIDTH, useUiStore } from '../store/ui';
 import { IconButton } from '../ui/IconButton';
@@ -34,14 +35,17 @@ export function Navigator() {
   const replaying = useReplayStore((s) => s.status !== 'off');
   const drag = useRef<{ x: number; w: number } | null>(null);
 
+  // Admins see Ask AI while it is off too: its panel offers to connect Ollama.
   const aiEnabled = useAiStatus(selectAiEnabled);
+  const admin = useIsAdmin();
+  const aiShown = aiEnabled || admin;
   // Learn once whether the server has Ask AI on (the rail hides the section otherwise).
   useEffect(() => {
     void useAiStatus.getState().refresh();
   }, []);
 
   const sections = SECTIONS.filter(
-    (s) => (s.id !== 'replayTrading' || replaying) && (s.id !== 'ai' || aiEnabled),
+    (s) => (s.id !== 'replayTrading' || replaying) && (s.id !== 'ai' || aiShown),
   );
   const def = sections.find((s) => s.id === navSection) ?? sections[0];
   const open = navOpen && !!def;
