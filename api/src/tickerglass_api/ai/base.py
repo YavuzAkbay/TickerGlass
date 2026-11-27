@@ -47,6 +47,12 @@ class ModelInfo:
     #: As reported by the backend (`7.6B`), for display only.
     parameter_size: str | None = None
     size_bytes: int | None = None
+    #: Capability tier ("basic" | "standard" | "full", see `tiers.py`); None until resolved.
+    tier: str | None = None
+    #: Runs at a cloud provider (chart data leaves the server).
+    cloud: bool = False
+    #: The connection serving it (`ollama` or a cloud connection id).
+    connection: str | None = None
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -55,6 +61,9 @@ class ModelInfo:
             "tools": self.tools,
             "parameterSize": self.parameter_size,
             "sizeBytes": self.size_bytes,
+            "tier": self.tier,
+            "cloud": self.cloud,
+            "connection": self.connection,
         }
 
 

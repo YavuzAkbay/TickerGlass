@@ -24,6 +24,7 @@ import { commit, findDrawing } from '../drawings/actions';
 import { addIndicator, findIndicator, removeIndicators } from '../indicators/actions';
 import { useIndicatorStore } from '../indicators/store';
 import { runInSession } from '../store/chart';
+import type { AiTier } from './api';
 import { fundamentalsReport } from './fundamentals';
 
 /** Ollama function schema. */
@@ -117,7 +118,39 @@ export const READ_ONLY_TOOLS = new Set([
   'find_swings',
   'find_divergences',
   'find_levels',
+  'search_indicators',
+  'list_drawings',
+  'get_bars',
+  'get_events',
+  'get_news',
 ]);
+
+const TIER_RANK: Record<AiTier, number> = { basic: 0, standard: 1, full: 2 };
+/** Lowest tier offered each tool; unlisted tools are Basic (mirrors the server's TIER_TOOLS). */
+const MIN_TIER: Record<string, AiTier> = {
+  search_indicators: 'standard',
+  draw: 'standard',
+  list_drawings: 'full',
+  update_drawing: 'full',
+  remove_drawing: 'full',
+  edit_indicator: 'full',
+  set_chart: 'full',
+  get_bars: 'full',
+  get_events: 'full',
+  get_news: 'full',
+};
+
+/** Tool rounds per question before the loop gives up. */
+export const MAX_TOOL_ROUNDS: Record<AiTier, number> = { basic: 6, standard: 10, full: 16 };
+
+/** The tools a model of `tier` gets; only read-only ones unless the user allows chart changes. */
+export function schemasFor(tier: AiTier, allowActions: boolean): ToolSchema[] {
+  return TOOL_SCHEMAS.filter((t) => {
+    const name = t.function.name;
+    if (TIER_RANK[MIN_TIER[name] ?? 'basic'] > TIER_RANK[tier]) return false;
+    return allowActions || READ_ONLY_TOOLS.has(name);
+  });
+}
 const TONE = { bullish: '#34C38F', bearish: '#F2626B', neutral: '#9AA8FF' } as const;
 type Tone = keyof typeof TONE;
 const MAX_RESULT_CHARS = 4000;

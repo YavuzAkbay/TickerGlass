@@ -74,6 +74,14 @@
   color: var(--accent-text);
   font-size: 11px;
 }
+.ai-set-tier {
+  flex: none;
+  width: auto;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 12px;
+}
 .ai-set-actions {
   display: flex;
   justify-content: flex-end;

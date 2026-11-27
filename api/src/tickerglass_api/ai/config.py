@@ -20,6 +20,7 @@ from ..settings import Settings
 from .base import AiBackend, AiError, ModelInfo
 from .demo import DemoBackend
 from .ollama import OllamaBackend
+from .tiers import is_tier
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,8 @@ class AiConfig:
     default_model: str | None = None
     #: Context window sent to Ollama; None = `AI_NUM_CTX`.
     num_ctx: int | None = None
+    #: Capability tier an admin set per model name; others get the automatic one.
+    tiers: dict[str, str] = field(default_factory=dict)
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -57,6 +60,7 @@ class AiConfig:
             "models": list(self.models),
             "defaultModel": self.default_model,
             "numCtx": self.num_ctx,
+            "tiers": dict(self.tiers),
         }
 
 
@@ -106,7 +110,13 @@ def load_config(engine: Engine) -> AiConfig | None:
         default = value.get("defaultModel")
         ctx = value.get("numCtx")
         num_ctx = int(ctx) if isinstance(ctx, int) and NUM_CTX_MIN <= ctx <= NUM_CTX_MAX else None
-        return AiConfig(url, models, str(default) if default else None, num_ctx)
+        raw_tiers = value.get("tiers")
+        tiers = {
+            str(k): str(v)
+            for k, v in (raw_tiers.items() if isinstance(raw_tiers, dict) else [])
+            if is_tier(v)
+        }
+        return AiConfig(url, models, str(default) if default else None, num_ctx, tiers)
     except (KeyError, TypeError, ValueError, AttributeError):
         log.warning("ignoring the stored AI settings, they are malformed")
         return None
@@ -149,6 +159,11 @@ class AiRuntime:
     config: AiConfig | None = None
     #: Context window in force.
     num_ctx: int = 16384
+
+    @property
+    def tiers(self) -> dict[str, str]:
+        """Admin-set tiers per model (none when the environment decides)."""
+        return dict(self.config.tiers) if self.config else {}
 
 
 def resolve(settings: Settings, stored: AiConfig | None) -> AiRuntime:

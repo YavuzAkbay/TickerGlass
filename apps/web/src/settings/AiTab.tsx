@@ -6,12 +6,15 @@ import { CheckCircle2, CircleAlert, Radar, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../api/client';
 import {
+  AI_TIERS,
+  TIER_LABEL,
   getAiConfig,
   saveAiConfig,
   testAi,
   type AiConfig,
   type AiModel,
   type AiTestResult,
+  type AiTier,
 } from '../ai/api';
 import { useAiStatus } from '../ai/store';
 import { Row, Section } from '../dialogs/controls';
@@ -39,6 +42,7 @@ export function AiTab() {
   const [picked, setPicked] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
   const [numCtx, setNumCtx] = useState(16384);
+  const [tiers, setTiers] = useState<Record<string, AiTier>>({});
   const [probe, setProbe] = useState<Probe>({ state: 'idle' });
   const [saving, setSaving] = useState(false);
   const testSeq = useRef(0);
@@ -63,6 +67,7 @@ export function AiTab() {
     setPicked(c.models);
     setDefaultModel(c.defaultModel ?? '');
     setNumCtx(c.numCtx);
+    setTiers(c.tiers ?? {});
   };
 
   useEffect(() => {
@@ -100,7 +105,8 @@ export function AiTab() {
     (allModels ? 0 : picked.length) !== config.models.length ||
     (!allModels && picked.some((m) => !config.models.includes(m))) ||
     defaultModel !== (config.defaultModel ?? '') ||
-    numCtx !== config.numCtx;
+    numCtx !== config.numCtx ||
+    JSON.stringify(tiers) !== JSON.stringify(config.tiers ?? {});
 
   const save = async (off = false) => {
     setSaving(true);
@@ -113,6 +119,7 @@ export function AiTab() {
               models: allModels ? [] : picked,
               defaultModel: defaultModel && allowed.includes(defaultModel) ? defaultModel : null,
               numCtx,
+              tiers,
             },
       );
       adopt(next);
@@ -253,6 +260,27 @@ export function AiTab() {
                     </span>
                     {m.vision && <span className="ai-set-tag">reads images</span>}
                     {m.tools && <span className="ai-set-tag">chart tools</span>}
+                    {m.tools && (
+                      <select
+                        className="io-input ai-set-tier"
+                        aria-label={`Tools tier of ${m.name}`}
+                        title="Basic: strict script, core chart tools (small models). Standard: freer answers, every indicator, Fibonacci and more drawings. Full: every tool, other symbols, news, chart changes (large and cloud models)."
+                        value={tiers[m.name] ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value as AiTier | '';
+                          setTiers(({ [m.name]: _, ...rest }) =>
+                            v ? { ...rest, [m.name]: v } : rest,
+                          );
+                        }}
+                      >
+                        <option value="">Auto ({TIER_LABEL[m.tier]})</option>
+                        {AI_TIERS.map((t) => (
+                          <option key={t} value={t}>
+                            {TIER_LABEL[t]}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </li>
                 ))}
               </ul>

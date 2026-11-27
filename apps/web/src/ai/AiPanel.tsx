@@ -14,6 +14,7 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { getActiveSession, useChartStore } from '../store/chart';
 import { useUiStore } from '../store/ui';
+import { TIER_LABEL } from './api';
 import { clearRangeSelect, startRangeSelect } from './attach';
 import { ask, resolveModel, stopAsking, undoAiChanges } from './chat';
 import { Markdown } from './Markdown';
@@ -236,6 +237,8 @@ export function AiPanel() {
               {m.name}
               {fmtSize(m.parameterSize)}
               {m.vision ? ' · vision' : ''}
+              {m.tools ? ` · ${TIER_LABEL[m.tier] ?? m.tier}` : ''}
+              {m.cloud ? ' · cloud' : ''}
             </option>
           ))}
         </select>

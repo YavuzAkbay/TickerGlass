@@ -17,6 +17,9 @@ const RESERVED_TOKENS = 2500;
 /** With chart tools: their definitions (~1.5K), results over several rounds and the model's
  * reasoning between them need room too (a full window cuts the answer off mid-sentence). */
 const RESERVED_TOKENS_TOOLS = 7000;
+/** The tool count `RESERVED_TOKENS_TOOLS` was sized for, and tokens per tool beyond it. */
+const BASE_TOOL_COUNT = 13;
+const TOKENS_PER_TOOL = 150;
 /** Share of the rest of the context window the brief may use. */
 const BRIEF_SHARE = 0.7;
 /** With tools the brief never takes more than this share of the whole window. */
@@ -26,13 +29,13 @@ const BRIEF_MAX_SHARE_TOOLS = 0.35;
 const SKIP_DRAWINGS = new Set(['image', 'icon', 'emoji', 'sticker']);
 
 /** Token budget of the brief for a model context window of `numCtx` tokens. */
-export function briefBudget(numCtx: number, tools = false): number {
+export function briefBudget(numCtx: number, tools = false, toolCount = BASE_TOOL_COUNT): number {
   if (!tools) return Math.max(800, Math.floor((numCtx - RESERVED_TOKENS) * BRIEF_SHARE));
+  const reserved =
+    RESERVED_TOKENS_TOOLS + Math.max(0, toolCount - BASE_TOOL_COUNT) * TOKENS_PER_TOOL;
   return Math.max(
     800,
-    Math.floor(
-      Math.min((numCtx - RESERVED_TOKENS_TOOLS) * BRIEF_SHARE, numCtx * BRIEF_MAX_SHARE_TOOLS),
-    ),
+    Math.floor(Math.min((numCtx - reserved) * BRIEF_SHARE, numCtx * BRIEF_MAX_SHARE_TOOLS)),
   );
 }
 

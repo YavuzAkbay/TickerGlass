@@ -14,9 +14,10 @@ from ollama_fake import FakeOllama, serve
 from pydantic import ValidationError
 from test_userdata import NullProvider
 
-from tickerglass_api.ai import AiBadRequest, AiUnavailable, make_backend
+from tickerglass_api.ai import AiBadRequest, AiUnavailable, ModelInfo, make_backend
 from tickerglass_api.ai.ollama import OllamaBackend
-from tickerglass_api.ai.prompt import SYSTEM_PROMPT
+from tickerglass_api.ai.prompt import SYSTEM_PROMPT, system_prompt
+from tickerglass_api.ai.tiers import auto_tier, parse_billions, with_tiers
 from tickerglass_api.app import create_app
 from tickerglass_api.metrics import upstream
 from tickerglass_api.settings import Settings
@@ -322,6 +323,7 @@ def test_config_off_by_default(tmp_path: Path) -> None:
             "models": [],
             "defaultModel": None,
             "numCtx": 16384,
+            "tiers": {},
         }
 
 
@@ -551,3 +553,65 @@ def test_slow_first_token_is_not_unreachable(ollama: FakeOllama) -> None:
     backend = OllamaBackend(ollama.url, timeout_s=0.5, num_ctx=1024)
     with pytest.raises(AiUnavailable, match="did not start answering within"):
         list(backend.open_chat("qwen2.5:7b", []))
+
+
+# --- capability tiers ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("size", "billions"),
+    [("26.1B", 26.1), ("671B", 671.0), ("8x7B", 56.0), ("567M", 0.567), ("0B", None), (None, None)],
+)
+def test_parse_billions(size: str | None, billions: float | None) -> None:
+    got = parse_billions(size)
+    assert got == pytest.approx(billions) if billions is not None else got is None
+
+
+def test_auto_tier() -> None:
+    assert auto_tier("7.6B") == "basic"
+    assert auto_tier("26.1B") == "standard"
+    assert auto_tier(None) == "standard"
+    assert auto_tier("355B") == "full"
+    assert auto_tier("7B", cloud=True) == "full"
+
+
+def test_with_tiers_override() -> None:
+    models = [ModelInfo("a", False, True, "7B"), ModelInfo("b", False, True, "70B")]
+    got = {m.name: m.tier for m in with_tiers(models, {"a": "full", "b": "bogus"})}
+    assert got == {"a": "full", "b": "full"}
+
+
+def test_tier_prompts() -> None:
+    assert "## Working on the chart" in system_prompt(True, "basic")
+    relaxed = system_prompt(True, "standard")
+    assert "General knowledge" in relaxed and "not financial advice" in relaxed
+    assert "set_chart" not in relaxed and "set_chart" in system_prompt(True, "full")
+
+
+def _tool(name: str) -> dict[str, Any]:
+    return {**TOOL, "function": {**TOOL["function"], "name": name}}  # type: ignore[dict-item]
+
+
+def test_route_enforces_tier_tools(tmp_path: Path, ollama: FakeOllama) -> None:
+    with make(tmp_path, ollama_url=ollama.url) as c:
+        st = c.get("/api/ai/status").json()
+        assert {m["name"]: m["tier"] for m in st["models"]}["qwen2.5:7b"] == "basic"
+        q = {"role": "user", "content": "fib"}
+        r = c.post(
+            "/api/ai/chat", json={"model": "qwen2.5:7b", "tools": [_tool("draw")], "messages": [q]}
+        )
+        assert r.status_code == 400 and "draw" in r.json()["detail"]
+
+
+def test_route_standard_tier(tmp_path: Path) -> None:
+    with make(tmp_path, ai_provider="demo") as c:  # demo: unknown size -> standard
+        q = {"role": "user", "content": "fib"}
+        ok = c.post(
+            "/api/ai/chat", json={"model": "demo-text", "tools": [_tool("draw")], "messages": [q]}
+        )
+        assert ok.status_code == 200
+        r = c.post(
+            "/api/ai/chat",
+            json={"model": "demo-text", "tools": [_tool("set_chart")], "messages": [q]},
+        )
+        assert r.status_code == 400 and "set_chart" in r.json()["detail"]

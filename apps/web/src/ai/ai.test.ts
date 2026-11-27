@@ -87,6 +87,7 @@ describe('resolveModel', () => {
       tools: false,
       parameterSize: null,
       sizeBytes: null,
+      tier: 'basic' as const,
     })),
   };
   it('prefers the saved model, then the default', () => {
@@ -103,6 +104,25 @@ describe('briefBudget', () => {
     // With tools: room for definitions, results and reasoning; at most 35% of the window.
     expect(briefBudget(16384, true)).toBe(Math.floor(Math.min((16384 - 7000) * 0.7, 16384 * 0.35)));
     expect(briefBudget(8192, true)).toBe(834);
+  });
+});
+
+describe('schemasFor', () => {
+  const names = async (tier: 'basic' | 'standard' | 'full', allow: boolean) => {
+    const { schemasFor } = await import('./tools');
+    return schemasFor(tier, allow).map((t) => t.function.name);
+  };
+  it('offers only read-only tools when chart changes are off', async () => {
+    expect(await names('basic', false)).toContain('get_fundamentals');
+    expect(await names('basic', false)).not.toContain('draw_level');
+    expect(await names('basic', true)).toContain('draw_level');
+  });
+  it('mirrors the server tiers', async () => {
+    expect(await names('basic', true)).not.toContain('draw');
+    expect(await names('standard', true)).not.toContain('set_chart');
+  });
+  it('sizes the brief for more tools', () => {
+    expect(briefBudget(12288, true, 25)).toBeLessThan(briefBudget(12288, true));
   });
 });
 

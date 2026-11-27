@@ -4,13 +4,27 @@
  */
 import { ApiError, getJson, notifyUnauthorized, requestJson } from '../api/client';
 
+/** Capability tier: which prompt and chart tools a model gets (server decides). */
+export type AiTier = 'basic' | 'standard' | 'full';
+export const AI_TIERS: readonly AiTier[] = ['basic', 'standard', 'full'];
+export const TIER_LABEL: Record<AiTier, string> = {
+  basic: 'Basic',
+  standard: 'Standard',
+  full: 'Full',
+};
+
 export interface AiModel {
   name: string;
   vision: boolean;
-  /** Ollama tool calling: the model can act on the chart. */
+  /** Tool calling: the model can use chart tools. */
   tools: boolean;
   parameterSize: string | null;
   sizeBytes: number | null;
+  /** Admin-set or automatic (by size; cloud = full). */
+  tier: AiTier;
+  /** Runs at a cloud provider: questions and chart data leave the server. */
+  cloud?: boolean;
+  connection?: string | null;
 }
 
 export type AiStatus =
@@ -130,6 +144,8 @@ export interface AiConfig {
   defaultModel: string | null;
   /** Context window in force (tokens). */
   numCtx: number;
+  /** Tier set per model; others are automatic. */
+  tiers: Record<string, AiTier>;
 }
 
 export type AiTestResult =
@@ -150,6 +166,7 @@ export function saveAiConfig(body: {
   models: string[];
   defaultModel: string | null;
   numCtx: number | null;
+  tiers?: Record<string, AiTier>;
 }): Promise<AiConfig> {
   return requestJson<AiConfig>('PUT', '/ai/config', body);
 }

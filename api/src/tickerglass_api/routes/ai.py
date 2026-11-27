@@ -32,6 +32,7 @@ from ..ai.config import (
     save_config,
 )
 from ..ai.prompt import assemble
+from ..ai.tiers import TIER_TOOLS, Tier, tool_names, with_tiers
 from ..deps import AdminDep, SettingsDep, UserDep
 
 log = logging.getLogger(__name__)
@@ -40,8 +41,8 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 #: Messages per request (tool rounds add an assistant and a tool message each).
 MAX_MESSAGES = 80
-MAX_TOOLS = 24
-MAX_TOOLS_JSON = 64 * 1024
+MAX_TOOLS = 40
+MAX_TOOLS_JSON = 128 * 1024
 MAX_IMAGES_PER_MESSAGE = 2
 _IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
 
@@ -102,7 +103,7 @@ def status(request: Request, who: UserDep, settings: SettingsDep) -> dict[str, A
     if backend is None:
         return {"enabled": False}
     try:
-        models = backend.list_models()
+        models = with_tiers(backend.list_models(), runtime.tiers)
         error = None
     except AiError as exc:
         models, error = [], str(exc)
@@ -166,7 +167,7 @@ async def chat(
     images = _check_images(body, int(settings.ai_max_image_mb * 1024 * 1024))
 
     try:
-        models = await run_in_threadpool(backend.list_models)
+        models = with_tiers(await run_in_threadpool(backend.list_models), _runtime(request).tiers)
     except AiError as exc:
         raise HTTPException(exc.status, str(exc)) from None
     info = next((m for m in models if m.name == body.model), None)
@@ -176,12 +177,18 @@ async def chat(
         raise HTTPException(400, "this model cannot read images")
     if body.tools and not info.tools:
         raise HTTPException(400, "this model cannot use chart tools")
+    tier: Tier = info.tier if info.tier in TIER_TOOLS else "standard"
+    extra = sorted(set(tool_names(body.tools)) - TIER_TOOLS[tier])
+    if extra:
+        raise HTTPException(400, f"not available to a {tier} model: {', '.join(extra)}")
 
     active: set[str] = request.app.state.ai_active
     if who.id in active:
         raise HTTPException(429, "an answer is already being generated")
     active.add(who.id)
-    messages = assemble([_ollama_message(m) for m in body.messages], tools=bool(body.tools))
+    messages = assemble(
+        [_ollama_message(m) for m in body.messages], tools=bool(body.tools), tier=tier
+    )
     try:
         stream = await run_in_threadpool(
             backend.open_chat, info.name, messages, body.tools or None, body.numCtx
@@ -225,6 +232,7 @@ def _config_view(request: Request, settings: Any) -> dict[str, Any]:
             "models": list(settings.ai_models),
             "defaultModel": settings.ai_default_model,
             "numCtx": settings.ai_num_ctx,
+            "tiers": {},
         }
     cfg = runtime.config
     return {
@@ -235,6 +243,7 @@ def _config_view(request: Request, settings: Any) -> dict[str, Any]:
         "models": list(cfg.models) if cfg else [],
         "defaultModel": cfg.default_model if cfg else None,
         "numCtx": runtime.num_ctx,
+        "tiers": runtime.tiers,
     }
 
 
@@ -251,6 +260,8 @@ class ConfigBody(BaseModel):
     defaultModel: str | None = Field(default=None, max_length=200)
     #: Context window in tokens; None = `AI_NUM_CTX`.
     numCtx: int | None = Field(default=None, ge=NUM_CTX_MIN, le=NUM_CTX_MAX)
+    #: Tier per model name; models left out get the automatic one.
+    tiers: dict[str, Tier] = Field(default_factory=dict, max_length=MAX_MODELS)
 
 
 @router.put("/config")
@@ -267,7 +278,7 @@ def put_config(
             raise HTTPException(422, f"Ollama URL {exc}") from None
         models = tuple(dict.fromkeys(m.strip() for m in body.models if m.strip()))
         default = (body.defaultModel or "").strip() or None
-        config = AiConfig(url, models, default, body.numCtx)
+        config = AiConfig(url, models, default, body.numCtx, dict(body.tiers))
     save_config(request.app.state.engine, config)
     request.app.state.ai_runtime = resolve(settings, config)
     log.info("Ask AI %s in the app", "connected" if config else "turned off")
@@ -299,4 +310,5 @@ def test_connection(body: TestBody, who: AdminDep, settings: SettingsDep) -> dic
             "error": result.error,
             "tried": [{"url": r.url, "error": r.error} for r in tried],
         }
-    return {"ok": True, "url": result.url, "models": [m.as_json() for m in result.models]}
+    models = with_tiers(result.models, None)
+    return {"ok": True, "url": result.url, "models": [m.as_json() for m in models]}

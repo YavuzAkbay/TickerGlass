@@ -14,8 +14,8 @@ import { chartImage } from './image';
 import {
   removeAiDrawings,
   runTool,
-  READ_ONLY_TOOLS,
-  TOOL_SCHEMAS,
+  MAX_TOOL_ROUNDS,
+  schemasFor,
   type AiChanges,
   type ToolCall,
   type ToolContext,
@@ -29,9 +29,6 @@ const nextId = (): string => `ai_${Date.now().toString(36)}_${(seq++).toString(3
 function fullWindow(numCtx: number): string {
   return `Ran out of room: the ${Math.round(numCtx / 1024)}K context window is full, so the answer was cut off. Pick a larger context window below the question box (32K or more for reasoning models), ask about a shorter range, or start a new conversation.`;
 }
-
-/** Tool rounds per question before the loop gives up. */
-const MAX_TOOL_ROUNDS = 6;
 
 export const OMITTED_CONTEXT = '[Earlier chart context omitted; see the latest CHART CONTEXT.]';
 
@@ -125,13 +122,12 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   const focus = opts.focus ?? visibleFocus(chart);
   if (!focus) throw new Error('The chart has no bars yet');
   // Read-only tools (fundamentals, levels, swings...) always; chart changes only when allowed.
+  const tier = model.tier ?? 'basic';
   const useTools = model.tools;
-  const tools = useAiPrefs.getState().allowActions
-    ? TOOL_SCHEMAS
-    : TOOL_SCHEMAS.filter((t) => READ_ONLY_TOOLS.has(t.function.name));
+  const tools = schemasFor(tier, useAiPrefs.getState().allowActions);
   const userCtx = useAiPrefs.getState().numCtx;
   const numCtx = userCtx || opts.status.numCtx;
-  const brief = briefFromChart(chart, focus, briefBudget(numCtx, useTools));
+  const brief = briefFromChart(chart, focus, briefBudget(numCtx, useTools, tools.length));
   if (!brief) throw new Error('The chart has no bars yet');
 
   const last = chart.store.length ? chart.store.time[chart.store.length - 1] : 0;
@@ -251,7 +247,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
           error: 'The model finished without an answer. Ask again, or try a larger model.',
         }));
       if (!calls.length || current?.status !== 'done') break;
-      if (++rounds > MAX_TOOL_ROUNDS) {
+      if (++rounds > MAX_TOOL_ROUNDS[tier]) {
         patch(() => ({ text: '_Stopped after too many chart actions._' }));
         break;
       }
