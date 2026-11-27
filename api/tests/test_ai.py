@@ -68,6 +68,26 @@ def test_settings_rejects_bad_url(url: str) -> None:
         Settings(_env_file=None, ollama_url=url)  # type: ignore[call-arg]
 
 
+def test_settings_blank_values_are_unset() -> None:
+    s = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        ollama_url="",
+        ai_provider="  ",
+        ai_default_model="",
+        ai_keep_alive="",
+        ai_models="",
+    )
+    assert s.ai_backend is None
+    assert s.ollama_url is None and s.ai_default_model is None and s.ai_keep_alive is None
+    assert s.ai_models == []
+
+
+def test_settings_blank_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("OLLAMA_URL", "AI_PROVIDER", "AI_MODELS", "AI_DEFAULT_MODEL", "AI_KEEP_ALIVE"):
+        monkeypatch.setenv(name, "")
+    assert Settings(_env_file=None).ai_backend is None  # type: ignore[call-arg]
+
+
 def test_settings_ollama_needs_url() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, ai_provider="ollama")  # type: ignore[call-arg]

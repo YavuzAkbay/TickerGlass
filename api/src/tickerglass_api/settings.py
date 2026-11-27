@@ -407,6 +407,16 @@ class Settings(BaseSettings):
     def _split_ai_models(cls, value: Any) -> Any:
         return _split_list(value)
 
+    @field_validator(
+        "ollama_url", "ai_provider", "ai_default_model", "ai_keep_alive", mode="before"
+    )
+    @classmethod
+    def _blank_is_unset(cls, value: Any) -> Any:
+        # docker-compose passes `${OLLAMA_URL:-}` etc. as empty strings when unset.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value.strip() if isinstance(value, str) else value
+
     @model_validator(mode="after")
     def _ai_consistent(self) -> Self:
         if self.ai_provider == "ollama" and not self.ollama_url:
