@@ -140,9 +140,43 @@ arguments}]}` before `done`. Models without the `tools` capability get none (400
   Indicators go through `addIndicator` (an identical instance is reused).
 - Demo backend scripts find_divergences → draw_divergence → summary for tests and smoke runs.
 
+## 8. Capability tiers (2026-11)
+
+- `ai/tiers.py`: `auto_tier(parameter_size, cloud)` (<14B basic, 14–60B or unknown standard,
+  ≥60B or cloud full; `8x7B` counts 56B), admin overrides in `AiConfig.tiers` (keyed by the model
+  name users see), `with_tiers` applied by `/status`, `/test` and `/chat`. `TIER_TOOLS` is the
+  authority: `/chat` answers 400 for tool names above the model's tier.
+- Prompts (`prompt.py`): Basic keeps the strict script (`SYSTEM_PROMPT` + `TOOLS_PROMPT`);
+  Standard/Full get `RELAXED_PROMPT` (toolbox, not script; general knowledge labelled; user's format
+  wins) + `RELAXED_TOOLS_PROMPT`, Full also `FULL_TOOLS_PROMPT`. Guardrails are identical.
+- Web: `schemasFor(tier, allowActions)` (`tools.ts`) mirrors `TIER_TOOLS`, swaps in the open
+  `add_indicator` and the per-tier `draw` enum; `MAX_TOOL_ROUNDS` 6/10/16; `briefBudget` reserves
+  150 tokens per tool beyond 13. `catalog.ts`: registry search, input coercion, drawable types
+  (anchor counts from `DrawingToolDefinition.creation`). Full tools in `fullTools.ts`, their
+  schemas in `fullSchemas.ts` (no runtime import of `tools.ts`, so module init has no cycle).
+
+## 9. OpenAI-compatible connections
+
+- `ai/openai_compat.py`: `OpenAICompatBackend` (stdlib `http.client`, abort = socket shutdown,
+  like Ollama). `to_openai` translates the Ollama-shaped conversation: images → `image_url` data
+  URIs; assistant `tool_calls` get ids `call_<n>`; each tool result answers the oldest open call
+  of the same name. SSE parsing: `content` → delta (Mistral's chunk lists split into text and
+  thinking), `reasoning_content` / `reasoning` → thinking, tool-call fragments accumulated by
+  `index`, usage from the final chunk (`stream_options.include_usage`). Status codes: 401/403 key,
+  404 bad request, 429 rate limit (429 to the browser), 5xx unavailable.
+- Models come from the admin's list (no network for `/status`); names are `<connection>/<model>`.
+  `ai/multi.py` `MultiBackend` merges Ollama and connections and routes by prefix; an Ollama
+  failure leaves the cloud models usable and is reported as `status.error`.
+- Config: `AiConfig.connections` (`CloudConnection`: id, preset, base URL, key, models with
+  vision/tools/context, context, maxTokens) in `app_meta['ai_config']`; routes
+  `PUT/DELETE /ai/connections/{id}` (key omitted = kept; cloud URLs need `acknowledged`),
+  `POST /ai/connections/test` (`GET /models`, by key or stored id). `ModelInfo.cloud` /
+  `context_tokens` drive the Full tier, the `cloud` badge and the brief budget.
+- Per-user sliding-window limit for cloud requests: `AI_CLOUD_RATE_PER_MIN`.
+
 ## 7. Not done / later
 
 - Saved conversations.
-- Other backends (OpenAI-compatible servers such as llama.cpp or LM Studio) behind the same
-  `AiBackend` protocol.
+- Anthropic Messages API natively (today: through OpenRouter or another OpenAI-compatible
+  gateway); environment variables for cloud connections.
 - A left-toolbar button for the range tool.

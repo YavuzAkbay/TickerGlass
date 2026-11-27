@@ -1,9 +1,10 @@
 # Ask AI about the chart
 
 Ask a language model questions about the chart you are looking at: "What happened here?", "Where
-are support and resistance?", "What do the indicators say?". The model runs on your own hardware
-through [Ollama](https://ollama.com). Your charts and questions go to that Ollama server only, never
-to a cloud service.
+are support and resistance?", "What do the indicators say?", "Is this stock cheap?". By default the
+model runs on your own hardware through [Ollama](https://ollama.com), and your charts and questions
+go to that Ollama server only. An admin can also connect cloud models (OpenAI, OpenRouter, Z.ai GLM,
+DeepSeek, OpenCode Zen…) with an API key; see [Cloud and other connections](#cloud-and-other-connections).
 
 The design notes are in [design/local-ai.md](design/local-ai.md).
 
@@ -210,6 +211,57 @@ Small models usually ignore the tools and only talk: in our tests `qwen2.5:0.5b`
 instead of calling them, while a 26B model added RSI, found and drew the divergences and explained
 them. Use 7B or larger, ideally 9B+.
 
+## Model tiers
+
+Small models follow a strict script and a few tools well, and get lost with more. Large and cloud
+models do better with freedom and every tool. Each model gets a **tier**:
+
+| Tier     | Picked automatically for                          | What the model gets                                                                                                                                                                                                                      |
+| -------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Basic    | under 14B parameters                              | A strict analyst script. Core tools: fundamentals, levels, swings, divergences, a short indicator list, lines.                                                                                                                           |
+| Standard | 14B–60B, or size unknown                          | A freer brief: answers general questions, follows your format. Every indicator in the app (`search_indicators`), and `draw` for Fibonacci retracement/extension/time zones, rectangles, channels, rays, text, callouts.                  |
+| Full     | 60B and larger (mixtures: total), any cloud model | Everything in Standard, every anchor-based drawing type, editing and removing your drawings and indicators, switching symbol/interval/range/chart type, other symbols' bars and fundamentals, earnings/dividends/splits, news headlines. |
+
+Admins can override the tier per model in **Settings → AI** (the select next to each model). The
+server enforces the tier: a request with tools above it is refused. Every tier keeps the same
+rules: no buy/sell advice, no invented numbers, and no chart changes unless you ask.
+
+With **Draw** off in the panel a model of any tier still uses its read-only tools but changes
+nothing. Full-tier edits of your own drawings and indicators are undone by **Undo AI changes**
+too; locked drawings are never touched. Switching the chart (`set_chart`) is not undone.
+
+## Cloud and other connections
+
+**Settings → AI → Cloud and other connections → Add connection** connects any server speaking the
+OpenAI Chat Completions API. Presets fill in the base URL:
+
+| Preset           | Base URL                                                     |
+| ---------------- | ------------------------------------------------------------ |
+| OpenAI           | `https://api.openai.com/v1`                                  |
+| OpenRouter       | `https://openrouter.ai/api/v1`                               |
+| Z.ai (GLM)       | `https://api.z.ai/api/paas/v4`                               |
+| Z.ai Coding Plan | `https://api.z.ai/api/coding/paas/v4`                        |
+| DeepSeek         | `https://api.deepseek.com`                                   |
+| OpenCode Zen     | `https://opencode.ai/zen/v1` (check your OpenCode dashboard) |
+| Groq             | `https://api.groq.com/openai/v1`                             |
+| Mistral          | `https://api.mistral.ai/v1`                                  |
+| LM Studio        | `http://localhost:1234/v1`                                   |
+
+Enter the API key, **Load models**, tick the models users may pick and say whether each reads
+images and uses tools, then **Save**. Cloud models appear in the panel's model picker marked
+`cloud`.
+
+- **API keys, not subscriptions.** A ChatGPT Plus/Pro or Claude Pro/Max chat subscription cannot be
+  used here; providers bill API usage per token to the key. One admin key is shared by every user
+  of the server; `AI_CLOUD_RATE_PER_MIN` (default 30 requests per user per minute, each tool round
+  counts) caps runaway use. Set a spending limit at the provider too.
+- **Privacy.** With a cloud connection, users' questions, the chart data and chart pictures go to
+  that provider. Saving a cloud connection requires ticking that you understand this. Addresses on
+  this machine or the private network (LM Studio, vLLM) count as local.
+- **Keys** are stored in the server database (`app_meta`), are never sent back to the browser
+  (only the last four characters), and are part of database backups: enable backup encryption.
+- Cloud models default to the **Full** tier and a 128K context window (change it per connection).
+
 ## Not financial advice
 
 Ask AI describes what a chart shows. **Nothing it says or draws is financial advice, an investment
@@ -225,7 +277,8 @@ are not licensed advisers and accept no liability for decisions made with it; se
 - The model can be wrong, especially small ones. The statistics in the brief are computed exactly;
   compare the answer with them (click the context line) when a number matters. Nothing here is
   financial advice.
-- The model only knows what is in the brief: no news, fundamentals or other symbols.
+- The model only knows the brief and what its tools return. Basic and Standard models read the
+  chart symbol's fundamentals; only Full models read other symbols, events and news.
 - On Heikin Ashi, Renko and other transformed chart types the brief says the bars are not traded
   prices.
 - Each user can have one answer being written at a time. Several users share the Ollama machine;
