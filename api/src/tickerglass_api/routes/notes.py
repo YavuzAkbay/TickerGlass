@@ -10,6 +10,7 @@ from ..deps import OwnedSessionDep
 from ..ownership import owned_get
 from ..userdata import schemas as s
 from ..userdata import store
+from ._symbol import SymbolParam
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 
@@ -24,7 +25,7 @@ def _get(session: OwnedSessionDep, note_id: str) -> m.Note:
 @router.get("", response_model=list[s.Note])
 def list_notes(
     session: OwnedSessionDep,
-    symbol: Annotated[str | None, Query(max_length=32)] = None,
+    symbol: Annotated[SymbolParam | None, Query()] = None,
     kind: Annotated[Literal["note", "journal", "all"], Query()] = "note",
 ) -> list[s.Note]:
     """Notes (oldest first), or only those of `symbol`. `kind` defaults to the Notes-panel

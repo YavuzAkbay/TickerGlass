@@ -996,3 +996,11 @@ def test_migration_user_scripts_up_down(tmp_path: Path) -> None:
     assert "user_scripts" not in inspect(engine).get_table_names()
     assert "alerts" in inspect(engine).get_table_names()
     engine.dispose()
+
+
+def test_symbol_query_filters_reject_junk(client: TestClient) -> None:
+    for path in ("/api/drawings", "/api/notes"):
+        for bad in ("A\x00B", "A B", "  ", "x" * 33, "../x"):
+            assert client.get(path, params={"symbol": bad}).status_code == 422, (path, bad)
+        assert client.get(path).status_code == 200
+        assert client.get(path, params={"symbol": " brk.b "}).status_code == 200

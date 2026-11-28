@@ -182,6 +182,8 @@ def test_tx_list_order_filter_and_symbol_normalized(client: TestClient) -> None:
     only = client.get(url, params={"symbol": "msft"}).json()
     assert [t["id"] for t in only] == [late["id"]]
     assert client.get(url, params={"symbol": "NOPE"}).json() == []
+    for bad in ("A B", "  ", "x" * 33, "a\x00b", "../x"):
+        assert client.get(url, params={"symbol": bad}).status_code == 422
     other = mk_portfolio(client, name="Other")["id"]
     assert client.get(f"/api/portfolios/{other}/transactions").json() == []
 

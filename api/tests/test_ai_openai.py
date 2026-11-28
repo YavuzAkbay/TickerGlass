@@ -170,6 +170,26 @@ def test_is_local_url() -> None:
     assert is_local_url("http://localhost:1234/v1")
     assert is_local_url("http://192.168.1.5:8000/v1")
     assert not is_local_url("https://api.openai.com/v1")
+    assert is_local_url("http://[::1]:8000/v1")
+    assert is_local_url("http://ollama:11434")  # compose service
+    assert is_local_url("http://mac-mini.local:11434")  # mDNS
+    assert is_local_url("http://host.docker.internal:11434")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example.com/v1",
+        "https://ollama.example.com",
+        "https://x.lan/v1",
+        "https://api.attacker.internal/v1",
+        "https://a.b.local/v1",
+        "http://8.8.8.8/v1",
+        "http://[2001:4860:4860::8888]/v1",
+    ],
+)
+def test_is_local_url_rejects_public_looking_names(url: str) -> None:
+    assert not is_local_url(url)
 
 
 def _conn_body(fake: FakeOpenAI, **kw: Any) -> dict[str, Any]:
@@ -279,3 +299,28 @@ def test_connection_id_rejects_trailing_newline(tmp_path: Path, fake: FakeOpenAI
     with make(tmp_path) as c:
         assert c.put("/api/ai/connections/oa%0A", json=_conn_body(fake)).status_code == 422
         assert c.put("/api/ai/connections/oa", json=_conn_body(fake)).status_code == 200
+
+
+def test_stored_key_is_not_sent_to_another_server(tmp_path: Path, fake: FakeOpenAI) -> None:
+    with make(tmp_path) as c:
+        assert c.put("/api/ai/connections/oa", json=_conn_body(fake)).status_code == 200
+        other = fake.url.replace("127.0.0.1", "localhost")
+        assert other != fake.url
+        seen = len(fake.requests)
+        # Testing a different address with the stored key is refused, nothing is sent.
+        r = c.post("/api/ai/connections/test", json={"baseUrl": other, "id": "oa"})
+        assert r.status_code == 422 and "enter the key again" in r.json()["detail"]
+        assert len(fake.requests) == seen
+        # Saving a new address without a new key is refused, the old one stays.
+        r = c.put("/api/ai/connections/oa", json=_conn_body(fake, baseUrl=other, apiKey=None))
+        assert r.status_code == 422
+        assert c.get("/api/ai/config").json()["connections"][0]["baseUrl"] == fake.url
+        # A newly entered key is fine for a new address.
+        r = c.post("/api/ai/connections/test", json={"baseUrl": other, "id": "oa", "apiKey": KEY})
+        assert r.json()["ok"]
+        r = c.put("/api/ai/connections/oa", json=_conn_body(fake, baseUrl=other, apiKey=KEY))
+        assert r.status_code == 200
+        # Same server (trailing slash only): the stored key still applies.
+        r = c.put("/api/ai/connections/oa", json=_conn_body(fake, baseUrl=other + "/", apiKey=None))
+        assert r.status_code == 200
+        assert c.post("/api/ai/connections/test", json={"baseUrl": other, "id": "oa"}).json()["ok"]

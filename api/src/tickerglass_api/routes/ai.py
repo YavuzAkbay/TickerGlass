@@ -40,6 +40,7 @@ from ..ai.config import (
     probe,
     redact_url,
     resolve,
+    same_origin,
     save_config,
 )
 from ..ai.multi import MultiBackend
@@ -397,6 +398,10 @@ class ConnectionBody(BaseModel):
 
 
 _CONN_ID = r"[a-z0-9][a-z0-9-]{0,31}"
+_KEY_NEEDS_REENTRY = (
+    "the stored API key is only sent to the server it was saved for: enter the key again "
+    "to use it with a different address"
+)
 
 
 @router.put("/connections/{conn_id}")
@@ -417,6 +422,13 @@ def put_connection(
     old = next((c for c in conns if c.id == conn_id), None)
     if old is None and len(conns) >= MAX_CONNECTIONS:
         raise HTTPException(409, f"at most {MAX_CONNECTIONS} connections")
+    if (
+        body.apiKey is None
+        and old is not None
+        and old.api_key
+        and not same_origin(old.base_url, base_url)
+    ):
+        raise HTTPException(422, _KEY_NEEDS_REENTRY)
     key = (old.api_key if old else None) if body.apiKey is None else (body.apiKey.strip() or None)
     conn = CloudConnection(
         id=conn_id,
@@ -488,6 +500,8 @@ def test_cloud(
         current = _stored(request)
         old = next((c for c in current.connections if c.id == body.id), None) if current else None
         key = old.api_key if old else None
+        if key and old and not same_origin(old.base_url, base_url):
+            raise HTTPException(422, _KEY_NEEDS_REENTRY)
     probe_conn = CloudConnection("test", "This server", "custom", base_url, key or None)
     try:
         names = cloud_backend(settings, probe_conn).available_models()

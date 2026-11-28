@@ -5,6 +5,7 @@ users may pick, and the default, kept in `app_meta` under `ai_config` (server co
 exported). `OLLAMA_URL` or `AI_PROVIDER` in the environment wins and locks the in-app settings.
 """
 
+import ipaddress
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -62,18 +63,41 @@ PRESETS: dict[str, dict[str, Any]] = {
 MAX_CONNECTIONS = 10
 #: Context window assumed for cloud models without one set (tokens).
 CLOUD_CONTEXT_DEFAULT = 128_000
-_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "host.docker.internal", "ollama")
+#: Names that mean this machine or its Docker host. Only these exact names and the shapes in
+#: `is_local_url` count as local; a dotted public-looking name never does.
+_LOCAL_HOSTS = ("localhost", "host.docker.internal")
 
 
 def is_local_url(url: str) -> bool:
-    """A URL on this machine or the private network: chat data stays in-house."""
-    host = (urlsplit(url).hostname or "").lower()
-    if host in _LOCAL_HOSTS or host.endswith((".local", ".lan", ".internal")):
+    """A URL on this machine or the private network: chat data stays in-house.
+
+    Local: `localhost`, `host.docker.internal`, a literal loopback/private IP, a single-label
+    name (a Docker/compose service such as `ollama`, a LAN box such as `nas`) and an mDNS
+    `*.local` name (e.g. `mac-mini.local`, the usual way to reach Ollama on another home
+    machine; mDNS resolves on the link only). Anything else, such as `ollama.example.com` or
+    `x.lan`, is treated as cloud and needs the acknowledgement."""
+    host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    if not host:
+        return False
+    if host in _LOCAL_HOSTS:
         return True
     try:
-        import ipaddress
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return "." not in host or (host.endswith(".local") and host.count(".") == 1)
+    return ip.is_private or ip.is_loopback
 
-        return ipaddress.ip_address(host).is_private
+
+def same_origin(a: str, b: str) -> bool:
+    """Both URLs reach the same scheme, host and port: a credential for one may go to the other."""
+    pa, pb = urlsplit(a), urlsplit(b)
+    default = {"http": 80, "https": 443}
+    try:
+        return (
+            pa.scheme == pb.scheme
+            and (pa.hostname or "").lower().rstrip(".") == (pb.hostname or "").lower().rstrip(".")
+            and (pa.port or default.get(pa.scheme)) == (pb.port or default.get(pb.scheme))
+        )
     except ValueError:
         return False
 

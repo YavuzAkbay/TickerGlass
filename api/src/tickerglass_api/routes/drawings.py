@@ -11,6 +11,7 @@ from ..deps import HubDep, OwnedSessionDep, SessionDep
 from ..ownership import id_taken_by_other, session_owner
 from ..userdata import schemas as s
 from ..userdata import store
+from ._symbol import SymbolParam
 
 router = APIRouter(prefix="/drawings", tags=["drawings"])
 
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/drawings", tags=["drawings"])
 @router.get("", response_model=s.DrawingList)
 def list_drawings(
     session: SessionDep,
-    symbol: Annotated[str | None, Query(max_length=32)] = None,
+    symbol: Annotated[SymbolParam | None, Query()] = None,
     synced: bool = True,
 ) -> s.DrawingList:
     """All drawings, or those of `symbol` plus (unless `synced=false`) the synced ones. Each

@@ -19,6 +19,7 @@ from ..ownership import owned_get
 from ..userdata import portfolio as pf
 from ..userdata import schemas as s
 from ..userdata import store
+from ._symbol import SymbolParam
 
 log = logging.getLogger("tickerglass.portfolio")
 
@@ -215,7 +216,7 @@ def delete_portfolio(session: OwnedSessionDep, portfolio_id: str) -> Response:
 def list_transactions(
     session: OwnedSessionDep,
     portfolio_id: str,
-    symbol: Annotated[str | None, Query(max_length=32)] = None,
+    symbol: Annotated[SymbolParam | None, Query()] = None,
 ) -> list[pf.Tx]:
     """Ordered by time, then `seq` (insertion order); optionally only those of `symbol`."""
     _portfolio(session, portfolio_id)
