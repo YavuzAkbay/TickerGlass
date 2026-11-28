@@ -11,6 +11,7 @@ import {
   type StudyInfo,
   type StudySpec,
   type StudyTarget,
+  type SubscribeRequest,
   type SymbolInfo,
 } from '@tickerglass/engine';
 import {
@@ -1379,5 +1380,195 @@ describe('user script instances', () => {
     ctl.sync(list.slice(1));
     expect(chart.studies.has(over.id)).toBe(true);
     defaultRegistry.unregister(UT);
+  });
+});
+
+describe('resync after a live-connection outage', () => {
+  const settleMany = async (n = 6) => {
+    for (let i = 0; i < n; i++) await settle();
+  };
+  interface LiveSub {
+    req: SubscribeRequest;
+    last: Bar | null;
+    onBar: (bar: Bar) => void;
+    onResync: (() => void) | undefined;
+    closed: boolean;
+  }
+  /** Feed serving `serve(req)` per request and recording subscriptions (with their resync listeners). */
+  function liveFeed(serve: (req: GetBarsRequest) => BarColumns | Promise<BarColumns>) {
+    const requests: GetBarsRequest[] = [];
+    const subs: LiveSub[] = [];
+    const feed: DataFeed = {
+      resolveSymbol: (symbol) =>
+        Promise.resolve({ symbol, timezone: null, session: null } as SymbolInfo),
+      searchSymbols: () => Promise.resolve([]),
+      getBars: async (req) => {
+        requests.push(req);
+        return { bars: await serve(req), hasMore: false };
+      },
+      subscribe: (req, last, onBar, onResync) => {
+        const sub: LiveSub = { req, last, onBar, onResync, closed: false };
+        subs.push(sub);
+        return () => {
+          sub.closed = true;
+        };
+      },
+    };
+    return { feed, requests, subs };
+  }
+  const tail = (c: BarColumns, n: number): BarColumns => ({
+    time: c.time.slice(-n),
+    open: c.open.slice(-n),
+    high: c.high.slice(-n),
+    low: c.low.slice(-n),
+    close: c.close.slice(-n),
+    volume: c.volume.slice(-n),
+  });
+  /** `c` padded to `n` rows by carrying its last bar forward (as the as-of join does). */
+  const carry = (c: BarColumns, n: number): BarColumns => {
+    const pad = (a: Float64Array) => {
+      const out = new Float64Array(n);
+      out.set(a.subarray(0, Math.min(n, a.length)));
+      out.fill(a[a.length - 1]!, a.length);
+      return out;
+    };
+    return {
+      time: c.time,
+      open: pad(c.open),
+      high: pad(c.high),
+      low: pad(c.low),
+      close: pad(c.close),
+      volume: pad(c.volume),
+    };
+  };
+  /** Correlation values as the runtime computes them on aligned bars. */
+  const expectedCc = (chart: BarColumns, extRaw: BarColumns) => {
+    const ext = { ...carry(extRaw, chart.time.length), time: chart.time };
+    const rt = new IndicatorRuntime();
+    rt.add({ id: 'x', type: 'correlation', inputs: { symbol: 'GOOG', length: 5 } });
+    rt.setBars(chart);
+    rt.setExternal('GOOG', ext);
+    const r = rt.result('x')!;
+    return Array.from(r.values['cc']!.subarray(0, r.length));
+  };
+  const corr = () => inst('correlation', { symbol: 'GOOG', length: 5 });
+
+  it('backfills an external symbol from a fresh tail and resubscribes from its last bar', async () => {
+    const main = makeBars(62);
+    // Two bars closed and the last known one was revised while the connection was down.
+    const grown = makeBars(62, DAY, START, 5);
+    const data = makeBars(60, DAY, START, 5);
+    const { feed, requests, subs } = liveFeed((req) => (req.fresh ? tail(grown, 5) : data));
+    const { chart, log, ctl } = setup({ feed });
+    const cc = corr();
+    ctl.sync([cc]);
+    chart.load(main);
+    await settleMany();
+    expect(subs).toHaveLength(1);
+    expect(subs[0]!.last!.time).toBe(data.time[59]);
+    const before = chart.studies.get(cc.id)!.values['cc']!;
+    expect(before).toEqual(expectedCc(main, data));
+
+    subs[0]!.onResync!();
+    await settleMany();
+    const fresh = requests.filter((r) => r.fresh);
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]!.symbol).toBe('GOOG');
+    expect(fresh[0]!.limit).toBeGreaterThanOrEqual(3);
+    expect(log.filter((m) => m.type === 'extBars' && m.symbol === 'GOOG').length).toBeGreaterThan(
+      1,
+    );
+    expect(chart.studies.get(cc.id)!.values['cc']).toEqual(expectedCc(main, grown));
+    expect(subs).toHaveLength(2);
+    expect(subs[0]!.closed).toBe(true);
+    expect(subs[1]!.closed).toBe(false);
+    expect(subs[1]!.last!.time).toBe(grown.time[61]);
+    expect(subs[1]!.last!.high).toBe(grown.high[61]);
+    expect(subs[1]!.onResync).toBeTypeOf('function');
+  });
+
+  it('serializes resyncs and ignores one that finishes after the symbol was removed', async () => {
+    const main = makeBars(62);
+    const grown = makeBars(62, DAY, START, 5);
+    let release!: () => void;
+    let gate: Promise<void> | null = null;
+    const { feed, requests, subs } = liveFeed(async (req) => {
+      if (!req.fresh) return makeBars(60, DAY, START, 5);
+      await gate;
+      return tail(grown, 5);
+    });
+    const { chart, ctl } = setup({ feed });
+    const cc = corr();
+    ctl.sync([cc]);
+    chart.load(main);
+    await settleMany();
+    gate = new Promise<void>((r) => (release = r));
+    subs[0]!.onResync!();
+    subs[0]!.onResync!();
+    subs[0]!.onResync!();
+    await settleMany();
+    expect(requests.filter((r) => r.fresh)).toHaveLength(1);
+    release();
+    await settleMany();
+    // One more pass for the requests that arrived meanwhile, not one per call.
+    expect(requests.filter((r) => r.fresh)).toHaveLength(2);
+
+    gate = new Promise<void>((r) => (release = r));
+    const n = subs.length;
+    subs.at(-1)!.onResync!();
+    await settleMany();
+    ctl.sync([]);
+    release();
+    await settleMany();
+    expect(subs).toHaveLength(n);
+    expect(subs.every((s) => s.closed)).toBe(true);
+  });
+
+  it('reloads an external symbol whose fresh bars do not connect', async () => {
+    const main = makeBars(62);
+    const far = makeBars(4, DAY, START + 100 * DAY, 5);
+    const { feed, requests, subs } = liveFeed((req) =>
+      req.fresh && requests.filter((r) => r.fresh).length === 1 ? far : makeBars(60, DAY, START, 5),
+    );
+    const { chart, ctl } = setup({ feed });
+    ctl.sync([corr()]);
+    chart.load(main);
+    await settleMany();
+    subs[0]!.onResync!();
+    await settleMany();
+    // The gap response was not merged; the symbol was refetched fresh and resubscribed.
+    expect(requests.filter((r) => r.fresh)).toHaveLength(2);
+    expect(subs[0]!.closed).toBe(true);
+    expect(subs.at(-1)!.closed).toBe(false);
+    expect(subs.at(-1)!.last!.time).toBe(START + 59 * DAY);
+  });
+
+  it('backfills a higher-timeframe series and resends it', async () => {
+    const weekly0 = makeBars(8, 7 * DAY, START - 100 * DAY, 3);
+    const weekly1 = makeBars(10, 7 * DAY, START - 100 * DAY, 3);
+    weekly1.close[7] = 777;
+    const { feed, requests, subs } = liveFeed((req) => (req.fresh ? tail(weekly1, 3) : weekly0));
+    const { chart, log, ctl } = setup({ feed });
+    const tf = inst('test_tf_close');
+    ctl.sync([tf]);
+    const daily = makeBars(40, DAY, START - 70 * DAY);
+    chart.load(daily);
+    await settleMany();
+    expect(subs).toHaveLength(1);
+    expect(chart.studies.get(tf.id)!.values.v![39]).toBe(weekly0.close[7]);
+
+    subs[0]!.onResync!();
+    await settleMany();
+    const fresh = requests.filter((r) => r.fresh);
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]!.limit).toBeGreaterThanOrEqual(3);
+    const sent = log.filter((m) => m.type === 'tfBars').at(-1)!;
+    expect(Array.from(sent.bars.time)).toEqual(Array.from(weekly1.time));
+    expect(sent.bars.close[7]).toBe(777);
+    // The chart's last day now maps to the newest weekly bar.
+    expect(chart.studies.get(tf.id)!.values.v![39]).toBe(weekly1.close[9]);
+    expect(subs).toHaveLength(2);
+    expect(subs[0]!.closed).toBe(true);
+    expect(subs[1]!.last!.time).toBe(weekly1.time[9]);
   });
 });

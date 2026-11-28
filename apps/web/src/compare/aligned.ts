@@ -87,7 +87,27 @@ export class AlignedSeries {
     for (const c of COLUMNS) this[c] = Array.from(bars[c]).slice(0, len);
   }
 
-  /** Recompute join keys (after set/prepend). */
+  /**
+   * Overwrite the newest bars: everything from `bars.time[0]` on is replaced by
+   * `bars[0, len)`, older bars stay. Returns false (unchanged) when `bars` does
+   * not connect: empty, starting after the last bar (a gap) or before the first.
+   */
+  replaceTail(bars: BarColumns, len: number): boolean {
+    const n = this.time.length;
+    if (!len) return false;
+    const first = bars.time[0]!;
+    if (n && (first > this.time[n - 1]! || first < this.time[0]!)) return false;
+    const keep = lowerBound(this.time, n, first);
+    const tail = (cur: number[], src: ArrayLike<number>) => [
+      ...cur.slice(0, keep),
+      ...Array.from(src).slice(0, len),
+    ];
+    this.time = tail(this.time, bars.time);
+    for (const c of COLUMNS) this[c] = tail(this[c], bars[c]);
+    return true;
+  }
+
+  /** Recompute join keys (after set/prepend/replaceTail). */
   rekey(grid: AlignGrid): void {
     const n = this.time.length;
     this.ctx = grid.mode === 'calendar' ? calendarContext(this.timezone, this.time, n) : UTC_CTX;

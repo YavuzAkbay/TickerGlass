@@ -4,6 +4,7 @@
 import {
   intervalSeconds,
   isExpressionSymbol,
+  lowerBound,
   parseInterval,
   type Bar,
   type BarColumns,
@@ -15,6 +16,7 @@ import {
   type StudyApi,
   type StudySpec,
   type StudyTarget,
+  type SubscribeRequest,
   type SymbolInfo,
   type Unsubscribe,
 } from '@tickerglass/engine';
@@ -140,6 +142,9 @@ interface TfSeries {
   bars: BarColumns | null;
   /** An older page is in flight. */
   busy: boolean;
+  /** A resync (tail backfill after a live-connection outage) is running / was requested meanwhile. */
+  resyncing: boolean;
+  resyncAgain: boolean;
   /** Older pages fetched since the chart's series last reset. */
   pages: number;
   unsub: Unsubscribe | null;
@@ -208,6 +213,36 @@ function concatColumns(older: BarColumns, n: number, newer: BarColumns): BarColu
     low: join(older.low, newer.low),
     close: join(older.close, newer.close),
     volume: join(older.volume, newer.volume),
+  };
+}
+
+/**
+ * `cols` with everything from `fresh.time[0]` on replaced by `fresh[0, len)`, or
+ * null when `fresh` does not connect (empty, starting after the last bar or before the first).
+ */
+export function replaceTailColumns(
+  cols: BarColumns,
+  fresh: BarColumns,
+  len: number,
+): BarColumns | null {
+  const n = cols.time.length;
+  if (!len) return null;
+  const first = fresh.time[0]!;
+  if (n && (first > cols.time[n - 1]! || first < cols.time[0]!)) return null;
+  const keep = lowerBound(cols.time, n, first);
+  const join = (a: Float64Array, b: Float64Array) => {
+    const out = new Float64Array(keep + len);
+    out.set(a.subarray(0, keep));
+    out.set(b.subarray(0, len), keep);
+    return out;
+  };
+  return {
+    time: join(cols.time, fresh.time),
+    open: join(cols.open, fresh.open),
+    high: join(cols.high, fresh.high),
+    low: join(cols.low, fresh.low),
+    close: join(cols.close, fresh.close),
+    volume: join(cols.volume, fresh.volume),
   };
 }
 
@@ -816,7 +851,7 @@ export class IndicatorController {
   }
 
   /** Fetch (or extend) a timeframe series covering the chart's span plus warm-up. */
-  private ensureTimeframe(tf: string): void {
+  private ensureTimeframe(tf: string, fresh = false): void {
     const store = this.chart.store;
     const n = store.length;
     if (!n) return;
@@ -841,6 +876,8 @@ export class IndicatorController {
       complete: false,
       bars: null,
       busy: false,
+      resyncing: false,
+      resyncAgain: false,
       pages: 0,
       unsub: null,
     };
@@ -854,7 +891,7 @@ export class IndicatorController {
     const prepost = this.opts.prepost?.() ?? false;
     const current = () => !this.destroyed && this.tfSeries.get(tf) === entry;
     this.feed
-      .getBars({ symbol, interval, limit, prepost })
+      .getBars({ symbol, interval, limit, prepost, ...(fresh && { fresh }) })
       .then((res) => {
         if (!current()) return;
         const len = res.bars.time.length;
@@ -870,30 +907,14 @@ export class IndicatorController {
         const bars = copyColumns(res.bars, len);
         entry.bars = bars;
         this.sendTimeframeBars(tf, bars);
-        const last = {
-          time: bars.time[len - 1]!,
-          open: bars.open[len - 1]!,
-          high: bars.high[len - 1]!,
-          low: bars.low[len - 1]!,
-          close: bars.close[len - 1]!,
-          volume: bars.volume[len - 1]!,
-        };
         const info = this.chart.symbolInfo;
-        entry.unsub = this.feed.subscribe(
-          {
-            symbol,
-            interval,
-            prepost,
-            timezone: info?.timezone ?? null,
-            session: info?.session ?? null,
-          },
-          last,
-          (bar) => {
-            if (!current()) return;
-            if (entry.bars) entry.bars = upsertBar(entry.bars, bar);
-            this.worker.post({ type: 'tfBar', tf, bar });
-          },
-        );
+        this.subscribeTimeframe(tf, entry, {
+          symbol,
+          interval,
+          prepost,
+          timezone: info?.timezone ?? null,
+          session: info?.session ?? null,
+        });
         this.extendTimeframe(tf, entry);
       })
       .catch((err: unknown) => {
@@ -902,6 +923,99 @@ export class IndicatorController {
         this.tfSeries.delete(tf);
         this.onError(`Could not load ${tf} bars: ${errText(err)}`);
       });
+  }
+
+  /** Subscribe to live bars of a loaded timeframe series from its last bar (replacing any earlier subscription). */
+  private subscribeTimeframe(tf: string, entry: TfSeries, req: SubscribeRequest): void {
+    const cols = entry.bars;
+    if (!cols) return;
+    const n = cols.time.length;
+    const last: Bar | null = n
+      ? {
+          time: cols.time[n - 1]!,
+          open: cols.open[n - 1]!,
+          high: cols.high[n - 1]!,
+          low: cols.low[n - 1]!,
+          close: cols.close[n - 1]!,
+          volume: cols.volume[n - 1]!,
+        }
+      : null;
+    const current = () => !this.destroyed && this.tfSeries.get(tf) === entry;
+    const old = entry.unsub;
+    entry.unsub = this.feed.subscribe(
+      req,
+      last,
+      (bar) => {
+        if (!current()) return;
+        if (entry.bars) entry.bars = upsertBar(entry.bars, bar);
+        this.worker.post({ type: 'tfBar', tf, bar });
+      },
+      () => this.resyncTimeframe(tf, entry, req),
+    );
+    old?.();
+  }
+
+  /** The live connection of a timeframe series came back after an outage: backfill the missed bars. */
+  private resyncTimeframe(tf: string, entry: TfSeries, req: SubscribeRequest): void {
+    if (this.destroyed || this.tfSeries.get(tf) !== entry || !entry.loaded) return;
+    if (entry.resyncing) {
+      entry.resyncAgain = true;
+      return;
+    }
+    entry.resyncing = true;
+    void this.doResyncTimeframe(tf, entry, req).finally(() => {
+      entry.resyncing = false;
+      if (entry.resyncAgain) {
+        entry.resyncAgain = false;
+        this.resyncTimeframe(tf, entry, req);
+      }
+    });
+  }
+
+  /**
+   * Re-fetch the bars since the last known one (bypassing feed caches), merge them
+   * over the tail, resend the series and re-subscribe from the corrected last bar.
+   * A result that does not connect reloads the series.
+   */
+  private async doResyncTimeframe(
+    tf: string,
+    entry: TfSeries,
+    req: SubscribeRequest,
+  ): Promise<void> {
+    const current = () => !this.destroyed && this.tfSeries.get(tf) === entry;
+    const lastTime = entry.bars?.time[entry.bars.time.length - 1];
+    const elapsed =
+      lastTime === undefined
+        ? 0
+        : Math.ceil((Date.now() / 1000 - lastTime) / intervalSeconds(req.interval));
+    try {
+      const res = await this.feed.getBars({
+        symbol: req.symbol,
+        interval: req.interval,
+        limit: Math.min(TF_MAX_BARS, Math.max(0, elapsed) + 3),
+        prepost: req.prepost ?? false,
+        fresh: true,
+      });
+      if (!current() || !entry.bars) return;
+      const len = res.bars.time.length;
+      if (len) {
+        const merged = replaceTailColumns(entry.bars, res.bars, len);
+        if (!merged) {
+          // Does not connect to what is loaded: refetch the series from scratch.
+          entry.unsub?.();
+          entry.unsub = null;
+          this.tfSeries.delete(tf);
+          this.ensureTimeframe(tf, true);
+          return;
+        }
+        entry.bars = merged;
+        entry.first = merged.time[0]!;
+        this.sendTimeframeBars(tf, merged);
+      }
+      this.subscribeTimeframe(tf, entry, req);
+    } catch {
+      // Offline again or a bad response: keep what we have; the next reconnect retries.
+    }
   }
 
   /** A copy of the series to the worker (the posted arrays are transferred). */

@@ -84,6 +84,9 @@ interface Overlay {
   hasMore: boolean;
   /** A history page is in flight. */
   busy: boolean;
+  /** A resync (tail backfill after a live-connection outage) is running / was requested meanwhile. */
+  resyncing: boolean;
+  resyncAgain: boolean;
   /** History pages fetched since the main series last reset or prepended. */
   pages: number;
   unsub: Unsubscribe | null;
@@ -431,7 +434,7 @@ export class CompareController {
     ov.unsub = null;
   }
 
-  private load(symbol: string, key: string): void {
+  private load(symbol: string, key: string, fresh = false): void {
     const interval = this.interval!;
     const prepost = this.prepost;
     const ov: Overlay = {
@@ -448,6 +451,8 @@ export class CompareController {
       ctx: null,
       hasMore: false,
       busy: false,
+      resyncing: false,
+      resyncAgain: false,
       pages: 0,
       unsub: null,
       dead: false,
@@ -465,7 +470,13 @@ export class CompareController {
       const info = await this.feed.resolveSymbol(symbol);
       if (ov.dead) return;
       ov.info = info;
-      const res = await this.feed.getBars({ symbol, interval, limit, prepost });
+      const res = await this.feed.getBars({
+        symbol,
+        interval,
+        limit,
+        prepost,
+        ...(fresh && { fresh }),
+      });
       if (ov.dead) return;
       const len = res.bars.time.length;
       ov.time = Array.from(res.bars.time.subarray(0, len));
@@ -483,11 +494,7 @@ export class CompareController {
             volume: res.bars.volume[len - 1]!,
           }
         : null;
-      ov.unsub = this.feed.subscribe(
-        { symbol, interval, prepost, timezone: info.timezone, session: info.session },
-        last,
-        (bar) => this.onOverlayBar(ov, bar),
-      );
+      this.subscribeLive(ov, info, last);
       this.onOverlayData(ov);
     };
     run().catch((err: unknown) => {
@@ -497,6 +504,93 @@ export class CompareController {
       this.onError(`Compare ${symbol}: ${ov.message}`);
       this.publish();
     });
+  }
+
+  /** Subscribe to live bars of `ov` from `last` (replacing any earlier subscription). */
+  private subscribeLive(ov: Overlay, info: SymbolInfo, last: Bar | null): void {
+    const old = ov.unsub;
+    ov.unsub = this.feed.subscribe(
+      {
+        symbol: ov.symbol,
+        interval: ov.interval,
+        prepost: ov.prepost,
+        timezone: info.timezone,
+        session: info.session,
+      },
+      last,
+      (bar) => this.onOverlayBar(ov, bar),
+      () => this.resync(ov),
+    );
+    old?.();
+  }
+
+  /** The live connection of `ov` came back after an outage: backfill the bars it missed. */
+  private resync(ov: Overlay): void {
+    if (ov.dead || this.destroyed || ov.state !== 'ready') return;
+    if (ov.resyncing) {
+      ov.resyncAgain = true;
+      return;
+    }
+    ov.resyncing = true;
+    void this.doResync(ov).finally(() => {
+      ov.resyncing = false;
+      if (ov.resyncAgain) {
+        ov.resyncAgain = false;
+        this.resync(ov);
+      }
+    });
+  }
+
+  /**
+   * Re-fetch the bars since the last known one (bypassing feed caches), merge
+   * them over the tail, push the corrected line and re-subscribe from the
+   * corrected last bar. A result that does not connect reloads the overlay.
+   */
+  private async doResync(ov: Overlay): Promise<void> {
+    const n = ov.time.length;
+    const elapsed = n
+      ? Math.ceil((Date.now() / 1000 - ov.time[n - 1]!) / intervalSeconds(ov.interval))
+      : 0;
+    try {
+      const res = await this.feed.getBars({
+        symbol: ov.symbol,
+        interval: ov.interval,
+        limit: Math.min(MAX_BARS, Math.max(0, elapsed) + 3),
+        prepost: ov.prepost,
+        fresh: true,
+      });
+      if (ov.dead || this.destroyed) return;
+      const bars = res.bars;
+      const len = bars.time.length;
+      if (!len || !ov.info) return;
+      const m = ov.time.length;
+      const first = bars.time[0]!;
+      if (m && (first > ov.time[m - 1]! || first < ov.time[0]!)) {
+        // Does not connect to what is loaded: refetch the overlay from scratch.
+        this.drop(ov);
+        this.overlays.delete(ov.key);
+        if (this.interval && !this.unavailable && this.mainKeys.length) {
+          this.load(ov.symbol, ov.key, true);
+        }
+        this.publish();
+        return;
+      }
+      const keep = lowerBound(ov.time, m, first);
+      ov.time = [...ov.time.slice(0, keep), ...Array.from(bars.time.subarray(0, len))];
+      ov.close = [...ov.close.slice(0, keep), ...Array.from(bars.close.subarray(0, len))];
+      this.rekey(ov);
+      this.onOverlayData(ov);
+      this.subscribeLive(ov, ov.info, {
+        time: bars.time[len - 1]!,
+        open: bars.open[len - 1]!,
+        high: bars.high[len - 1]!,
+        low: bars.low[len - 1]!,
+        close: bars.close[len - 1]!,
+        volume: bars.volume[len - 1]!,
+      });
+    } catch {
+      // Offline again or a bad response: keep what we have; the next reconnect retries.
+    }
   }
 
   /** Recompute the overlay's key context and join keys (after load or prepend). */

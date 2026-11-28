@@ -247,6 +247,7 @@ interface Sub {
   req: SubscribeRequest;
   last: Bar | null;
   onBar: BarListener;
+  onResync: (() => void) | undefined;
   closed: boolean;
 }
 
@@ -254,6 +255,8 @@ interface Sub {
 function fakeFeed(series: Record<string, BarColumns>, infos: Record<string, SymbolInfo> = {}) {
   const requests: GetBarsRequest[] = [];
   const subs: Sub[] = [];
+  /** Responses to `fresh` requests, per symbol, served once (default: the regular series). */
+  const fresh: Record<string, BarColumns> = {};
   const feed: DataFeed = {
     resolveSymbol: async (symbol) => {
       const i = infos[symbol] ?? (series[`${symbol}|1D`] ? info(symbol, 'UTC') : null);
@@ -264,7 +267,9 @@ function fakeFeed(series: Record<string, BarColumns>, infos: Record<string, Symb
     getBars: async (req): Promise<GetBarsResult> => {
       requests.push(req);
       const key = `${req.symbol}|${req.interval.count}${req.interval.unit}`;
-      const s = series[key] ?? series[`${req.symbol}|1D`];
+      const once = req.fresh ? fresh[req.symbol] : undefined;
+      if (once) delete fresh[req.symbol];
+      const s = once ?? series[key] ?? series[`${req.symbol}|1D`];
       if (!s) throw new Error(`Unknown symbol: ${req.symbol}`);
       let end = s.time.length;
       if (req.to !== undefined) while (end > 0 && s.time[end - 1]! >= req.to) end--;
@@ -282,15 +287,15 @@ function fakeFeed(series: Record<string, BarColumns>, infos: Record<string, Symb
         hasMore: start > 0,
       };
     },
-    subscribe: (req, last, onBar) => {
-      const sub: Sub = { req, last, onBar, closed: false };
+    subscribe: (req, last, onBar, onResync) => {
+      const sub: Sub = { req, last, onBar, onResync, closed: false };
       subs.push(sub);
       return () => {
         sub.closed = true;
       };
     },
   };
-  return { feed, requests, subs };
+  return { feed, requests, subs, fresh };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -449,6 +454,91 @@ describe('CompareController', () => {
     chart.tick(bar(AAPL_T[4]! + DAY, 189));
     frame();
     expect(s.patches.length).toBe(count + 1);
+  });
+
+  describe('resync after a live-connection outage', () => {
+    const settleMany = async () => {
+      for (let i = 0; i < 6; i++) await settle();
+    };
+
+    it('merges a fresh tail over the overlay and resubscribes from its last bar', async () => {
+      const { chart, ctl, frame, subs, requests, fresh } = setup();
+      chart.load(cols(AAPL_T, AAPL_C));
+      ctl.sync([cmp('cmp-a', 'BTC-USD')]);
+      await settle();
+      const s = chart.studies.get('cmp-a')!;
+      expect(s.values).toEqual([101, 102, 103, 104, 107]);
+      // Jan 8 was revised and Jan 9 closed while the connection was down.
+      fresh['BTC-USD'] = cols([BTC_T[6]!, BTC_T[7]!, BTC_T[7]! + DAY], [106, 150, 111]);
+      subs[0]!.onResync!();
+      await settleMany();
+      const reqs = requests.filter((r) => r.fresh);
+      expect(reqs).toHaveLength(1);
+      expect(reqs[0]!.limit).toBeGreaterThanOrEqual(3);
+      expect(s.values).toEqual([101, 102, 103, 104, 150]);
+      expect(subs).toHaveLength(2);
+      expect(subs[0]!.closed).toBe(true);
+      expect(subs[1]!.closed).toBe(false);
+      expect(subs[1]!.last).toMatchObject({ time: BTC_T[7]! + DAY, close: 111 });
+      expect(subs[1]!.onResync).toBeTypeOf('function');
+      // The recovered bar shows once the main series reaches it.
+      chart.tick(bar(AAPL_T[4]! + DAY, 187));
+      frame();
+      expect(s.values).toEqual([101, 102, 103, 104, 150, 111]);
+    });
+
+    it('serializes resyncs and ignores one that finishes after the overlay was removed', async () => {
+      const f = fakeFeed({ 'BTC-USD|1D': cols(BTC_T, BTC_C) });
+      let release!: () => void;
+      let gate: Promise<void> = Promise.resolve();
+      const real = f.feed.getBars;
+      const freshRequests: GetBarsRequest[] = [];
+      f.feed.getBars = async (req) => {
+        if (req.fresh) {
+          freshRequests.push(req);
+          await gate;
+        }
+        return real(req);
+      };
+      const { chart, ctl, subs } = setup(f);
+      chart.load(cols(AAPL_T, AAPL_C));
+      ctl.sync([cmp('cmp-a', 'BTC-USD')]);
+      await settle();
+      gate = new Promise<void>((r) => (release = r));
+      subs[0]!.onResync!();
+      subs[0]!.onResync!();
+      subs[0]!.onResync!();
+      await settleMany();
+      expect(freshRequests).toHaveLength(1);
+      release();
+      await settleMany();
+      expect(freshRequests).toHaveLength(2);
+
+      gate = new Promise<void>((r) => (release = r));
+      const n = subs.length;
+      subs.at(-1)!.onResync!();
+      await settleMany();
+      ctl.sync([]);
+      release();
+      await settleMany();
+      expect(subs).toHaveLength(n);
+      expect(subs.every((x) => x.closed)).toBe(true);
+    });
+
+    it('reloads the overlay when the fresh bars do not connect', async () => {
+      const { chart, ctl, subs, requests, fresh } = setup();
+      chart.load(cols(AAPL_T, AAPL_C));
+      ctl.sync([cmp('cmp-a', 'BTC-USD')]);
+      await settle();
+      fresh['BTC-USD'] = cols([BTC_T[7]! + 5 * DAY], [200]);
+      subs[0]!.onResync!();
+      await settleMany();
+      expect(requests.filter((r) => r.fresh)).toHaveLength(2);
+      expect(subs[0]!.closed).toBe(true);
+      expect(subs).toHaveLength(2);
+      expect(subs[1]!.closed).toBe(false);
+      expect(chart.studies.get('cmp-a')!.values).toEqual([101, 102, 103, 104, 107]);
+    });
   });
 
   it('patches from the first affected main row on live overlay bars', async () => {

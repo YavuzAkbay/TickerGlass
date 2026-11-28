@@ -44,6 +44,10 @@ interface Entry {
   loaded: boolean;
   hasMore: boolean;
   busy: boolean;
+  /** A resync (tail backfill after a live-connection outage) is running / was requested meanwhile. */
+  resyncing: boolean;
+  resyncAgain: boolean;
+  info: SymbolInfo | null;
   /** History pages fetched since the displayed series last reset. */
   pages: number;
   unsub: Unsubscribe | null;
@@ -177,7 +181,7 @@ export class ExternalSymbols {
     e.unsub = null;
   }
 
-  private load(symbol: string): void {
+  private load(symbol: string, fresh = false): void {
     const { chart, feed } = this.opts;
     const interval = this.interval!;
     const prepost = this.prepost;
@@ -189,6 +193,9 @@ export class ExternalSymbols {
       loaded: false,
       hasMore: false,
       busy: false,
+      resyncing: false,
+      resyncAgain: false,
+      info: null,
       pages: 0,
       unsub: null,
       dead: false,
@@ -204,29 +211,16 @@ export class ExternalSymbols {
     const run = async () => {
       const info = await feed.resolveSymbol(symbol);
       if (e.dead) return;
+      e.info = info;
       e.series = new AlignedSeries(info.timezone ?? null);
-      const res = await feed.getBars({ symbol, interval, limit, prepost });
+      const res = await feed.getBars({ symbol, interval, limit, prepost, ...(fresh && { fresh }) });
       if (e.dead) return;
       const len = res.bars.time.length;
       e.series.set(res.bars, len);
       e.hasMore = res.hasMore && len > 0;
       e.loaded = true;
       if (this.grid) e.series.rekey(this.grid);
-      const last: Bar | null = len
-        ? {
-            time: res.bars.time[len - 1]!,
-            open: res.bars.open[len - 1]!,
-            high: res.bars.high[len - 1]!,
-            low: res.bars.low[len - 1]!,
-            close: res.bars.close[len - 1]!,
-            volume: res.bars.volume[len - 1]!,
-          }
-        : null;
-      e.unsub = feed.subscribe(
-        { symbol, interval, prepost, timezone: info.timezone, session: info.session },
-        last,
-        (bar) => this.onLiveBar(e, bar),
-      );
+      this.subscribeLive(e);
       this.opts.onProblem(symbol, null);
       this.sendFull(e);
       this.extend(e);
@@ -236,6 +230,94 @@ export class ExternalSymbols {
       // Stays cached (no refetch loop) until the interval changes or the symbol is removed.
       this.opts.onProblem(symbol, errText(err));
     });
+  }
+
+  /** Subscribe to live bars from the series' last bar (replacing any earlier subscription). */
+  private subscribeLive(e: Entry): void {
+    const info = e.info;
+    if (!info || !this.interval) return;
+    const s = e.series;
+    const n = s.length;
+    const last: Bar | null = n
+      ? {
+          time: s.time[n - 1]!,
+          open: s.open[n - 1]!,
+          high: s.high[n - 1]!,
+          low: s.low[n - 1]!,
+          close: s.close[n - 1]!,
+          volume: s.volume[n - 1]!,
+        }
+      : null;
+    const old = e.unsub;
+    e.unsub = this.opts.feed.subscribe(
+      {
+        symbol: e.symbol,
+        interval: this.interval,
+        prepost: this.prepost,
+        timezone: info.timezone,
+        session: info.session,
+      },
+      last,
+      (bar) => this.onLiveBar(e, bar),
+      () => this.resync(e),
+    );
+    old?.();
+  }
+
+  /** The live connection of `e` came back after an outage: backfill the bars it missed. */
+  private resync(e: Entry): void {
+    if (e.dead || this.destroyed || !e.loaded) return;
+    if (e.resyncing) {
+      e.resyncAgain = true;
+      return;
+    }
+    e.resyncing = true;
+    void this.doResync(e).finally(() => {
+      e.resyncing = false;
+      if (e.resyncAgain) {
+        e.resyncAgain = false;
+        this.resync(e);
+      }
+    });
+  }
+
+  /**
+   * Re-fetch the bars since the last known one (bypassing feed caches), merge
+   * them over the tail, resend the aligned series and re-subscribe from the
+   * corrected last bar. A result that does not connect reloads the whole symbol.
+   */
+  private async doResync(e: Entry): Promise<void> {
+    const interval = this.interval;
+    const n = e.series.length;
+    if (!interval) return;
+    const elapsed = n
+      ? Math.ceil((Date.now() / 1000 - e.series.time[n - 1]!) / intervalSeconds(interval))
+      : 0;
+    try {
+      const res = await this.opts.feed.getBars({
+        symbol: e.symbol,
+        interval,
+        limit: Math.min(MAX_BARS, Math.max(0, elapsed) + 3),
+        prepost: this.prepost,
+        fresh: true,
+      });
+      if (e.dead || this.destroyed) return;
+      const len = res.bars.time.length;
+      if (len) {
+        if (!e.series.replaceTail(res.bars, len)) {
+          // Does not connect to what is loaded: refetch the symbol from scratch.
+          this.drop(e);
+          this.entries.delete(e.symbol);
+          this.load(e.symbol, true);
+          return;
+        }
+        if (this.grid) e.series.rekey(this.grid);
+        this.sendFull(e);
+      }
+      this.subscribeLive(e);
+    } catch {
+      // Offline again or a bad response: keep what we have; the next reconnect retries.
+    }
   }
 
   /** Fetch older history while the series starts after the displayed bars (minus staleness). */
