@@ -229,6 +229,21 @@ describe('dividends and currencies', () => {
     expect(l.cash.EUR).toBe(4);
   });
 
+  it('a fee in another currency than the position is attributed, not flagged', () => {
+    const fee = (day: number, amount: number, currency: string) =>
+      mk('fee', d(day), { symbol: 'A', amount, currency });
+    const l = computeLedger(
+      [buy(d(1), 'A', 1, 10), fee(2, 2, 'USD'), fee(3, 3, 'EUR'), fee(4, 1, 'EUR')],
+      { costMethod: 'fifo' },
+    );
+    expect(l.issues).toEqual([]);
+    expect(pos(l, 'A')).toMatchObject({ fees: 2, foreignFees: { EUR: 4 } });
+    expect(l.totals.EUR?.fees).toBe(4);
+    expect(l.totals.USD?.fees).toBe(2);
+    expect(l.cash.EUR).toBe(-4);
+    expect(l.cash.USD).toBe(-12);
+  });
+
   it('a rejected sell (currency clash) has no cash effect', () => {
     const l = computeLedger(
       [buy(d(1), 'A', 5, 10), sell(d(2), 'A', 5, 10, 0, { currency: 'EUR' })],

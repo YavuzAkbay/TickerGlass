@@ -37,6 +37,12 @@ export interface Position {
   foreignDividends: Record<string, ForeignDividend>;
   /** Commissions on buys/sells plus `fee` transactions tagged with this symbol. */
   fees: number;
+  /**
+   * `fee` transactions tagged with this symbol but paid in a currency other than `currency`, by
+   * payment currency. Not included in `fees`: the ledger has no FX rates. No valuation row shows
+   * position fees yet, so nothing converts them.
+   */
+  foreignFees: Record<string, number>;
   openLots: OpenLot[];
 }
 
@@ -142,6 +148,7 @@ interface PosState {
   withholding: number;
   foreignDividends: Record<string, ForeignDividend>;
   fees: number;
+  foreignFees: Record<string, number>;
 }
 
 function emptyTotals(): LedgerTotals {
@@ -211,6 +218,7 @@ export function computeLedger(txs: Tx[], opts: { costMethod: CostMethod }): Ledg
       withholding: 0,
       foreignDividends: {},
       fees: 0,
+      foreignFees: {},
     };
     states.set(symbol, fresh);
     return fresh;
@@ -383,8 +391,11 @@ export function computeLedger(txs: Tx[], opts: { costMethod: CostMethod }): Ledg
         cash[ccy] = (cash[ccy] ?? 0) + cashEffect(tx);
         t.fees += a;
         if (tx.symbol) {
-          const s = stateFor(tx, false);
-          if (s) s.fees += a;
+          // Like a dividend, a fee in another currency than the position's is attributed per
+          // currency, not flagged.
+          const s = states.get(tx.symbol);
+          if (s && s.currency === ccy) s.fees += a;
+          else if (s) s.foreignFees[ccy] = (s.foreignFees[ccy] ?? 0) + a;
         }
         break;
       }
@@ -451,6 +462,7 @@ export function computeLedger(txs: Tx[], opts: { costMethod: CostMethod }): Ledg
       withholding: s.withholding,
       foreignDividends: s.foreignDividends,
       fees: s.fees,
+      foreignFees: s.foreignFees,
       openLots,
     });
   }
