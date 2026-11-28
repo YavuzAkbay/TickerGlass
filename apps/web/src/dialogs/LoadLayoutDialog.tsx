@@ -1,11 +1,12 @@
 import { Search, Trash2 } from 'lucide-react';
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { errorMessage } from '../api/client';
 import type { LayoutSummary } from '../api/types';
 import { getPersistence } from '../persist/bootstrap';
 import { deleteLayout, loadLayout } from '../persist/commands';
 import { useLayoutStatus } from '../persist/layouts';
 import { Modal } from '../ui/Modal';
+import { singleFlight } from '../ui/singleFlight';
 import './dialogs.css';
 import './persist.css';
 
@@ -42,14 +43,20 @@ export default function LoadLayoutDialog({ onClose }: { onClose: () => void; arg
   const rows = (layouts ?? []).filter((l) => !q || l.name.toLowerCase().includes(q));
   const idx = Math.max(0, Math.min(active, rows.length - 1));
 
-  const open = async (l: LayoutSummary) => {
-    if (await loadLayout(l.id)) onClose();
-  };
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Key repeat / double Enter: one load at a time.
+  const [open] = useState(() =>
+    singleFlight(async (l: LayoutSummary) => {
+      if (await loadLayout(l.id)) onCloseRef.current();
+    }),
+  );
   const remove = async (l: LayoutSummary) => {
     if (await deleteLayout(l.id, l.name)) await refresh();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     const n = rows.length;
     if (e.key === 'ArrowDown') setActive(n ? (idx + 1) % n : 0);
     else if (e.key === 'ArrowUp') setActive(n ? (idx - 1 + n) % n : 0);

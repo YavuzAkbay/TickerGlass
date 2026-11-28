@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  changeClass,
   currencyPrefix,
   fmtCap,
   fmtCompact,
@@ -71,5 +72,43 @@ describe('currencyPrefix', () => {
     setFormatLocale('en-CA');
     expect(currencyPrefix('CAD')).not.toBe('$');
     expect(currencyPrefix('CAD')).not.toBe('');
+  });
+});
+
+describe('rounding at display precision', () => {
+  it('drops the sign when the value rounds to zero', () => {
+    setFormatLocale('en-US');
+    expect(fmtSigned(-0.004, 2, '%')).toBe('0.00%');
+    expect(fmtSigned(0.004, 2, '%')).toBe('0.00%');
+    expect(fmtSigned(-0)).toBe('0.00');
+    expect(fmtSigned(-0.005, 2)).toBe('−0.01');
+    expect(fmtSigned(0.0049, 3)).toBe('+0.005');
+  });
+
+  it('keeps colour consistent with the rounded value when given the precision', () => {
+    expect(changeClass(-0.004)).toBe('down');
+    expect(changeClass(-0.004, 2)).toBe('');
+    expect(changeClass(-0.006, 2)).toBe('down');
+    expect(changeClass(0.5, 0)).toBe('up');
+  });
+
+  it('picks the compact unit after rounding', () => {
+    setFormatLocale('en-US');
+    expect(fmtCompact(999_999)).toBe('1.00M');
+    expect(fmtCompact(-999_999)).toBe('-1.00M');
+    expect(fmtCompact(999_994)).toBe('999.99K');
+    expect(fmtCompact(999_999_999)).toBe('1.00B');
+    expect(fmtCompact(999_999_999_999)).toBe('1.00T');
+    expect(fmtCompact(995)).toBe('995');
+    expect(fmtCompact(1000)).toBe('1.00K');
+  });
+
+  it('promotes market caps that round up to the next unit', () => {
+    setFormatLocale('en-US');
+    expect(fmtCap(999.6e6)).toBe('$1.0B');
+    expect(fmtCap(999.4e6)).toBe('$999M');
+    expect(fmtCap(99.96e6)).toBe('$100M');
+    expect(fmtCap(999.6e9)).toBe('$1.0T');
+    expect(fmtCap(42.5e6)).toBe('$42.5M');
   });
 });

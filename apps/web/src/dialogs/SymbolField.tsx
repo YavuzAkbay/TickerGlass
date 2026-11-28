@@ -66,6 +66,7 @@ export function SymbolField({
           setTimeout(() => setOpen(false), 120);
         }}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
             const n = search.items.length;

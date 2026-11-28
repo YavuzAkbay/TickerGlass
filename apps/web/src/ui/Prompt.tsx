@@ -9,6 +9,7 @@ import { Modal } from './Modal';
 type Request =
   | {
       kind: 'prompt';
+      id: number;
       title: string;
       label: string;
       initial: string;
@@ -23,6 +24,9 @@ type Request =
       danger: boolean;
       resolve: (v: boolean) => void;
     };
+
+/** Per-request id: the host keys the dialog by it so a new prompt never reuses a stale one. */
+let promptSeq = 0;
 
 const usePrompt = create<{ request: Request | null }>()(() => ({ request: null }));
 
@@ -51,6 +55,7 @@ export function promptName(opts: {
     usePrompt.setState({
       request: {
         kind: 'prompt',
+        id: ++promptSeq,
         title: opts.title,
         label: opts.label ?? 'Name',
         initial: opts.initial ?? '',
@@ -87,7 +92,7 @@ export function PromptHost() {
   const request = usePrompt((s) => s.request);
   if (!request) return null;
   return request.kind === 'prompt' ? (
-    <PromptDialog key={request.title} request={request} />
+    <PromptDialog key={request.id} request={request} />
   ) : (
     <ConfirmDialog request={request} />
   );
@@ -133,6 +138,7 @@ function PromptDialog({ request }: { request: Extract<Request, { kind: 'prompt' 
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
           if (e.key === 'Enter') ok();
           else return;
           e.preventDefault();

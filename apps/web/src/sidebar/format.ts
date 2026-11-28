@@ -58,10 +58,16 @@ export function fmtAuto(v: number | null | undefined): string {
   return fmtPrice(v, a >= 1000 ? 2 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6);
 }
 
+/** True when `v` rounds to zero at `decimals` places (displays as 0.00, never -0.00). */
+export function isZeroAt(v: number, decimals: number): boolean {
+  return Math.abs(v) < 0.5 / 10 ** decimals;
+}
+
 export function fmtSigned(v: number | null | undefined, decimals = 2, suffix = ''): string {
   if (!isNum(v)) return DASH;
   const s = fmtPrice(Math.abs(v), decimals);
-  return `${v > 0 ? '+' : v < 0 ? '−' : ''}${s}${suffix}`;
+  // Sign follows the rounded value: -0.004 at 2 places displays as zero, so unsigned.
+  return `${isZeroAt(v, decimals) ? '' : v > 0 ? '+' : '−'}${s}${suffix}`;
 }
 
 /** Compact: 1.23K, 4.5M, 6.78B, 1.2T. */
@@ -74,7 +80,14 @@ export function fmtCompact(v: number | null | undefined): string {
     [1e6, 'M'],
     [1e3, 'K'],
   ];
-  for (const [n, u] of units) if (a >= n) return `${(v / n).toFixed(2)}${u}`;
+  for (let i = 0; i < units.length; i++) {
+    const [n, u] = units[i]!;
+    if (a < n) continue;
+    // Pick the unit after rounding: 999_999 is 1.00M, not 1000.00K.
+    const up = units[i - 1];
+    if (up && Number((a / n).toFixed(2)) >= up[0] / n) return `${(v / up[0]).toFixed(2)}${up[1]}`;
+    return `${(v / n).toFixed(2)}${u}`;
+  }
   return numberFormat(0, 2).format(v);
 }
 
@@ -90,10 +103,16 @@ export function fmtCap(v: number | null | undefined): string {
     [1e9, 'B'],
     [1e6, 'M'],
   ];
-  for (const [n, u] of units) {
+  for (let i = 0; i < units.length; i++) {
+    const [n, u] = units[i]!;
     if (a < n) continue;
+    // Pick unit and precision after rounding: 999.6M is $1.0B, not $1,000M.
+    const up = units[i - 1];
+    if (up && Number((a / n).toFixed(0)) >= up[0] / n) {
+      return `$${numberFormat(1, 1).format(v / up[0])}${up[1]}`;
+    }
     const x = v / n;
-    const d = Math.abs(x) >= 100 ? 0 : 1;
+    const d = Number(Math.abs(x).toFixed(1)) >= 100 ? 0 : 1;
     return `$${numberFormat(d, d).format(x)}${u}`;
   }
   return `$${numberFormat(0, 0).format(v)}`;
@@ -150,8 +169,12 @@ export function fmtInt(v: number | null | undefined): string {
   return numberFormat(0, 0).format(Math.round(v));
 }
 
-export function changeClass(v: number | null | undefined): string {
-  if (!isNum(v) || v === 0) return '';
+/**
+ * Direction class for a change. Pass `decimals` (the display precision) so a
+ * value that rounds to zero ("0.00%") is neutral, matching `fmtSigned`.
+ */
+export function changeClass(v: number | null | undefined, decimals?: number): string {
+  if (!isNum(v) || v === 0 || (decimals !== undefined && isZeroAt(v, decimals))) return '';
   return v > 0 ? 'up' : 'down';
 }
 

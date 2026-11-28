@@ -250,6 +250,7 @@ export default function IndicatorsDialog({ onClose, arg }: { onClose: () => void
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     const n = rows.length;
     if (e.key === 'ArrowDown') setActive(n ? (idx + 1) % n : 0);
     else if (e.key === 'ArrowUp') setActive(n ? (idx - 1 + n) % n : 0);

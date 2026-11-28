@@ -1,9 +1,13 @@
 /** Number and date formatting for the portfolio panel (builds on the sidebar formatters). */
-import { fmtPrice, fmtSigned, formatLocale, isNum } from '../sidebar/format';
+import { fmtPrice, fmtSigned, formatLocale, isNum, isZeroAt } from '../sidebar/format';
 
 /** Gain / loss colour class (jade / coral); '' for zero or missing. */
-export const tone = (v: number | null | undefined): string =>
-  !isNum(v) || v === 0 ? '' : v > 0 ? 'pf-up' : 'pf-down';
+export const tone = (v: number | null | undefined, decimals?: number): string =>
+  !isNum(v) || v === 0 || (decimals !== undefined && isZeroAt(v, decimals))
+    ? ''
+    : v > 0
+      ? 'pf-up'
+      : 'pf-down';
 
 const DASH = '—';
 const moneyCache = new Map<string, Intl.NumberFormat>();
@@ -26,14 +30,17 @@ function moneyFormat(currency: string): Intl.NumberFormat | null {
 export function fmtMoney(v: number | null | undefined, currency: string): string {
   if (!isNum(v)) return DASH;
   const nf = moneyFormat(currency);
-  return nf ? nf.format(v) : `${fmtPrice(v, 2)} ${currency}`;
+  if (!nf) return `${fmtPrice(v, 2)} ${currency}`;
+  // Never print a sign on a value that rounds to zero ("-$0.00", also for -0).
+  return nf.format(isZeroAt(v, nf.resolvedOptions().maximumFractionDigits ?? 2) ? 0 : v);
 }
 
 /** `+$12.30` / `−$12.30` (U+2212), zero unsigned. */
 export function fmtMoneySigned(v: number | null | undefined, currency: string): string {
   if (!isNum(v)) return DASH;
   const s = fmtMoney(Math.abs(v), currency);
-  return `${v > 0 ? '+' : v < 0 ? '−' : ''}${s}`;
+  const d = moneyFormat(currency)?.resolvedOptions().maximumFractionDigits ?? 2;
+  return `${isZeroAt(v, d) ? '' : v > 0 ? '+' : '−'}${s}`;
 }
 
 /** Percent value (12.5 = 12.5 %) with a sign. */

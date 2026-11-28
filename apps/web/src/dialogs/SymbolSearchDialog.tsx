@@ -110,6 +110,7 @@ export default function SymbolSearchDialog({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'ArrowDown') setActive(rows.length ? (idx + 1) % rows.length : 0);
     else if (e.key === 'ArrowUp')
       setActive(rows.length ? (idx - 1 + rows.length) % rows.length : 0);

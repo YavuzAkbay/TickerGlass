@@ -404,6 +404,7 @@ export function JournalEditor({ entry, transactions, ledger, onBack }: Props) {
             }}
             onBlur={commitTag}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
               if (e.key === 'Enter') {
                 e.preventDefault();
                 commitTag();

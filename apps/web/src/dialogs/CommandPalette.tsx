@@ -276,6 +276,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void; arg?:
   }, [idx, entries.length]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
     const n = entries.length;
     if (e.key === 'ArrowDown') setActive(n ? (idx + 1) % n : 0);
     else if (e.key === 'ArrowUp') setActive(n ? (idx - 1 + n) % n : 0);
