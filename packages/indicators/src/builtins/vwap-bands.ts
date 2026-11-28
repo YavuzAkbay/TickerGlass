@@ -10,21 +10,27 @@ export interface VwapSums extends Record<string, number> {
   ssv: number;
   /** Volume-weighted standard deviation of the last update. */
   sd: number;
+  /** 1 while a period reset is owed: set by a new period, cleared by the next valid update. */
+  pending: number;
 }
 
-export const VWAP_SUMS: VwapSums = { sv: NaN, v: NaN, ssv: NaN, sd: NaN };
+export const VWAP_SUMS: VwapSums = { sv: NaN, v: NaN, ssv: NaN, sd: NaN, pending: 0 };
 
 /**
  * VWAP: accumulate (resetting on a new period) and
  * return the VWAP; `st.sd` gets sqrt(max(E[src^2] - vwap^2, 0)). NaN inputs
- * leave the sums unchanged.
+ * leave the sums unchanged, and a period reset requested on such a bar is
+ * kept pending until the next valid bar (so the new period never accumulates
+ * onto the previous one's sums).
  */
 export function vwapUpdate(st: VwapSums, isNew: boolean, x: number, vol: number): number {
+  if (isNew) st.pending = 1;
   if (Number.isNaN(x) || Number.isNaN(vol)) {
     st.sd = NaN;
     return NaN;
   }
-  if (isNew || Number.isNaN(st.v)) {
+  if (st.pending === 1 || Number.isNaN(st.v)) {
+    st.pending = 0;
     st.sv = x * vol;
     st.v = vol;
     st.ssv = x * x * vol;

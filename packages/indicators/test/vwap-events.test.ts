@@ -140,4 +140,28 @@ describe('VWAP event anchors', () => {
     ).toEqual(['ev', 'session']);
     expectClose(snapshot(rt.result('ev')!).vwap!, run(INPUTS, null).vwap!);
   });
+
+  it('a reset on a NaN-volume bar applies at the next valid bar', () => {
+    // Daily bars Thu, Fri, then Mon (NaN volume, new week/event), Tue, Wed.
+    const days = [3, 4, 7, 8, 9];
+    const close = [10, 12, 11, 14, 13];
+    const bars = {
+      time: Float64Array.from(days.map((d) => T0 + d * DAY)),
+      open: Float64Array.from(close),
+      high: Float64Array.from(close),
+      low: Float64Array.from(close),
+      close: Float64Array.from(close),
+      volume: Float64Array.from([1, 3, NaN, 2, 1]),
+    };
+    const events: BarsEvents = { ...NONE, dividends: [bars.time[2]!] };
+    for (const anchor of ['Week', 'Dividends']) {
+      const rt = new IndicatorRuntime({ context: { intervalSeconds: DAY, events } });
+      rt.add({ id: 'x', type: 'vwap', inputs: { ...INPUTS, anchor } });
+      rt.setBars(bars);
+      const v = snapshot(rt.result('x')!).vwap!;
+      expect(v[2], anchor).toBeNaN();
+      // Bar 3 starts the new period (14), not (10 + 36 + 28) / 6 from the old one.
+      expectClose([v[3]!, v[4]!], [14, (14 * 2 + 13) / 3]);
+    }
+  });
 });
