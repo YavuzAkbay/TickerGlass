@@ -326,8 +326,11 @@ test('server mode exports every page of the scan as CSV', async ({ page }) => {
     page.getByRole('menuitem', { name: 'Export view (CSV)' }).click(),
   ]);
   expect(file.suggestedFilename()).toMatch(/^Screener-stocks_\d{4}-\d{2}-\d{2}\.csv$/);
-  // One extra page request at the server's maximum page size, from offset 0.
-  expect(m.screener.scanRequests[before]).toMatchObject({ limit: 500, offset: 0 });
+  // One extra page request at the server's maximum page size, from offset 0 (a background
+  // refresh of the visible page may come first).
+  expect(m.screener.scanRequests.slice(before)).toContainEqual(
+    expect.objectContaining({ limit: 500, offset: 0 }),
+  );
   const text = await (await import('node:fs/promises')).readFile((await file.path())!, 'utf8');
   const lines = text.replace(/^\uFEFF/, '').split('\n');
   expect(lines[0]).toMatch(

@@ -167,6 +167,14 @@ export class InteractionController {
     );
   }
 
+  /** Stop kinetic panning and an easing wheel zoom (a view reset must not be undone by them). */
+  stopMotion(): void {
+    cancelAnimationFrame(this.kineticFrame);
+    this.kineticFrame = 0;
+    if (this.zoomEase) cancelAnimationFrame(this.zoomEase.frame);
+    this.zoomEase = null;
+  }
+
   destroy(): void {
     this.abort.abort();
     cancelAnimationFrame(this.kineticFrame);

@@ -1349,6 +1349,8 @@ export class Chart implements StudyApi, DrawingApi {
 
   /** Back to the latest bar with default zoom and auto-scale. */
   resetView(): void {
+    // A wheel zoom still easing in (or a kinetic pan) would keep moving after the reset.
+    this.controller?.stopMotion();
     this.timeScale.barSpacing = DEFAULT_BAR_SPACING;
     this.timeScale.reset(this.store.length - 1);
     for (const p of this.panes) p.priceScale.autoScale = true;
