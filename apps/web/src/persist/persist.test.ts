@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
 import type { Layout, LayoutSummary, StoredDrawing } from '../api/types';
 import { useHistory } from '../commands/history';
+import { pickJsonFile } from './commands';
 import type { CompareState } from '../compare/model';
 import { useCompareStore } from '../compare/store';
 import { useDrawingStore, useDrawingTemplates, withRemoteApply } from '../drawings/store';
@@ -2054,6 +2055,85 @@ describe('notes sync', () => {
     expect(server.text).toBe('hold');
     expect(useNotesStore.getState().notes[GENERAL_NOTE]).toBeUndefined();
     await sync.dispose();
+  });
+});
+
+describe('notes sync: Keep mine after a 409', () => {
+  it('restores the text typed while the save was in flight', async () => {
+    useNotesStore.setState({ notes: {} });
+    const server = { id: 'n1', symbol: 'AAPL', text: 'theirs', revision: 5 };
+    const api = {
+      listNotes: vi.fn(async () => [
+        { ...server, text: 'start', revision: 1, createdAt: '', updatedAt: '' },
+      ]),
+      createNote: vi.fn(),
+      updateNote: vi.fn(async () => {
+        // The user keeps typing while the request is on its way.
+        useNotesStore.getState().edit('AAPL', 'sent text and more');
+        throw conflict({ message: 'stale', current: { ...server, createdAt: '', updatedAt: '' } });
+      }),
+    };
+    const onConflict = vi.fn();
+    const sync = new NotesSync({
+      api: api as unknown as NotesApi,
+      delay: 0,
+      onError: vi.fn(),
+      onConflict,
+    });
+    sync.start();
+    await sync.load();
+    useNotesStore.getState().edit('AAPL', 'sent text');
+    await sync.flush();
+    expect(useNotesStore.getState().notes.AAPL).toMatchObject({ text: 'theirs', dirty: false });
+    onConflict.mock.calls[0]![1]();
+    expect(useNotesStore.getState().notes.AAPL).toMatchObject({
+      text: 'sent text and more',
+      dirty: true,
+    });
+    await sync.dispose();
+  });
+});
+
+describe('pickJsonFile', () => {
+  type Listener = () => void | Promise<void>;
+  function fakeDom() {
+    const listeners = new Map<string, Listener>();
+    const input = {
+      type: '',
+      accept: '',
+      hidden: false,
+      files: [] as unknown[],
+      addEventListener: (ev: string, fn: Listener) => void listeners.set(ev, fn),
+      click: vi.fn(),
+      remove: vi.fn(() => {
+        attached = false;
+      }),
+    };
+    let attached = false;
+    vi.stubGlobal('document', {
+      createElement: () => input,
+      body: { appendChild: () => void (attached = true) },
+    });
+    return { input, listeners, isAttached: () => attached };
+  }
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('resolves null when the dialog is cancelled and removes the input', async () => {
+    const dom = fakeDom();
+    const p = pickJsonFile();
+    expect(dom.isAttached()).toBe(true);
+    dom.listeners.get('cancel')!();
+    await expect(p).resolves.toBeNull();
+    expect(dom.input.remove).toHaveBeenCalled();
+  });
+
+  it('resolves the parsed file on change and removes the input', async () => {
+    const dom = fakeDom();
+    const p = pickJsonFile();
+    dom.input.files = [{ name: 'a.json', text: async () => '{"x":1}' }];
+    await dom.listeners.get('change')!();
+    await expect(p).resolves.toEqual({ name: 'a.json', data: { x: 1 } });
+    expect(dom.isAttached()).toBe(false);
   });
 });
 

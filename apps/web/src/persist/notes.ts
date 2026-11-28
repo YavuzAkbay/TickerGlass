@@ -155,7 +155,9 @@ export class NotesSync {
       } catch (err) {
         const server = persistence.noteConflict(err);
         if (server) {
-          const mine = entry.text;
+          // What is in the editor now, incl. text typed while the save was in flight
+          // (read before the server's copy replaces it).
+          const mine = useNotesStore.getState().notes[key]?.text ?? entry.text;
           setEntry(key, {
             id: server.id,
             text: server.text,

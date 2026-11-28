@@ -4,7 +4,7 @@
  * and revalidated with `If-None-Match` (304 -> the cached body). Everything else
  * goes through `requestJson`.
  */
-import { ApiError, requestJson, type RequestOptions } from '../../api/client';
+import { ApiError, parseOkJson, requestJson, type RequestOptions } from '../../api/client';
 import type { Universe as ClassUniverse } from '../universe/types';
 import type {
   FieldsResponse,
@@ -101,7 +101,7 @@ async function etagJson<T>(
   }
   if (res.status === 304 && hit) return hit.data as T;
   if (!res.ok || res.status === 304) return requestJson<T>(method, path, body, opts);
-  const data = (await res.json()) as T;
+  const data = await parseOkJson<T>(res);
   const etag = res.headers.get('ETag');
   if (etag) cache.set(key, { etag, data });
   return data;

@@ -1,6 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requestJson = vi.fn();
+
+/** Minimal hook runtime: effects run during render when their deps changed. */
+const hooks = vi.hoisted(() => ({
+  idx: 0,
+  slots: [] as Array<{ deps?: unknown[]; cleanup?: unknown } | undefined>,
+}));
+vi.mock('react', () => ({
+  useState: (init: unknown) => [init, () => {}],
+  useMemo: (fn: () => unknown) => fn(),
+  useSyncExternalStore: (_sub: unknown, get: () => unknown) => get(),
+  useEffect: (fn: () => unknown, deps: unknown[]) => {
+    const i = hooks.idx++;
+    const prev = hooks.slots[i];
+    if (prev && prev.deps && prev.deps.every((d, k) => Object.is(d, deps[k]))) return;
+    if (typeof prev?.cleanup === 'function') prev.cleanup();
+    hooks.slots[i] = { deps, cleanup: fn() };
+  },
+}));
 vi.mock('../../api/client', async (orig) => ({
   ...(await orig<typeof import('../../api/client')>()),
   requestJson: (...args: unknown[]) => requestJson(...args),
@@ -18,6 +36,7 @@ import {
   peekSnapshots,
   requestSnapshot,
   snapshotsDisabled,
+  useSnapshots,
 } from './snapshot';
 
 const row = (n: number) => ({ last: n, rsi14: 50, nextEarnings: null });
@@ -117,21 +136,54 @@ describe('snapshot loader', () => {
     expect(peekSnapshot('AAPL')).toBeUndefined();
   });
 
-  it.each([404, 501, 0])(
-    'is disabled for the session after a %i, with no retries',
-    async (status) => {
-      requestJson.mockRejectedValue(new ApiError('nope', status));
-      const a = requestSnapshot('AAPL');
-      const b = requestSnapshot('MSFT');
-      await vi.advanceTimersByTimeAsync(BATCH_MS);
-      expect(await a).toBeNull();
-      expect(await b).toBeNull();
-      expect(snapshotsDisabled()).toBe(true);
-      expect(await requestSnapshot('NVDA')).toBeNull();
-      await vi.advanceTimersByTimeAsync(BATCH_MS * 4);
-      expect(requestJson).toHaveBeenCalledTimes(1);
-    },
-  );
+  it.each([404, 501])('is disabled for the session after a %i, with no retries', async (status) => {
+    requestJson.mockRejectedValue(new ApiError('nope', status));
+    const a = requestSnapshot('AAPL');
+    const b = requestSnapshot('MSFT');
+    await vi.advanceTimersByTimeAsync(BATCH_MS);
+    expect(await a).toBeNull();
+    expect(await b).toBeNull();
+    expect(snapshotsDisabled()).toBe(true);
+    expect(await requestSnapshot('NVDA')).toBeNull();
+    await vi.advanceTimersByTimeAsync(BATCH_MS * 4);
+    expect(requestJson).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unreachable API (status 0) does not disable the feature; it is retried after the failure window', async () => {
+    requestJson.mockRejectedValueOnce(new ApiError('offline', 0));
+    const a = requestSnapshot('AAPL');
+    await vi.advanceTimersByTimeAsync(BATCH_MS);
+    expect(await a).toBeNull();
+    expect(snapshotsDisabled()).toBe(false);
+    vi.advanceTimersByTime(FAILURE_TTL_MS + 1);
+    const b = requestSnapshot('AAPL');
+    await vi.advanceTimersByTimeAsync(BATCH_MS);
+    expect(await b).toEqual(row(1));
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('useSnapshots refetches rows dropped for a newer asOf without waiting for the renew timer', async () => {
+    hooks.slots = [];
+    const symbols = ['AAPL'];
+    const render = () => {
+      hooks.idx = 0;
+      return useSnapshots(symbols);
+    };
+    render();
+    await vi.advanceTimersByTimeAsync(BATCH_MS);
+    expect(render().AAPL).toEqual(row(1));
+    expect(requestJson).toHaveBeenCalledTimes(1);
+    // Another consumer loads a symbol under a newer asOf: AAPL's row is superseded.
+    requestJson.mockImplementation(answer('2026-11-06'));
+    const b = requestSnapshot('MSFT');
+    await vi.advanceTimersByTimeAsync(BATCH_MS);
+    await b;
+    expect(render().AAPL).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(BATCH_MS);
+    expect(requestJson).toHaveBeenCalledTimes(3);
+    expect(requestJson.mock.calls[2]![3].query).toEqual({ symbols: 'AAPL' });
+    expect(render().AAPL).toEqual(row(1));
+  });
 
   it('retries after a transient failure, without disabling', async () => {
     requestJson.mockRejectedValueOnce(new ApiError('busy', 503));

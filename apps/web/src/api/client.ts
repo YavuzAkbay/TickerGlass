@@ -166,7 +166,20 @@ export async function requestJson<T>(
     throw new ApiError(detail, res.status, parsed);
   }
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  return parseOkJson<T>(res);
+}
+
+/**
+ * JSON body of a 2xx answer. A captive portal or proxy can answer 200 with HTML (or the
+ * connection can drop mid-body): that is the API being unreachable, not a permanent
+ * failure, so it surfaces as status 0 (retryable / transient) instead of a SyntaxError.
+ */
+export async function parseOkJson<T>(res: Response): Promise<T> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError('Invalid response: API unreachable or answered with non-JSON', 0);
+  }
 }
 
 /** GET `/api{path}` as JSON. Throws ApiError with the server's `detail` on non-OK. */

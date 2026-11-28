@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearJsonCache } from '../../api/client';
+import { ApiError, clearJsonCache, isRetryable } from '../../api/client';
 import { clearUniverseCache, getUniverse, UniverseUnavailableError } from '../universe';
 import {
   clearScreenerCache,
@@ -80,6 +80,13 @@ describe('scan', () => {
     const second = await scan({ ...REQ });
     expect(headerOf(calls[1]!, 'If-None-Match')).toBe('"abc"');
     expect(second).toBe(first);
+  });
+
+  it('a 200 with a non-JSON body (captive portal) is a retryable ApiError', async () => {
+    respond = () => new Response('<html>login</html>', { status: 200 });
+    const err = await scan(REQ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(isRetryable(err)).toBe(true);
   });
 
   it('keeps one ETag per canonical request', async () => {

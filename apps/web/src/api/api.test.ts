@@ -7,6 +7,7 @@ import {
   bodyBytes,
   cachedJson,
   clearJsonCache,
+  isRetryable,
   keepaliveBytesLeft,
   requestJson,
 } from './client';
@@ -109,10 +110,15 @@ describe('cachedJson', () => {
 describe('requestJson', () => {
   it('sends method, JSON body, query and keepalive', async () => {
     respond = () => json({ ok: 1 });
-    const out = await requestJson('POST', '/x', { a: 1 }, {
-      query: { mode: 'merge', dryRun: true, skip: undefined },
-      keepalive: true,
-    });
+    const out = await requestJson(
+      'POST',
+      '/x',
+      { a: 1 },
+      {
+        query: { mode: 'merge', dryRun: true, skip: undefined },
+        keepalive: true,
+      },
+    );
     expect(out).toEqual({ ok: 1 });
     expect(calls[0]!.url).toBe('/api/x?mode=merge&dryRun=true');
     expect(calls[0]!.init.method).toBe('POST');
@@ -147,6 +153,39 @@ describe('requestJson', () => {
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')));
     await expect(requestJson('GET', '/settings')).rejects.toMatchObject({ status: 0 });
   });
+
+  it('a 200 with a non-JSON body (captive portal) is a retryable ApiError, not a SyntaxError', async () => {
+    respond = () =>
+      new Response('<html>Sign in to the Wi-Fi</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const err = await requestJson('GET', '/settings').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(0);
+    expect(isRetryable(err)).toBe(true);
+  });
+
+  it('an autosaver keeps its value and retries after a captive-portal 200', async () => {
+    vi.useFakeTimers();
+    let portal = true;
+    const saved: number[] = [];
+    const s = createAutosaver<number>(
+      async (v) => {
+        if (portal) await requestJson('PUT', '/settings', { v });
+        else saved.push(v);
+      },
+      { delay: 10, retryDelay: 100, window: new EventTarget(), document: fakeDoc() },
+    );
+    respond = () => new Response('<html></html>', { status: 200 });
+    s.schedule(7);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(saved).toEqual([]);
+    expect(s.pending).toBe(true); // kept, not dropped as permanent
+    portal = false;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(saved).toEqual([7]);
+  });
 });
 
 describe('persistence endpoints', () => {
@@ -164,7 +203,10 @@ describe('persistence endpoints', () => {
     expect(calls[2]!.url).toBe('/api/drawings');
 
     respond = () => json({ drawings: [], deleted: ['d2'] });
-    await batchDrawings({ upserts: [{ drawing: { id: 'd1' }, baseRevision: 1 }], deletes: [{ id: 'd2' }] });
+    await batchDrawings({
+      upserts: [{ drawing: { id: 'd1' }, baseRevision: 1 }],
+      deletes: [{ id: 'd2' }],
+    });
     expect(calls[3]!.url).toBe('/api/drawings/batch');
     expect(calls[3]!.init.method).toBe('POST');
 
@@ -172,7 +214,11 @@ describe('persistence endpoints', () => {
     await importAll({ version: 1, app: 'tickerglass' }, { mode: 'replace', dryRun: true });
     expect(calls[4]!.url).toBe('/api/import?mode=replace&dryRun=true');
 
-    await importLayout({ version: 1, kind: 'layout', layout: { name: 'n', state: {}, schemaVersion: 1 } });
+    await importLayout({
+      version: 1,
+      kind: 'layout',
+      layout: { name: 'n', state: {}, schemaVersion: 1 },
+    });
     expect(calls[5]!.url).toBe('/api/layouts/import');
 
     // A real replace carries the explicit confirmation; merge never does.
@@ -502,7 +548,14 @@ describe('createLayoutAutosaver', () => {
     const onConflict = vi.fn();
     const s = createLayoutAutosaver<{ n: number }>(
       { id: 'L', revision: 4 },
-      { delay: 10, schemaVersion: 2, onSaved, onConflict, window: new EventTarget(), document: fakeDoc() },
+      {
+        delay: 10,
+        schemaVersion: 2,
+        onSaved,
+        onConflict,
+        window: new EventTarget(),
+        document: fakeDoc(),
+      },
     );
     s.schedule({ n: 1 });
     await vi.advanceTimersByTimeAsync(10);

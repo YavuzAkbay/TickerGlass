@@ -123,8 +123,16 @@ export function pickJsonFile(): Promise<{ name: string; data: unknown } | null> 
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';
-    input.onchange = async () => {
+    input.hidden = true;
+    // Attached while the dialog is open (some browsers skip events of detached inputs).
+    document.body.appendChild(input);
+    input.addEventListener('cancel', () => {
+      input.remove();
+      resolve(null);
+    });
+    input.addEventListener('change', async () => {
       const file = input.files?.[0];
+      input.remove();
       if (!file) return resolve(null);
       try {
         resolve({ name: file.name, data: JSON.parse(await file.text()) });
@@ -132,7 +140,7 @@ export function pickJsonFile(): Promise<{ name: string; data: unknown } | null> 
         toast(`"${file.name}" is not a valid JSON file`, 'error');
         resolve(null);
       }
-    };
+    });
     input.click();
   });
 }

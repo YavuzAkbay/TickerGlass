@@ -10,9 +10,9 @@ import { ApiError, requestJson } from '../../api/client';
  * - A row stays cached while the response `asOf` it came with is still the newest one seen, for at
  *   most TTL_MS.
  * - Symbols the server omits (not tracked) are remembered as absent for NEGATIVE_TTL_MS.
- * - When the endpoint is missing (404/501) or the API is unreachable the feature is switched off for
- *   the session: no further requests, every answer is null (`snapshotsDisabled()`).
- * - Any other failure (5xx, 429) answers null for FAILURE_TTL_MS and is then retried.
+ * - When the endpoint is missing (404/501) the feature is switched off for the session: no further
+ *   requests, every answer is null (`snapshotsDisabled()`).
+ * - Any other failure (unreachable, 5xx, 429) answers null for FAILURE_TTL_MS and is then retried.
  */
 
 /** Frozen field ids of the screener (camelCase), see `GET /api/screener/fields`. */
@@ -76,7 +76,7 @@ export function clearSnapshots(): void {
   bump();
 }
 
-/** True once the endpoint proved absent or unreachable (for the rest of the session). */
+/** True once the endpoint proved absent (for the rest of the session). */
 export const snapshotsDisabled = (): boolean => disabled;
 
 function remember(symbol: string, value: SnapshotRow | null, asOf: string | null, ttl: number) {
@@ -116,9 +116,9 @@ export function peekSnapshots(symbols: readonly string[]): Record<string, Snapsh
   return out;
 }
 
-/** 404 / 501 / unreachable: the endpoint will not appear during this session. */
+/** 404 / 501: the endpoint will not appear during this session (unreachable, status 0, is transient). */
 const isAbsent = (e: unknown): boolean =>
-  e instanceof ApiError && (e.status === 404 || e.status === 501 || e.status === 0);
+  e instanceof ApiError && (e.status === 404 || e.status === 501);
 
 type Waiters = Map<string, Array<(v: SnapshotRow | null) => void>>;
 
@@ -228,6 +228,13 @@ export function useSnapshots(
     const t = setTimeout(() => setRenew((n) => n + 1), TTL_MS + 1000);
     return () => clearTimeout(t);
   }, [active, symbols, renew]);
+
+  // Rows dropped by `peekSnapshot` (a newer `asOf` arrived, or an entry expired) are asked for
+  // again. Cached answers (rows, absent, failed) are not refetched: only what is missing.
+  useEffect(() => {
+    if (!active) return;
+    for (const s of symbols) void requestSnapshot(s);
+  }, [active, symbols, v]);
 
   return useMemo(
     () => (active ? peekSnapshots(symbols) : EMPTY),
