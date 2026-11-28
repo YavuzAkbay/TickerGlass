@@ -128,9 +128,11 @@ describe('alerts on user scripts', () => {
     await tick(104);
     await tick(107, BAR_T + 60);
     const xs = (id: string) => h!.api.fires.filter((f) => f.id === id).map((f) => f.body.values.x);
-    // Both alerts fire on the history value and on each live bar (3 each). Wait for each one's
-    // own fires: a total count can be reached while one alert is still a bar behind.
-    await until(() => xs('u').length >= 3 && xs('b').length >= 3, 'fires');
+    // Both alerts fire on the history value and on each live bar. They are evaluated
+    // independently, so one can be a bar ahead at any moment: wait until both have caught up to
+    // the same values (a real mismatch never converges and times out with both lists).
+    const same = () => JSON.stringify(xs('u')) === JSON.stringify(xs('b'));
+    await until(() => xs('u').length >= 3 && same(), 'fires');
     expect(xs('u')).toEqual(xs('b'));
   });
 
