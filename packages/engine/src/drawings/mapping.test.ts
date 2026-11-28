@@ -386,3 +386,13 @@ describe('session-aware extrapolation past the last bar', () => {
     ).toBeNull();
   });
 });
+
+describe('timeToLogical non-finite time', () => {
+  it('maps a NaN / infinite anchor time to NaN, not to the first bar', () => {
+    const tl = timeline(dailyBars(5), { unit: 'day', count: 1 });
+    expect(timeToLogical(tl, { time: NaN })).toBeNaN();
+    expect(timeToLogical(tl, { time: Infinity })).toBeNaN();
+    expect(timeToLogical(tl, { time: -Infinity })).toBeNaN();
+    expect(timeToLogical(tl, { time: tl.time[0]! })).toBe(0);
+  });
+});

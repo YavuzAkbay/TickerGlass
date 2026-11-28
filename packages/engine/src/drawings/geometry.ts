@@ -62,8 +62,8 @@ export class Geometry implements DrawingGeometry {
   private ps!: PriceScale;
   private tl!: AnchorTimeline;
 
-  /** Map `drawing` into `pane`. Returns false when there are no bars to anchor to
-   * (pane-coordinate drawings map without bars). */
+  /** Map `drawing` into `pane`. Returns false when there are no bars to anchor to or an
+   * anchor has no finite time (pane-coordinate drawings map without bars). */
   update(
     drawing: Readonly<Drawing>,
     pane: DrawingPane,
@@ -83,6 +83,7 @@ export class Geometry implements DrawingGeometry {
     this.pane = isPaneCoords(drawing.type);
     const pts = drawing.points;
     const n = pts.length;
+    let mapped = true;
     while (this.points.length < n) this.points.push({ x: NaN, y: NaN });
     this.points.length = n;
     this.logical.length = n;
@@ -97,10 +98,12 @@ export class Geometry implements DrawingGeometry {
       }
       const l = timeToLogical(this.tl, p);
       this.logical[i] = l;
+      // An anchor without a usable time (drawn before any bars existed) has no position.
+      if (l !== l) mapped = false;
       px.x = this.ts.indexToX(l);
       px.y = this.ps.priceToY(p.price);
     }
-    return this.pane || view.timeline.length > 0;
+    return this.pane || (view.timeline.length > 0 && mapped);
   }
 
   /** Anchor -> pane px (pane fractions for `coords: 'pane'` tools). */

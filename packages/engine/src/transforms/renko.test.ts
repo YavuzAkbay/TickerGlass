@@ -85,3 +85,25 @@ describe('renko', () => {
     expect(renko(closes([100, 102]), { ...opts, boxSize: 0 }).bars.length).toBe(0);
   });
 });
+
+describe('renko degenerate input', () => {
+  it('returns nothing when the box is below float spacing at the price (no hang)', () => {
+    const r = renko(closes([60000, 60100]), { boxSize: 1e-13, source: 'close', wicks: false });
+    expect(r.bars.length).toBe(0);
+  });
+
+  it('caps the bricks emitted for one bad-tick jump and keeps going from the new level', () => {
+    const r = renko(closes([100, 1e9, 1e9 + 3]), { boxSize: 1, source: 'close', wicks: false });
+    expect(r.bars.length).toBeLessThanOrEqual(100_000 + 3);
+    expect(r.bars.length).toBeGreaterThan(100_000);
+    // Bricks after the jump continue from the jumped-to level.
+    expect(r.bars.close[r.bars.length - 1]).toBe(1e9 + 3);
+    expect(r.bars.open[r.bars.length - 1]).toBe(1e9 + 2);
+  });
+
+  it('caps a bad-tick drop too', () => {
+    const r = renko(closes([1e9, 100, 97]), { boxSize: 1, source: 'close', wicks: false });
+    expect(r.bars.length).toBeLessThanOrEqual(100_000 + 3);
+    expect(r.bars.close[r.bars.length - 1]).toBe(97);
+  });
+});

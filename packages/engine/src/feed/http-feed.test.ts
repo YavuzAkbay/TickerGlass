@@ -581,3 +581,25 @@ describe('HttpDataFeed live', () => {
     feed.dispose();
   });
 });
+
+describe('HttpDataFeed delayed ticks', () => {
+  it('drops a tick older than the newest one even within the same bar', () => {
+    const feed = makeFeed();
+    const bars: Bar[] = [];
+    const t0 = z('2024-01-02T15:00:00Z');
+    feed.subscribe(
+      { symbol: 'AAPL', interval: parseInterval('5m'), ...NY },
+      { time: t0, open: 1, high: 1, low: 1, close: 1, volume: 0 },
+      (b) => bars.push(b),
+    );
+    const ws = FakeWebSocket.last();
+    ws.open();
+    ws.receive(tick('AAPL', '2024-01-02T15:02:00Z', 5));
+    ws.receive(tick('AAPL', '2024-01-02T15:01:00Z', 3)); // delayed, same bar: must not become the close
+    expect(bars).toHaveLength(1);
+    expect(bars[0]).toMatchObject({ close: 5, low: 1, high: 5 });
+    ws.receive(tick('AAPL', '2024-01-02T15:02:00Z', 6)); // same timestamp is still accepted
+    expect(bars.at(-1)).toMatchObject({ close: 6 });
+    feed.dispose();
+  });
+});

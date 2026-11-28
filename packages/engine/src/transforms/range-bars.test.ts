@@ -48,3 +48,26 @@ describe('rangeBars', () => {
     expect(rangeBars(bars([{ o: 1, h: 1.5, l: 0.8, c: 1.2 }]), { range: 1 }).bars.length).toBe(1);
   });
 });
+
+describe('rangeBars degenerate input', () => {
+  it('returns nothing when the range is below float spacing at the price (no hang)', () => {
+    const src = bars([
+      { o: 60000, h: 60000, l: 60000, c: 60000 },
+      { o: 60000, h: 60010, l: 59990, c: 60005 },
+    ]);
+    expect(rangeBars(src, { range: 1e-13 }).bars.length).toBe(0);
+  });
+
+  it('caps the bars emitted for one bad-tick jump and keeps going from the new price', () => {
+    const src = bars([
+      { o: 100, h: 100, l: 100, c: 100 },
+      { o: 100, h: 1e9, l: 100, c: 1e9 }, // 1e9 bars at range 1 without the cap
+      { o: 1e9, h: 1e9 + 2, l: 1e9, c: 1e9 + 2 },
+    ]);
+    const r = rangeBars(src, { range: 1 });
+    expect(r.bars.length).toBeLessThanOrEqual(2 * 100_000 + 5);
+    expect(r.bars.length).toBeGreaterThan(100_000);
+    // The tail resumes at the jumped-to price.
+    expect(r.bars.close[r.bars.length - 1]).toBe(1e9 + 2);
+  });
+});

@@ -3,7 +3,10 @@ import {
   MutableOhlcv,
   initialCapacity,
   int32Column,
+  MAX_EMIT_PER_FEED,
+  MIN_BOX_RATIO,
   isValidBar,
+  maxAbsPrice,
   result,
   volumeAt,
 } from './buffers';
@@ -31,6 +34,8 @@ export function rangeBars(src: OhlcvSource, opts: RangeBarOptions): TransformRes
   const out = new MutableOhlcv(initialCapacity(n));
   const idx = int32Column(initialCapacity(n));
   if (!Number.isFinite(range) || range <= 0) return result(out, idx);
+  // Below float spacing at the price level `p - l > limit` never advances: treat as invalid.
+  if (range <= maxAbsPrice(src) * MIN_BOX_RATIO) return result(out, idx);
   const tick =
     opts.tick !== undefined && Number.isFinite(opts.tick) && opts.tick > 0 ? opts.tick : 0;
   const limit = range * (1 + 1e-9);
@@ -50,8 +55,15 @@ export function rangeBars(src: OhlcvSource, opts: RangeBarOptions): TransformRes
 
   const feed = (p: number, i: number): void => {
     const t = src.time[i]!;
+    // A bad-tick jump over a tiny range could emit millions of bars: cap per step and
+    // restart the forming bar at the new price.
+    let budget = MAX_EMIT_PER_FEED;
     if (p > c) {
       while (p - l > limit) {
+        if (budget-- <= 0) {
+          open(p);
+          return;
+        }
         const close = l + range;
         out.push(t, o, close, l, close, vol);
         idx.push(i);
@@ -59,6 +71,10 @@ export function rangeBars(src: OhlcvSource, opts: RangeBarOptions): TransformRes
       }
     } else if (p < c) {
       while (h - p > limit) {
+        if (budget-- <= 0) {
+          open(p);
+          return;
+        }
         const close = h - range;
         out.push(t, o, h, close, close, vol);
         idx.push(i);

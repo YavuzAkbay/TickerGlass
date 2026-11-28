@@ -204,4 +204,24 @@ describe('PriceScale', () => {
     ps.scaleBy(0);
     expect([ps.min, ps.max]).toEqual([100, 200]);
   });
+
+  it('log auto range ignores non-positive values (one bad 0 / negative price)', () => {
+    const ps = new PriceScale();
+    ps.height = 500;
+    ps.mode = 'log';
+    // Callers pass the smallest POSITIVE price as min; a leftover non-positive min
+    // collapses onto the max instead of stretching the axis to 1e-12.
+    ps.setAutoRange(0, 200);
+    expect(ps.max - ps.min).toBeLessThan(1);
+    ps.setAutoRange(-50, 200);
+    expect(ps.max - ps.min).toBeLessThan(1);
+    expect(ps.yToPrice(ps.priceToY(150))).toBeCloseTo(150, 6);
+    // Nothing positive at all: sane fallback (1..10), finite and invertible.
+    ps.setAutoRange(-5, 0);
+    expect(ps.min).toBe(0);
+    expect(ps.max).toBe(1);
+    ps.setAutoRange(100, 200);
+    expect(ps.fromInternal(ps.min)).toBeCloseTo(100, 6);
+    expect(ps.fromInternal(ps.max)).toBeCloseTo(200, 6);
+  });
 });

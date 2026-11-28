@@ -375,6 +375,12 @@ export class Chart implements StudyApi, DrawingApi {
   private profiling = false;
   private marks: TimeMark[] = [];
   private resizeObserver: ResizeObserver;
+  /** Fires when devicePixelRatio changes (monitor move, browser zoom); re-armed per change. */
+  private dprQuery: MediaQueryList | null = null;
+  private readonly onDprChange = (): void => {
+    this.watchDpr();
+    this.invalidate(INVALIDATE_LAYOUT);
+  };
   private countdownTimer: ReturnType<typeof setInterval>;
   private controller: InteractionController;
   private lastRange = { from: -1, to: -1 };
@@ -429,6 +435,7 @@ export class Chart implements StudyApi, DrawingApi {
 
     this.resizeObserver = new ResizeObserver(() => this.invalidate(INVALIDATE_LAYOUT));
     this.resizeObserver.observe(container);
+    this.watchDpr();
     this.countdownTimer = setInterval(() => {
       if (isIntraday(this.interval) && this.store.length) this.invalidate(INVALIDATE_OVERLAY);
     }, 1000);
@@ -1646,6 +1653,8 @@ export class Chart implements StudyApi, DrawingApi {
     cancelAnimationFrame(this.frame);
     clearInterval(this.countdownTimer);
     this.resizeObserver.disconnect();
+    this.dprQuery?.removeEventListener('change', this.onDprChange);
+    this.dprQuery = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.controller.destroy();
@@ -2345,6 +2354,21 @@ export class Chart implements StudyApi, DrawingApi {
     this.profiling = on;
   }
 
+  /**
+   * (Re)arm a one-shot listener for the current devicePixelRatio: the CSS size stays the
+   * same when the window moves to a monitor with another DPR, so no resize fires.
+   */
+  private watchDpr(): void {
+    this.dprQuery?.removeEventListener('change', this.onDprChange);
+    this.dprQuery = null;
+    if (this.destroyed || typeof window === 'undefined' || typeof window.matchMedia !== 'function')
+      return;
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    if (typeof mq?.addEventListener !== 'function') return;
+    mq.addEventListener('change', this.onDprChange);
+    this.dprQuery = mq;
+  }
+
   private layout(): void {
     const rect = this.root.getBoundingClientRect();
     this.width = Math.floor(rect.width);
@@ -2474,14 +2498,25 @@ export class Chart implements StudyApi, DrawingApi {
       if (ps.autoScale && from <= to) {
         let min = Infinity;
         let max = -Infinity;
+        const log = ps.mode === 'log';
+        let nonPositive = false;
         for (const s of pane.series) {
           const r = s.priceRange(from, to);
-          if (r) {
-            min = Math.min(min, r.min);
-            max = Math.max(max, r.max);
+          if (!r) continue;
+          let lo = r.min;
+          if (log && !(lo > 0)) {
+            // Log scale: ignore non-positive values; use the smallest positive one in view.
+            if (!(r.max > 0)) {
+              nonPositive = true;
+              continue;
+            }
+            lo = s.positiveMin?.(from, to) ?? r.max;
           }
+          min = Math.min(min, lo);
+          max = Math.max(max, r.max);
         }
         if (min <= max) ps.setAutoRange(min, max);
+        else if (nonPositive) ps.setAutoRange(0, 0); // nothing positive in view: fallback range
       }
 
       // Background + grid.

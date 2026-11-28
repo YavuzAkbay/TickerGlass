@@ -105,7 +105,8 @@ function lineSource(type: ChartType, style: ChartStyle): PriceSource | null {
  * [min, max] price range of bars in [from, to] for autoscale. Line-like types use
  * their source only; renko includes open/close (full bricks) as well as high/low;
  * point & figure includes the top of the last box (pass the transform's `extra`
- * so its box size is used); everything else uses high/low.
+ * so its box size is used); everything else uses high/low. `positiveOnly` (log scale)
+ * ignores non-positive values.
  */
 export function priceRangeFor(
   type: ChartType,
@@ -114,6 +115,7 @@ export function priceRangeFor(
   from: number,
   to: number,
   extra: TransformExtra = {},
+  positiveOnly = false,
 ): { min: number; max: number } | null {
   const lo = Math.max(0, from);
   const hi = Math.min(data.length - 1, to);
@@ -123,6 +125,7 @@ export function priceRangeFor(
   if (src !== null) {
     for (let i = lo; i <= hi; i++) {
       const v = sourceValue(data, i, src);
+      if (positiveOnly && !(v > 0)) continue;
       if (v < min) min = v;
       if (v > max) max = v;
     }
@@ -137,6 +140,11 @@ export function priceRangeFor(
         h = Math.max(h, data.open[i]!, data.close[i]!);
       } else if (box > 0) {
         h = Math.max(h, l + pfBoxCount(data, i, box) * box);
+      }
+      if (positiveOnly) {
+        // Log scale: a non-positive extreme contributes nothing; the bar's positive side still counts.
+        if (!(h > 0)) continue;
+        if (!(l > 0)) l = h;
       }
       if (l < min) min = l;
       if (h > max) max = h;

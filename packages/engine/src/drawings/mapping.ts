@@ -82,7 +82,7 @@ function runStart(time: ArrayLike<number>, i: number): number {
 }
 
 /**
- * Anchor -> logical bar index (NaN without bars). Rules (docs/drawings.md §3):
+ * Anchor -> logical bar index (NaN without bars or for a non-finite time). Rules (docs/drawings.md §3):
  * - before the first bar: extrapolated back by the interval;
  * - inside the data: the bar containing `time` (open <= time < open + interval),
  *   or the next bar when `time` falls into a gap (weekend, overnight);
@@ -94,6 +94,9 @@ export function timeToLogical(tl: AnchorTimeline, p: Pick<DrawingPoint, 'time' |
   const n = tl.length;
   if (!n) return NaN;
   const t = p.time;
+  // A drawing created while there were no bars carries a NaN time; NaN would otherwise
+  // fall through to index 0 and glue it to the first bar.
+  if (!Number.isFinite(t)) return NaN;
   const time = tl.time;
   if (t < time[0]!) return -stepsBetween(t, time[0]!, tl.interval);
   const i = indexAtOrBefore(time, n, t);

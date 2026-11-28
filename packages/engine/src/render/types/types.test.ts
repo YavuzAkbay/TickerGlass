@@ -543,3 +543,16 @@ describe('highLow', () => {
     expect(narrow.ctx.of('fillText')).toHaveLength(0);
   });
 });
+
+describe('priceRangeFor positiveOnly (log scale)', () => {
+  it('skips non-positive values', () => {
+    const data = bars([
+      [0, 0, 0, 0],
+      [100, 120, 90, 110],
+      [-5, 100, -5, 100],
+    ]);
+    expect(priceRangeFor('candles', data, style, 0, 2)?.min).toBe(-5);
+    expect(priceRangeFor('candles', data, style, 0, 2, {}, true)).toEqual({ min: 90, max: 120 });
+    expect(priceRangeFor('candles', bars([[0, 0, -1, 0]]), style, 0, 0, {}, true)).toBeNull();
+  });
+});

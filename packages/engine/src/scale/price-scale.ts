@@ -140,6 +140,18 @@ export class PriceScale {
   /** Apply an auto-scale range given in price units. */
   setAutoRange(minPrice: number, maxPrice: number): void {
     if (!this.autoScale || !Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) return;
+    if (this.mode === 'log') {
+      // Non-positive prices have no log: clamping them to MIN_LOG_PRICE would stretch the
+      // axis to ~12 decades and squash every candle. Callers pass the smallest positive
+      // value as `minPrice`; a leftover non-positive min collapses onto the max, and with
+      // nothing positive at all fall back to 1..10.
+      if (!(maxPrice > 0)) {
+        this.min = 0;
+        this.max = 1;
+        return;
+      }
+      if (!(minPrice > 0)) minPrice = maxPrice;
+    }
     let lo = this.toInternal(minPrice);
     let hi = this.toInternal(maxPrice);
     if (hi - lo < 1e-12) {

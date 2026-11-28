@@ -131,6 +131,8 @@ interface LiveSub {
   cur: Bar | null;
   prevDayVolume: number | null;
   prevDayVolumeDay: number;
+  /** Timestamp (ms) of the newest tick folded in; older (delayed / reordered) ticks are dropped. */
+  lastTickMs: number;
   onBar: BarListener;
   onResync: ResyncListener | undefined;
 }
@@ -308,6 +310,7 @@ export class HttpDataFeed implements DataFeed {
       cur: lastBar ? { ...lastBar } : null,
       prevDayVolume: null,
       prevDayVolumeDay: NaN,
+      lastTickMs: -Infinity,
       onBar,
       onResync,
     };
@@ -573,6 +576,9 @@ function applyTick(sub: LiveSub, tick: TickFrame): Bar | null {
   const cur = sub.cur;
   const bucket = tickBucket(sub, t, state);
   if (cur !== null && bucket < cur.time) return null; // older than the current bar
+  // A delayed tick from earlier in the same bar must not overwrite the newer close.
+  if (tick.time < sub.lastTickMs) return null;
+  sub.lastTickMs = tick.time;
 
   // Volume from dayVolume deltas; positive deltas only, and never across a local
   // day change (dayVolume resets, and a gap could otherwise look like a big jump).

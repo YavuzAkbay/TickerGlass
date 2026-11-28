@@ -31,6 +31,8 @@ export interface PaneSeries {
   readonly behind?: boolean;
   /** Price range (price units) over bar indices [from, to], or null if empty. */
   priceRange(from: number, to: number): { min: number; max: number } | null;
+  /** Smallest positive price over [from, to] (log-scale autorange), or null if none. */
+  positiveMin?(from: number, to: number): number | null;
   /** Price used as base for percent/indexed modes. */
   baseValue(from: number): number | null;
   draw(rc: SeriesRenderContext): void;
@@ -57,6 +59,18 @@ export class CandleSeries implements PaneSeries {
       if (s.high[i]! > max) max = s.high[i]!;
     }
     return min <= max ? { min, max } : null;
+  }
+
+  positiveMin(from: number, to: number): number | null {
+    const s = this.store;
+    let min = Infinity;
+    for (let i = Math.max(0, from); i <= to && i < s.length; i++) {
+      const l = s.low[i]!;
+      const h = s.high[i]!;
+      if (l > 0 && l < min) min = l;
+      else if (h > 0 && h < min) min = h;
+    }
+    return min < Infinity ? min : null;
   }
 
   baseValue(from: number): number | null {
@@ -147,6 +161,16 @@ export class LineSeries implements PaneSeries {
       if (x > max) max = x;
     }
     return min <= max ? { min, max } : null;
+  }
+
+  positiveMin(from: number, to: number): number | null {
+    const v = this.values();
+    let min = Infinity;
+    for (let i = Math.max(0, from); i <= to && i < this.length(); i++) {
+      const x = v[i]!;
+      if (x > 0 && x < min) min = x;
+    }
+    return min < Infinity ? min : null;
   }
 
   baseValue(from: number): number | null {

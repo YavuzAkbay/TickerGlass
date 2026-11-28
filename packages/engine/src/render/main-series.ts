@@ -47,6 +47,21 @@ export class MainSeries implements PaneSeries {
     );
   }
 
+  positiveMin(from: number, to: number): number | null {
+    const h = this.host;
+    return (
+      priceRangeFor(
+        h.chartType,
+        h.view,
+        h.chartStyle,
+        Math.max(0, from),
+        Math.min(to, h.view.length - 1),
+        h.transformExtra,
+        true,
+      )?.min ?? null
+    );
+  }
+
   baseValue(from: number): number | null {
     const v = this.host.view;
     if (!v.length) return null;

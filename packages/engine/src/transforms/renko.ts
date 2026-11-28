@@ -4,7 +4,10 @@ import {
   MutableOhlcv,
   initialCapacity,
   int32Column,
+  MAX_EMIT_PER_FEED,
+  MIN_BOX_RATIO,
   isValidBar,
+  maxAbsPrice,
   result,
   volumeAt,
 } from './buffers';
@@ -34,6 +37,8 @@ export function renko(src: OhlcvSource, opts: RenkoOptions): TransformResult {
   const out = new MutableOhlcv(initialCapacity(n));
   const idx = int32Column(initialCapacity(n));
   if (!Number.isFinite(box) || box <= 0) return result(out, idx, { boxSize: box });
+  // Grid levels (price / box) must stay exactly representable, else `top + 1 === top` loops forever.
+  if (box <= maxAbsPrice(src) * MIN_BOX_RATIO) return result(out, idx, { boxSize: box });
 
   const hl = opts.source === 'hl';
   const wicks = opts.wicks;
@@ -50,7 +55,14 @@ export function renko(src: OhlcvSource, opts: RenkoOptions): TransformResult {
     const up = Math.floor(p / box + GRID_EPS);
     if (up >= top + 1) {
       let first = true;
+      let budget = MAX_EMIT_PER_FEED;
       while (up >= top + 1) {
+        if (budget-- <= 0) {
+          // Bad-tick jump: drop the remaining bricks and continue from the new level.
+          bottom = up - 1;
+          top = up;
+          break;
+        }
         const o = top * box;
         const c = (top + 1) * box;
         const lo = first && wicks ? Math.min(o, minSince) : o;
@@ -64,7 +76,13 @@ export function renko(src: OhlcvSource, opts: RenkoOptions): TransformResult {
       const dn = Math.ceil(p / box - GRID_EPS);
       if (dn > bottom - 1) return;
       let first = true;
+      let budget = MAX_EMIT_PER_FEED;
       while (dn <= bottom - 1) {
+        if (budget-- <= 0) {
+          top = dn + 1;
+          bottom = dn;
+          break;
+        }
         const o = bottom * box;
         const c = (bottom - 1) * box;
         const hi = first && wicks ? Math.max(o, maxSince) : o;

@@ -340,3 +340,45 @@ describe('Chart markers and price lines', () => {
     ]);
   });
 });
+
+describe('Chart devicePixelRatio changes', () => {
+  it('re-lays out when the DPR media query fires (re-armed each time) and unsubscribes on destroy', async () => {
+    type Mq = { query: string; fn: (() => void) | null; removed: number };
+    const queries: Mq[] = [];
+    const win = window as unknown as {
+      devicePixelRatio: number;
+      matchMedia?: unknown;
+    };
+    win.matchMedia = (query: string) => {
+      const mq: Mq = { query, fn: null, removed: 0 };
+      queries.push(mq);
+      return {
+        addEventListener: (_: string, fn: () => void) => (mq.fn = fn),
+        removeEventListener: (_: string, fn: () => void) => {
+          if (mq.fn === fn) mq.fn = null;
+          mq.removed++;
+        },
+      };
+    };
+    try {
+      const { chart } = await loadLaid();
+      expect(queries.at(-1)!.query).toBe('(resolution: 1dppx)');
+      const priv = chart as unknown as { dpr: number; layout(): void; invalid: number };
+      priv.invalid = 0;
+      win.devicePixelRatio = 2; // moved to a HiDPI monitor; the CSS size is unchanged
+      queries.at(-1)!.fn!();
+      expect(priv.invalid).toBeGreaterThan(0);
+      priv.layout();
+      expect(priv.dpr).toBe(2);
+      // Re-armed for the new ratio; the old listener is gone.
+      expect(queries).toHaveLength(2);
+      expect(queries[1]!.query).toBe('(resolution: 2dppx)');
+      expect(queries[0]!.fn).toBeNull();
+      chart.destroy();
+      expect(queries[1]!.fn).toBeNull();
+    } finally {
+      win.devicePixelRatio = 1;
+      delete win.matchMedia;
+    }
+  });
+});

@@ -109,6 +109,28 @@ export const int32Column = (capacity?: number): IntColumn<Int32Array> =>
 /** Tolerance (in box units) for grid comparisons, absorbing float error like 0.3 / 0.1. */
 export const GRID_EPS = 1e-9;
 
+/** Smallest box / range allowed relative to the largest |price| (below it float spacing stalls the grid walks). */
+export const MIN_BOX_RATIO = 1e-12;
+
+/** Most bricks / bars a single price step may emit; a bad-tick jump with a tiny box would otherwise freeze or OOM. */
+export const MAX_EMIT_PER_FEED = 100_000;
+
+/** Largest |price| over the valid bars (0 when none). */
+export function maxAbsPrice(src: OhlcvSource): number {
+  let m = 0;
+  for (let i = 0; i < src.length; i++) {
+    if (!isValidBar(src, i)) continue;
+    const v = Math.max(
+      Math.abs(src.open[i]!),
+      Math.abs(src.high[i]!),
+      Math.abs(src.low[i]!),
+      Math.abs(src.close[i]!),
+    );
+    if (v > m) m = v;
+  }
+  return m;
+}
+
 /** True when the bar's OHLC values are all finite; other bars are skipped by transforms. */
 export function isValidBar(src: OhlcvSource, i: number): boolean {
   return (
