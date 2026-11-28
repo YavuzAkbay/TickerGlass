@@ -172,6 +172,23 @@ describe('AlertsSync load and events', () => {
     expect(useAlerts.getState().status).toBe('offline');
   });
 
+  it('keeps fires (and their unread count) that arrive while the log loads', async () => {
+    let answer!: (p: AlertLogPage) => void;
+    const api = makeApi({
+      getAlertLog: vi.fn(() => new Promise<AlertLogPage>((r) => (answer = r))),
+    });
+    // An entry loaded earlier, then cleared on the server: it must go.
+    useAlerts.setState({ log: [entry(1, { read: true })], unread: 0 });
+    const loading = new AlertsSync({ api }).load();
+    await Promise.resolve();
+    // A fire arrives while the request is out; the server answers without it.
+    useAlerts.setState((s) => ({ log: [entry(7), ...s.log], unread: s.unread + 1 }));
+    answer({ entries: [], hasMore: false, unread: 0 });
+    await loading;
+    expect(useAlerts.getState().log.map((e) => e.id)).toEqual([7]);
+    expect(useAlerts.getState().unread).toBe(1);
+  });
+
   function harness(api: AlertsApi, now = () => Date.now()) {
     let sub: EventSubscription | undefined;
     const stream = {

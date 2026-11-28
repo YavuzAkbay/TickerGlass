@@ -116,6 +116,8 @@ export class AlertsSync {
 
   private async loadOnce(): Promise<void> {
     if (useAlerts.getState().status !== 'ready') useAlerts.setState({ status: 'loading' });
+    // Entries already here when the request left: anything else arrived (fired) meanwhile.
+    const known = new Set(useAlerts.getState().log.map((e) => e.id));
     try {
       const [list, page] = await Promise.all([
         this.api.listAlerts(),
@@ -129,11 +131,20 @@ export class AlertsSync {
         log: mergeLog(
           page.entries.length
             ? s.log.filter((e) => e.id < page.entries.at(-1)!.id || e.id > page.entries[0]!.id)
-            : [],
+            : // An empty log on the server: keep only fires that arrived during the request.
+              s.log.filter((e) => !known.has(e.id)),
           page.entries,
         ),
         logHasMore: s.log.length > LOG_PAGE ? s.logHasMore : page.hasMore,
-        unread: page.unread,
+        // The server counted unread fires when it answered; fires that arrived during the
+        // request may or may not be in that count (a reconnect catch-up runs alongside), so
+        // never report fewer than those.
+        unread: Math.max(
+          page.unread,
+          s.log.filter(
+            (e) => !known.has(e.id) && !e.read && !page.entries.some((p) => p.id === e.id),
+          ).length,
+        ),
         status: 'ready',
         error: null,
       }));
