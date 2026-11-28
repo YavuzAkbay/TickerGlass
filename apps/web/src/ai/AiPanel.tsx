@@ -181,7 +181,9 @@ export function AiPanel() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [draft]);
 
-  const streaming = conv.messages.some((m) => m.status === 'streaming');
+  // Busy for the whole run: tool rounds and the picture wait have no streaming message.
+  const asking = useAiChat((s) => (chartId ? !!s.asking[chartId] : false));
+  const streaming = asking || conv.messages.some((m) => m.status === 'streaming');
   const lastText = conv.messages.at(-1)?.text ?? '';
   // Follow the answer while it streams, unless the user scrolled up to read.
   useEffect(() => {

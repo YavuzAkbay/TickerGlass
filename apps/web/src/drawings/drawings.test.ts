@@ -8,7 +8,12 @@ import { useChartView } from '../store/chartView';
 import { useLayoutGrid } from '../layout/store';
 import { useUiStore } from '../store/ui';
 import { isToolAvailable } from '../toolbar/tools';
-import { attachDrawings, engineTool, keepPerDrawingStyle } from './attach';
+import {
+  acquireDrawingPersistence,
+  attachDrawings,
+  engineTool,
+  keepPerDrawingStyle,
+} from './attach';
 import {
   amendCreated,
   amendGesture,
@@ -675,6 +680,23 @@ describe('attach (engine events and sync)', () => {
     expect(findDrawing(synced.id)).toBeUndefined();
     expect(f.ids()).toEqual([]);
     f.detach();
+  });
+
+  it('shares one persistence writer between charts and stops with the last', () => {
+    const subscribe = vi.spyOn(useDrawingStore, 'subscribe');
+    const a = acquireDrawingPersistence();
+    const b = acquireDrawingPersistence();
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    a.release();
+    a.release(); // idempotent
+    const c = acquireDrawingPersistence(); // b still holds it
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    b.release();
+    c.release(); // last one: stopped
+    const d = acquireDrawingPersistence();
+    expect(subscribe).toHaveBeenCalledTimes(2);
+    d.release();
+    subscribe.mockRestore();
   });
 
   it('maps emoji/sticker/icon toolbar ids to the engine icon tool with a preset glyph', () => {

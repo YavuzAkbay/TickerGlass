@@ -74,6 +74,28 @@ export interface ToolContext {
   changes: AiChanges;
   /** The model's tier: Basic gets the curated indicator list only. */
   tier?: AiTier;
+  /** `chartKey` of the chart when the question was asked; chart tools refuse once it differs. */
+  chartKey?: string;
+}
+
+/** What the chart shows, as far as the model's times and prices are concerned. */
+export function chartKey(chart: Pick<Chart, 'getSymbol' | 'getInterval'>): string {
+  return `${chart.getSymbol()}|${chart.getInterval()}`;
+}
+
+/** Tools that name their own symbol (or only search the catalog): safe after a chart switch. */
+function actsOnLiveChart(ctx: ToolContext, name: string, args: Record<string, unknown>): boolean {
+  switch (name) {
+    case 'search_indicators':
+    case 'get_bars':
+    case 'get_events':
+    case 'get_news':
+      return false;
+    case 'get_fundamentals':
+      return !(ctx.tier === 'full' && typeof args.symbol === 'string' && args.symbol.trim());
+    default:
+      return true;
+  }
 }
 
 /** Divergence sources: indicator type, the plotted output searched and drawn on, and how many
@@ -1020,6 +1042,29 @@ export function removeAiDrawings(chartId: string, ids: readonly string[]): void 
 /** Run one tool call. Never throws: failures come back as a result the model can read. */
 export async function runTool(ctx: ToolContext, call: ToolCall): Promise<ToolResult> {
   const args = call.arguments ?? {};
+  // The user may switch symbol or interval while the answer is written: the model's times and
+  // prices belong to the chart it was shown.
+  if (ctx.chartKey === undefined || !actsOnLiveChart(ctx, call.name, args))
+    return runToolUnchecked(ctx, call, args);
+  if (chartKey(ctx.chart) !== ctx.chartKey)
+    return fail(
+      'the chart changed since the question; not drawn or changed. Ask again on the current chart',
+      `Skipped ${call.name} (chart changed)`,
+    );
+  // set_chart moves the chart on purpose: later tools follow it.
+  if (call.name !== 'set_chart') return runToolUnchecked(ctx, call, args);
+  try {
+    return await runToolUnchecked(ctx, call, args);
+  } finally {
+    ctx.chartKey = chartKey(ctx.chart);
+  }
+}
+
+async function runToolUnchecked(
+  ctx: ToolContext,
+  call: ToolCall,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
   try {
     if (ctx.tier === 'full') {
       const full = await runFullTool(ctx, call.name, args);

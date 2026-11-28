@@ -163,8 +163,11 @@ interface ChatState {
   byChart: Record<string, Conversation>;
   /** Range selected on each chart (engine `RANGE_TOOL`); questions are about it when set. */
   selection: Record<string, TimeRange>;
+  /** Charts with a question in flight (streaming, running tools or waiting for the picture). */
+  asking: Record<string, true>;
   /** Bumped to ask the panel to focus its question box. */
   focusTick: number;
+  setAsking: (chartId: string, on: boolean) => void;
   update: (chartId: string, fn: (c: Conversation) => Conversation) => void;
   clear: (chartId: string) => void;
   setSelection: (chartId: string, range: TimeRange | null) => void;
@@ -176,7 +179,14 @@ export const EMPTY_CONVERSATION: Conversation = { messages: [], contextKey: null
 export const useAiChat = create<ChatState>()((set) => ({
   byChart: {},
   selection: {},
+  asking: {},
   focusTick: 0,
+  setAsking: (chartId, on) =>
+    set((s) => {
+      if (!!s.asking[chartId] === on) return s;
+      const { [chartId]: _old, ...rest } = s.asking;
+      return { asking: on ? { ...rest, [chartId]: true } : rest };
+    }),
   setSelection: (chartId, range) =>
     set((s) => {
       const { [chartId]: _old, ...rest } = s.selection;

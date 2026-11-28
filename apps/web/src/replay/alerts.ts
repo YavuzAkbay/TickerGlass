@@ -25,6 +25,8 @@ export interface ReplayAlertsDeps {
   alerts: () => Readonly<Record<string, Alert>>;
   /** Chart symbol. */
   symbol: () => string;
+  /** Chart interval; a change starts new samples like a symbol change (optional). */
+  interval?: () => string;
   /** The forming (last revealed) bar of the chart, or null. */
   lastBar: () => Bar | null;
   setMarkers: (group: string, markers: readonly ChartMarker[]) => void;
@@ -52,12 +54,15 @@ export class ReplayAlerts {
   private firedBar = new Map<string, number>();
   private done = new Set<string>();
   private markers: ChartMarker[] = [];
+  /** Symbol and interval the samples in `prev` were taken on. */
+  private sampledOn: string | null = null;
 
   constructor(private readonly deps: ReplayAlertsDeps) {}
 
   /** New session (start or seek): forget samples and fires, clear the markers. */
   reset(): void {
     this.prev.clear();
+    this.sampledOn = null;
     this.firedBar.clear();
     this.done.clear();
     this.setMarkers([]);
@@ -79,9 +84,16 @@ export class ReplayAlerts {
   }
 
   private sample(fire: boolean): void {
+    const symbol = canon(this.deps.symbol());
+    // Samples of another symbol or interval (A -> B -> A) are not a previous step of this one:
+    // comparing across the switch would fire a crossing that never happened.
+    const on = `${symbol}|${this.deps.interval?.() ?? ''}`;
+    if (on !== this.sampledOn) {
+      this.prev.clear();
+      this.sampledOn = on;
+    }
     const bar = this.deps.lastBar();
     if (!bar) return;
-    const symbol = canon(this.deps.symbol());
     const added: ChartMarker[] = [];
     for (const a of Object.values(this.deps.alerts())) {
       if (a.status !== 'active' || canon(a.symbol) !== symbol || !isPriceAlert(a.spec)) continue;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { apiMessages, OMITTED_CONTEXT, resolveModel } from './chat';
 import { briefBudget, lastBarLive } from './context';
 import { parseBlocks } from './Markdown';
-import { parseAiPrefs, type UiMessage } from './store';
+import { parseAiPrefs, useAiChat, type UiMessage } from './store';
 
 const ctx = { label: 'x', text: 'CHART CONTEXT', tokens: 10, trimmed: [], images: 0 };
 
@@ -305,5 +305,74 @@ describe('lastBarLive', () => {
   it('is false for a bad interval or no bars', () => {
     expect(lastBarLive('nope', day, day)).toBe(false);
     expect(lastBarLive('1D', 0, 10)).toBe(false);
+  });
+});
+
+describe('asking flag', () => {
+  it('is per chart and idempotent', () => {
+    const { setAsking } = useAiChat.getState();
+    setAsking('c1', true);
+    setAsking('c1', true);
+    expect(useAiChat.getState().asking).toEqual({ c1: true });
+    setAsking('c2', true);
+    setAsking('c1', false);
+    expect(useAiChat.getState().asking).toEqual({ c2: true });
+    setAsking('c2', false);
+    expect(useAiChat.getState().asking).toEqual({});
+  });
+});
+
+describe('runTool after the chart changed', () => {
+  const fakeChart = (symbol: string, interval = '1D') => {
+    const c = { symbol, interval, drew: 0 };
+    return {
+      state: c,
+      chart: {
+        getSymbol: () => c.symbol,
+        getInterval: () => c.interval,
+        addDrawing: () => {
+          c.drew++;
+        },
+      } as never,
+    };
+  };
+  const draw = { name: 'draw', arguments: { type: 'horizontal_line', price: 100 } };
+
+  it('refuses chart tools once symbol or interval differ from the question', async () => {
+    const { runTool, chartKey } = await import('./tools');
+    const f = fakeChart('AAPL');
+    const ctx = {
+      chartId: 'c1',
+      chart: f.chart,
+      focus: { kind: 'visible' } as never,
+      changes: { indicators: [], drawings: [] },
+      chartKey: chartKey(f.chart),
+    };
+    f.state.symbol = 'MSFT';
+    const a = await runTool(ctx, draw);
+    expect(a.ok).toBe(false);
+    expect(a.content).toContain('chart changed');
+    expect(ctx.changes.drawings).toEqual([]);
+    f.state.symbol = 'AAPL';
+    f.state.interval = '5m';
+    const b = await runTool(ctx, { name: 'find_swings', arguments: {} });
+    expect(b.ok).toBe(false);
+    expect(b.content).toContain('chart changed');
+    expect(f.state.drew).toBe(0);
+  });
+
+  it('lets tools that name their own symbol through', async () => {
+    const { runTool, chartKey } = await import('./tools');
+    const f = fakeChart('AAPL');
+    const ctx = {
+      chartId: 'c1',
+      chart: f.chart,
+      focus: { kind: 'visible' } as never,
+      changes: { indicators: [], drawings: [] },
+      chartKey: chartKey(f.chart),
+    };
+    f.state.symbol = 'MSFT';
+    const r = await runTool(ctx, { name: 'search_indicators', arguments: { query: 'rsi' } });
+    expect(r.content).not.toContain('chart changed');
   });
 });

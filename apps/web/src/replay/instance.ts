@@ -48,6 +48,7 @@ const lastBar = () => replayFeed.revealedBar(replaySymbol());
 const alerts = new ReplayAlerts({
   alerts: () => useAlerts.getState().alerts,
   symbol: replaySymbol,
+  interval: () => getReplaySession()?.view.getState().interval ?? '',
   lastBar,
   setMarkers: (group: string, markers: readonly ChartMarker[]) =>
     replayChart()?.setMarkers(group, markers),

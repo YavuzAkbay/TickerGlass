@@ -13,6 +13,7 @@ import { briefBudget, briefFromChart, visibleFocus } from './context';
 import { restoreChanges } from './fullTools';
 import { chartImage } from './image';
 import {
+  chartKey,
   removeAiDrawings,
   runTool,
   MAX_TOOL_ROUNDS,
@@ -157,6 +158,8 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   const numCtx = model.contextTokens ?? (userCtx || opts.status.numCtx);
   const brief = briefFromChart(chart, focus, briefBudget(numCtx, useTools, tools.length));
   if (!brief) throw new Error('The chart has no bars yet');
+  // What the model is shown: its tool calls refuse to act once the chart shows something else.
+  const askedOn = chartKey(chart);
 
   const last = chart.store.length ? chart.store.time[chart.store.length - 1] : 0;
   const key = [chart.getSymbol(), chart.getInterval(), focus.kind, focus.from, focus.to, last].join(
@@ -167,6 +170,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   // Claim the chart before the (async) picture so a second click cannot send twice.
   const controller = new AbortController();
   controllers.set(chartId, controller);
+  useAiChat.getState().setAsking(chartId, true);
   let images: string[] = [];
   if (newContext && model.vision && useAiPrefs.getState().includeImage) {
     try {
@@ -208,7 +212,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
     }));
 
   const changes: AiChanges = { indicators: [], drawings: [] };
-  const ctx: ToolContext = { chartId, chart, focus, changes, tier };
+  const ctx: ToolContext = { chartId, chart, focus, changes, tier, chartKey: askedOn };
   const mark = runInSession(chartId, historyMark);
   let rounds = 0;
   try {
@@ -309,6 +313,7 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
       update(chartId, (c) => ({ ...c, contextKey: conv?.contextKey ?? null }));
   } finally {
     controllers.delete(chartId);
+    useAiChat.getState().setAsking(chartId, false);
     if (changes.indicators.length || changes.drawings.length || changes.restore) {
       runInSession(chartId, () => foldHistorySince(mark, `AI: ${question.slice(0, 40)}`));
       patch(() => ({ changes }));

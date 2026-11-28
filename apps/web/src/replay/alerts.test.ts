@@ -24,13 +24,14 @@ const alert = (
     ...(o.symbol ? { symbol: o.symbol } : {}),
   }) as unknown as Alert;
 
-function setup(list: Alert[]) {
+function setup(list: Alert[], sym: { value: string; interval?: string } = { value: 'AAPL' }) {
   let bar = { time: 100, open: 10, high: 10, low: 10, close: 10, volume: 1 };
   const markers: ChartMarker[][] = [];
   const notify = vi.fn();
   const alerts = new ReplayAlerts({
     alerts: () => Object.fromEntries(list.map((a) => [a.id, a])),
-    symbol: () => 'AAPL',
+    symbol: () => sym.value,
+    interval: () => sym.interval ?? '1D',
     lastBar: () => bar,
     setMarkers: (g, m) => {
       expect(g).toBe(REPLAY_ALERT_GROUP);
@@ -160,5 +161,25 @@ describe('ReplayAlerts', () => {
     alerts.prime();
     alerts.step();
     expect(notify).toHaveBeenCalledTimes(1); // high 10 > 5
+  });
+
+  it('forgets samples across a symbol or interval switch (A -> B -> A)', () => {
+    const sym = { value: 'AAPL', interval: '1D' };
+    const { alerts, at, notify } = setup([alert('a', 'crossingUp', 15)], sym);
+    alerts.prime();
+    at(12, 101); // sample on AAPL: 12, below 15
+    sym.value = 'MSFT';
+    at(30, 102); // other symbol, its alerts do not apply
+    sym.value = 'AAPL';
+    at(16, 103); // first AAPL sample after the switch: no previous sample, no crossing
+    expect(notify).not.toHaveBeenCalled();
+    at(14, 104);
+    at(17, 105); // a real crossing still fires
+    expect(notify).toHaveBeenCalledTimes(1);
+    sym.interval = '5m';
+    at(10, 106);
+    sym.interval = '1D';
+    at(16, 107); // interval round trip: same rule
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 });

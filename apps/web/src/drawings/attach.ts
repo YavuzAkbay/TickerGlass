@@ -87,6 +87,31 @@ export function engineTool(id: string): EngineTool | null {
   return null;
 }
 
+let sharedPersistence: ReturnType<typeof startDrawingPersistence> | null = null;
+let persistenceUsers = 0;
+
+/**
+ * The drawing store is global, so one writer serves every chart: a writer per chart would save
+ * N times, merge each other tab save N times and toast a failing storage N times. Started by
+ * the first attached chart, stopped (and flushed) when the last one detaches.
+ */
+export function acquireDrawingPersistence(): { flush: () => void; release: () => void } {
+  sharedPersistence ??= startDrawingPersistence(undefined, 300, (m) => toast(m, 'error'));
+  persistenceUsers++;
+  const shared = sharedPersistence;
+  let released = false;
+  return {
+    flush: shared.flush,
+    release: () => {
+      if (released) return;
+      released = true;
+      if (--persistenceUsers > 0) return;
+      shared.stop();
+      sharedPersistence = null;
+    },
+  };
+}
+
 /**
  * Keep `chart`'s drawings in sync with the drawing store and the left
  * toolbar, turn engine events into undo steps, and persist the store.
@@ -98,7 +123,7 @@ export function attachDrawings(
 ): () => void {
   const { chart, drawingRuntime: runtime } = session;
   const on = scopedOn(session);
-  const persistence = startDrawingPersistence(undefined, 300, (m) => toast(m, 'error'));
+  const persistence = acquireDrawingPersistence();
   const symbol = () => session.view.getState().symbol;
   let shownSymbol: string | null = null;
   let dirty = false;
@@ -312,7 +337,7 @@ export function attachDrawings(
     window.removeEventListener('pointerup', onPointerUp, true);
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onPageHide);
-    persistence.stop();
+    persistence.release();
     runtime.setState({ selection: [], dragging: false, textEdit: null });
   };
 }
