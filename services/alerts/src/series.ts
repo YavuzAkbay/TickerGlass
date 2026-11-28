@@ -59,6 +59,9 @@ const RETRY_MIN_MS = 5000;
 const RETRY_MAX_MS = 300_000;
 const DAY = 86_400;
 const MAX_FAILURES = 5;
+/** Bars a poll fetches at least / at most (more when the series has been without data for longer). */
+const POLL_BARS = 3;
+const POLL_MAX_BARS = 100;
 /** Past `scriptTickMs`, how long a series waits for the values of its script instances. */
 const SCRIPT_MARGIN_MS = 2000;
 
@@ -231,6 +234,8 @@ export class Series {
   private retryAt = 0;
   private nextPollAt = 0;
   private polling = false;
+  /** Clock ms of the last bars received (load, poll or live): sizes the next poll. */
+  private lastDataAt = 0;
   private historyExhausted = false;
   private readonly createdAt: number;
   readonly legs: string[];
@@ -437,6 +442,7 @@ export class Series {
       await this.activate([...this.runners.values()]);
       if (gen !== this.gen) return;
       this.subscribeLive();
+      this.lastDataAt = this.host.clock.now();
       this.nextPollAt = this.host.clock.now() + this.host.cfg.pollMs;
     } catch (err) {
       if (gen !== this.gen) return;
@@ -978,6 +984,7 @@ export class Series {
     if (this.state !== 'ready' || !tracker) return;
     const gen = this.gen;
     const now = this.host.clock.now();
+    this.lastDataAt = now;
     const r = tracker.onBar(b.time, now);
     if (r.kind === 'old') return;
     const n = this.cols.length;
@@ -1131,14 +1138,26 @@ export class Series {
   private async pollOnce(scheduledAt: number): Promise<void> {
     if (this.state !== 'ready') return;
     try {
+      // Cover every bar period since the last bars were received (an outage of the provider or
+      // the API), so the fetch overlaps the series: market-closed gaps return no new bars and
+      // need no extra ones.
+      const missed = Math.ceil((this.host.clock.now() - this.lastDataAt) / (this.ivSec * 1000));
+      const limit = Math.min(POLL_MAX_BARS, Math.max(POLL_BARS, missed + 2));
       const res = await this.host.feed.getBars({
         symbol: this.symbol,
         interval: this.interval,
         prepost: this.prepost,
-        limit: 3,
+        limit,
       });
       const bars = fromColumns(res.bars);
       const lastT = this.cols.time[this.cols.length - 1] ?? -Infinity;
+      // Nothing returned reaches back to the series although the fetch was full: bars between
+      // them may be missing, and appending would leave a hole in the indicators. Reload instead.
+      if (this.cols.length > 0 && bars.length >= limit && bars[0]!.time > lastT + this.ivSec) {
+        this.host.log.warn('poll gap, reloading', { series: this.key });
+        await this.load();
+        return;
+      }
       let restated = false;
       for (const b of bars) {
         if (b.time >= lastT) continue;
@@ -1152,6 +1171,7 @@ export class Series {
         await this.resetBars();
         this.clearCache();
       }
+      this.lastDataAt = this.host.clock.now();
       for (const b of bars) if (b.time >= lastT) await this.processBar(b);
       this.host.metrics.observeLagMs(scheduledAt, this.host.clock.now());
     } catch (err) {

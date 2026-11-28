@@ -244,6 +244,8 @@ export class FakeApi {
   /** Responses consumed (in order) by the next fire requests; default 200. */
   fireScript: FireResponse[] = [];
   healthFails = 0;
+  /** When set, PUT /api/alerts/states waits for it after recording the request. */
+  putStatesGate: Promise<void> | null = null;
   /** The next status posts answer 500 (not recorded). */
   statusFails = 0;
   /** `active` of GET /api/providers; undefined = the route is missing (404). */
@@ -300,6 +302,7 @@ export class FakeApi {
     if (path === '/api/alerts/states' && m === 'PUT') {
       const rows = (body as { states: StateRow[] }).states;
       this.putStates.push(rows);
+      if (this.putStatesGate) await this.putStatesGate;
       for (const row of rows) {
         const a = this.alerts.find((x) => x.id === row.alertId);
         if (!a || a.revision !== row.revision) continue;

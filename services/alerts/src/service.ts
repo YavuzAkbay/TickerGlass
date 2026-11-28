@@ -38,6 +38,8 @@ const LIVE_CAP = 200;
 const LIVE_DOWN_MS = 20_000;
 const BULK_IDS = 20;
 const STOP_FIRE_WAIT_MS = 4000;
+/** Of `config.shutdownMs`, left for the caller to dispose of the rest and exit. */
+const STOP_SLACK_MS = 2000;
 const MAX_PENDING_PERSISTED = 20;
 const MAX_STATE_BYTES = 12 * 1024;
 /** Series loading their history at once after a provider change (each load costs provider credits). */
@@ -747,9 +749,13 @@ export function createService(deps: ServiceDeps): Service {
       } catch (err) {
         const ms = jitter(backoffMs(attempt, 1000, 60_000));
         log.warn('api unreachable, waiting', { error: errText(err), inMs: ms });
+        // stop() cancels the timer: it must also end the wait, or start() never returns.
         await new Promise<void>((resolve) => {
           const c = clock.setTimeout(resolve, ms);
-          cancels.push(c);
+          cancels.push(() => {
+            c();
+            resolve();
+          });
         });
       }
     }
@@ -786,6 +792,9 @@ export function createService(deps: ServiceDeps): Service {
     } catch (err) {
       log.warn('could not load saved states', { error: errText(err) });
     }
+    // stop() may run during any await below: it clears `cancels`, so whatever is registered
+    // after it would run (and keep the process alive) for good.
+    if (stopped) return;
     control.onAlertsChanged((ids, deleted) => {
       for (const id of deleted) {
         registry.remove(id);
@@ -803,8 +812,10 @@ export function createService(deps: ServiceDeps): Service {
     });
     control.onProviderChanged(() => void onProviderEvent());
     activeProvider = await fetchProvider();
+    if (stopped) return;
     control.start();
     await sync();
+    if (stopped) return;
     resendPending();
     cancels.push(clock.setInterval(() => void resync(), SYNC_MS));
     cancels.push(clock.setInterval(() => !control.connected && void sync(), DOWN_SYNC_MS));
@@ -816,25 +827,33 @@ export function createService(deps: ServiceDeps): Service {
   async function stop(): Promise<void> {
     if (stopped) return;
     stopped = true;
+    const began = clock.now();
     for (const c of cancels) c();
     cancels.length = 0;
     heartbeat.stop();
     control.stop();
+    // Persist the state (queued fires included) right away, alongside the wait for the queue:
+    // a slow API must not eat the whole budget before the first write is even attempted.
+    for (const r of runners.values()) host.markState(r);
+    void states.flush();
     // Give queued fires a moment to go out; whatever is left is persisted with the state.
-    let cancelWait = (): void => {};
-    await Promise.race([
-      fires.whenIdle(),
-      new Promise<void>((resolve) => {
-        cancelWait = clock.setTimeout(resolve, STOP_FIRE_WAIT_MS);
-      }),
-    ]);
-    cancelWait();
+    const budget = Math.max(1000, config.shutdownMs - STOP_SLACK_MS);
+    const wait = (ms: number, p: Promise<void>): Promise<void> => {
+      let cancel = (): void => {};
+      const timer = new Promise<void>((resolve) => {
+        cancel = clock.setTimeout(resolve, Math.max(0, ms));
+      });
+      return Promise.race([p, timer]).finally(() => cancel());
+    };
+    await wait(Math.min(STOP_FIRE_WAIT_MS, budget / 2), fires.whenIdle());
     fires.stop();
     for (const r of runners.values()) host.markState(r);
     for (const s of seriesMap.values()) s.dispose();
     seriesMap.clear();
     suspended.clear();
-    await states.flush();
+    // Flushes are serialized: this one follows the early write. Bounded, so a dead API cannot
+    // hold the process past the entry point's force-exit.
+    await wait(budget - (clock.now() - began), states.flush());
     deps.disposeFeed?.();
   }
 

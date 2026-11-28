@@ -868,7 +868,7 @@ API (`settings.py`, `.env.example`):
 Service (`docker-compose.yml` `alerts.environment`): `API_URL` (`http://api:8000`), `ALERTS_INTERNAL_TOKEN`,
 `ALERTS_POLL_MS` (30000), `ALERTS_CLOSE_GRACE_S` (60), `ALERTS_MIN_REFIRE_S` (60), `ALERTS_STATE_FLUSH_MS`
 (5000), `ALERTS_MAX_BARS` (5000), `ALERTS_MAX_DRAWING_BARS` (20000), `ALERTS_SCRIPT_MEMORY_MB` (128),
-`ALERTS_SCRIPT_LOAD_MS` (10000), `ALERTS_SCRIPT_TICK_MS` (250), `ALERTS_SCRIPT_CPU_PCT` (20), `ALERTS_SCRIPT_CPU_TOTAL_PCT` (50), `ALERTS_SCRIPT_PROCESS_MB` (768; §2.8), `ALERTS_LOG_LEVEL` (`info`).
+`ALERTS_SCRIPT_LOAD_MS` (10000), `ALERTS_SCRIPT_TICK_MS` (250), `ALERTS_SCRIPT_CPU_PCT` (20), `ALERTS_SCRIPT_CPU_TOTAL_PCT` (50), `ALERTS_SCRIPT_PROCESS_MB` (768; §2.8), `ALERTS_SHUTDOWN_MS` (8000; hard limit for draining fires and writing state on stop, keep it under the container's stop grace period, 10 s by default in Docker), `ALERTS_LOG_LEVEL` (`info`).
 
 Secrets live only in env: the browser never sees them, and `GET /alerts/channels` masks URLs and addresses
 (scheme and host only, no userinfo, path or query). `APPRISE_URLS` and all tokens are never returned. Invalid

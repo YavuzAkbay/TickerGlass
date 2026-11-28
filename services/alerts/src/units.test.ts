@@ -18,6 +18,7 @@ describe('config', () => {
       closeGraceS: 60,
       minRefireS: 60,
       stateFlushMs: 5000,
+      shutdownMs: 8000,
       maxBars: 5000,
       maxDrawingBars: 20_000,
       logLevel: 'info',

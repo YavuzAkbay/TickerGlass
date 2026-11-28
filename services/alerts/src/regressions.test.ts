@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AlertSpec } from '@tickerglass/alerts';
+import { FeedError } from '@tickerglass/engine/node';
 import {
   BAR_T,
   bar,
   harness,
   makeAlert,
   minuteBars,
+  NOW_S,
   settle,
   until,
   type Harness,
@@ -391,5 +393,120 @@ describe('review regressions', () => {
     await h.service.whenIdle();
     await until(() => h!.api.fires.some((f) => f.id === 'a2'), 'a2 fire');
     expect(h.api.fires.find((f) => f.id === 'a2')!.body.values.x).toBeCloseTo(99, 10);
+  });
+
+  it('shutdown writes the state (queued fires included) before waiting for the fire queue', async () => {
+    await setup();
+    h!.api.fireScript = Array.from({ length: 20 }, () => ({ status: 500 }));
+    await tick(101);
+    await h!.clock.advance(100);
+    expect(h!.service.fires.pending).toBe(1);
+    h!.api.putStates.length = 0;
+    const stopping = h!.service.stop();
+    // The fire wait (4 s of the fake clock) has not elapsed: the state is already on its way.
+    await until(
+      () =>
+        h!.api.putStates.some((rows) =>
+          rows.some((r) => r.alertId === 'a1' && r.state.pendingFires?.length === 1),
+        ),
+      'early state write',
+    );
+    await h!.clock.advance(4500);
+    await stopping;
+  });
+
+  it('shutdown stays within its budget when the API never answers the state write', async () => {
+    await setup([makeAlert()], [98, 99, 99], { ALERTS_SHUTDOWN_MS: '10000' });
+    let release!: () => void;
+    h!.api.putStatesGate = new Promise<void>((r) => (release = r));
+    try {
+      let done = false;
+      const stopping = h!.service.stop().then(() => (done = true));
+      await h!.clock.advance(7_900);
+      expect(done).toBe(false);
+      await h!.clock.advance(200); // 10 s minus the 2 s left to the caller
+      await stopping;
+      expect(done).toBe(true);
+    } finally {
+      release();
+    }
+  });
+
+  it('stop() during the wait for the API ends start()', async () => {
+    h = await harness();
+    h.api.healthFails = 1000;
+    let started = false;
+    const starting = h.service.start().then(() => (started = true));
+    await h.clock.advance(100);
+    await h.service.stop();
+    await h.clock.advance(100);
+    await starting;
+    expect(started).toBe(true);
+    // Nothing was registered after the stop: no heartbeat, no sync timers.
+    const hb = h.api.heartbeats.length;
+    await h.clock.advance(120_000);
+    expect(h.api.heartbeats.length).toBe(hb);
+  });
+
+  it('stop() while start() loads does not register timers or the heartbeat afterwards', async () => {
+    h = await harness();
+    h.api.alerts = [makeAlert()];
+    h.feed.setBars('TEST', '1m', minuteBars(BAR_T, [98, 99, 99]));
+    let release!: () => void;
+    h.feed.barsGate = new Promise<void>((r) => (release = r));
+    const starting = h.service.start();
+    await until(() => h!.feed.getBarsCalls.length > 0, 'history requested');
+    const stopping = h.service.stop();
+    release();
+    await Promise.all([starting, stopping]);
+    const hb = h.api.heartbeats.length;
+    await h.clock.advance(120_000);
+    expect(h.api.heartbeats.length).toBe(hb);
+  });
+
+  /** The provider is down for `outageMs`, then serves every minute bar up to the clock. */
+  async function outage(
+    outageMs: number,
+  ): Promise<SeriesPrivate & { cols: { time: Float64Array } }> {
+    await setup([makeAlert()], [98, 99, 99], { ALERTS_POLL_MS: '5000' });
+    h!.feed.setLive('reconnecting');
+    h!.feed.failBars = new FeedError('bad gateway', 502);
+    await h!.clock.advance(outageMs);
+    const end = BAR_T + Math.floor((NOW_S + outageMs / 1000 - BAR_T) / 60) * 60;
+    const all: number[] = [];
+    for (let t = BAR_T - 120; t <= end; t += 60) all.push(100 + (t % 7));
+    h!.feed.setBars('TEST', '1m', minuteBars(end, all));
+    h!.feed.failBars = null;
+    await h!.clock.advance(10_000);
+    await h!.service.whenIdle();
+    return h!.service.series()[0]! as never;
+  }
+  const contiguous = (t: Float64Array) => {
+    for (let i = 1; i < t.length; i++) if (t[i]! - t[i - 1]! !== 60) return false;
+    return true;
+  };
+
+  it('a poll after a short outage fetches every missed bar (no hole)', async () => {
+    const s = await outage(1_800_000);
+    expect(Math.max(...h!.feed.getBarsCalls.map((c) => c.limit))).toBeGreaterThanOrEqual(30);
+    expect(contiguous(s.cols.time)).toBe(true);
+    expect(s.cols.time.length).toBeGreaterThan(30);
+  });
+
+  it('a poll after an outage longer than it can cover reloads instead of appending over a hole', async () => {
+    const s = await outage(6_300_000);
+    expect(contiguous(s.cols.time)).toBe(true);
+    expect(s.cols.time[s.cols.time.length - 1]).toBe(BAR_T + 6300);
+  }, 30_000);
+
+  it('a poll that overlaps the series (market closed, nothing new) never reloads', async () => {
+    await setup([makeAlert()], [98, 99, 99], { ALERTS_POLL_MS: '5000' });
+    h!.feed.setLive('reconnecting');
+    h!.feed.getBarsCalls.length = 0;
+    // Hours pass with no new bars (weekend): polls keep succeeding, none needs a reload.
+    for (let k = 0; k < 20; k++) await h!.clock.advance(30_000);
+    await h!.service.whenIdle();
+    expect(h!.feed.getBarsCalls.length).toBeGreaterThan(0);
+    expect(h!.feed.getBarsCalls.every((c) => c.limit <= 100)).toBe(true);
   });
 });

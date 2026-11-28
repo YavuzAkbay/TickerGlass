@@ -10,8 +10,6 @@ import { childEntry } from './scripts/childBundle';
 import { ScriptHost } from './scripts/host';
 import { feedHeaders, tokenWebSocket } from './ws-auth';
 
-const SHUTDOWN_MS = 5000;
-
 async function main(): Promise<void> {
   let config;
   try {
@@ -84,7 +82,7 @@ async function main(): Promise<void> {
     if (closing) return;
     closing = true;
     log.info('shutting down', { signal });
-    const force = setTimeout(() => process.exit(1), SHUTDOWN_MS);
+    const force = setTimeout(() => process.exit(1), config.shutdownMs);
     force.unref();
     void service.stop().then(
       () => {

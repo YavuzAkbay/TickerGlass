@@ -16,6 +16,11 @@ export interface Config {
   closeGraceS: number;
   minRefireS: number;
   stateFlushMs: number;
+  /**
+   * Hard limit of a shutdown (drain fires, flush state), ms; the process exits when it passes.
+   * The default stays under Docker's 10 s stop grace period (SIGKILL after it); raise both together.
+   */
+  shutdownMs: number;
   maxBars: number;
   maxDrawingBars: number;
   /** Heap limit of each user-script isolate, MB. */
@@ -75,6 +80,7 @@ export function loadConfig(env: Env = process.env): Config {
     closeGraceS: int(env, 'ALERTS_CLOSE_GRACE_S', 60, 0),
     minRefireS: int(env, 'ALERTS_MIN_REFIRE_S', 60, 0),
     stateFlushMs: int(env, 'ALERTS_STATE_FLUSH_MS', 5000, 100),
+    shutdownMs: int(env, 'ALERTS_SHUTDOWN_MS', 8000, 3000, 120_000),
     maxBars: int(env, 'ALERTS_MAX_BARS', 5000, 50, 100_000),
     maxDrawingBars: int(env, 'ALERTS_MAX_DRAWING_BARS', 20_000, 50, 100_000),
     scriptMemoryMb: int(env, 'ALERTS_SCRIPT_MEMORY_MB', 128, 8, 4096),
