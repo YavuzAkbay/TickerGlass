@@ -1,0 +1,132 @@
+{
+  "active": "yahoo",
+  "setting": "MARKET_PROVIDER",
+  "switchable": true,
+  "selectedBy": "env",
+  "providers": [
+    {
+      "id": "yahoo",
+      "name": "Yahoo Finance",
+      "description": "Stocks, ETFs, indices, FX and crypto through yfinance. Free, unofficial API.",
+      "network": true,
+      "terms": "Yahoo's terms allow personal use only: do not run a public instance on it.",
+      "configured": true,
+      "capabilities": {
+        "intervals": [
+          "1m",
+          "2m",
+          "5m",
+          "15m",
+          "30m",
+          "60m",
+          "90m",
+          "1d",
+          "5d",
+          "1wk",
+          "1mo",
+          "3mo"
+        ],
+        "extendedHistory": true,
+        "extendedQuotes": true,
+        "adjustedClose": true,
+        "search": true,
+        "events": ["dividends", "earnings", "splits"],
+        "news": true,
+        "fundamentalsInfo": true,
+        "fundamentalsStatements": true,
+        "streaming": true,
+        "markets": ["crypto", "futures", "fx", "index", "intl", "us"]
+      },
+      "costs": {
+        "history": 1,
+        "symbolInfo": 1,
+        "search": 1,
+        "quoteBatch": 50,
+        "quotePerRequest": 1,
+        "quotePerSymbol": 0,
+        "events": 2,
+        "news": 1,
+        "fundamentals": 7
+      },
+      "budget": {
+        "ratePerMin": 60.0,
+        "burst": 20,
+        "daily": null
+      },
+      "config": [],
+      "plan": null
+    },
+    {
+      "id": "demo",
+      "name": "Demo data",
+      "description": "Generated prices for any symbol, offline. For trying the app and tests.",
+      "network": false,
+      "terms": null,
+      "configured": true,
+      "capabilities": {
+        "intervals": [
+          "1m",
+          "2m",
+          "5m",
+          "15m",
+          "30m",
+          "60m",
+          "90m",
+          "1d",
+          "5d",
+          "1wk",
+          "1mo",
+          "3mo"
+        ],
+        "extendedHistory": true,
+        "extendedQuotes": true,
+        "adjustedClose": true,
+        "search": true,
+        "events": ["dividends", "earnings", "splits"],
+        "news": true,
+        "fundamentalsInfo": true,
+        "fundamentalsStatements": true,
+        "streaming": true,
+        "markets": ["crypto", "futures", "fx", "index", "intl", "us"]
+      },
+      "costs": {
+        "history": 1,
+        "symbolInfo": 1,
+        "search": 1,
+        "quoteBatch": 50,
+        "quotePerRequest": 1,
+        "quotePerSymbol": 0,
+        "events": 2,
+        "news": 1,
+        "fundamentals": 7
+      },
+      "budget": {
+        "ratePerMin": 60.0,
+        "burst": 20,
+        "daily": null
+      },
+      "config": [],
+      "plan": null
+    }
+  ],
+  "activeCapabilities": {
+    "intervals": ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1d", "5d", "1wk", "1mo", "3mo"],
+    "extendedHistory": true,
+    "extendedQuotes": true,
+    "adjustedClose": true,
+    "search": true,
+    "events": ["dividends", "earnings", "splits"],
+    "news": true,
+    "fundamentalsInfo": true,
+    "fundamentalsStatements": true,
+    "streaming": true,
+    "markets": ["crypto", "futures", "fx", "index", "intl", "us"]
+  },
+  "effectiveLimits": {
+    "creditsPerMin": 60.0,
+    "dailyCredits": null,
+    "quoteTtlS": 15.0,
+    "pollIntervalS": 15.0,
+    "source": "env"
+  }
+}

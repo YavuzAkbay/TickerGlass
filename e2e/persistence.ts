@@ -7,6 +7,7 @@
  * survives page reloads within a test. e2e never reaches a real user-data
  * database: only market-data routes pass through; anything else fails the test.
  */
+import { readFileSync } from 'node:fs';
 import { expect, type Page, type Route } from '@playwright/test';
 
 type Json = Record<string, unknown>;
@@ -1019,6 +1020,52 @@ export class MockServer {
   }
 }
 
+/** `/api/providers` as a Yahoo-backed server answers it (trimmed to Yahoo and Demo). */
+const PROVIDERS: unknown = JSON.parse(
+  readFileSync(new URL('./fixtures/providers.json', import.meta.url), 'utf8'),
+);
+
+const SYMBOL_NAMES: Record<string, string> = {
+  AAPL: 'Apple Inc.',
+  MSFT: 'Microsoft Corporation',
+  NVDA: 'NVIDIA Corporation',
+  SPY: 'SPDR S&P 500 ETF Trust',
+};
+
+/** Default answers for provider and symbol metadata (see `mockPersistence`), else undefined. */
+function providerMeta(method: string, path: string): unknown {
+  if (method === 'GET' && path === '/api/providers') return PROVIDERS;
+  if (method === 'GET' && path === '/api/providers/usage')
+    return {
+      plan: null,
+      metered: false,
+      minute: { limit: 60, left: 60 },
+      daily: null,
+      state: 'ok',
+      retryAfterS: 0,
+    };
+  if (method === 'POST' && path === '/api/providers/test')
+    return { ok: true, symbol: 'AAPL', price: 101, latencyMs: 12 };
+  const sym = /^\/api\/symbols\/([^/]+)$/.exec(path);
+  if (method === 'GET' && sym) {
+    const symbol = decodeURIComponent(sym[1]!).toUpperCase();
+    return {
+      symbol,
+      name: SYMBOL_NAMES[symbol] ?? symbol,
+      exchange: 'NMS',
+      exchangeName: 'NasdaqGS',
+      type: 'equity',
+      currency: 'USD',
+      timezone: 'America/New_York',
+      session: '0930-1600',
+      priceHint: 2,
+      minTick: 0.01,
+      hasIntraday: true,
+    };
+  }
+  return undefined;
+}
+
 /**
  * Make list `id` the active watchlist (a local-only preference, not synced: it lives in
  * localStorage). Applied before the page loads and only while the user has not chosen yet.
@@ -1039,8 +1086,15 @@ export async function mockPersistence(page: Page, server = new MockServer()): Pr
   await page.route('**/api/**', async (route: Route) => {
     const req = route.request();
     const url = new URL(req.url());
-    // Only the backend (not e.g. Vite's /src/api/*.ts modules); market data passes through.
-    if (!url.pathname.startsWith('/api/') || MARKET.test(url.pathname)) return route.fallback();
+    // Only the backend (not e.g. Vite's /src/api/*.ts modules).
+    if (!url.pathname.startsWith('/api/')) return route.fallback();
+    // Provider and symbol metadata: fixed answers, so specs do not depend on a backend running
+    // behind the dev server (CI has none). Specs that route these themselves win (later routes
+    // run first).
+    const meta = providerMeta(req.method(), url.pathname);
+    if (meta !== undefined) return route.fulfill({ status: 200, json: meta });
+    // Market data passes through (specs mock what they assert on: see market.ts).
+    if (MARKET.test(url.pathname)) return route.fallback();
     const call = `${req.method()} ${url.pathname}${url.search}`;
     // Auth is off in e2e (open mode: every request is the owner, an admin), answered even while
     // the mock server is down, so boot behavior matches the pre-auth app exactly. The stable
