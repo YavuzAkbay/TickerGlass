@@ -63,15 +63,15 @@ export class SeriesStore {
 
   /**
    * Overwrite the newest bars: everything from `cols.time[0]` on is replaced by
-   * `cols`; older bars stay. Returns the number of bars kept in front, or -1
-   * (store unchanged) when `cols` does not connect: empty, starting after the
-   * last bar (a gap) or before the first.
+   * `cols`; older bars stay. When `cols` starts before the first stored bar it
+   * covers the whole series: everything is replaced (keep 0). Returns the number
+   * of bars kept in front, or -1 (store unchanged) when `cols` does not connect:
+   * empty, or starting after the last bar (a real gap).
    */
   replaceTail(cols: BarColumns): number {
     const n = cols.time.length;
     const first = n ? cols.time[0]! : NaN;
-    if (!n || (this.length && (first > this.time[this.length - 1]! || first < this.time[0]!)))
-      return -1;
+    if (!n || (this.length && first > this.time[this.length - 1]!)) return -1;
     let keep = 0;
     while (keep < this.length && this.time[keep]! < first) keep++;
     this.ensureCapacity(keep + n, true);

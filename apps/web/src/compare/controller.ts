@@ -544,13 +544,15 @@ export class CompareController {
   /**
    * Re-fetch the bars since the last known one (bypassing feed caches), merge
    * them over the tail, push the corrected line and re-subscribe from the
-   * corrected last bar. A result that does not connect reloads the overlay.
+   * corrected last bar. A result that leaves a real gap after the loaded bars
+   * reloads the overlay; one starting before them replaces the whole line.
    */
   private async doResync(ov: Overlay): Promise<void> {
     const n = ov.time.length;
     const elapsed = n
       ? Math.ceil((Date.now() / 1000 - ov.time[n - 1]!) / intervalSeconds(ov.interval))
       : 0;
+    let fetched = false;
     try {
       const res = await this.feed.getBars({
         symbol: ov.symbol,
@@ -559,14 +561,15 @@ export class CompareController {
         prepost: ov.prepost,
         fresh: true,
       });
+      fetched = true;
       if (ov.dead || this.destroyed) return;
       const bars = res.bars;
       const len = bars.time.length;
       if (!len || !ov.info) return;
       const m = ov.time.length;
       const first = bars.time[0]!;
-      if (m && (first > ov.time[m - 1]! || first < ov.time[0]!)) {
-        // Does not connect to what is loaded: refetch the overlay from scratch.
+      if (m && first > ov.time[m - 1]!) {
+        // A real gap after what is loaded: refetch the overlay from scratch.
         this.drop(ov);
         this.overlays.delete(ov.key);
         if (this.interval && !this.unavailable && this.mainKeys.length) {
@@ -575,7 +578,9 @@ export class CompareController {
         this.publish();
         return;
       }
+      // A tail starting before the loaded bars replaces them all (keep 0).
       const keep = lowerBound(ov.time, m, first);
+      if (!m || first < ov.time[0]!) ov.hasMore = res.hasMore;
       ov.time = [...ov.time.slice(0, keep), ...Array.from(bars.time.subarray(0, len))];
       ov.close = [...ov.close.slice(0, keep), ...Array.from(bars.close.subarray(0, len))];
       this.rekey(ov);
@@ -588,8 +593,10 @@ export class CompareController {
         close: bars.close[len - 1]!,
         volume: bars.volume[len - 1]!,
       });
-    } catch {
+    } catch (err) {
       // Offline again or a bad response: keep what we have; the next reconnect retries.
+      // Anything thrown after the fetch is a bug: do not swallow it silently.
+      if (fetched) console.warn('compare resync failed', err);
     }
   }
 

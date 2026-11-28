@@ -171,153 +171,158 @@ export async function ask(question: string, opts: AskOptions): Promise<void> {
   const controller = new AbortController();
   controllers.set(chartId, controller);
   useAiChat.getState().setAsking(chartId, true);
-  let images: string[] = [];
-  if (newContext && model.vision && useAiPrefs.getState().includeImage) {
-    try {
-      const img = await chartImage(chart, focus, opts.status.maxImageBytes);
-      if (img) images = [img];
-    } catch {
-      // No picture: the text brief still goes.
-    }
-  }
-  const context: AiContextInfo | undefined = newContext
-    ? {
-        label: focusLabel(chart, focus, brief),
-        text: brief.text,
-        tokens: brief.approxTokens,
-        trimmed: brief.trimmed,
-        images: images.length,
-      }
-    : undefined;
-  const userMsg: UiMessage = {
-    id: nextId(),
-    role: 'user',
-    text: question,
-    content: newContext ? `${brief.text}\n\nQuestion: ${question}` : question,
-    ...(images.length ? { images } : {}),
-    ...(context ? { context } : {}),
-  };
-  const { update } = useAiChat.getState();
-  update(chartId, (c) => ({
-    messages: [...c.messages, userMsg],
-    contextKey: newContext ? key : c.contextKey,
-  }));
-  const append = (m: UiMessage): void =>
-    update(chartId, (c) => ({ ...c, messages: [...c.messages, m] }));
-  let answerId = '';
-  const patch = (fn: (m: UiMessage) => Partial<UiMessage>): void =>
-    update(chartId, (c) => ({
-      ...c,
-      messages: c.messages.map((m) => (m.id === answerId ? { ...m, ...fn(m) } : m)),
-    }));
-
-  const changes: AiChanges = { indicators: [], drawings: [] };
-  const ctx: ToolContext = { chartId, chart, focus, changes, tier, chartKey: askedOn };
-  const mark = runInSession(chartId, historyMark);
-  let rounds = 0;
+  // Everything after the claim runs under one `finally`: a throw anywhere (building the
+  // context, the history mark) must not leave the chart stuck on "asking".
   try {
-    for (;;) {
-      answerId = nextId();
-      append({
-        id: answerId,
-        role: 'assistant',
-        text: '',
-        content: '',
-        status: 'streaming',
-        model: model.name,
-      });
-      const history = useAiChat
-        .getState()
-        .byChart[chartId]!.messages.filter((m) => m.id !== answerId);
-      let calls: ToolCall[] = [];
-      await streamChat(
-        {
-          model: model.name,
-          messages: apiMessages(history),
-          ...(useTools ? { tools } : {}),
-          ...(userCtx && !model.contextTokens ? { numCtx: userCtx } : {}),
-        },
-        (e) => {
-          switch (e.t) {
-            case 'delta':
-              patch((m) => ({ text: m.text + e.text }));
-              break;
-            case 'thinking':
-              patch((m) => ({ thinking: (m.thinking ?? '') + e.text }));
-              break;
-            case 'tool_calls':
-              calls = e.calls;
-              patch(() => ({ toolCalls: e.calls }));
-              break;
-            case 'done':
-              patch(() => ({
-                stats: { evalTokens: e.evalTokens, durationMs: e.durationMs },
-                // Ollama stops with `length` when the context window is full: the answer
-                // was cut off, not finished.
-                ...(e.reason === 'length'
-                  ? { status: 'error' as const, error: fullWindow(numCtx) }
-                  : { status: 'done' as const }),
-              }));
-              break;
-            case 'error':
-              patch(() => ({ status: 'error', error: e.message }));
-              break;
-          }
-        },
-        controller.signal,
-      );
-      // A stream that ended without `done` or `error` was cut off.
-      patch((m) =>
-        m.status === 'streaming' ? { status: 'error', error: 'The answer was cut off' } : {},
-      );
-      const current = useAiChat
-        .getState()
-        .byChart[chartId]?.messages.find((m) => m.id === answerId);
-      if (!calls.length && current?.status === 'done' && !current.text.trim())
-        patch(() => ({
-          status: 'error',
-          error: 'The model finished without an answer. Ask again, or try a larger model.',
-        }));
-      if (!calls.length || current?.status !== 'done') break;
-      if (++rounds > MAX_TOOL_ROUNDS[tier]) {
-        patch(() => ({ text: '_Stopped after too many chart actions._' }));
-        break;
+    let images: string[] = [];
+    if (newContext && model.vision && useAiPrefs.getState().includeImage) {
+      try {
+        const img = await chartImage(chart, focus, opts.status.maxImageBytes);
+        if (img) images = [img];
+      } catch {
+        // No picture: the text brief still goes.
       }
-      for (const call of calls) {
-        if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        const offered = tools.some((t) => t.function.name === call.name);
-        const r = offered
-          ? await runTool(ctx, call)
-          : {
-              content: JSON.stringify({
-                error: `${call.name} is not available: the user has not allowed chart changes`,
-              }),
-              summary: `Skipped ${call.name} (chart changes off)`,
-              ok: false,
-            };
+    }
+    const context: AiContextInfo | undefined = newContext
+      ? {
+          label: focusLabel(chart, focus, brief),
+          text: brief.text,
+          tokens: brief.approxTokens,
+          trimmed: brief.trimmed,
+          images: images.length,
+        }
+      : undefined;
+    const userMsg: UiMessage = {
+      id: nextId(),
+      role: 'user',
+      text: question,
+      content: newContext ? `${brief.text}\n\nQuestion: ${question}` : question,
+      ...(images.length ? { images } : {}),
+      ...(context ? { context } : {}),
+    };
+    const { update } = useAiChat.getState();
+    update(chartId, (c) => ({
+      messages: [...c.messages, userMsg],
+      contextKey: newContext ? key : c.contextKey,
+    }));
+    const append = (m: UiMessage): void =>
+      update(chartId, (c) => ({ ...c, messages: [...c.messages, m] }));
+    let answerId = '';
+    const patch = (fn: (m: UiMessage) => Partial<UiMessage>): void =>
+      update(chartId, (c) => ({
+        ...c,
+        messages: c.messages.map((m) => (m.id === answerId ? { ...m, ...fn(m) } : m)),
+      }));
+
+    const changes: AiChanges = { indicators: [], drawings: [] };
+    const ctx: ToolContext = { chartId, chart, focus, changes, tier, chartKey: askedOn };
+    const mark = runInSession(chartId, historyMark);
+    let rounds = 0;
+    try {
+      for (;;) {
+        answerId = nextId();
         append({
-          id: nextId(),
-          role: 'tool',
-          text: r.summary,
-          content: r.content,
-          toolName: call.name,
-          ok: r.ok,
+          id: answerId,
+          role: 'assistant',
+          text: '',
+          content: '',
+          status: 'streaming',
+          model: model.name,
         });
+        const history = useAiChat
+          .getState()
+          .byChart[chartId]!.messages.filter((m) => m.id !== answerId);
+        let calls: ToolCall[] = [];
+        await streamChat(
+          {
+            model: model.name,
+            messages: apiMessages(history),
+            ...(useTools ? { tools } : {}),
+            ...(userCtx && !model.contextTokens ? { numCtx: userCtx } : {}),
+          },
+          (e) => {
+            switch (e.t) {
+              case 'delta':
+                patch((m) => ({ text: m.text + e.text }));
+                break;
+              case 'thinking':
+                patch((m) => ({ thinking: (m.thinking ?? '') + e.text }));
+                break;
+              case 'tool_calls':
+                calls = e.calls;
+                patch(() => ({ toolCalls: e.calls }));
+                break;
+              case 'done':
+                patch(() => ({
+                  stats: { evalTokens: e.evalTokens, durationMs: e.durationMs },
+                  // Ollama stops with `length` when the context window is full: the answer
+                  // was cut off, not finished.
+                  ...(e.reason === 'length'
+                    ? { status: 'error' as const, error: fullWindow(numCtx) }
+                    : { status: 'done' as const }),
+                }));
+                break;
+              case 'error':
+                patch(() => ({ status: 'error', error: e.message }));
+                break;
+            }
+          },
+          controller.signal,
+        );
+        // A stream that ended without `done` or `error` was cut off.
+        patch((m) =>
+          m.status === 'streaming' ? { status: 'error', error: 'The answer was cut off' } : {},
+        );
+        const current = useAiChat
+          .getState()
+          .byChart[chartId]?.messages.find((m) => m.id === answerId);
+        if (!calls.length && current?.status === 'done' && !current.text.trim())
+          patch(() => ({
+            status: 'error',
+            error: 'The model finished without an answer. Ask again, or try a larger model.',
+          }));
+        if (!calls.length || current?.status !== 'done') break;
+        if (++rounds > MAX_TOOL_ROUNDS[tier]) {
+          patch(() => ({ text: '_Stopped after too many chart actions._' }));
+          break;
+        }
+        for (const call of calls) {
+          if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+          const offered = tools.some((t) => t.function.name === call.name);
+          const r = offered
+            ? await runTool(ctx, call)
+            : {
+                content: JSON.stringify({
+                  error: `${call.name} is not available: the user has not allowed chart changes`,
+                }),
+                summary: `Skipped ${call.name} (chart changes off)`,
+                ok: false,
+              };
+          append({
+            id: nextId(),
+            role: 'tool',
+            text: r.summary,
+            content: r.content,
+            toolName: call.name,
+            ok: r.ok,
+          });
+        }
+      }
+    } catch (e) {
+      const aborted = e instanceof DOMException && e.name === 'AbortError';
+      patch(() => (aborted ? { status: 'stopped' } : { status: 'error', error: errorMessage(e) }));
+      // The server never saw a question it refused: let the next one resend the context.
+      if (!aborted && newContext && rounds === 0)
+        update(chartId, (c) => ({ ...c, contextKey: conv?.contextKey ?? null }));
+    } finally {
+      if (changes.indicators.length || changes.drawings.length || changes.restore) {
+        runInSession(chartId, () => foldHistorySince(mark, `AI: ${question.slice(0, 40)}`));
+        patch(() => ({ changes }));
       }
     }
-  } catch (e) {
-    const aborted = e instanceof DOMException && e.name === 'AbortError';
-    patch(() => (aborted ? { status: 'stopped' } : { status: 'error', error: errorMessage(e) }));
-    // The server never saw a question it refused: let the next one resend the context.
-    if (!aborted && newContext && rounds === 0)
-      update(chartId, (c) => ({ ...c, contextKey: conv?.contextKey ?? null }));
   } finally {
-    controllers.delete(chartId);
+    if (controllers.get(chartId) === controller) controllers.delete(chartId);
     useAiChat.getState().setAsking(chartId, false);
-    if (changes.indicators.length || changes.drawings.length || changes.restore) {
-      runInSession(chartId, () => foldHistorySince(mark, `AI: ${question.slice(0, 40)}`));
-      patch(() => ({ changes }));
-    }
   }
 }
 

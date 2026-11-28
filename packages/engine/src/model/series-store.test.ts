@@ -34,6 +34,28 @@ describe('SeriesStore', () => {
     expect(s.close[2]).toBeCloseTo(30.2);
   });
 
+  it('replaceTail: overwrites from the first fetched time, keeps older bars', () => {
+    const s = new SeriesStore();
+    s.setAll(cols([10, 20, 30]));
+    expect(s.replaceTail(cols([20, 30, 40]))).toBe(1);
+    expect(Array.from(s.time.subarray(0, s.length))).toEqual([10, 20, 30, 40]);
+  });
+
+  it('replaceTail: a tail starting before the first bar replaces everything (no reload)', () => {
+    const s = new SeriesStore();
+    s.setAll(cols([30, 40]));
+    expect(s.replaceTail(cols([10, 20, 30, 40, 50]))).toBe(0);
+    expect(Array.from(s.time.subarray(0, s.length))).toEqual([10, 20, 30, 40, 50]);
+  });
+
+  it('replaceTail: refuses a real gap or an empty tail', () => {
+    const s = new SeriesStore();
+    s.setAll(cols([10, 20]));
+    expect(s.replaceTail(cols([30, 40]))).toBe(-1);
+    expect(s.replaceTail(cols([]))).toBe(-1);
+    expect(Array.from(s.time.subarray(0, s.length))).toEqual([10, 20]);
+  });
+
   it('grows past initial capacity', () => {
     const s = new SeriesStore();
     for (let t = 0; t < 1000; t++)

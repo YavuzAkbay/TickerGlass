@@ -564,8 +564,22 @@ export class HttpDataFeed implements DataFeed {
   }
 }
 
+/**
+ * How far past the local clock a tick's timestamp may be before it is treated as bogus (wrong
+ * units, upstream glitch): applying it would open a bar in the future and drop every real tick
+ * after it. Generous on purpose: a client clock that is off by minutes must not drop live ticks.
+ */
+const FUTURE_TICK_SLACK_MS = 6 * 3_600_000;
+/**
+ * A tick at most this much older than the newest one is a delayed tick (it widens high/low but
+ * does not overwrite the close). One much older means the newest timestamp was bogus: accept it
+ * and restart the ordering from it, so a single bad timestamp cannot lock out later ticks.
+ */
+const REORDER_WINDOW_MS = 15 * 60_000;
+
 /** Fold a tick into a subscription's current bar. Returns a copy to emit, or null to ignore. */
 function applyTick(sub: LiveSub, tick: TickFrame): Bar | null {
+  if (tick.time > Date.now() + FUTURE_TICK_SLACK_MS) return null;
   const t = Math.floor(tick.time / 1000);
   const price = tick.price;
   const state = sessionState(t, sub.ctx);
@@ -576,8 +590,16 @@ function applyTick(sub: LiveSub, tick: TickFrame): Bar | null {
   const cur = sub.cur;
   const bucket = tickBucket(sub, t, state);
   if (cur !== null && bucket < cur.time) return null; // older than the current bar
-  // A delayed tick from earlier in the same bar must not overwrite the newer close.
-  if (tick.time < sub.lastTickMs) return null;
+  if (tick.time < sub.lastTickMs && sub.lastTickMs - tick.time <= REORDER_WINDOW_MS) {
+    // A delayed tick from earlier in the same bar must not overwrite the newer close, but
+    // its price still happened: widen high/low. No volume: its cumulative dayVolume is
+    // already covered by the newer tick's delta, and `prevDayVolume` must not move back.
+    if (cur === null || bucket !== cur.time) return null;
+    if (price <= cur.high && price >= cur.low) return null;
+    if (price > cur.high) cur.high = price;
+    if (price < cur.low) cur.low = price;
+    return { ...cur };
+  }
   sub.lastTickMs = tick.time;
 
   // Volume from dayVolume deltas; positive deltas only, and never across a local

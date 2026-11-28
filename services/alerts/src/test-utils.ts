@@ -244,6 +244,8 @@ export class FakeApi {
   /** Responses consumed (in order) by the next fire requests; default 200. */
   fireScript: FireResponse[] = [];
   healthFails = 0;
+  /** When set, GET /api/alerts waits for it (the list is read after it resolves). */
+  alertsGate: Promise<void> | null = null;
   /** When set, PUT /api/alerts/states waits for it after recording the request. */
   putStatesGate: Promise<void> | null = null;
   /** The next status posts answer 500 (not recorded). */
@@ -314,7 +316,10 @@ export class FakeApi {
       this.heartbeats.push(body);
       return send(204);
     }
-    if (path === '/api/alerts' && m === 'GET') return send(200, this.alerts);
+    if (path === '/api/alerts' && m === 'GET') {
+      if (this.alertsGate) await this.alertsGate;
+      return send(200, this.alerts);
+    }
     const mm = /^\/api\/alerts\/([^/]+)(?:\/(fire|status))?$/.exec(path);
     if (mm) {
       const id = decodeURIComponent(mm[1]!);

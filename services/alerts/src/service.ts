@@ -411,6 +411,9 @@ export function createService(deps: ServiceDeps): Service {
   }
 
   function attach(alert: Alert): void {
+    // stop() may have run during an await of the caller (sync, reattach): attaching now would
+    // create series and feeds that stop() already disposed and nothing would ever dispose.
+    if (stopped) return;
     if (alert.expiresAt && Date.parse(alert.expiresAt) <= clock.now()) {
       void report(alert, 'expired', '');
       return;
@@ -747,6 +750,9 @@ export function createService(deps: ServiceDeps): Service {
         await api.health();
         return;
       } catch (err) {
+        // stop() ran during the health call: it already cleared `cancels`, so a wait started
+        // now could never be cancelled.
+        if (stopped) return;
         const ms = jitter(backoffMs(attempt, 1000, 60_000));
         log.warn('api unreachable, waiting', { error: errText(err), inMs: ms });
         // stop() cancels the timer: it must also end the wait, or start() never returns.

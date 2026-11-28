@@ -2145,7 +2145,8 @@ export class Chart implements StudyApi, DrawingApi {
   /**
    * Re-fetch the bars since the last known one (bypassing feed caches), merge them
    * over the tail, and re-subscribe so the feed continues from the corrected bar.
-   * A result that does not connect to the loaded bars triggers a full reload.
+   * A result that leaves a gap after the loaded bars triggers a full reload; one that
+   * starts before them (a long outage) replaces the whole series in place.
    */
   private async doResync(gen: number): Promise<void> {
     const n = this.raw.length;
@@ -2166,14 +2167,25 @@ export class Chart implements StudyApi, DrawingApi {
       if (res.bars.time.length) {
         // Plain views share the raw store, so measure before it changes.
         const before = this.store.length;
+        const oldFirst = this.raw.time[0]!;
         const keep = this.raw.replaceTail(res.bars);
         if (keep < 0) {
           void this.load();
           return;
         }
+        // Fetched bars older than the loaded start are history added in front:
+        // the view must not move for them (only the bars after are "appended").
+        let added = 0;
+        if (!BRICK_TYPES.has(this._chartType))
+          while (added < res.bars.time.length && res.bars.time[added]! < oldFirst) added++;
         this.rawEpoch++;
         this.rebuildView();
-        this.followLength(this.store.length - before);
+        if (added > 0) {
+          this.timeScale.onPrepend(added);
+          if (this.crosshair) this.crosshair.index += added;
+          this.hasMore = res.hasMore;
+        }
+        this.followLength(this.store.length - before - added);
         this.recomputeWeights();
         this.invalidate(INVALIDATE_MAIN);
         this.emitSeriesReset(this.usesTransform ? 0 : keep);

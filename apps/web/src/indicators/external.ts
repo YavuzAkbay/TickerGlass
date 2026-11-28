@@ -284,7 +284,8 @@ export class ExternalSymbols {
   /**
    * Re-fetch the bars since the last known one (bypassing feed caches), merge
    * them over the tail, resend the aligned series and re-subscribe from the
-   * corrected last bar. A result that does not connect reloads the whole symbol.
+   * corrected last bar. A result that leaves a real gap after the loaded bars
+   * reloads the whole symbol; one starting before them replaces the whole series.
    */
   private async doResync(e: Entry): Promise<void> {
     const interval = this.interval;
@@ -293,6 +294,7 @@ export class ExternalSymbols {
     const elapsed = n
       ? Math.ceil((Date.now() / 1000 - e.series.time[n - 1]!) / intervalSeconds(interval))
       : 0;
+    let fetched = false;
     try {
       const res = await this.opts.feed.getBars({
         symbol: e.symbol,
@@ -301,22 +303,27 @@ export class ExternalSymbols {
         prepost: this.prepost,
         fresh: true,
       });
+      fetched = true;
       if (e.dead || this.destroyed) return;
       const len = res.bars.time.length;
       if (len) {
+        const startsEarlier = !n || res.bars.time[0]! < e.series.time[0]!;
         if (!e.series.replaceTail(res.bars, len)) {
-          // Does not connect to what is loaded: refetch the symbol from scratch.
+          // A real gap after what is loaded: refetch the symbol from scratch.
           this.drop(e);
           this.entries.delete(e.symbol);
           this.load(e.symbol, true);
           return;
         }
+        if (startsEarlier) e.hasMore = res.hasMore;
         if (this.grid) e.series.rekey(this.grid);
         this.sendFull(e);
       }
       this.subscribeLive(e);
-    } catch {
+    } catch (err) {
       // Offline again or a bad response: keep what we have; the next reconnect retries.
+      // Anything thrown after the fetch is a bug: do not swallow it silently.
+      if (fetched) console.warn('external indicator resync failed', err);
     }
   }
 

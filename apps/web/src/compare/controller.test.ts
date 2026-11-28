@@ -525,6 +525,50 @@ describe('CompareController', () => {
       expect(subs.every((x) => x.closed)).toBe(true);
     });
 
+    it('replaces the overlay in place when the fresh tail starts before its first bar', async () => {
+      const { chart, ctl, subs, requests, fresh } = setup();
+      chart.load(cols(AAPL_T, AAPL_C));
+      ctl.sync([cmp('cmp-a', 'BTC-USD')]);
+      await settle();
+      // A long outage: the capped tail reaches back past the loaded start.
+      fresh['BTC-USD'] = cols(
+        [BTC_T[0]! - 2 * DAY, BTC_T[0]! - DAY, ...BTC_T],
+        [10, 11, ...BTC_C.slice(0, 7), 150],
+      );
+      subs[0]!.onResync!();
+      await settleMany();
+      expect(requests.filter((r) => r.fresh)).toHaveLength(1); // no reload
+      expect(subs).toHaveLength(2);
+      expect(subs[0]!.closed).toBe(true);
+      expect(subs[1]!.closed).toBe(false);
+      expect(chart.studies.get('cmp-a')!.values).toEqual([101, 102, 103, 104, 150]);
+    });
+
+    it('warns about an unexpected error after the fetch but stays quiet for fetch errors', async () => {
+      const f = fakeFeed({ 'BTC-USD|1D': cols(BTC_T, BTC_C) });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { chart, ctl, subs } = setup(f);
+      chart.load(cols(AAPL_T, AAPL_C));
+      ctl.sync([cmp('cmp-a', 'BTC-USD')]);
+      await settle();
+      const real = f.feed.getBars;
+      f.feed.getBars = async (req) => {
+        if (req.fresh) throw new Error('offline');
+        return real(req);
+      };
+      subs[0]!.onResync!();
+      await settleMany();
+      expect(warn).not.toHaveBeenCalled();
+      f.feed.getBars = real;
+      f.feed.subscribe = () => {
+        throw new Error('boom');
+      };
+      subs.at(-1)!.onResync!();
+      await settleMany();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
     it('reloads the overlay when the fresh bars do not connect', async () => {
       const { chart, ctl, subs, requests, fresh } = setup();
       chart.load(cols(AAPL_T, AAPL_C));

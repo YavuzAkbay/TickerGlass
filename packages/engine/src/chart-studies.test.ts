@@ -335,6 +335,26 @@ describe('live reconnect backfill', () => {
     expect(feed.subscribes).toHaveLength(2); // initial + the reload, none from the stale resync
   });
 
+  it('replaces in place (no reload) when the fetched tail starts before the loaded bars', async () => {
+    const { chart, feed, recent } = await load(50);
+    // A long outage: the capped tail reaches back past our first loaded bar.
+    feed.recent = makeBars(70, recent[0]!.time - 10 * DAY);
+    const changes: SeriesChange[] = [];
+    chart.on('seriesChange', (c) => changes.push(c));
+    feed.requests.length = 0;
+    feed.resync?.();
+    await settle();
+    await settle();
+
+    expect(feed.requests).toHaveLength(1); // the fresh tail only, no reload
+    expect(feed.requests[0]).toMatchObject({ fresh: true });
+    expect(chart.store.length).toBe(70);
+    expect(chart.store.time[0]).toBe(feed.recent[0]!.time);
+    expect(chart.timeScale.baseIndex).toBe(chart.store.length - 1);
+    expect(changes.map((c) => c.kind)).toEqual(['reset']);
+    expect(feed.subscribes).toHaveLength(2);
+  });
+
   it('reloads when the fetched tail does not reach the loaded bars', async () => {
     const { chart, feed, recent } = await load(50);
     // The tail starts after our last bar: bars in between are missing.

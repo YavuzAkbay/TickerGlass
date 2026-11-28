@@ -602,4 +602,49 @@ describe('HttpDataFeed delayed ticks', () => {
     expect(bars.at(-1)).toMatchObject({ close: 6 });
     feed.dispose();
   });
+
+  it('folds a delayed tick into high/low without touching close or volume', () => {
+    const feed = makeFeed();
+    const bars: Bar[] = [];
+    const t0 = z('2024-01-02T15:00:00Z');
+    feed.subscribe(
+      { symbol: 'AAPL', interval: parseInterval('5m'), ...NY },
+      { time: t0, open: 5, high: 5, low: 5, close: 5, volume: 0 },
+      (b) => bars.push(b),
+    );
+    const ws = FakeWebSocket.last();
+    ws.open();
+    ws.receive(tick('AAPL', '2024-01-02T15:03:00Z', 5.5, 1000));
+    ws.receive(tick('AAPL', '2024-01-02T15:01:00Z', 9, 400)); // delayed spike
+    expect(bars.at(-1)).toMatchObject({ close: 5.5, high: 9, low: 5, volume: 0 });
+    ws.receive(tick('AAPL', '2024-01-02T15:01:30Z', 2, 450)); // delayed dip
+    expect(bars.at(-1)).toMatchObject({ close: 5.5, high: 9, low: 2, volume: 0 });
+    // The delayed dayVolume did not move the baseline back: +100 only, not +650.
+    ws.receive(tick('AAPL', '2024-01-02T15:04:00Z', 5.6, 1100));
+    expect(bars.at(-1)).toMatchObject({ close: 5.6, volume: 100 });
+    feed.dispose();
+  });
+
+  it('ignores a tick stamped in the future so it cannot lock out later ticks', () => {
+    const feed = makeFeed();
+    const bars: Bar[] = [];
+    const now = Date.now();
+    const t0 = Math.floor(now / 1000 / 300) * 300; // current 5m bucket
+    feed.subscribe(
+      { symbol: 'AAPL', interval: parseInterval('5m'), ...NY, prepost: true },
+      { time: t0, open: 1, high: 1, low: 1, close: 1, volume: 0 },
+      (b) => bars.push(b),
+    );
+    const ws = FakeWebSocket.last();
+    ws.open();
+    const raw = (price: number, time: number) => ({
+      ...tick('AAPL', '2024-01-02T15:00:00Z', price),
+      time,
+    });
+    ws.receive(raw(99, now + 3 * 86_400_000)); // bogus timestamp
+    expect(bars).toHaveLength(0);
+    ws.receive(raw(2, now)); // a real tick right after is still applied
+    expect(bars.at(-1)).toMatchObject({ time: t0, close: 2 });
+    feed.dispose();
+  });
 });

@@ -32,6 +32,7 @@ import {
   type ChartHost,
   type ControllerOptions,
   type WorkerPort,
+  replaceTailColumns,
   upsertBar,
 } from './controller';
 import { createInstance, type IndicatorState } from './model';
@@ -1000,6 +1001,28 @@ describe('IndicatorController', () => {
   });
 });
 
+describe('replaceTailColumns', () => {
+  it('overwrites from the first fresh time, keeping older bars', () => {
+    const cols = makeBars(5);
+    const fresh = makeBars(3, DAY, cols.time[3]!);
+    const out = replaceTailColumns(cols, fresh, 3)!;
+    expect(Array.from(out.time)).toEqual([...Array.from(cols.time.subarray(0, 3)), ...fresh.time]);
+  });
+
+  it('replaces everything when the fresh tail starts before the first bar', () => {
+    const cols = makeBars(5);
+    const fresh = makeBars(9, DAY, cols.time[0]! - 3 * DAY);
+    const out = replaceTailColumns(cols, fresh, 9)!;
+    expect(Array.from(out.time)).toEqual(Array.from(fresh.time));
+  });
+
+  it('refuses a real gap or an empty tail', () => {
+    const cols = makeBars(5);
+    expect(replaceTailColumns(cols, makeBars(2, DAY, cols.time[4]! + 3 * DAY), 2)).toBeNull();
+    expect(replaceTailColumns(cols, makeBars(2), 0)).toBeNull();
+  });
+});
+
 describe('upsertBar', () => {
   it('updates the last bar, appends a later one and ignores older ones', () => {
     const cols = makeBars(3);
@@ -1524,6 +1547,29 @@ describe('resync after a live-connection outage', () => {
     expect(subs.every((s) => s.closed)).toBe(true);
   });
 
+  it('replaces an external symbol in place when the fresh tail starts before its first bar', async () => {
+    const main = makeBars(62);
+    const longer = makeBars(64, DAY, START - 4 * DAY, 5);
+    const { feed, requests, subs } = liveFeed((req) =>
+      req.fresh ? longer : makeBars(60, DAY, START, 5),
+    );
+    const { chart, log, ctl } = setup({ feed });
+    ctl.sync([corr()]);
+    chart.load(main);
+    await settleMany();
+    const sent = log.filter((m) => m.type === 'extBars' && m.symbol === 'GOOG').length;
+    subs[0]!.onResync!();
+    await settleMany();
+    expect(requests.filter((r) => r.fresh)).toHaveLength(1); // no reload
+    expect(log.filter((m) => m.type === 'extBars' && m.symbol === 'GOOG').length).toBeGreaterThan(
+      sent,
+    );
+    expect(subs).toHaveLength(2);
+    expect(subs[0]!.closed).toBe(true);
+    expect(subs[1]!.closed).toBe(false);
+    expect(subs[1]!.last!.time).toBe(longer.time[63]);
+  });
+
   it('reloads an external symbol whose fresh bars do not connect', async () => {
     const main = makeBars(62);
     const far = makeBars(4, DAY, START + 100 * DAY, 5);
@@ -1570,5 +1616,22 @@ describe('resync after a live-connection outage', () => {
     expect(subs).toHaveLength(2);
     expect(subs[0]!.closed).toBe(true);
     expect(subs[1]!.last!.time).toBe(weekly1.time[9]);
+  });
+
+  it('replaces a higher-timeframe series in place when the fresh tail starts before it', async () => {
+    const weekly0 = makeBars(8, 7 * DAY, START - 100 * DAY, 3);
+    const weekly1 = makeBars(12, 7 * DAY, START - 100 * DAY - 28 * DAY, 3);
+    const { feed, requests, subs } = liveFeed((req) => (req.fresh ? weekly1 : weekly0));
+    const { chart, log, ctl } = setup({ feed });
+    ctl.sync([inst('test_tf_close')]);
+    chart.load(makeBars(40, DAY, START - 70 * DAY));
+    await settleMany();
+    subs[0]!.onResync!();
+    await settleMany();
+    expect(requests.filter((r) => r.fresh)).toHaveLength(1); // no reload
+    const sent = log.filter((m) => m.type === 'tfBars').at(-1)!;
+    expect(Array.from(sent.bars.time)).toEqual(Array.from(weekly1.time));
+    expect(subs).toHaveLength(2);
+    expect(subs[1]!.last!.time).toBe(weekly1.time[11]);
   });
 });

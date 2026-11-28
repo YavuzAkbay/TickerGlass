@@ -218,7 +218,8 @@ function concatColumns(older: BarColumns, n: number, newer: BarColumns): BarColu
 
 /**
  * `cols` with everything from `fresh.time[0]` on replaced by `fresh[0, len)`, or
- * null when `fresh` does not connect (empty, starting after the last bar or before the first).
+ * null when `fresh` does not connect (empty, or starting after the last bar: a real
+ * gap). A `fresh` starting before the first bar replaces everything.
  */
 export function replaceTailColumns(
   cols: BarColumns,
@@ -228,7 +229,7 @@ export function replaceTailColumns(
   const n = cols.time.length;
   if (!len) return null;
   const first = fresh.time[0]!;
-  if (n && (first > cols.time[n - 1]! || first < cols.time[0]!)) return null;
+  if (n && first > cols.time[n - 1]!) return null;
   const keep = lowerBound(cols.time, n, first);
   const join = (a: Float64Array, b: Float64Array) => {
     const out = new Float64Array(keep + len);
@@ -975,7 +976,8 @@ export class IndicatorController {
   /**
    * Re-fetch the bars since the last known one (bypassing feed caches), merge them
    * over the tail, resend the series and re-subscribe from the corrected last bar.
-   * A result that does not connect reloads the series.
+   * A result that leaves a real gap after the loaded bars reloads the series; one
+   * starting before them replaces the whole series.
    */
   private async doResyncTimeframe(
     tf: string,
@@ -988,6 +990,7 @@ export class IndicatorController {
       lastTime === undefined
         ? 0
         : Math.ceil((Date.now() / 1000 - lastTime) / intervalSeconds(req.interval));
+    let fetched = false;
     try {
       const res = await this.feed.getBars({
         symbol: req.symbol,
@@ -996,12 +999,14 @@ export class IndicatorController {
         prepost: req.prepost ?? false,
         fresh: true,
       });
+      fetched = true;
       if (!current() || !entry.bars) return;
       const len = res.bars.time.length;
       if (len) {
+        const startsEarlier = !entry.bars.time.length || res.bars.time[0]! < entry.bars.time[0]!;
         const merged = replaceTailColumns(entry.bars, res.bars, len);
         if (!merged) {
-          // Does not connect to what is loaded: refetch the series from scratch.
+          // A real gap after what is loaded: refetch the series from scratch.
           entry.unsub?.();
           entry.unsub = null;
           this.tfSeries.delete(tf);
@@ -1010,11 +1015,14 @@ export class IndicatorController {
         }
         entry.bars = merged;
         entry.first = merged.time[0]!;
+        if (startsEarlier) entry.complete = !res.hasMore;
         this.sendTimeframeBars(tf, merged);
       }
       this.subscribeTimeframe(tf, entry, req);
-    } catch {
+    } catch (err) {
       // Offline again or a bad response: keep what we have; the next reconnect retries.
+      // Anything thrown after the fetch is a bug: do not swallow it silently.
+      if (fetched) console.warn('timeframe resync failed', err);
     }
   }
 

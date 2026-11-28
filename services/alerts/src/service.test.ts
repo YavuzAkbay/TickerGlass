@@ -599,4 +599,33 @@ describe('service', () => {
     await h.clock.advance(1100);
     await until(() => h!.api.putStates.length >= 1, 'state flush');
   });
+
+  it('stop() during a failing health check ends the wait instead of sleeping', async () => {
+    h = await harness();
+    h.api.healthFails = 1;
+    const started = h.service.start();
+    const stopping = h.service.stop(); // lands while api.health() is in flight
+    const result = await Promise.race([
+      started.then(() => 'returned'),
+      new Promise<string>((r) => setTimeout(() => r('hung'), 2000)),
+    ]);
+    await stopping;
+    expect(result).toBe('returned');
+  });
+
+  it('a sync that is still reading the list when stop() runs attaches nothing', async () => {
+    await setup();
+    let release!: () => void;
+    h!.api.alertsGate = new Promise<void>((r) => (release = r));
+    h!.api.alerts = [...h!.api.alerts, makeAlert({ id: 'a2', symbol: 'OTHER' })];
+    h!.feed.setBars('OTHER', '1m', minuteBars(BAR_T, [98, 99, 99]));
+    const syncing = h!.service.sync();
+    await settle(20); // the list request is now waiting on the gate
+    const stopping = h!.service.stop();
+    release();
+    await syncing;
+    await stopping;
+    expect(h!.service.series()).toHaveLength(0);
+    expect(h!.feed.subscriptions).toBe(0);
+  });
 });

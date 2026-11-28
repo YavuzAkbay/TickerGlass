@@ -89,14 +89,15 @@ export class AlignedSeries {
 
   /**
    * Overwrite the newest bars: everything from `bars.time[0]` on is replaced by
-   * `bars[0, len)`, older bars stay. Returns false (unchanged) when `bars` does
-   * not connect: empty, starting after the last bar (a gap) or before the first.
+   * `bars[0, len)`, older bars stay. A tail starting before the first bar replaces
+   * everything. Returns false (unchanged) when `bars` does not connect: empty, or
+   * starting after the last bar (a real gap).
    */
   replaceTail(bars: BarColumns, len: number): boolean {
     const n = this.time.length;
     if (!len) return false;
     const first = bars.time[0]!;
-    if (n && (first > this.time[n - 1]! || first < this.time[0]!)) return false;
+    if (n && first > this.time[n - 1]!) return false;
     const keep = lowerBound(this.time, n, first);
     const tail = (cur: number[], src: ArrayLike<number>) => [
       ...cur.slice(0, keep),
