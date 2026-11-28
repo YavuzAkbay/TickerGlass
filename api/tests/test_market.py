@@ -215,6 +215,19 @@ def test_events(client: TestClient) -> None:
     assert body["earnings"][0]["epsEstimate"] == 1.0
 
 
+@pytest.mark.parametrize("route", ["events", "news", "fundamentals", "performance", "symbols"])
+def test_path_symbols_are_stripped_and_validated(client: TestClient, route: str) -> None:
+    url = f"/api/{route}/"
+    plain = client.get(url + "AAPL")
+    padded = client.get(url + "%20AAPL%20")
+    assert padded.status_code == plain.status_code
+    assert padded.json() == plain.json()
+    for bad in ("AA%09PL", "A..B", "AAPL%3Fx", "A%5CB", "AA%0APL", "X" * 33, "%20%20"):
+        assert client.get(url + bad).status_code == 422, (route, bad)
+    # BTC/USD style symbols stay valid for the query-string routes.
+    assert client.get("/api/bars", params={"symbol": "BTC/USD"}).status_code != 422
+
+
 def test_events_404(client: TestClient) -> None:
     assert client.get("/api/events/NOPE").status_code == 404
 

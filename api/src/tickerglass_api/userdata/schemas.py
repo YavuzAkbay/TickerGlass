@@ -73,14 +73,14 @@ Id = Annotated[str, StringConstraints(min_length=1, max_length=36)]
 DrawingId = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 ToolType = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 SchemaVersion = Annotated[int, Field(ge=1, le=1_000_000)]
-Revision = Annotated[int, Field(ge=1)]
+Revision = Annotated[int, Field(ge=1, le=2_147_483_647)]  # a 32-bit column
 NoteText = Annotated[str, StringConstraints(max_length=MAX_NOTE_CHARS)]
 
 _SCRIPT_ID = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
 
 
 def _check_script_id(value: str) -> str:
-    if not _SCRIPT_ID.match(value):
+    if not _SCRIPT_ID.fullmatch(value):
         raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
     return value
 
@@ -94,7 +94,7 @@ _SETTING_KEY = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 
 
 def check_setting_key(key: str) -> str:
-    if not _SETTING_KEY.match(key):
+    if not _SETTING_KEY.fullmatch(key):
         raise ValueError("setting key must match [A-Za-z0-9_.-]{1,64}")
     return key
 
@@ -362,13 +362,13 @@ _WL_ID = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
 
 def _check_wl_symbol(value: str) -> str:
     value = value.strip().upper()
-    if not _WL_SYMBOL.match(value):
+    if not _WL_SYMBOL.fullmatch(value):
         raise ValueError(f"invalid symbol: {value!r}")
     return value
 
 
 def _check_wl_id(value: str) -> str:
-    if not _WL_ID.match(value):
+    if not _WL_ID.fullmatch(value):
         raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
     return value
 

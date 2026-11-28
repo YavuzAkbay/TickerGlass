@@ -60,7 +60,7 @@ def test_post_with_client_id_conflicts_on_reuse(client: TestClient) -> None:
     assert res.status_code == 409
     assert res.json()["detail"]["current"] == first
     assert client.get("/api/watchlists/client-id_1").json()["name"] == "A"
-    for bad in ("a/b", "x" * 37, "", "a b"):
+    for bad in ("a/b", "x" * 37, "", "a b", "abc\n"):
         res = client.post("/api/watchlists", json={"id": bad, "name": "B"})
         assert res.status_code == 422, bad
 

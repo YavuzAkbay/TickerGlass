@@ -334,7 +334,7 @@ def _watchlist_symbols(session: Session) -> list[str]:
         for item in items:
             if isinstance(item, dict) and item.get("type") == "symbol":
                 sym = str(item.get("symbol", "")).upper()
-                if SYMBOL_RE.match(sym):
+                if SYMBOL_RE.fullmatch(sym):
                     out[sym] = None
     return list(out)
 
@@ -367,7 +367,7 @@ def tracked_symbols(session: Session, settings: Settings) -> list[str]:
     next_rank = max([CUSTOM_RANK_BASE - 1, *(s.rank for s in rows.values())]) + 1
     stamp = datetime.now(UTC)
     for sym in (*listed, *watched):
-        if sym not in rows and SYMBOL_RE.match(sym):
+        if sym not in rows and SYMBOL_RE.fullmatch(sym):
             row = ScreenerSymbol(
                 symbol=sym,
                 cls=_guess_class(sym),
@@ -470,19 +470,19 @@ def put_list(
     """Create or override a list (source 'upload'; a bundled id stays an 'index' list). Symbols
     are upper-cased and de-duplicated. Raises `ListError` for a bad id, name, date, a missing or
     malformed symbol or more than `MAX_LIST_SYMBOLS` symbols. The caller commits."""
-    if not _LIST_ID_RE.match(list_id):
+    if not _LIST_ID_RE.fullmatch(list_id):
         raise ListError("bad_id", "list id must be 1-36 letters, digits, '-' or '_'")
     name = name.strip()
     if not 1 <= len(name) <= 200:
         raise ListError("bad_name", "name must be 1-200 characters")
-    if not _AS_OF_RE.match(as_of):
+    if not _AS_OF_RE.fullmatch(as_of):
         raise ListError("bad_as_of", "asOf must be YYYY-MM or YYYY-MM-DD")
     if len(symbols) > MAX_LIST_SYMBOLS:
         raise ListError("too_many_symbols", f"at most {MAX_LIST_SYMBOLS} symbols")
     clean: list[str] = []
     for raw in symbols:
         sym = raw.strip().upper()
-        if not SYMBOL_RE.match(sym):
+        if not SYMBOL_RE.fullmatch(sym):
             raise ListError("bad_symbol", f"invalid symbol: {raw!r}")
         clean.append(sym)
     existing = find_list(session, list_id)

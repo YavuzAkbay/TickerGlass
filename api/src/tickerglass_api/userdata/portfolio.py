@@ -64,7 +64,7 @@ class PfModel(BaseModel):
 
 
 def _check_id(value: str) -> str:
-    if not _ID.match(value):
+    if not _ID.fullmatch(value):
         raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
     return value
 
@@ -80,7 +80,7 @@ def _symbol(value: str | None) -> str | None:
 
 def _currency(value: str) -> str:
     value = value.strip().upper()
-    if not _CURRENCY.match(value):
+    if not _CURRENCY.fullmatch(value):
         raise ValueError("currency must be a 3-letter ISO-4217 code")
     return value
 
@@ -115,7 +115,7 @@ def _tags(value: list[str]) -> list[str]:
 Id = Annotated[str, AfterValidator(_check_id)]
 PfSymbol = Annotated[str | None, AfterValidator(_symbol)]
 Currency = Annotated[str, AfterValidator(_currency)]
-Revision = Annotated[int, Field(ge=1)]
+Revision = Annotated[int, Field(ge=1, le=2_147_483_647)]  # a 32-bit column
 Num = Annotated[float, Field(allow_inf_nan=False)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 CostMethod = Literal["fifo", "average"]

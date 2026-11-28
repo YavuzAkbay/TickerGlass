@@ -12,6 +12,7 @@ from ..deps import BarServiceDep, UpstreamGuardDep
 from ..intervals import resolve_interval
 from ._cache_headers import set_max_age, set_no_cache
 from ._priority import PriorityDep
+from ._symbol import SymbolParam
 
 router = APIRouter(tags=["bars"])
 logger = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ logger = logging.getLogger(__name__)
 HISTORY_MAX_AGE_S = 300
 # A page ending this many bar intervals before now holds only closed, settled bars.
 SETTLED_BARS = 2
+# Unix-second bounds for `from`/`to`: 1900-01-01 (old index history is pre-1970) to 2100-01-01.
+# Anything wider is a client bug and would overflow the database integer.
+MIN_TS = -2_208_988_800
+MAX_TS = 4_102_444_800
 MAX_SPARKLINE_SYMBOLS = 50
 SPARKLINE_WORKERS = 4
 SPARKLINE_MAX_AGE_S = 60
@@ -49,10 +54,16 @@ def get_bars(
     bars: BarServiceDep,
     guard: UpstreamGuardDep,
     priority: PriorityDep,
-    symbol: Annotated[str, Query(min_length=1, max_length=32)],
+    symbol: SymbolParam,
     interval: str = "1d",
-    start: Annotated[int | None, Query(alias="from", description="Inclusive unix seconds")] = None,
-    end: Annotated[int | None, Query(alias="to", description="Exclusive unix seconds")] = None,
+    start: Annotated[
+        int | None,
+        Query(alias="from", description="Inclusive unix seconds", ge=MIN_TS, le=MAX_TS),
+    ] = None,
+    end: Annotated[
+        int | None,
+        Query(alias="to", description="Exclusive unix seconds", ge=MIN_TS, le=MAX_TS),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=20_000)] = 2000,
     adjusted: bool = False,
     prepost: bool = False,

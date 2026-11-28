@@ -51,6 +51,7 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 ONLINE_WITHIN = timedelta(seconds=90)
 _FIRE_RETRIES = 3
+MAX_LOG_ID = 2_147_483_647  # `alert_log.id` is a 32-bit integer column
 
 
 class ServiceState:
@@ -266,8 +267,8 @@ def get_log(
     session: SessionDep,
     alert_id: Annotated[str | None, Query(alias="alertId", max_length=36)] = None,
     symbol: Annotated[str | None, Query(max_length=128)] = None,
-    before: Annotated[int | None, Query(ge=0)] = None,
-    after: Annotated[int | None, Query(ge=0)] = None,
+    before: Annotated[int | None, Query(ge=0, le=MAX_LOG_ID)] = None,
+    after: Annotated[int | None, Query(ge=0, le=MAX_LOG_ID)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> al.LogPage:
     """Newest first. `before`/`after` are exclusive log ids."""

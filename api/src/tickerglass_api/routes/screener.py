@@ -436,7 +436,7 @@ def snapshot(
         raise HTTPException(422, "symbols must not be empty")
     if len(parsed) > MAX_SNAPSHOT_SYMBOLS:
         raise HTTPException(422, f"at most {MAX_SNAPSHOT_SYMBOLS} symbols")
-    bad = next((s for s in parsed if not uv.SYMBOL_RE.match(s)), None)
+    bad = next((s for s in parsed if not uv.SYMBOL_RE.fullmatch(s)), None)
     if bad is not None:
         raise HTTPException(422, f"invalid symbol: {bad!r}")
     as_of, rows = snapshot_values(session, parsed, settings=settings, now=datetime.now(UTC))

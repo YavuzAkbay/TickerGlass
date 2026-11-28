@@ -17,7 +17,7 @@ MAX_FRAME_CHARS = 64 * 1024
 def _parse_symbols(value: Any) -> list[str]:
     if not isinstance(value, list) or not value:
         raise ValueError("'symbols' must be a non-empty list of strings")
-    bad = [s for s in value if not isinstance(s, str) or not SYMBOL_RE.match(s)]
+    bad = [s for s in value if not isinstance(s, str) or not SYMBOL_RE.fullmatch(s)]
     if bad:
         shown = ", ".join(repr(s) for s in bad[:5])
         raise ValueError(f"invalid symbol(s): {shown}")

@@ -401,6 +401,8 @@ def test_custom_list_crud(session: Session) -> None:
     ("args", "code"),
     [
         (("bad id", "N", "2026-01", ["A"]), "bad_id"),
+        (("ok\n", "N", "2026-01", ["A"]), "bad_id"),
+        (("ok", "N", "2026-01\n", ["A"]), "bad_as_of"),
         (("x" * 37, "N", "2026-01", ["A"]), "bad_id"),
         (("ok", "  ", "2026-01", ["A"]), "bad_name"),
         (("ok", "n" * 201, "2026-01", ["A"]), "bad_name"),

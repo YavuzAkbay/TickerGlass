@@ -21,6 +21,7 @@ MAX_SYMBOLS = 1000
 MAX_RULES = 50
 MAX_DEPTH = 2
 MAX_LIMIT = 500
+MAX_OFFSET = 1_000_000
 DEFAULT_LIMIT = 100
 MAX_FIELDS = 60
 LIST_ID_PATTERN = r"^[A-Za-z0-9_-]{1,36}$"
@@ -65,7 +66,7 @@ class SymbolsUniverse(StrictCamel):
         out: list[str] = []
         for raw in value:
             sym = raw.strip().upper()
-            if not SYMBOL_RE.match(sym):
+            if not SYMBOL_RE.fullmatch(sym):
                 raise ValueError(f"invalid symbol: {raw!r}")
             out.append(sym)
         return list(dict.fromkeys(out))
@@ -135,7 +136,7 @@ class ScanRequest(StrictCamel):
     filter: Group | None = None
     sort: Sort = Sort(field="avgDollarVol30", dir="desc")
     limit: int = Field(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT)
-    offset: int = Field(default=0, ge=0)
+    offset: int = Field(default=0, ge=0, le=MAX_OFFSET)
     fields: list[str] | None = Field(default=None, max_length=MAX_FIELDS)
 
 

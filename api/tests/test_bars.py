@@ -315,6 +315,37 @@ def test_bars_endpoint_to_is_exclusive_upper_bound(tmp_path: Path) -> None:
         assert res.json()["t"] == ts[-2:]
 
 
+@pytest.mark.parametrize("name", ["from", "to"])
+@pytest.mark.parametrize("value", [99999999999999999999, 4_102_444_801, -2_208_988_801])
+def test_bars_endpoint_rejects_out_of_range_timestamps(
+    tmp_path: Path, name: str, value: int
+) -> None:
+    # An unbounded int reached the database and overflowed it: a 500, not a 422.
+    app = create_app(
+        provider=FakeProvider({("AAPL", "1d"): DAILY}), database_url=f"sqlite:///{tmp_path}/a.db"
+    )
+    with TestClient(app) as client:
+        res = client.get("/api/bars", params={"symbol": "AAPL", "interval": "1d", name: value})
+        assert res.status_code == 422
+        ok = client.get("/api/bars", params={"symbol": "AAPL", "interval": "1d", name: 0})
+        assert ok.status_code == 200
+
+
+def test_bars_endpoint_normalizes_the_symbol(tmp_path: Path) -> None:
+    # "AAPL " must be the same series as "AAPL", not a second cache entry and upstream call.
+    provider = FakeProvider({("AAPL", "1d"): DAILY})
+    app = create_app(provider=provider, database_url=f"sqlite:///{tmp_path}/a.db")
+    with TestClient(app) as client:
+        plain = client.get("/api/bars", params={"symbol": "AAPL", "interval": "1d", "limit": 5})
+        padded = client.get("/api/bars", params={"symbol": " AAPL ", "interval": "1d", "limit": 5})
+        assert plain.status_code == padded.status_code == 200
+        assert padded.json() == plain.json() and padded.json()["symbol"] == "AAPL"
+        assert {c[0] for c in provider.calls} == {"AAPL"}
+        for bad in ("AA PL", "AAPL\nX", "../etc/passwd", "A..B", "AAPL?x", "A%2FB", "X" * 33, "  "):
+            res = client.get("/api/bars", params={"symbol": bad, "interval": "1d"})
+            assert res.status_code == 422, bad
+
+
 class FailingProvider(FakeProvider):
     def __init__(self, error: Exception) -> None:
         super().__init__({})

@@ -10,6 +10,7 @@ from ..providers.guard import Priority
 from ..services.performance import compute_performance
 from ._cache_headers import set_max_age, set_no_cache
 from ._priority import PriorityDep
+from ._symbol import SymbolParam
 
 router = APIRouter(tags=["market"])
 
@@ -73,7 +74,7 @@ def events(
     market: MarketServiceDep,
     guard: UpstreamGuardDep,
     priority: PriorityDep,
-    symbol: str,
+    symbol: SymbolParam,
 ) -> dict[str, Any]:
     with guard.priority(_screen_priority(priority)):
         out = market.events(symbol)
@@ -122,7 +123,7 @@ def news(
     market: MarketServiceDep,
     guard: UpstreamGuardDep,
     priority: PriorityDep,
-    symbol: str,
+    symbol: SymbolParam,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
     with guard.priority(priority):
@@ -137,7 +138,7 @@ def fundamentals(
     market: MarketServiceDep,
     guard: UpstreamGuardDep,
     priority: PriorityDep,
-    symbol: str,
+    symbol: SymbolParam,
 ) -> dict[str, Any]:
     with guard.priority(_screen_priority(priority)):
         out = market.fundamentals(symbol)
@@ -147,7 +148,7 @@ def fundamentals(
 
 @router.get("/performance/{symbol}")
 def performance(
-    response: Response, bars: BarServiceDep, symbols: SymbolServiceDep, symbol: str
+    response: Response, bars: BarServiceDep, symbols: SymbolServiceDep, symbol: SymbolParam
 ) -> dict[str, Any]:
     """1W..5Y price returns from cached daily bars (calendar offsets, exchange tz)."""
     sym = symbol.upper()

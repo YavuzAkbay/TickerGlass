@@ -148,7 +148,7 @@ def create_user(
     if "password" not in settings.auth_methods:
         raise HTTPException(400, "local accounts need the password method (AUTH_PASSWORD)")
     username = normalize_username(body.username)
-    if not USERNAME_RE.match(username):
+    if not USERNAME_RE.fullmatch(username):
         raise HTTPException(422, "username must be 1-64 characters of a-z, 0-9, '.', '_', '@', '-'")
     if username == BOOTSTRAP_USERNAME:
         raise HTTPException(422, f"username {BOOTSTRAP_USERNAME!r} is reserved")

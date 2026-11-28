@@ -222,6 +222,11 @@ def test_invalid_input_and_ping(
     with client.websocket_connect("/ws") as ws:
         ws.send_json({"op": "subscribe", "symbols": ["AAPL; DROP"]})
         assert "invalid symbol" in recv(ws, "error")["message"]
+        # `$` matches before a trailing newline; the whole string must be a symbol.
+        ws.send_json({"op": "subscribe", "symbols": ["AAPL\n"]})
+        assert "invalid symbol" in recv(ws, "error")["message"]
+        ws.send_json({"op": "unsubscribe", "symbols": ["AAPL\n"]})
+        assert "invalid symbol" in recv(ws, "error")["message"]
         ws.send_text("not json")
         assert recv(ws, "error")["message"] == "invalid JSON"
         ws.send_json({"op": "nope"})

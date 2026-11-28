@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, Response
 from ..deps import SymbolServiceDep, UpstreamGuardDep
 from ._cache_headers import set_max_age
 from ._priority import PriorityDep
+from ._symbol import SymbolParam
 
 router = APIRouter(prefix="/symbols", tags=["symbols"])
 
@@ -29,7 +30,7 @@ def info(
     symbols: SymbolServiceDep,
     guard: UpstreamGuardDep,
     priority: PriorityDep,
-    symbol: str,
+    symbol: SymbolParam,
 ) -> dict[str, Any]:
     with guard.priority(priority):
         found = symbols.info(symbol)

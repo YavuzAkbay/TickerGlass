@@ -193,6 +193,13 @@ def test_fundamental_fields_unavailable_without_screen_info(tmp_path: Path) -> N
 # --------------------------------------------------------------------- scan
 
 
+def test_scan_rejects_an_offset_beyond_the_cap(client: TestClient) -> None:
+    # 1e20 overflowed the database integer (a 500).
+    for offset in (10**20, 1_000_001):
+        assert scan(client, offset=offset).status_code == 422, offset
+    assert scan(client, offset=1_000_000).status_code == 200
+
+
 def test_scan_returns_rows_and_headers(client: TestClient, provider: ScreenProvider) -> None:
     with session_of(client) as s:
         add_run(s)

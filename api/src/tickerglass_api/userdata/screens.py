@@ -35,14 +35,14 @@ _ID = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
 
 
 def _check_id(value: str) -> str:
-    if not _ID.match(value):
+    if not _ID.fullmatch(value):
         raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
     return value
 
 
 ScreenId = Annotated[str, AfterValidator(_check_id)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-Revision = Annotated[int, Field(ge=1)]
+Revision = Annotated[int, Field(ge=1, le=2_147_483_647)]  # a 32-bit column
 
 
 def utc(dt: datetime) -> datetime:

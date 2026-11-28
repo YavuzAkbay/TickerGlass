@@ -65,7 +65,7 @@ def _json_size(value: Any) -> int:
 
 
 def _check_alert_id(value: str) -> str:
-    if not _ID.match(value):
+    if not _ID.fullmatch(value):
         raise ValueError("id must match [A-Za-z0-9_-]{1,36}")
     if value in RESERVED_ALERT_IDS:
         raise ValueError(f"id {value!r} is reserved")
@@ -73,7 +73,7 @@ def _check_alert_id(value: str) -> str:
 
 
 def _check_instance_id(value: str) -> str:
-    if not _INSTANCE_ID.match(value):
+    if not _INSTANCE_ID.fullmatch(value):
         raise ValueError("instance id must match [A-Za-z0-9_-]{1,64}")
     return value
 
@@ -107,7 +107,7 @@ SymbolStr = Annotated[
     str, StringConstraints(min_length=1, max_length=128), AfterValidator(_printable)
 ]
 Interval = Annotated[str, StringConstraints(pattern=r"^[1-9][0-9]{0,5}[mhDWM]$")]
-Revision = Annotated[int, Field(ge=1)]
+Revision = Annotated[int, Field(ge=1, le=2_147_483_647)]  # a 32-bit column
 DrawingId = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 ShortId = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 FiniteFloat = Annotated[float, Field(strict=True, allow_inf_nan=False)]
