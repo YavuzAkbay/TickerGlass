@@ -6,7 +6,6 @@ import { getPersistence } from '../persist/bootstrap';
 import { deleteLayout, loadLayout } from '../persist/commands';
 import { useLayoutStatus } from '../persist/layouts';
 import { Modal } from '../ui/Modal';
-import { singleFlight } from '../ui/singleFlight';
 import './dialogs.css';
 import './persist.css';
 
@@ -43,14 +42,17 @@ export default function LoadLayoutDialog({ onClose }: { onClose: () => void; arg
   const rows = (layouts ?? []).filter((l) => !q || l.name.toLowerCase().includes(q));
   const idx = Math.max(0, Math.min(active, rows.length - 1));
 
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   // Key repeat / double Enter: one load at a time.
-  const [open] = useState(() =>
-    singleFlight(async (l: LayoutSummary) => {
-      if (await loadLayout(l.id)) onCloseRef.current();
-    }),
-  );
+  const loading = useRef(false);
+  const open = async (l: LayoutSummary) => {
+    if (loading.current) return;
+    loading.current = true;
+    try {
+      if (await loadLayout(l.id)) onClose();
+    } finally {
+      loading.current = false;
+    }
+  };
   const remove = async (l: LayoutSummary) => {
     if (await deleteLayout(l.id, l.name)) await refresh();
   };

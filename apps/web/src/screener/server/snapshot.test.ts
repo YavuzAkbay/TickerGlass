@@ -165,24 +165,24 @@ describe('snapshot loader', () => {
   it('useSnapshots refetches rows dropped for a newer asOf without waiting for the renew timer', async () => {
     hooks.slots = [];
     const symbols = ['AAPL'];
-    const render = () => {
+    const useRender = () => {
       hooks.idx = 0;
       return useSnapshots(symbols);
     };
-    render();
+    useRender();
     await vi.advanceTimersByTimeAsync(BATCH_MS);
-    expect(render().AAPL).toEqual(row(1));
+    expect(useRender().AAPL).toEqual(row(1));
     expect(requestJson).toHaveBeenCalledTimes(1);
     // Another consumer loads a symbol under a newer asOf: AAPL's row is superseded.
     requestJson.mockImplementation(answer('2026-11-06'));
     const b = requestSnapshot('MSFT');
     await vi.advanceTimersByTimeAsync(BATCH_MS);
     await b;
-    expect(render().AAPL).toBeUndefined();
+    expect(useRender().AAPL).toBeUndefined();
     await vi.advanceTimersByTimeAsync(BATCH_MS);
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(requestJson.mock.calls[2]![3].query).toEqual({ symbols: 'AAPL' });
-    expect(render().AAPL).toEqual(row(1));
+    expect(useRender().AAPL).toEqual(row(1));
   });
 
   it('retries after a transient failure, without disabling', async () => {
